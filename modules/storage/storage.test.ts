@@ -1,9 +1,15 @@
+import { fixture } from "../runtime/fixture.ts";
 import { beforeEach, afterEach, describe, it, expect } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Storage } from "./index.ts";
-import { createWork, writePages, restore } from "../workspace/index.ts";
+import {
+  createWork,
+  writeWork,
+  moveModules,
+  restore,
+} from "../workspace/index.ts";
 import { register, login } from "../identity/index.ts";
 import { createApp } from "../../apps/server/app.ts";
 let dir: string, db: Storage;
@@ -24,7 +30,7 @@ describe("user owned works", () => {
     a.saveRun({
       id: "run",
       workId: work.id,
-      pageId: "root",
+      sceneId: "root",
       status: "waiting",
       startedAt: 1,
       messages: [],
@@ -43,31 +49,131 @@ describe("user owned works", () => {
     expect(() => b.delete(work.id)).toThrow();
     expect(a.work(work.id)).toEqual(work);
   });
-  it("commits atomically and restores a snapshot as a new revision", () => {
-    const s = db.scoped(register(db, "a", "abcdef").id),
-      w = createWork(s, "test");
-    const p = { ...w.pages.root, html: "<h1>one</h1>" };
-    const next = writePages(s, w.id, [p], 1);
-    expect(next.revision).toBe(2);
-    expect(() => writePages(s, w.id, [{ ...p, html: "bad" }], 1)).toThrow(
-      "版本",
-    );
-    expect(s.work(w.id).pages.root.html).toBe(p.html);
-    expect(restore(s, w.id, 1).revision).toBe(3);
-    expect(s.work(w.id).pages.root.html).toBe("");
-    expect(s.revision(w.id, 2).pages.root.html).toBe(p.html);
+  it("updates shared drawing source and restores the complete composition atomically", () => {
+    const store = db.scoped(register(db, "a", "abcdef").id);
+    const work = createWork(store, "test");
+    const content = fixture();
+    const saved = writeWork(store, work.id, {
+      baseRevision: 1,
+      drawings: Object.values(content.drawings),
+      scenes: Object.values(content.scenes),
+      details: Object.values(content.details),
+      interactions: Object.values(content.interactions),
+    });
+    expect(saved.revision).toBe(2);
+    const changed = {
+      ...saved.drawings.tier,
+      source: "return api.svg('<svg/>');",
+    };
+    const edited = writeWork(store, work.id, {
+      baseRevision: 2,
+      drawings: [changed],
+    });
+    expect(edited.scenes).toEqual(saved.scenes);
+    expect(edited.drawings.tier).toEqual(changed);
+    expect(() =>
+      writeWork(store, work.id, { baseRevision: 2, title: "stale" }),
+    ).toThrow("版本");
+    expect(restore(store, work.id, 2).revision).toBe(4);
+    expect(store.work(work.id).drawings.tier).toEqual(content.drawings.tier);
+    expect(store.revision(work.id, 3).drawings.tier).toEqual(changed);
   });
-  it("rejects cycles, missing parents and another user asset before changing data", () => {
+  it("validates composition references together and permits atomic deletion", () => {
+    const store = db.scoped(register(db, "a", "abcdef").id);
+    const work = createWork(store, "test"),
+      content = fixture();
+    writeWork(store, work.id, {
+      baseRevision: 1,
+      drawings: Object.values(content.drawings),
+      scenes: Object.values(content.scenes),
+      details: Object.values(content.details),
+      interactions: Object.values(content.interactions),
+    });
+    expect(() =>
+      writeWork(store, work.id, {
+        baseRevision: 2,
+        remove: { drawings: ["tier"] },
+      }),
+    ).toThrow("画法");
+    expect(() =>
+      writeWork(store, work.id, {
+        baseRevision: 2,
+        scenes: [{ ...content.scenes.child, parentId: "child" }],
+      }),
+    ).toThrow("循环");
+    expect(() =>
+      writeWork(store, work.id, {
+        baseRevision: 2,
+        scenes: [{ ...content.scenes.child, parentId: "missing" }],
+      }),
+    ).toThrow("父场景");
+    expect(() =>
+      writeWork(store, work.id, {
+        baseRevision: 2,
+        scenes: [
+          {
+            ...content.scenes.root,
+            links: [
+              {
+                id: "link",
+                drawingId: "connector",
+                from: { moduleId: "level-0", anchor: "missing" },
+                to: { moduleId: "level-1", anchor: "left" },
+                data: {},
+              },
+            ],
+          },
+        ],
+      }),
+    ).toThrow("锚点");
+    const cleared = writeWork(store, work.id, {
+      baseRevision: 2,
+      scenes: [{ ...content.scenes.root, modules: [], checks: [] }],
+      remove: { drawings: ["tier"] },
+    });
+    expect(cleared.revision).toBe(3);
+    expect(cleared.drawings.tier).toBeUndefined();
+  });
+  it("moves modules without changing drawing definitions, data or the saved camera", () => {
+    const store = db.scoped(register(db, "a", "abcdef").id),
+      work = createWork(store, "test"),
+      content = fixture();
+    const saved = writeWork(store, work.id, {
+      baseRevision: 1,
+      drawings: Object.values(content.drawings),
+      scenes: Object.values(content.scenes),
+      details: Object.values(content.details),
+      interactions: Object.values(content.interactions),
+    });
+    const m = saved.scenes.root.modules[0];
+    const moved = moveModules(store, work.id, "root", 2, [
+      { id: m.id, bounds: { ...m.bounds, x: 901 } },
+    ]);
+    expect(moved.drawings).toEqual(saved.drawings);
+    expect(moved.scenes.root.modules[0]).toEqual({
+      ...m,
+      bounds: { ...m.bounds, x: 901 },
+    });
+    expect(moved.scenes.root.modules.slice(1)).toEqual(
+      saved.scenes.root.modules.slice(1),
+    );
+    expect(moved).not.toHaveProperty("camera");
+  });
+  it("rejects resources owned by another user before changing any records", () => {
     const a = db.scoped(register(db, "a", "abcdef").id),
       b = db.scoped(register(db, "b", "abcdef").id),
-      w = createWork(a, "test");
-    const p = { ...w.pages.root, id: "child", parentId: "child" };
-    expect(() => writePages(a, w.id, [p], 1)).toThrow("循环");
+      work = createWork(a, "test");
     const asset = b.putAsset(new Uint8Array([1]), "x", "image/png");
     expect(() =>
-      writePages(a, w.id, [{ ...w.pages.root, assetIds: [asset.id] }], 1),
+      writeWork(a, work.id, {
+        baseRevision: 1,
+        title: "changed",
+        resources: [
+          { id: "image", name: "x", url: asset.url, assetId: asset.id },
+        ],
+      }),
     ).toThrow();
-    expect(a.work(w.id).revision).toBe(1);
+    expect(a.work(work.id)).toEqual(work);
   });
   it("retains saved content and suspended conversation across reopening", () => {
     const uid = register(db, "a", "abcdef").id,
@@ -76,7 +182,7 @@ describe("user owned works", () => {
     s.saveRun({
       id: "waiting",
       workId: w.id,
-      pageId: "root",
+      sceneId: "root",
       status: "waiting",
       startedAt: 0,
       messages: [],
@@ -90,7 +196,7 @@ describe("user owned works", () => {
   });
 });
 describe("HTTP identity boundary", () => {
-  it("uses session ownership on reads, page rendering and mutations", async () => {
+  it("uses session ownership on reads, scene rendering and mutations", async () => {
     const { app } = createApp(db);
     const signup = async (name: string) => {
       const r = await app.request("/api/auth/register", {
@@ -118,7 +224,7 @@ describe("HTTP identity boundary", () => {
     ).json();
     expect((await request("/api/works/" + w.id, b)).status).toBe(404);
     expect(
-      (await request("/api/works/" + w.id + "/pages/root", b)).status,
+      (await request("/api/works/" + w.id + "/scenes/root", b)).status,
     ).toBe(404);
     expect(
       (

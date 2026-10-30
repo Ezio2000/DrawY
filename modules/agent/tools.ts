@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageSchema } from "../contracts/index.ts";
+import { workEditSchema } from "../contracts/index.ts";
 const string = { type: "string" };
 const obj = (properties: object, required: string[]) => ({
   type: "object",
@@ -12,23 +12,18 @@ const fn = (name: string, description: string, parameters: object) => ({
   name,
   description,
   parameters,
+  strict: false,
 });
 export const tools = [
   fn(
     "read_work",
-    "Read the current work, page sources and revision.",
+    "Read the current work, scene compositions and drawing sources and revision.",
     obj({}, []),
   ),
   fn(
-    "write_pages",
-    "Atomically save complete changed pages. baseRevision must match current work.",
-    obj(
-      {
-        baseRevision: { type: "integer" },
-        pages: { type: "array", items: z.toJSONSchema(pageSchema) },
-      },
-      ["baseRevision", "pages"],
-    ),
+    "write_work",
+    "Atomically upsert or remove drawing definitions, scene compositions, interactions, details and resources. Sections contain complete records by ID; omitted records remain. Supply the current baseRevision.",
+    z.toJSONSchema(workEditSchema),
   ),
   fn(
     "find_matirial",
@@ -37,7 +32,7 @@ export const tools = [
   ),
   fn(
     "generate_image",
-    "Generate an image or edit reference asset IDs. Returns saved assets for HTML use.",
+    "Generate an image or edit reference asset IDs. Returns assets to add to work resources.",
     obj(
       {
         prompt: string,

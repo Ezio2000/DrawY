@@ -1,6 +1,6 @@
 import { id, DomainError, type Run, type Message } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
-import { writePages } from "../workspace/index.ts";
+import { writeWork } from "../workspace/index.ts";
 import { findMaterials } from "../materials/index.ts";
 import { generateImage } from "../images/index.ts";
 import { review } from "../review/index.ts";
@@ -25,7 +25,7 @@ export class Agent {
   start(
     store: UserStore,
     workId: string,
-    pageId: string,
+    sceneId: string,
     prompt: string,
     assets: string[] = [],
   ) {
@@ -37,11 +37,11 @@ export class Agent {
     )
       throw new DomainError("请先完成或取消当前任务", 409);
     for (const a of assets) store.asset(a);
-    if (!work.pages[pageId]) throw new DomainError("页面不存在", 404);
+    if (!work.scenes[sceneId]) throw new DomainError("场景不存在", 404);
     const run: Run = {
       id: id(),
       workId,
-      pageId,
+      sceneId,
       status: "running",
       messages: [{ role: "user", text: prompt, assets }],
       startedAt: Date.now(),
@@ -54,7 +54,7 @@ export class Agent {
     const content: Item[] = [
       {
         type: "input_text",
-        text: `${prompt}\nCurrent page: ${pageId}\nCurrent work: ${JSON.stringify(work)}`,
+        text: `${prompt}\nCurrent scene: ${sceneId}\nCurrent work: ${JSON.stringify(work)}`,
       },
     ];
     for (const a of assets) {
@@ -157,21 +157,13 @@ export class Agent {
                 output = await generateImage(store, args, abort.signal);
                 break;
               }
-              case "write_pages": {
-                const work = writePages(
-                  store,
-                  run.workId,
-                  args.pages,
-                  args.baseRevision,
-                );
+              case "write_work": {
+                const work = writeWork(store, run.workId, args);
                 ctx.changed = [
-                  ...new Set([
-                    ...ctx.changed,
-                    ...args.pages.map((p: Item) => p.id),
-                  ]),
+                  ...new Set([...ctx.changed, ...Object.keys(work.scenes)]),
                 ];
                 run.review = undefined;
-                run.firstPageMs ??= Date.now() - start;
+                run.firstSceneMs ??= Date.now() - start;
                 this.publish(store.userId, { type: "work", work });
                 output = { revision: work.revision };
                 break;
@@ -198,7 +190,7 @@ export class Agent {
                 run.review = await review(
                   store,
                   run.workId,
-                  ctx.changed.length ? ctx.changed : [run.pageId],
+                  ctx.changed.length ? ctx.changed : [run.sceneId],
                   ctx.request,
                   ctx.refs,
                   abort.signal,

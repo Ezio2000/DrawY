@@ -6,10 +6,18 @@ import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { Storage, type UserStore } from "../../modules/storage/index.ts";
 import { register, login } from "../../modules/identity/index.ts";
-import { DomainError, settingsSchema } from "../../modules/contracts/index.ts";
-import { createWork, restore } from "../../modules/workspace/index.ts";
+import {
+  DomainError,
+  settingsSchema,
+  boundsSchema,
+} from "../../modules/contracts/index.ts";
+import {
+  createWork,
+  restore,
+  moveModules,
+} from "../../modules/workspace/index.ts";
 import { documentFor } from "../../modules/runtime/document.ts";
-import { findMaterials, catalogue } from "../../modules/materials/index.ts";
+import { browseMaterials, catalogue } from "../../modules/materials/index.ts";
 import { Agent } from "../../modules/agent/index.ts";
 import encoder from "plantuml-encoder";
 type Env = {
@@ -118,15 +126,41 @@ export function createApp(storage: Storage) {
     publish(store.userId, { type: "work", work });
     return c.json(work);
   });
-  app.get("/api/works/:id/pages/:page", (c) => {
+  app.get("/api/works/:id/scenes/:scene", (c) => {
     const store = c.get("store"),
       rev = c.req.query("revision");
     const work = rev
       ? store.revision(c.req.param("id"), Number(rev))
       : store.work(c.req.param("id"));
-    const page = work.pages[c.req.param("page")];
-    if (!page) throw new DomainError("页面不存在", 404);
-    return c.html(documentFor(page, c.req.query("review") === "1"));
+    const sceneId = c.req.param("scene");
+    if (!work.scenes[sceneId]) throw new DomainError("场景不存在", 404);
+    return c.html(documentFor(work, sceneId));
+  });
+  app.patch("/api/works/:id/modules", async (c) => {
+    const store = c.get("store"),
+      workId = c.req.param("id");
+    if (
+      store
+        .runs(workId)
+        .some((r) => ["running", "reviewing", "waiting"].includes(r.status))
+    )
+      throw new DomainError("请先完成当前任务", 409);
+    const args = z
+      .object({
+        sceneId: z.string(),
+        baseRevision: z.number().int(),
+        moves: z.array(z.object({ id: z.string(), bounds: boundsSchema })),
+      })
+      .parse(await c.req.json());
+    const work = moveModules(
+      store,
+      workId,
+      args.sceneId,
+      args.baseRevision,
+      args.moves,
+    );
+    publish(store.userId, { type: "work", work });
+    return c.json(work);
   });
   app.get("/api/works/:id/runs", (c) =>
     c.json(c.get("store").runs(c.req.param("id"))),
@@ -135,7 +169,7 @@ export function createApp(storage: Storage) {
     const args = z
       .object({
         prompt: z.string().min(1),
-        pageId: z.string(),
+        sceneId: z.string(),
         assets: z.array(z.string()).default([]),
       })
       .parse(await c.req.json());
@@ -143,7 +177,7 @@ export function createApp(storage: Storage) {
       agent.start(
         c.get("store"),
         c.req.param("id"),
-        args.pageId,
+        args.sceneId,
         args.prompt,
         args.assets,
       ),
@@ -182,7 +216,17 @@ export function createApp(storage: Storage) {
     );
   });
   app.get("/api/materials", async (c) =>
-    c.json(await findMaterials(c.get("store"), c.req.query("q") || "")),
+    c.json(
+      await browseMaterials(
+        c.get("store"),
+        c.req.query("q") || "",
+        z.coerce
+          .number()
+          .int()
+          .positive()
+          .parse(c.req.query("page") || "1"),
+      ),
+    ),
   );
   app.get("/api/catalogue", async (c) => c.json(await catalogue()));
   app.post("/api/plantuml", async (c) => {

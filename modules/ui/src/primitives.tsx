@@ -12,7 +12,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Ellipsis, type LucideIcon } from "lucide-react";
-import { useSwipeDismiss } from "./gesture.ts";
 import { reducedMotion } from "./motion.ts";
 import { cx } from "./cx.ts";
 import { useWords } from "./locale.tsx";
@@ -187,7 +186,6 @@ export function Tooltips() {
       });
     };
     const over = (e: PointerEvent) => {
-      if (e.pointerType !== "mouse") return;
       const el =
         (e.target as Element).closest?.<HTMLElement>("[data-tip]") ?? null;
       if (el === current) return;
@@ -316,26 +314,22 @@ function MenuList({
   );
 }
 
-/** What was just deleted, with the moment to take it back; swiping it away lets it go. */
+/** A deletion notice with an undo action. */
 export function UndoToast({
   text,
   onUndo,
-  onDone,
 }: {
   text: string;
   onUndo: () => void;
-  onDone: () => void;
 }) {
   const closing = useClosing(),
     w = useWords(words);
   const ref = useRef<HTMLDivElement>(null);
-  useSwipeDismiss(ref, "bottom", closing ? undefined : onDone);
   return (
     <div
       className={cx(`toast undo${closing ? " closing" : ""}`)}
       ref={ref}
       role="status"
-      data-swipe-handle
     >
       <span>{text}</span>
       <button onClick={onUndo}>{w.undo}</button>

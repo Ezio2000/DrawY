@@ -314,7 +314,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(20, 20, 19, calc(0.32 - var(--swipe-progress, 0) * 0.16));
+  background: rgba(20, 20, 19, 0.32);
   transition: background-color 0.4s var(--ease);
   animation: fade-in 0.3s var(--ease) both;
 }
@@ -329,7 +329,7 @@
   display: flex;
   flex-direction: column;
   width: min(560px, 100%);
-  max-height: min(780px, calc(100dvh - 48px));
+  max-height: min(780px, calc(100vh - 48px));
   overflow: hidden;
   border-radius: 16px;
   background: var(--paper);
@@ -337,15 +337,12 @@
   box-shadow:
     0 0 0 0.5px var(--line-strong),
     0 24px 64px rgba(20, 20, 19, 0.16);
-  translate: 0 var(--swipe, 0px);
-  transition: translate 0.5s var(--spring);
   animation: dialog-in 0.6s var(--spring) both;
 }
 
 .dialog-header {
   user-select: none;
   -webkit-user-select: none;
-  touch-action: none;
 }
 
 .dialog-overlay.closing .dialog {
@@ -429,128 +426,6 @@
   color: var(--text-3);
 }
 
-/* ---------- Gestures and controls ---------- */
-
-.gesture-presets {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.gesture-presets button {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 16px;
-  background: var(--bg);
-  box-shadow: 0 0 0 1px var(--separator);
-  text-align: left;
-  transition:
-    box-shadow 0.25s var(--ease),
-    background-color 0.25s var(--ease),
-    transform 0.4s var(--spring);
-}
-
-.gesture-presets button:hover {
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.1),
-    0 8px 22px rgba(0, 0, 0, 0.07);
-}
-
-.gesture-presets button:active {
-  transform: scale(0.98);
-}
-
-.gesture-presets button[aria-checked="true"] {
-  background: var(--blue-soft);
-  box-shadow: 0 0 0 1.5px var(--blue);
-}
-
-.gesture-presets strong {
-  display: block;
-  padding-right: 18px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.gesture-presets small {
-  display: block;
-  margin-top: 3px;
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--text-2);
-}
-
-.gesture-check {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  color: var(--blue);
-  opacity: 0;
-  scale: 0.6;
-  transition:
-    opacity 0.2s var(--ease),
-    scale 0.4s var(--spring);
-}
-
-[aria-checked="true"] > .gesture-check {
-  opacity: 1;
-  scale: 1;
-}
-
-.gesture-group {
-  display: flex;
-  flex-direction: column;
-  border-radius: 16px;
-  background: var(--bg-2);
-}
-
-.gesture-option {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 14px;
-  padding: 12px 14px;
-}
-
-.gesture-option + .gesture-option {
-  box-shadow: 0 -1px 0 var(--separator);
-}
-
-label.gesture-option {
-  cursor: pointer;
-}
-
-.gesture-option > span {
-  flex: 1 1 220px;
-  min-width: 0;
-}
-
-.gesture-option strong {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.gesture-option small {
-  display: block;
-  margin-top: 2px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-3);
-}
-
-.gesture-option .segmented {
-  background: var(--fill-2);
-}
-
-.gesture-option .segmented > button:disabled {
-  opacity: 0.4;
-}
-
 .switch {
   position: relative;
   flex-shrink: 0;
@@ -602,6 +477,7 @@ label.gesture-option {
 /* ---------- Prompts ---------- */
 
 .toast {
+  translate: -50% 0;
   position: fixed;
   left: 50%;
   bottom: 28px;
@@ -617,9 +493,6 @@ label.gesture-option {
   box-shadow: 0 12px 36px rgba(20, 20, 19, 0.22);
   font-size: 13px;
   color: var(--paper);
-  translate: -50% var(--swipe, 0px);
-  touch-action: none;
-  transition: translate 0.45s var(--spring);
   animation: toast-in 0.6s var(--spring) both;
 }
 
@@ -677,12 +550,6 @@ label.gesture-option {
 
 .secondary:hover:not(:disabled) {
   background: var(--bg-2);
-}
-
-.dialog-overlay[data-swipe="on"],
-.dialog-overlay[data-swipe="on"] .dialog,
-.toast[data-swipe="on"] {
-  transition: none;
 }
 
 .stage-bar {

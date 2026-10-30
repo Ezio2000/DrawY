@@ -34,13 +34,13 @@ export async function review(
     ...new Set(
       changed.flatMap((id) => [
         id,
-        ...(work.pages[id]?.parentId ? [work.pages[id].parentId!] : []),
-        ...Object.values(work.pages)
+        ...(work.scenes[id]?.parentId ? [work.scenes[id].parentId!] : []),
+        ...Object.values(work.scenes)
           .filter((p) => p.parentId === id)
           .map((p) => p.id),
       ]),
     ),
-  ].filter((id) => work.pages[id]?.html);
+  ].filter((id) => work.scenes[id]?.modules.length);
   const screenshots: ReviewResult["screenshots"] = [];
   try {
     const r = await fetch(service + "/capture", {
@@ -49,10 +49,10 @@ export async function review(
       body: JSON.stringify({
         origin,
         cookie: token,
-        pages: ids.map((id) => ({
+        scenes: ids.map((id) => ({
           id,
-          url: `${origin}/api/works/${workId}/pages/${id}?revision=${work.revision}&review=1`,
-          selectors: work.pages[id].checkSelectors,
+          url: `${origin}/api/works/${workId}/scenes/${id}?revision=${work.revision}&review=1`,
+          checks: work.scenes[id].checks,
         })),
       }),
       signal,
@@ -60,13 +60,13 @@ export async function review(
     if (!r.ok) throw Error("截图失败: " + (await r.text()));
     const { shots } = (await r.json()) as {
       shots: {
-        pageId: string;
+        sceneId: string;
         label: string;
         base64: string;
         errors: string[];
       }[];
     };
-    if (!shots.length) throw Error("没有可检查的页面");
+    if (!shots.length) throw Error("没有可检查的场景");
     const input: Item[] = [
       {
         role: "user",
@@ -86,7 +86,7 @@ export async function review(
             screenshots.push(
               store.putAsset(
                 Buffer.from(s.base64, "base64"),
-                `review-${work.revision}-${s.pageId}-${i}`,
+                `review-${work.revision}-${s.sceneId}-${i}`,
                 "image/png",
                 "review",
               ),
@@ -94,7 +94,7 @@ export async function review(
             return [
               {
                 type: "input_text",
-                text: `Screenshot ${i}, page ${s.pageId}, ${s.label}, errors: ${s.errors.join("; ")}`,
+                text: `Screenshot ${i}, scene ${s.sceneId}, ${s.label}, errors: ${s.errors.join("; ")}`,
               },
               {
                 type: "input_image",
@@ -115,12 +115,17 @@ export async function review(
             items: {
               type: "object",
               properties: {
-                pageId: { type: "string" },
+                sceneId: { type: "string" },
                 area: { type: "string" },
-                severity: { type: "string", enum: ["blocking", "minor"] },
+                severity: {
+                  type: "string",
+                  enum: ["blocking", "minor"],
+                  description:
+                    "blocking for concrete content, readability, geometry or interaction defects that require repair; minor only for optional aesthetic preferences.",
+                },
                 detail: { type: "string" },
               },
-              required: ["pageId", "area", "severity", "detail"],
+              required: ["sceneId", "area", "severity", "detail"],
               additionalProperties: false,
             },
           },
@@ -160,7 +165,7 @@ export async function review(
           for (const s of shots)
             for (const error of s.errors)
               issues.push({
-                pageId: s.pageId,
+                sceneId: s.sceneId,
                 area: s.label,
                 severity: "blocking",
                 detail: error,

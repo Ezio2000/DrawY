@@ -65,7 +65,7 @@ export async function generate(
       if (e.type === "response.failed" || e.type === "error")
         throw Error(JSON.stringify(e.error || e.response?.error));
       if (e.type === "response.incomplete")
-        throw Error("模型输出被截断，请缩小本轮页面内容");
+        throw Error("模型输出被截断，请缩小本轮作品修改范围");
     }
   }
   if (!complete) throw Error("模型连接在完成前中断");

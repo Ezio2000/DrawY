@@ -1,3 +1,4 @@
+import type { MaterialPage } from "../../../modules/materials/index.ts";
 import { useState, useEffect } from "react";
 import { Dialog, Switch } from "@drawy/ui";
 import { api } from "./api.ts";
@@ -166,25 +167,47 @@ export function MaterialsDialog({
   pick: (m: { id: string; url: string; name: string; kind: string }) => void;
 }) {
   const [q, Q] = useState(""),
-    [items, I] = useState<any[]>([]),
+    [result, I] = useState<MaterialPage>({
+      items: [],
+      total: 0,
+      page: 1,
+      pages: 1,
+    }),
+    [page, setPage] = useState(1),
+    [loading, setLoading] = useState(true),
     [error, E] = useState("");
   useEffect(() => {
     const a = new AbortController();
-    fetch("/api/materials?q=" + encodeURIComponent(q), { signal: a.signal })
-      .then((r) => r.json())
-      .then(I)
+    setLoading(true);
+    E("");
+    fetch("/api/materials?q=" + encodeURIComponent(q) + "&page=" + page, {
+      signal: a.signal,
+    })
+      .then(async (r) => {
+        if (!r.ok) throw Error((await r.json()).error);
+        return r.json();
+      })
+      .then((value) => {
+        if (!a.signal.aborted) I(value);
+      })
       .catch((e) => {
         if (!a.signal.aborted) E(e.message);
+      })
+      .finally(() => {
+        if (!a.signal.aborted) setLoading(false);
       });
     return () => a.abort();
-  }, [q]);
+  }, [q, page]);
   return (
     <Dialog title="素材" wide onClose={close}>
       <input
         className={cx("rail-search")}
         placeholder="搜索公共与个人素材"
         value={q}
-        onChange={(e) => Q(e.target.value)}
+        onChange={(e) => {
+          Q(e.target.value);
+          setPage(1);
+        }}
       />
       <label className={cx("secondary")}>
         上传图片
@@ -209,10 +232,11 @@ export function MaterialsDialog({
         />
       </label>
       <p className={cx("error")}>{error}</p>
-      <div className={cx("drawy-materials")}>
-        {items.map((m) => (
+      <div className={cx("drawy-materials")} aria-busy={loading}>
+        {result.items.map((m) => (
           <button
-            key={m.id}
+            key={m.kind + ":" + m.id}
+            disabled={loading}
             onClick={() => {
               pick(m);
               close();
@@ -223,6 +247,29 @@ export function MaterialsDialog({
           </button>
         ))}
       </div>
+      <nav className={cx("drawy-pagination")} aria-label="素材分页">
+        <span aria-live="polite">
+          {loading
+            ? "加载中…"
+            : result.total
+              ? `共 ${result.total} 个 · 第 ${result.page} / ${result.pages} 页`
+              : "没有匹配的素材"}
+        </span>
+        <button
+          className={cx("secondary")}
+          disabled={loading || result.page === 1}
+          onClick={() => setPage(result.page - 1)}
+        >
+          上一页
+        </button>
+        <button
+          className={cx("secondary")}
+          disabled={loading || result.page === result.pages}
+          onClick={() => setPage(result.page + 1)}
+        >
+          下一页
+        </button>
+      </nav>
     </Dialog>
   );
 }

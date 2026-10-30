@@ -22,7 +22,7 @@ export async function catalogue() {
     icons: Record<string, unknown>;
   };
 }
-export async function findMaterials(store: UserStore, query: string) {
+async function searchMaterials(store: UserStore, query: string) {
   const c = await catalogue();
   const all: Material[] = [
     ...store
@@ -56,6 +56,30 @@ export async function findMaterials(store: UserStore, query: string) {
     }))
     .filter((r) => !terms.length || r.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 36)
     .map((r) => r.m);
+}
+
+export interface MaterialPage {
+  items: Material[];
+  total: number;
+  page: number;
+  pages: number;
+}
+export async function browseMaterials(
+  store: UserStore,
+  query: string,
+  requestedPage: number,
+): Promise<MaterialPage> {
+  const matches = await searchMaterials(store, query);
+  const pages = Math.max(1, Math.ceil(matches.length / 36));
+  const page = Math.min(requestedPage, pages);
+  return {
+    items: matches.slice((page - 1) * 36, page * 36),
+    total: matches.length,
+    page,
+    pages,
+  };
+}
+export async function findMaterials(store: UserStore, query: string) {
+  return (await searchMaterials(store, query)).slice(0, 36);
 }

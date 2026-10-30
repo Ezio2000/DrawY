@@ -1,3 +1,4 @@
+import { SceneView, DetailView } from "./SceneView.tsx";
 import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -22,7 +23,13 @@ import { Dialog, Spinner, LocaleContext, Tooltips } from "@drawy/ui";
 import { api } from "./api.ts";
 import { cx } from "./cx.ts";
 import { SettingsDialog, MaterialsDialog, HistoryDialog } from "./Dialogs.tsx";
-import type { Work, Run, Asset } from "../../../modules/contracts/index.ts";
+import type {
+  Work,
+  Run,
+  Asset,
+  Selection,
+  Target,
+} from "../../../modules/contracts/index.ts";
 const examples = [
   "太阳系是如何运转的？",
   "大语言模型是怎么工作的？",
@@ -35,25 +42,31 @@ export function App() {
     [open, O] = useState(false),
     [works, L] = useState<Work[]>([]),
     [work, W] = useState<Work>(),
-    [pageId, P] = useState("root"),
+    [sceneId, P] = useState("root"),
     [runs, R] = useState<Run[]>([]),
     [dialog, D] = useState(""),
     [prompt, Q] = useState(""),
     [assets, A] = useState<Asset[]>([]),
-    [selected, S] = useState<{ id: string; text: string }>(),
+    [selected, S] = useState<Selection>(),
+    [detailId, setDetail] = useState<string>(),
     [chat, C] = useState(false),
     [progress, G] = useState(""),
     [busy, B] = useState(false),
     [outline, N] = useState(false),
     [query, F] = useState("");
-  const frame = useRef<HTMLIFrameElement>(null),
-    picker = useRef<HTMLInputElement>(null),
-    position = useRef<Record<string, number>>({});
+  const picker = useRef<HTMLInputElement>(null);
   const current = useRef(work);
   current.current = work;
   const run = runs.at(-1),
     working = run && ["running", "reviewing"].includes(run.status);
-  const active = work?.pages[pageId];
+  const active = work?.scenes[sceneId];
+  useEffect(() => {
+    if (work && !work.scenes[sceneId]) {
+      P(work.rootSceneId);
+      S(undefined);
+    }
+    if (detailId && work && !work.details[detailId]) setDetail(undefined);
+  }, [work, sceneId, detailId]);
   const attempt = async (fn: () => Promise<unknown>) => {
     try {
       E("");
@@ -66,7 +79,8 @@ export function App() {
   async function load(id: string) {
     const w = await api<Work>("/works/" + id);
     W(w);
-    P(w.rootId);
+    setDetail(undefined);
+    P(w.rootSceneId);
     S(undefined);
     R(await api("/works/" + id + "/runs"));
     history.pushState(null, "", "/a/" + id);
@@ -119,26 +133,6 @@ export function App() {
     return () => events.close();
   }, [user?.id]);
   useEffect(() => {
-    function receive(e: MessageEvent) {
-      if (e.source !== frame.current?.contentWindow || !e.data?.drawy) return;
-      const d = e.data;
-      if (d.type === "select") {
-        S({ id: d.id, text: d.text });
-        C(true);
-      }
-      if (d.type === "scroll" && work)
-        position.current[work.id + ":" + pageId] = d.y;
-      if (d.type === "ready" && work)
-        frame.current?.contentWindow?.scrollTo(
-          0,
-          position.current[work.id + ":" + pageId] || 0,
-        );
-      if (d.type === "open" && work) void attempt(() => enter(d.id, d.title));
-    }
-    window.addEventListener("message", receive);
-    return () => window.removeEventListener("message", receive);
-  }, [work, pageId, working]);
-  useEffect(() => {
     const pop = () => {
       const id = location.pathname.match(/^\/a\/([^/]+)/)?.[1];
       if (id) void attempt(() => load(id));
@@ -149,6 +143,7 @@ export function App() {
   }, []);
   function home(push = true) {
     W(undefined);
+    setDetail(undefined);
     R([]);
     S(undefined);
     Q("");
@@ -164,7 +159,7 @@ export function App() {
       A((old) => [...old, a]);
     }
   }
-  async function send(text = prompt, target = pageId) {
+  async function send(text = prompt, target = sceneId) {
     if (!text.trim() || working) return;
     B(true);
     try {
@@ -172,12 +167,12 @@ export function App() {
       if (!w) {
         w = await api<Work>("/works", "POST", { title: text.slice(0, 36) });
         W(w);
-        P(w.rootId);
-        target = w.rootId;
+        P(w.rootSceneId);
+        target = w.rootSceneId;
         history.pushState(null, "", "/a/" + w.id);
       }
       const request = selected
-        ? `${text}\nSelected region: ${selected.id}\n${selected.text}`
+        ? `${text}\nSelected module: ${selected.moduleId}\n${selected.label}`
         : text;
       const r =
         run?.status === "waiting"
@@ -186,7 +181,7 @@ export function App() {
             })
           : await api<Run>("/works/" + w.id + "/runs", "POST", {
               prompt: request,
-              pageId: target,
+              sceneId: target,
               assets: assets.map((a) => a.id),
             });
       R((old) =>
@@ -203,14 +198,15 @@ export function App() {
     }
   }
   async function enter(id: string, title?: string) {
-    if (!work?.pages[id]) {
-      throw Error("这个入口还没有子页面，请让 AI 补充");
+    if (!work?.scenes[id]) {
+      throw Error("这个入口还没有子场景，请让 AI 补充");
     }
     P(id);
+    setDetail(undefined);
     S(undefined);
-    if (!work.pages[id].html && !working)
+    if (!work.scenes[id].modules.length && !working)
       await send(
-        `展开“${title || work.pages[id].title}”页面，保持作品风格。`,
+        `展开“${title || work.scenes[id].title}”场景，保持作品风格。`,
         id,
       );
   }
@@ -219,14 +215,14 @@ export function App() {
       revision,
     });
     W(w);
-    if (!w.pages[pageId]) P(w.rootId);
+    if (!w.scenes[sceneId]) P(w.rootSceneId);
     D("");
   }
   const crumbs = [];
   let at = active;
   while (at) {
     crumbs.unshift(at);
-    at = at.parentId ? work?.pages[at.parentId] : undefined;
+    at = at.parentId ? work?.scenes[at.parentId] : undefined;
   }
   const composer = (homePage: boolean) => (
     <div
@@ -241,7 +237,7 @@ export function App() {
       <div className={cx("drawy-input")}>
         {selected && !homePage && (
           <div className={cx("ask-quote")}>
-            <span>{selected.text.slice(0, 80)}</span>
+            <span>{selected.label.slice(0, 80)}</span>
             <button onClick={() => S(undefined)} aria-label="清除选择">
               <X size={12} />
             </button>
@@ -427,7 +423,7 @@ export function App() {
                     home();
                     L([]);
                     U(null);
-                    position.current = {};
+
                     D("");
                     O(false);
                   })
@@ -482,7 +478,7 @@ export function App() {
                 <section className={cx("exploration")}>
                   <header className={cx("stage-bar")}>
                     <div className={cx("stage-lead")}>
-                      <button aria-label="页面目录" onClick={() => N(!outline)}>
+                      <button aria-label="场景目录" onClick={() => N(!outline)}>
                         <PanelLeft size={18} />
                       </button>
                       <nav className={cx("drawy-crumbs")}>
@@ -524,7 +520,7 @@ export function App() {
                   </header>
                   {outline && (
                     <aside className={cx("drawy-outline")}>
-                      {Object.values(work.pages).map((p) => (
+                      {Object.values(work.scenes).map((p) => (
                         <button
                           key={p.id}
                           onClick={() => void attempt(() => enter(p.id))}
@@ -535,12 +531,35 @@ export function App() {
                       ))}
                     </aside>
                   )}
-                  {active?.html ? (
-                    <iframe
-                      ref={frame}
-                      className={cx("drawy-page")}
-                      title={active.title}
-                      src={`/api/works/${work.id}/pages/${pageId}?revision=${work.revision}`}
+                  {active?.modules.length ? (
+                    <SceneView
+                      key={work.id}
+                      work={work}
+                      sceneId={sceneId}
+                      disabled={
+                        !!run &&
+                        ["running", "reviewing", "waiting"].includes(run.status)
+                      }
+                      open={(target: Target) =>
+                        target.kind === "scene"
+                          ? void attempt(() => enter(target.id))
+                          : setDetail(target.id)
+                      }
+                      select={(value) => {
+                        S(value || undefined);
+                      }}
+                      commit={(moves) =>
+                        void attempt(async () => {
+                          if (working) throw Error("请等待当前绘制完成");
+                          W(
+                            await api(
+                              "/works/" + work.id + "/modules",
+                              "PATCH",
+                              { sceneId, baseRevision: work.revision, moves },
+                            ),
+                          );
+                        })
+                      }
                     />
                   ) : (
                     <div className={cx("stage-status exploration-main")}>
@@ -549,6 +568,12 @@ export function App() {
                         {working ? "正在把你的想法画出来…" : "从一个想法开始"}
                       </p>
                     </div>
+                  )}
+                  {detailId && work.details[detailId] && (
+                    <DetailView
+                      detail={work.details[detailId]}
+                      close={() => setDetail(undefined)}
+                    />
                   )}
                   <div
                     className={cx("ask drawy-ask")}
@@ -642,7 +667,7 @@ export function App() {
             close={() => D("")}
             pick={(m) => {
               Q(
-                `将${selected ? "选中的区域" : "当前页面"}使用的素材改为“${m.name}”，地址 ${m.url}${m.kind === "personal" ? `，assetId ${m.id}` : ""}`,
+                `将${selected ? "选中的区域" : "当前场景"}使用的素材改为“${m.name}”，地址 ${m.url}${m.kind === "personal" ? `，assetId ${m.id}` : ""}`,
               );
               C(true);
             }}

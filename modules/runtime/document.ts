@@ -1,11 +1,5 @@
-import type { Page } from "../contracts/index.ts";
-export function documentFor(page: Page, readOnly = false) {
-  const config = JSON.stringify({
-    diagrams: page.diagrams,
-    readOnly,
-  }).replaceAll("<", "\\u003c");
-  const bootstrap = `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html{overflow-x:hidden}body{margin:0}img{max-width:100%}[data-drawy-selected]{outline:2px solid #d97757;outline-offset:4px}[data-drawy-open]{cursor:pointer}[data-drawy-diagram] svg{max-width:100%;height:auto}</style><script>window.drawyData=${config};window.drawyErrors=[];window.drawy={pending:[],waitUntil(p){this.pending.push(Promise.resolve(p))}};<\/script><script defer src="/runtime/runtime.js"><\/script>`;
-  return /<head[^>]*>/i.test(page.html)
-    ? page.html.replace(/<head[^>]*>/i, (m) => m + bootstrap)
-    : `<!doctype html><html><head>${bootstrap}</head><body>${page.html}</body></html>`;
+import type { Work } from "../contracts/index.ts";
+export function documentFor(work: Work, sceneId: string) {
+  const data = JSON.stringify({ work, sceneId }).replaceAll("<", "\\u003c");
+  return `<!doctype html><html><head><meta charset="utf-8"><style>html,body,#stage{width:100%;height:100%;margin:0;overflow:hidden;background:#faf9f5}body{font-family:system-ui}</style></head><body><div id="stage"></div><script>window.drawyData=${data};</script><script src="/runtime/runtime.js"></script></body></html>`;
 }

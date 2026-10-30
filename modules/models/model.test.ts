@@ -14,8 +14,8 @@ it("retains completed streamed tool arguments when final output is empty", async
   const item = {
     type: "function_call",
     call_id: "c",
-    name: "write_pages",
-    arguments: '{"pages":[]}',
+    name: "write_work",
+    arguments: '{"baseRevision":1,"scenes":[]}',
   };
   const data = [
     { type: "response.output_item.done", item },

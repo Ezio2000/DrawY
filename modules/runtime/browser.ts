@@ -1,122 +1,65 @@
-import mermaid from "mermaid";
+import { Canvas } from "../canvas/index.ts";
+import { detailElement } from "./detail.ts";
+import type { Work, Target } from "../contracts/index.ts";
+
 declare global {
   interface Window {
+    drawyData: { work: Work; sceneId: string };
     drawyReady: boolean;
     drawyErrors: string[];
-    drawyData: {
-      diagrams: { id: string; format: string; source: string }[];
-      readOnly: boolean;
-    };
-    drawy: {
-      pending: Promise<unknown>[];
-      waitUntil: (promise: Promise<unknown>) => void;
-    };
+    drawyView: Canvas;
   }
 }
-window.drawyReady = false;
 window.drawyErrors = [];
-window.addEventListener("error", (e) => window.drawyErrors.push(e.message));
-window.addEventListener("unhandledrejection", (e) =>
+window.drawyReady = false;
+addEventListener("error", (e) => window.drawyErrors.push(e.message));
+addEventListener("unhandledrejection", (e) =>
   window.drawyErrors.push(String(e.reason)),
 );
-const send = (value: object) =>
-  parent.postMessage({ drawy: true, ...value }, location.origin);
-let diagramSequence = 0;
-async function mount() {
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: "loose",
-    theme: "neutral",
-  });
-  for (const d of window.drawyData.diagrams) {
-    const el = document.querySelector(
-      `[data-drawy-diagram="${CSS.escape(d.id)}"]`,
+const { work } = window.drawyData;
+const stage = document.getElementById("stage")!;
+function open(target: Target) {
+  if (target.kind === "scene") {
+    window.drawyView.dispose();
+    const url = new URL(location.href);
+    url.pathname = url.pathname.replace(
+      /[^/]+$/,
+      encodeURIComponent(target.id),
     );
-    if (!el) continue;
-    try {
-      if (d.format === "mermaid") {
-        const r = await mermaid.render(
-          "drawy-diagram-" + ++diagramSequence,
-          d.source,
-        );
-        el.innerHTML = r.svg;
-        r.bindFunctions?.(el as HTMLElement);
-      } else {
-        const r = await fetch("/api/plantuml", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source: d.source }),
-        });
-        if (!r.ok) throw new Error(await r.text());
-        el.innerHTML = await r.text();
-      }
-    } catch (e) {
-      window.drawyErrors.push(String(e));
-      el.textContent = String(e);
-    }
+    history.replaceState(null, "", url);
+    render(target.id);
+  } else {
+    const detail = detailElement(work.details[target.id], () =>
+      detail.remove(),
+    );
+    detail.style.cssText =
+      "position:fixed;inset:0;overflow:auto;background:#faf9f5;padding:48px max(24px,calc((100vw - 760px)/2));box-sizing:border-box;z-index:10";
+    document.body.append(detail);
+    window.drawyReady = false;
+    void Promise.all([
+      document.fonts.ready,
+      ...Array.from(detail.shadowRoot!.querySelectorAll("img")).map((img) =>
+        img.decode(),
+      ),
+    ])
+      .catch((e) => window.drawyErrors.push(String(e)))
+      .finally(() => {
+        window.drawyReady = true;
+      });
   }
-  await Promise.all(
-    window.drawy.pending.map((p) =>
-      p.catch((error) => {
-        window.drawyErrors.push(String(error));
-      }),
-    ),
-  );
-  await document.fonts.ready;
-  await Promise.all(
-    [...document.images].map((i) =>
-      i.complete
-        ? Promise.resolve()
-        : new Promise<void>((r) => {
-            i.onload = () => r();
-            i.onerror = () => {
-              window.drawyErrors.push("图片加载失败 " + i.src);
-              r();
-            };
-          }),
-    ),
-  );
-  window.drawyReady = true;
-  send({ type: "ready" });
 }
-if (document.readyState === "loading")
-  document.addEventListener("DOMContentLoaded", () => void mount());
-else void mount();
-document.addEventListener("click", (e) => {
-  const el = e.target as Element;
-  const hot = el.closest("[data-drawy-open]");
-  if (hot) {
-    e.preventDefault();
-    if (parent === window) {
-      const url = new URL(location.href);
-      url.pathname = url.pathname.replace(
-        /[^/]+$/,
-        encodeURIComponent(hot.getAttribute("data-drawy-open")!),
-      );
-      location.href = url.href;
-      return;
-    }
-    send({
-      type: "open",
-      id: hot.getAttribute("data-drawy-open"),
-      title: hot.textContent?.trim(),
+function render(sceneId: string) {
+  window.drawyData.sceneId = sceneId;
+  window.drawyReady = false;
+  window.drawyView = new Canvas(stage, work, work.scenes[sceneId], {
+    open,
+    select: () => {},
+    error: (message) => window.drawyErrors.push(message),
+  });
+  void window.drawyView.ready
+    .catch((e) => window.drawyErrors.push(String(e)))
+    .finally(() => {
+      window.drawyReady = true;
     });
-    return;
-  }
-  if (window.drawyData.readOnly) return;
-  const selected = el.closest("[data-drawy-id]");
-  if (selected) {
-    document
-      .querySelector("[data-drawy-selected]")
-      ?.removeAttribute("data-drawy-selected");
-    selected.setAttribute("data-drawy-selected", "");
-    send({
-      type: "select",
-      id: selected.getAttribute("data-drawy-id"),
-      text: selected.textContent?.slice(0, 1000),
-    });
-  }
-});
-window.addEventListener("scroll", () => send({ type: "scroll", y: scrollY }), {
-  passive: true,
-});
+}
+render(window.drawyData.sceneId);
