@@ -19,6 +19,8 @@ export const viewSchema = z.object({
     .optional(),
 });
 export type ViewOptions = z.infer<typeof viewSchema>;
+/** The capture service cannot look right now; nothing about the work is wrong. */
+export class Unavailable extends Error {}
 export async function observe(
   store: UserStore,
   workId: string,
@@ -62,9 +64,14 @@ export async function observe(
             }),
             signal,
           },
-        );
+        ).catch((e) => {
+          if (signal.aborted) throw e;
+          throw new Unavailable("画布查看服务不可用: " + e.message);
+        });
         if (!response.ok)
-          throw Error("查看画布失败: " + (await response.text()));
+          throw new Unavailable(
+            `画布查看服务不可用 (${response.status}): ${(await response.text()).slice(0, 300)}`,
+          );
         const { shots } = (await response.json()) as { shots: Shot[] };
         if (!shots.length) throw Error("截图服务没有返回画面");
         const screenshots = shots.map((s, i) =>

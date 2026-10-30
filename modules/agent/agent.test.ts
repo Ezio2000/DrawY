@@ -9,6 +9,7 @@ import { Agent } from "./index.ts";
 import { writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { generate } from "../models/index.ts";
+import { observe, Unavailable } from "../observation/index.ts";
 import type { Run } from "../contracts/index.ts";
 import { library as client } from "../materials/index.ts";
 import { serveLibrary, picture } from "@drawy/materials/testing";
@@ -680,3 +681,50 @@ it("develops pictures while the author composes and holds finish until they were
     rmSync(dir, { recursive: true });
   }
 });
+
+it("stops the run when the canvas cannot be looked at, instead of spending turns on it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0);
+    const run: Run = {
+      id: "down",
+      workId: work.id,
+      sceneId: "root",
+      status: "running",
+      steps: [],
+      observations: [],
+      startedAt: Date.now(),
+    };
+    store.saveRun(run);
+    vi.mocked(observe).mockClear();
+    vi.mocked(observe).mockRejectedValue(
+      new Unavailable("画布查看服务不可用 (500)"),
+    );
+    const seen: any[][] = [];
+    script(
+      [
+        ["view_canvas", {}],
+        ["finish", { message: "never" }],
+      ],
+      seen,
+    );
+    await new Agent(() => {}).execute(
+      store,
+      run,
+      { input: [], generations: 0 },
+      "request",
+    );
+    expect(seen).toHaveLength(1);
+    expect(vi.mocked(observe)).toHaveBeenCalledTimes(3);
+    expect(run.status).toBe("failed");
+    expect(run.error).toContain("画布查看服务不可用");
+  } finally {
+    vi.mocked(observe).mockReset();
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+}, 20000);

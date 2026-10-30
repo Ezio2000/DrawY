@@ -23,7 +23,7 @@ import {
   freshen,
 } from "../materials/index.ts";
 import { develop, type Development } from "../images/index.ts";
-import { observe, requireObserved } from "../observation/index.ts";
+import { observe, requireObserved, Unavailable } from "../observation/index.ts";
 import { AUTHOR, catalogue } from "./prompts.ts";
 import { generate, textOf, type Item } from "../models/index.ts";
 import { tools, askSchema, findSchema, generateSchema } from "./tools.ts";
@@ -232,13 +232,11 @@ async function questions(
     (ids.length ? await library.get(ids, store.userId, true) : []).map((m) => [
       m.id,
       m.kind === "style"
-        ? m.samples
-            .slice(0, 3)
-            .map((s) => ({
-              id: s,
-              name: m.name.zh,
-              url: `/materials/files/${s}`,
-            }))
+        ? m.samples.slice(0, 3).map((s) => ({
+            id: s,
+            name: m.name.zh,
+            url: `/materials/files/${s}`,
+          }))
         : m.kind === "picture"
           ? [{ id: m.id, name: m.name.zh, url: m.file.url }]
           : [],
@@ -825,7 +823,19 @@ export class Agent {
             images.push(
               ...(await this.developed(store, run)).flatMap((m) => m.content),
             );
-            const result = await observe(store, run.workId, args, abort.signal);
+            // The service may be restarting; after a few tries the run stops instead of
+            // spending the author's turns on a look it cannot get.
+            let result: Awaited<ReturnType<typeof observe>> | undefined;
+            for (const wait of [2000, 6000, 0]) {
+              try {
+                result = await observe(store, run.workId, args, abort.signal);
+                break;
+              } catch (e) {
+                if (!(e instanceof Unavailable) || !wait) throw e;
+                await new Promise((r) => setTimeout(r, wait));
+              }
+            }
+            if (!result) throw new Unavailable("画布查看服务不可用");
             run.observations.push(result.observation);
             output = result.observation;
             images.push(...result.content);
@@ -884,6 +894,7 @@ export class Agent {
       abort.signal.throwIfAborted();
       const error = e instanceof Error ? e.message : String(e);
       if (step) Object.assign(step, { status: "failed", error });
+      if (e instanceof Unavailable) throw e;
       return { done: false, output: { error }, images: [], error };
     }
   }

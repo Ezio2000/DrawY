@@ -39,6 +39,9 @@ export async function capture(
   request: CaptureRequest,
 ): Promise<Shot[]> {
   const context = await browser.newContext();
+  // The service runs under tsx, which names functions with a helper; code it sends into
+  // pages finds the same helper there.
+  await context.addInitScript({ content: "globalThis.__name = (f) => f;" });
   await context.addCookies([
     { name: "drawy_session", value: request.cookie, url: request.origin },
   ]);
@@ -67,7 +70,6 @@ export async function capture(
         const geometry = await page.evaluate(() => {
           const camera = window.drawyView.view;
           const { materials } = window.drawyData.work;
-          const round = (n: number) => Math.round(n);
           return {
             camera,
             modules: [...window.drawyView.renderer.instances.values()].map(
@@ -89,14 +91,14 @@ export async function capture(
                   return [
                     {
                       material: m.id,
-                      x: round(
+                      x: Math.round(
                         (r.left + r.width * c.x - camera.x) / camera.scale,
                       ),
-                      y: round(
+                      y: Math.round(
                         (r.top + r.height * c.y - camera.y) / camera.scale,
                       ),
-                      width: round((r.width * c.width) / camera.scale),
-                      height: round((r.height * c.height) / camera.scale),
+                      width: Math.round((r.width * c.width) / camera.scale),
+                      height: Math.round((r.height * c.height) / camera.scale),
                     },
                   ];
                 });
