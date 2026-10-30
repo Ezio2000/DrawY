@@ -184,10 +184,15 @@ export function createApp(storage: Storage) {
     );
   });
   app.post("/api/runs/:id/answer", async (c) => {
-    const { answer } = z
-      .object({ answer: z.string().min(1) })
+    const { answer, assets } = z
+      .object({
+        answer: z.string().min(1),
+        assets: z.array(z.string()).default([]),
+      })
       .parse(await c.req.json());
-    return c.json(agent.resume(c.get("store"), c.req.param("id"), answer));
+    return c.json(
+      agent.resume(c.get("store"), c.req.param("id"), answer, assets),
+    );
   });
   app.post("/api/runs/:id/cancel", (c) =>
     c.json(agent.cancel(c.get("store"), c.req.param("id"))),

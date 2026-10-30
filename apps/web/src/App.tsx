@@ -200,6 +200,7 @@ export function App() {
         run?.status === "waiting"
           ? await api<Run>("/runs/" + run.id + "/answer", "POST", {
               answer: request,
+              assets: assets.map((a) => a.id),
             })
           : await api<Run>("/works/" + w.id + "/runs", "POST", {
               prompt: request,

@@ -81,6 +81,67 @@ interface Context {
   input: Item[];
   generations: number;
 }
+function userMessage(store: UserStore, text: string, assets: string[]): Item {
+  return {
+    role: "user",
+    content: [
+      { type: "input_text", text },
+      ...assets.map((id) => ({
+        type: "input_image",
+        image_url: `data:${store.asset(id).mediaType};base64,${store.bytes(id).toString("base64")}`,
+      })),
+    ],
+  };
+}
+
+// Estimate conservatively without counting base64 bytes as text tokens.
+function contextSize(input: Item[]): number {
+  return Math.ceil(
+    JSON.stringify(input, (key, value) =>
+      key === "image_url" ? " ".repeat(6400) : value,
+    ).length / 3,
+  );
+}
+async function compact(
+  store: UserStore,
+  run: Run,
+  ctx: Context,
+  signal: AbortSignal,
+) {
+  if (contextSize(ctx.input) < 128000) return;
+  const result = await generate(
+    store.settings().author,
+    "Summarize this drawing conversation for continuation. Preserve user requirements, reference-image intent, decisions, unfinished work and tool failures. Do not execute the task. The latest saved work and original reference images will be supplied separately.",
+    ctx.input,
+    [],
+    signal,
+    undefined,
+    4096,
+  );
+  const references = [
+    ...new Set(
+      store
+        .runs(run.workId)
+        .flatMap((r) =>
+          r.steps.flatMap((s) =>
+            s.kind === "message" && s.role === "user" ? s.assets || [] : [],
+          ),
+        ),
+    ),
+  ];
+  ctx.input = [
+    userMessage(
+      store,
+      "Conversation summary:\n" + textOf(result.items),
+      references,
+    ),
+    {
+      role: "user",
+      content: `Current scene: ${run.sceneId}\nCurrent work: ${JSON.stringify(store.work(run.workId))}`,
+    },
+  ];
+  store.context(run.id, ctx);
+}
 export class Agent {
   active = new Map<string, AbortController>();
   constructor(public publish: (user: string, event: object) => void) {}
@@ -113,48 +174,47 @@ export class Agent {
       observations: [],
       startedAt: Date.now(),
     };
-    const history = store
-      .runs(workId)
-      .flatMap((r) => r.steps)
-      .filter((s) => s.kind === "message")
-      .slice(-12)
-      .map((m) => ({ role: m.role, content: m.text }));
-    const content: Item[] = [
-      {
-        type: "input_text",
-        text: `${prompt}\nCurrent scene: ${sceneId}\nCurrent work: ${JSON.stringify(work)}`,
-      },
-    ];
-    for (const a of assets) {
-      const asset = store.asset(a);
-      content.push({
-        type: "input_image",
-        image_url: `data:${asset.mediaType};base64,${store.bytes(a).toString("base64")}`,
-      });
-    }
+    const previous = store.runs(workId).at(-1);
     const ctx: Context = {
-      input: [...history, { role: "user", content }],
+      input: previous ? store.context(previous.id).input : [],
       generations: 0,
     };
+    ctx.input.push(userMessage(store, prompt, assets), {
+      role: "user",
+      content: `Current scene: ${sceneId}\nCurrent work: ${JSON.stringify(work)}`,
+    });
     this.emit(store, run);
+    store.context(run.id, ctx);
     void this.execute(store, run, ctx);
     return run;
   }
-  resume(store: UserStore, runId: string, answer: string) {
+  resume(
+    store: UserStore,
+    runId: string,
+    answer: string,
+    assets: string[] = [],
+  ) {
     const run = store.run(runId);
     if (run.status !== "waiting") throw new DomainError("当前任务没有等待回答");
     const ctx = store.context(runId) as Context;
-    run.steps.push({ kind: "message", role: "user", text: answer });
+    const message = userMessage(store, answer, assets);
+    run.steps.push({ kind: "message", role: "user", text: answer, assets });
     run.question = undefined;
     run.status = "running";
-    ctx.input.push({ role: "user", content: answer });
+    ctx.input.push(message);
+    ctx.generations = 0;
     this.emit(store, run);
+    store.context(run.id, ctx);
     void this.execute(store, run, ctx);
     return run;
   }
   cancel(store: UserStore, runId: string) {
     const run = store.run(runId);
-    this.active.get(runId)?.abort();
+    const active = this.active.get(runId);
+    if (active) {
+      active.abort();
+      return run;
+    }
     run.status = "cancelled";
     this.emit(store, run);
     return run;
@@ -188,6 +248,7 @@ export class Agent {
         // Progress the author writes takes its place among the steps as it streams.
         let said: Extract<Step, { kind: "message" }> | undefined;
         abort.signal.throwIfAborted();
+        await compact(store, run, ctx, abort.signal);
         const result = await generate(
           settings.author,
           AUTHOR + "\nUser preferences: " + settings.preferences,
@@ -407,6 +468,23 @@ export class Agent {
       run.status = abort.signal.aborted ? "cancelled" : "failed";
       run.error = String(abort.signal.reason || e);
     } finally {
+      // A cancelled batch still needs a result for every emitted tool call.
+      const answered = new Set(
+        ctx.input
+          .filter((item) => item.type === "function_call_output")
+          .map((item) => item.call_id),
+      );
+      for (const item of ctx.input.filter(
+        (item) => item.type === "function_call",
+      ))
+        if (!answered.has(item.call_id))
+          ctx.input.push({
+            type: "function_call_output",
+            call_id: item.call_id,
+            output:
+              "Execution interrupted. Read the current work before continuing.",
+          });
+      store.context(run.id, ctx);
       clearTimeout(timeout);
       clearTimeout(flush);
       this.active.delete(run.id);

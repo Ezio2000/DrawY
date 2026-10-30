@@ -267,3 +267,130 @@ it("lays out streamed modules on the write step before the write is saved", asyn
     rmSync(dir, { recursive: true });
   }
 });
+
+it("continues the exact context across turns and accepts images in answers", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0);
+    const asset = store.putAsset(
+      Buffer.from("reference"),
+      "reference.png",
+      "image/png",
+    );
+    const agent = new Agent(() => {});
+    vi.mocked(generate).mockImplementation(async () => ({
+      items: [
+        {
+          type: "function_call",
+          name: "ask_question",
+          call_id: crypto.randomUUID(),
+          arguments: JSON.stringify({ text: "Which style?", options: [] }),
+        },
+      ],
+      usage: {},
+    }));
+    const run = agent.start(store, work.id, "root", "Match this", [asset.id]);
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
+    const initial = store.context(run.id).input;
+    agent.resume(store, run.id, "Five panels", [asset.id]);
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
+    const answered = store.context(run.id).input;
+    expect(answered.slice(0, initial.length)).toEqual(initial);
+    expect(answered[initial.length].content[1].image_url).toContain(
+      "cmVmZXJlbmNl",
+    );
+    expect(store.run(run.id).steps.at(-1)).toMatchObject({
+      assets: [asset.id],
+    });
+    agent.cancel(store, run.id);
+    const current = store.work(work.id);
+    store.commit({ ...current, title: "Manually edited" }, current.revision);
+    const next = agent.start(store, work.id, "root", "Continue");
+    await vi.waitFor(() => expect(store.run(next.id).status).toBe("waiting"));
+    const continued = store.context(next.id).input;
+    expect(continued.slice(0, answered.length)).toEqual(answered);
+    expect(continued[answered.length + 1].content).toContain("Manually edited");
+    expect(store.run(next.id).steps[0]).toMatchObject({ text: "Continue" });
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("compacts at the budget with original references and closes interrupted tool batches", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0);
+    const asset = store.putAsset(
+      Buffer.from("reference"),
+      "reference.png",
+      "image/png",
+    );
+    const run: Run = {
+      id: "budget",
+      workId: work.id,
+      sceneId: "root",
+      status: "running",
+      steps: [
+        { kind: "message", role: "user", text: "Match", assets: [asset.id] },
+      ],
+      observations: [],
+      startedAt: Date.now(),
+    };
+    store.saveRun(run);
+    const ctx = {
+      input: [{ role: "user", content: "x".repeat(384001) }] as any[],
+      generations: 0,
+    };
+    let turn = 0;
+    const agent = new Agent(() => {});
+    vi.mocked(generate).mockImplementation(
+      async (_role, _instructions, input, tools) => {
+        if (turn++ === 0) {
+          expect(tools).toEqual([]);
+          return {
+            items: [
+              {
+                type: "message",
+                content: [{ type: "output_text", text: "Keep five panels" }],
+              },
+            ],
+            usage: {},
+          };
+        }
+        expect(input[0].content[0].text).toContain("Keep five panels");
+        expect(input[0].content[1].image_url).toContain("cmVmZXJlbmNl");
+        expect(input[1].content).toContain(work.id);
+        agent.cancel(store, run.id);
+        return {
+          items: ["one", "two"].map((call_id) => ({
+            type: "function_call",
+            name: "read_work",
+            arguments: "{}",
+            call_id,
+          })),
+          usage: {},
+        };
+      },
+    );
+    await agent.execute(store, run, ctx);
+    expect(store.run(run.id).status).toBe("cancelled");
+    expect(
+      store
+        .context(run.id)
+        .input.filter((i: any) => i.type === "function_call_output")
+        .map((i: any) => i.call_id),
+    ).toEqual(["one", "two"]);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
