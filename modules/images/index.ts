@@ -113,12 +113,27 @@ async function paint(
       },
     );
   };
-  let r = await attempt(transparent ? "transparent" : "opaque");
+  // A dropped connection, a rate limit or a server error is retried; any other answer
+  // is final.
+  const send = async (background: string) => {
+    for (const wait of [3000, 10000, 0]) {
+      const r = await attempt(background).catch((e) => {
+        if (!wait) throw e;
+        return undefined;
+      });
+      if (r && (r.ok || (r.status !== 429 && r.status < 500) || !wait))
+        return r;
+      await r?.body?.cancel();
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+    throw Error("unreachable");
+  };
+  let r = await send(transparent ? "transparent" : "opaque");
   // Not every picture model can leave the background clear.
   if (r.status === 400 && transparent) {
     const text = await r.text();
     if (!/background/i.test(text)) throw Error(`生图失败 400: ${text}`);
-    r = await attempt("auto");
+    r = await send("auto");
   }
   if (!r.ok) throw Error(`生图失败 ${r.status}: ${await r.text()}`);
   const data = (await r.json()) as { data: { b64_json: string }[] };

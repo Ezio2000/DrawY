@@ -70,14 +70,18 @@ export function useOf(m: Material): MaterialUse | null {
 const CALL = /api\.(?:material|draw|effect)\(\s*["'`]([a-z0-9-]+)["'`]/g;
 const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** Ids the work's code calls literally, and id-like strings in its module data. */
+const QUOTED = /["'`]([a-z0-9]+(?:-[a-z0-9]+)*)["'`]/g;
 function named(work: Work) {
   const called = new Set<string>(),
-    mentioned = new Set<string>();
+    mentioned = new Set<string>(),
+    quoted = new Set<string>();
   for (const { source } of [
     ...Object.values(work.drawings),
     ...Object.values(work.interactions),
-  ])
+  ]) {
     for (const [, id] of source.matchAll(CALL)) called.add(id);
+    for (const [, id] of source.matchAll(QUOTED)) quoted.add(id);
+  }
   const scan = (v: unknown) => {
     if (typeof v === "string") {
       if (ID.test(v) && v.length < 64) mentioned.add(v);
@@ -86,7 +90,7 @@ function named(work: Work) {
   };
   for (const scene of Object.values(work.scenes))
     for (const x of [...scene.modules, ...scene.links]) scan(x.data);
-  return { called, mentioned };
+  return { called, mentioned, quoted };
 }
 
 /** The materials a module is drawn with; none means it is drawn by hand. */
@@ -107,10 +111,16 @@ export function drawnWith(work: Work, sceneId: string, moduleId: string) {
   return [...ids].filter((id) => work.materials[id]);
 }
 
-/** Takes into the work every material it names, refreshing pictures that were still
- * developing. Returns the ids newly taken. */
+/** Brings the work's materials in line with what it names: takes in new ones, refreshes
+ * pictures that were still developing and lets go of those no longer named. Returns the
+ * ids newly taken. */
 export async function take(work: Work, explicit: string[], user: string) {
-  const { called, mentioned } = named(work);
+  const { called, mentioned, quoted } = named(work);
+  // A material nothing in the work names any more leaves it, such as a picture an edit
+  // replaced; one named only in code (an interaction switching pictures) stays.
+  for (const id of Object.keys(work.materials))
+    if (![explicit, called, mentioned, quoted].some((s) => [...s].includes(id)))
+      delete work.materials[id];
   const strict = [...new Set([...explicit, ...called])];
   const refresh = Object.values(work.materials)
     .filter((m) => m.kind === "picture" && m.status === "developing")

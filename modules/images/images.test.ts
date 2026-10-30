@@ -75,6 +75,35 @@ for (const channel of ["api", "oauth"] as const)
         ],
       });
   });
+it("retries a dropped connection or a busy server before giving up", async () => {
+  const store = db.scoped(register(db, "author", "abcdef").id);
+  const settings = store.settings();
+  settings.image = {
+    ...settings.image,
+    credential: "test",
+    baseUrl: "https://example.invalid",
+  };
+  store.saveSettings(settings);
+  const png = await picture();
+  let calls = 0;
+  library.route(async () => {
+    calls++;
+    if (calls === 1) throw new TypeError("fetch failed");
+    if (calls === 2) return new Response("busy", { status: 503 });
+    return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+  });
+  vi.useFakeTimers({ toFake: ["setTimeout"] });
+  try {
+    const [made] = await develop(store, fixture(), [
+      { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
+    ]);
+    while (!made.settled) await vi.advanceTimersByTimeAsync(1000);
+    expect(await made.done).toEqual({ status: "ready" });
+    expect(calls).toBe(3);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 it("records a failed picture so the work and the author both learn of it", async () => {
   const store = db.scoped(register(db, "author", "abcdef").id);
   const settings = store.settings();
@@ -84,16 +113,16 @@ it("records a failed picture so the work and the author both learn of it", async
     baseUrl: "https://example.invalid",
   };
   store.saveSettings(settings);
-  library.route(async () => new Response("quota", { status: 429 }));
+  library.route(async () => new Response("unsafe prompt", { status: 400 }));
   const [made] = await develop(store, fixture(), [
     { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
   ]);
   expect(await made.done).toMatchObject({
     status: "failed",
-    error: expect.stringContaining("429"),
+    error: expect.stringContaining("400"),
   });
   await expect(library.library.ready(made.id, store.userId, 0)).rejects.toThrow(
-    "429",
+    "400",
   );
   await expect(
     develop(store, { ...fixture(), brief: null }, [
