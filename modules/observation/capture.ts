@@ -23,7 +23,10 @@ export interface Shot {
 }
 async function ready(page: Page) {
   await page.waitForFunction(() => window.drawyReady, {}, { timeout: 30000 });
-  await page.evaluate(() => window.drawyView.renderer.settled());
+  await page.evaluate(async () => {
+    await window.drawyView.renderer.settled();
+    await window.drawyView.renderer.developed();
+  });
 }
 export async function capture(
   browser: Browser,
@@ -46,7 +49,8 @@ export async function capture(
       await page.setViewportSize({ width, height: 900 });
       const load = async () => {
         errors.length = 0;
-        await page.goto(scene.url, { waitUntil: "load" });
+        // The runtime says when it is ready; a developing picture would hold up "load".
+        await page.goto(scene.url, { waitUntil: "domcontentloaded" });
         try {
           await ready(page);
         } catch (e) {

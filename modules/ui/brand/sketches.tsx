@@ -2,7 +2,7 @@ import { useId, type CSSProperties } from "react";
 import { random } from "./hand.tsx";
 import { handLine, pointsOf } from "./pen.tsx";
 const useCatalogue = () => ({
-  painting: (id: string) => ({ src: `/materials/paintings/${id}.webp` }),
+  painting: (id: string) => ({ src: `/materials/files/${id}` }),
 });
 import { cx } from "./cx.ts";
 

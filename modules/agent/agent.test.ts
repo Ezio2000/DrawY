@@ -1,4 +1,4 @@
-import { it, expect, vi } from "vitest";
+import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,9 +6,17 @@ import { Storage } from "../storage/index.ts";
 import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { Agent } from "./index.ts";
+import { writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { generate } from "../models/index.ts";
 import type { Run } from "../contracts/index.ts";
+import { library as client } from "../materials/index.ts";
+import { serveLibrary, picture } from "@drawy/materials/testing";
+let library: ReturnType<typeof serveLibrary>;
+beforeEach(() => {
+  library = serveLibrary(client.base);
+});
+afterEach(() => library.close());
 vi.mock("../models/index.ts", async (original) => ({
   ...(await original<object>()),
   generate: vi.fn(),
@@ -17,6 +25,7 @@ vi.mock("../observation/index.ts", async (original) => ({
   ...(await original<object>()),
   observe: vi.fn(async (store, workId) => ({
     observation: {
+      at: Date.now(),
       revision: store.work(workId).revision,
       sceneIds: ["root"],
       overview: true,
@@ -98,7 +107,7 @@ it("feeds canvas images into the author conversation and requires another look a
         };
       },
     );
-    await new Agent(() => {}).execute(store, run, ctx);
+    await new Agent(() => {}).execute(store, run, ctx, "request");
     expect(sawImage).toBe(true);
     expect(run.status).toBe("completed");
     expect(
@@ -239,7 +248,7 @@ it("lays out streamed modules on the write step before the write is saved", asyn
         laid.push(step.scenes[0]?.modules.length);
         written.push(step.writing);
       }
-    }).execute(store, run, { input: [], generations: 0 });
+    }).execute(store, run, { input: [], generations: 0 }, "request");
     expect(run.status).toBe("completed");
     expect(laid).toContain(3);
     expect(written).toContain(writing.id);
@@ -276,40 +285,68 @@ it("continues the exact context across turns and accepts images in answers", asy
       work = fixture();
     work.revision = 0;
     store.commit(work, 0);
-    const asset = store.putAsset(
-      Buffer.from("reference"),
-      "reference.png",
+    const reference = await client.ingest(
+      await picture(),
       "image/png",
+      {
+        role: "object",
+        name: { zh: "参考", en: "reference" },
+        style: null,
+        origin: { kind: "upload" },
+      },
+      store.userId,
     );
     const agent = new Agent(() => {});
     vi.mocked(generate).mockImplementation(async () => ({
       items: [
         {
           type: "function_call",
-          name: "ask_question",
+          name: "ask_user",
           call_id: crypto.randomUUID(),
-          arguments: JSON.stringify({ text: "Which style?", options: [] }),
+          arguments: JSON.stringify({
+            questions: [
+              {
+                id: "style",
+                text: "Which style?",
+                options: [
+                  { label: "Textbook", materials: ["textbook"] },
+                  { label: "Crayon", materials: ["crayon", "missing"] },
+                ],
+              },
+            ],
+          }),
         },
       ],
       usage: {},
     }));
-    const run = agent.start(store, work.id, "root", "Match this", [asset.id]);
+    const run = await agent.start(store, work.id, "root", "Match this", [
+      reference.id,
+    ]);
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
+    expect(store.run(run.id).questions![0].options[1]).toMatchObject({
+      label: "Crayon",
+      // A style option shows the style's own samples.
+      pictures: [
+        { id: "apple-crayon", url: "/materials/files/apple-crayon" },
+        { id: "earth" },
+        { id: "sun" },
+      ],
+    });
     const initial = store.context(run.id).input;
-    agent.resume(store, run.id, "Five panels", [asset.id]);
+    await agent.resume(store, run.id, "Five panels", [reference.id]);
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
     const answered = store.context(run.id).input;
     expect(answered.slice(0, initial.length)).toEqual(initial);
-    expect(answered[initial.length].content[1].image_url).toContain(
-      "cmVmZXJlbmNl",
+    expect(answered[initial.length].content[1].image_url).toMatch(
+      /^data:image\/webp;base64,/,
     );
     expect(store.run(run.id).steps.at(-1)).toMatchObject({
-      assets: [asset.id],
+      materials: [reference.id],
     });
     agent.cancel(store, run.id);
     const current = store.work(work.id);
     store.commit({ ...current, title: "Manually edited" }, current.revision);
-    const next = agent.start(store, work.id, "root", "Continue");
+    const next = await agent.start(store, work.id, "root", "Continue");
     await vi.waitFor(() => expect(store.run(next.id).status).toBe("waiting"));
     const continued = store.context(next.id).input;
     expect(continued.slice(0, answered.length)).toEqual(answered);
@@ -329,10 +366,16 @@ it("compacts at the budget with original references and closes interrupted tool 
       work = fixture();
     work.revision = 0;
     store.commit(work, 0);
-    const asset = store.putAsset(
-      Buffer.from("reference"),
-      "reference.png",
+    const reference = await client.ingest(
+      await picture(),
       "image/png",
+      {
+        role: "object",
+        name: { zh: "参考", en: "reference" },
+        style: null,
+        origin: { kind: "upload" },
+      },
+      store.userId,
     );
     const run: Run = {
       id: "budget",
@@ -340,7 +383,12 @@ it("compacts at the budget with original references and closes interrupted tool 
       sceneId: "root",
       status: "running",
       steps: [
-        { kind: "message", role: "user", text: "Match", assets: [asset.id] },
+        {
+          kind: "message",
+          role: "user",
+          text: "Match",
+          materials: [reference.id],
+        },
       ],
       observations: [],
       startedAt: Date.now(),
@@ -367,7 +415,7 @@ it("compacts at the budget with original references and closes interrupted tool 
           };
         }
         expect(input[0].content[0].text).toContain("Keep five panels");
-        expect(input[0].content[1].image_url).toContain("cmVmZXJlbmNl");
+        expect(input[0].content[1].image_url).toMatch(/^data:image\/webp/);
         expect(input[1].content).toContain(work.id);
         agent.cancel(store, run.id);
         return {
@@ -381,7 +429,7 @@ it("compacts at the budget with original references and closes interrupted tool 
         };
       },
     );
-    await agent.execute(store, run, ctx);
+    await agent.execute(store, run, ctx, "request");
     expect(store.run(run.id).status).toBe("cancelled");
     expect(
       store
@@ -389,6 +437,244 @@ it("compacts at the budget with original references and closes interrupted tool 
         .input.filter((i: any) => i.type === "function_call_output")
         .map((i: any) => i.call_id),
     ).toEqual(["one", "two"]);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+/** Answers each model turn with the next scripted tool call. */
+function script(calls: [string, unknown][], seen: any[][] = []) {
+  let turn = 0;
+  vi.mocked(generate).mockImplementation(
+    async (_role, _instructions, input) => {
+      seen.push(structuredClone(input));
+      const [name, args] = calls[turn++];
+      return {
+        items: [
+          {
+            type: "function_call",
+            name,
+            arguments: JSON.stringify(args),
+            call_id: "c" + turn,
+          },
+        ],
+        usage: {},
+      };
+    },
+  );
+}
+const outputs = (input: any[]) =>
+  input
+    .filter((x) => x.type === "function_call_output")
+    .map((x) => x.output as string);
+it("settles a brief only on the user's own words, then applies its style and shows the cast", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.brief = null;
+    for (const s of Object.values(work.scenes)) s.modules = [];
+    store.commit(work, 0);
+    const brief = {
+      subject: "苹果（水果）的结构",
+      intent: "果皮、果肉、果核与种子",
+      audience: "初中生",
+      register: "formal",
+      style: "textbook",
+      direction: "剖面线描",
+      cast: ["苹果", "种子"],
+      basis: { subject: "苹果", intent: "苹果", register: "严谨" },
+    };
+    const seen: any[][] = [];
+    script(
+      [
+        ["set_brief", brief],
+        [
+          "ask_user",
+          {
+            questions: [
+              {
+                id: "focus",
+                text: "画苹果的什么？",
+                options: [{ label: "结构" }, { label: "生长" }],
+              },
+            ],
+          },
+        ],
+        [
+          "set_brief",
+          {
+            ...brief,
+            basis: { subject: "苹果", intent: "结构", register: "教科书" },
+          },
+        ],
+        [
+          "write_work",
+          {
+            baseRevision: 2,
+            drawings: [
+              {
+                id: "fruit",
+                name: "苹果",
+                source: 'return api.material("apple")',
+              },
+            ],
+            scenes: [
+              {
+                ...work.scenes.root,
+                modules: [
+                  {
+                    id: "apple",
+                    label: "苹果",
+                    drawingId: "fruit",
+                    data: {},
+                    bounds: { x: 0, y: 0, width: 200, height: 194 },
+                    anchors: {},
+                    group: null,
+                    target: null,
+                  },
+                ],
+                checks: [],
+              },
+            ],
+          },
+        ],
+        ["view_canvas", {}],
+        ["finish", { message: "done" }],
+      ],
+      seen,
+    );
+    const agent = new Agent(() => {});
+    const run = await agent.start(store, work.id, "root", "苹果");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
+    expect(outputs(seen[1]).at(-1)).toContain("不是用户说过的话");
+    expect(store.work(work.id).brief).toBeNull();
+    await agent.resume(store, run.id, "画苹果的什么？\n→ 结构，教科书那样");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    const saved = store.work(work.id);
+    expect(saved.brief?.style).toBe("textbook");
+    expect(saved.style.font).toContain("PingFang");
+    expect(Object.keys(saved.materials)).toEqual(["apple"]);
+    const [castOutput] = outputs(seen[3]).slice(-1);
+    // The cast is searched in the brief's style first.
+    expect(JSON.parse(castOutput).cast[0].hits[0]).toMatchObject({
+      id: "apple-textbook",
+      style: "textbook",
+    });
+    // The author sees the cast as pictures, not only names.
+    expect(
+      seen[3].at(-1).content.some((c: any) => c.type === "input_image"),
+    ).toBe(true);
+    const step = store
+      .run(run.id)
+      .steps.find(
+        (s) =>
+          s.kind === "tool" && s.name === "set_brief" && s.status === "done",
+      );
+    expect(step).toMatchObject({
+      revision: 2,
+      found: [{ subject: "苹果" }, { subject: "种子" }],
+    });
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+it("develops pictures while the author composes and holds finish until they were seen", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0);
+    const settings = store.settings();
+    settings.image = {
+      ...settings.image,
+      credential: "test",
+      baseUrl: "https://example.invalid",
+    };
+    store.saveSettings(settings);
+    let paint!: () => void;
+    const painted = new Promise<void>((r) => (paint = r));
+    const png = await picture();
+    library.route(async () => {
+      await painted;
+      return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+    });
+    const seen: any[][] = [];
+    let id = "";
+    script(
+      [
+        [
+          "generate_images",
+          {
+            images: [
+              {
+                name: { zh: "鲸", en: "whale" },
+                role: "object",
+                depicts: "a blue whale, side view",
+                aspect: "landscape",
+              },
+            ],
+          },
+        ],
+        ["finish", { message: "too soon" }],
+        ["view_canvas", {}],
+        ["finish", { message: "done" }],
+      ],
+      seen,
+    );
+    const run: Run = {
+      id: "develop",
+      workId: work.id,
+      sceneId: "root",
+      status: "running",
+      steps: [],
+      observations: [],
+      startedAt: Date.now(),
+    };
+    store.saveRun(run);
+    const agent = new Agent(() => {});
+    const done = agent.execute(
+      store,
+      run,
+      { input: [], generations: 0 },
+      "request",
+    );
+    await vi.waitFor(() => expect(seen.length).toBeGreaterThanOrEqual(2));
+    id = JSON.parse(outputs(seen[1])[0]).developing[0].id;
+    expect(id).toMatch(/^g-whale-/);
+    // The picture is usable at once, before it exists.
+    const { work: written } = await writeWork(store, work.id, {
+      baseRevision: 1,
+      drawings: [
+        { id: "whale", name: "鲸", source: `return api.material("${id}")` },
+      ],
+    });
+    expect(written.materials[id]).toMatchObject({ status: "developing" });
+    await vi.waitFor(() => expect(seen.length).toBe(3));
+    expect(outputs(seen[2]).at(-1)).toContain("图片仍在生成");
+    await new Promise((r) => setTimeout(r, 50));
+    paint();
+    await done;
+    expect(run.status).toBe("completed");
+    // The finished picture was shown to the author before the final look.
+    const shown = seen[3].find(
+      (x: any) =>
+        x.role === "user" && x.content?.[0]?.text?.startsWith?.("Pictures:"),
+    );
+    expect(shown.content[0].text).toContain(id);
+    expect(shown.content.some((c: any) => c.type === "input_image")).toBe(true);
+    expect(
+      run.steps.find((s) => s.kind === "tool" && s.name === "generate_images"),
+    ).toMatchObject({
+      images: [{ id, status: "ready" }],
+    });
   } finally {
     db.close();
     rmSync(dir, { recursive: true });

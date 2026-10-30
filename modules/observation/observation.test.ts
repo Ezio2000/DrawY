@@ -11,6 +11,7 @@ afterEach(() => vi.unstubAllGlobals());
 it("requires latest revision and all populated scenes; runtime errors invalidate observation", () => {
   const work = fixture();
   const seen: Observation = {
+    at: 1,
     revision: 1,
     sceneIds: ["root"],
     overview: true,
@@ -26,7 +27,7 @@ it("requires latest revision and all populated scenes; runtime errors invalidate
     requireObserved(work, [all, { ...seen, errors: ["broken interaction"] }]),
   ).toThrow("root");
 });
-it("returns actual image inputs with revision and geometry, scopes assets and closes capture session", async () => {
+it("returns actual image inputs with revision and geometry, scopes captures and closes capture session", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-observe-")),
     db = new Storage(dir);
   try {
@@ -64,13 +65,13 @@ it("returns actual image inputs with revision and geometry, scopes assets and cl
       detail: "high",
     });
     expect(result.observation.revision).toBe(1);
-    expect(store.bytes(result.observation.screenshots[0].id).toString()).toBe(
-      "image",
-    );
+    expect(
+      store.captureBytes(result.observation.screenshots[0].id).toString(),
+    ).toBe("image");
     expect(() =>
       db
         .scoped(register(db, "other", "abcdef").id)
-        .asset(result.observation.screenshots[0].id),
+        .capture(result.observation.screenshots[0].id),
     ).toThrow();
     expect(db.db.prepare("SELECT count(*) n FROM sessions").get()?.n).toBe(0);
     const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);

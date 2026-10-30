@@ -1,9 +1,9 @@
-import type { MaterialPage } from "../../../modules/materials/index.ts";
+import type { Material, MaterialPage } from "@drawy/materials/schema";
 import { useState, useEffect } from "react";
 import { Dialog, Switch } from "@drawy/ui";
 import { api } from "./api.ts";
 import { cx } from "./cx.ts";
-import type { Settings, Asset } from "../../../modules/contracts/index.ts";
+import type { Settings } from "../../../modules/contracts/index.ts";
 export function SettingsDialog({ close }: { close: () => void }) {
   const [value, set] = useState<Settings>();
   const [error, E] = useState("");
@@ -157,14 +157,22 @@ export function SettingsDialog({ close }: { close: () => void }) {
     </Dialog>
   );
 }
+const kinds = [
+  ["picture", "图片"],
+  ["drawing", "画法"],
+  ["effect", "质感"],
+  ["style", "风格"],
+] as const;
+/** The library: pictures to place, drawing code, effects and styles. */
 export function MaterialsDialog({
   close,
   pick,
 }: {
   close: () => void;
-  pick: (m: { id: string; url: string; name: string; kind: string }) => void;
+  pick: (m: Material) => void;
 }) {
   const [q, Q] = useState(""),
+    [kind, K] = useState<Material["kind"]>("picture"),
     [result, I] = useState<MaterialPage>({
       items: [],
       total: 0,
@@ -178,9 +186,10 @@ export function MaterialsDialog({
     const a = new AbortController();
     setLoading(true);
     E("");
-    fetch("/api/materials?q=" + encodeURIComponent(q) + "&page=" + page, {
-      signal: a.signal,
-    })
+    fetch(
+      `/api/materials?q=${encodeURIComponent(q)}&page=${page}&kind=${kind}`,
+      { signal: a.signal },
+    )
       .then(async (r) => {
         if (!r.ok) throw Error((await r.json()).error);
         return r.json();
@@ -195,55 +204,83 @@ export function MaterialsDialog({
         if (!a.signal.aborted) setLoading(false);
       });
     return () => a.abort();
-  }, [q, page]);
+  }, [q, page, kind]);
+  const preview = (m: Material) =>
+    m.kind === "picture"
+      ? m.file.url
+      : m.kind === "style" && m.samples[0]
+        ? `/materials/files/${m.samples[0]}`
+        : undefined;
   return (
     <Dialog title="素材" wide onClose={close}>
+      <nav className={cx("material-kinds")}>
+        {kinds.map(([k, label]) => (
+          <button
+            key={k}
+            aria-pressed={kind === k}
+            onClick={() => {
+              K(k);
+              setPage(1);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
       <input
         className={cx("search")}
-        placeholder="搜索公共与个人素材"
+        placeholder="搜索素材，中文或英文"
         value={q}
         onChange={(e) => {
           Q(e.target.value);
           setPage(1);
         }}
       />
-      <label className={cx("secondary")}>
-        上传图片
-        <input
-          type="file"
-          accept="image/*"
-          hidden
-          onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (file) {
-              const data = new FormData();
-              data.append("file", file);
-              try {
-                const a = await api<Asset>("/assets", "POST", data);
-                pick({ ...a, kind: "personal" });
-                close();
-              } catch (e) {
-                E(String(e));
+      {kind === "picture" && (
+        <label className={cx("secondary")}>
+          上传图片
+          <input
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                const data = new FormData();
+                data.append("file", file);
+                try {
+                  pick(await api<Material>("/materials", "POST", data));
+                  close();
+                } catch (e) {
+                  E(String(e));
+                }
               }
-            }
-          }}
-        />
-      </label>
-      <p className={cx("error")}>{error}</p>
-      <div className={cx("materials")} aria-busy={loading}>
-        {result.items.map((m) => (
-          <button
-            key={m.kind + ":" + m.id}
-            disabled={loading}
-            onClick={() => {
-              pick(m);
-              close();
             }}
-          >
-            <img src={m.url} alt="" />
-            <span>{m.name}</span>
-          </button>
-        ))}
+          />
+        </label>
+      )}
+      {error && <p className={cx("error")}>{error}</p>}
+      <div className={cx("materials")} data-kind={kind} aria-busy={loading}>
+        {result.items.map((m) => {
+          const src = preview(m);
+          return (
+            <button
+              key={m.id}
+              disabled={loading}
+              title={`${m.name.zh} / ${m.name.en}\n${m.about}`}
+              onClick={() => {
+                pick(m);
+                close();
+              }}
+            >
+              {src ? <img src={src} alt="" loading="lazy" /> : <p>{m.about}</p>}
+              <span>
+                {m.name.zh}
+                {m.kind === "picture" && m.style && <i>{m.style}</i>}
+              </span>
+            </button>
+          );
+        })}
       </div>
       <nav className={cx("pagination")} aria-label="素材分页">
         <span aria-live="polite">

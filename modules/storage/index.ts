@@ -6,7 +6,7 @@ import {
   defaultSettings,
   DomainError,
   type Work,
-  type Asset,
+  type Capture,
   type Settings,
   type Run,
 } from "../contracts/index.ts";
@@ -15,14 +15,14 @@ export class Storage {
   dir: string;
   constructor(dir: string) {
     this.dir = dir;
-    mkdirSync(join(dir, "assets"), { recursive: true });
+    mkdirSync(join(dir, "captures"), { recursive: true });
     this.db = new DatabaseSync(join(dir, "drawy.sqlite"));
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
  CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,name TEXT UNIQUE NOT NULL,password TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id));
  CREATE TABLE IF NOT EXISTS works(user_id TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(user_id,id));
  CREATE TABLE IF NOT EXISTS revisions(user_id TEXT NOT NULL,work_id TEXT NOT NULL,revision INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(user_id,work_id,revision));
- CREATE TABLE IF NOT EXISTS assets(user_id TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(user_id,id));
+ CREATE TABLE IF NOT EXISTS captures(user_id TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(user_id,id));
  CREATE TABLE IF NOT EXISTS settings(user_id TEXT PRIMARY KEY,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS runs(user_id TEXT NOT NULL,id TEXT NOT NULL,work_id TEXT NOT NULL,data TEXT NOT NULL,context TEXT,PRIMARY KEY(user_id,id));`);
   }
@@ -147,44 +147,24 @@ export class UserStore {
       )
       .run(this.userId, JSON.stringify(value));
   }
-  asset(assetId: string) {
-    return this.one<Asset>(
-      "SELECT data FROM assets WHERE user_id=? AND id=?",
-      assetId,
+  capture(captureId: string) {
+    return this.one<Capture>(
+      "SELECT data FROM captures WHERE user_id=? AND id=?",
+      captureId,
     );
   }
-  bytes(assetId: string) {
-    this.asset(assetId);
-    return readFileSync(join(this.storage.dir, "assets", assetId));
+  captureBytes(captureId: string) {
+    this.capture(captureId);
+    return readFileSync(join(this.storage.dir, "captures", captureId));
   }
-  assets(): Asset[] {
-    return this.storage.db
-      .prepare("SELECT data FROM assets WHERE user_id=?")
-      .all(this.userId)
-      .map((r) => JSON.parse(r.data as string));
-  }
-  putAsset(
-    bytes: Uint8Array,
-    name: string,
-    mediaType: string,
-    source: Asset["source"] = "upload",
-    generationId?: string,
-  ) {
-    const assetId = id();
-    const asset: Asset = {
-      id: assetId,
-      name,
-      mediaType,
-      size: bytes.length,
-      source,
-      url: `/api/assets/${assetId}`,
-      generationId,
-    };
-    writeFileSync(join(this.storage.dir, "assets", assetId), bytes);
+  putCapture(bytes: Uint8Array, name: string): Capture {
+    const captureId = id();
+    const capture = { id: captureId, name, url: `/api/captures/${captureId}` };
+    writeFileSync(join(this.storage.dir, "captures", captureId), bytes);
     this.storage.db
-      .prepare("INSERT INTO assets VALUES(?,?,?)")
-      .run(this.userId, assetId, JSON.stringify(asset));
-    return asset;
+      .prepare("INSERT INTO captures VALUES(?,?,?)")
+      .run(this.userId, captureId, JSON.stringify(capture));
+    return capture;
   }
   saveRun(run: Run) {
     this.storage.db

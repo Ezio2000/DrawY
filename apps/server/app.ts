@@ -17,8 +17,11 @@ import {
   moveModules,
 } from "../../modules/workspace/index.ts";
 import { documentFor } from "../../modules/runtime/document.ts";
-import { browseMaterials, catalogue } from "../../modules/materials/index.ts";
+import { library, upload, freshen } from "../../modules/materials/index.ts";
+import { MaterialsError } from "@drawy/materials/client";
+import { kindSchema } from "@drawy/materials/schema";
 import { Agent } from "../../modules/agent/index.ts";
+import { tracer } from "../../modules/trace/index.ts";
 import encoder from "plantuml-encoder";
 type Env = {
   Variables: { store: UserStore; user: { id: string; name: string } };
@@ -32,13 +35,15 @@ export function createApp(storage: Storage) {
   app.onError((e, c) =>
     c.json(
       { error: e.message },
-      e instanceof DomainError
+      e instanceof DomainError || e instanceof MaterialsError
         ? (e.status as 400)
         : e instanceof z.ZodError
           ? 400
           : 500,
     ),
   );
+  const userOf = (token?: string) =>
+    token ? storage.userFor(token) : undefined;
   app.get("/api/health", (c) => c.json({ ok: true }));
   for (const action of ["register", "login"] as const)
     app.post("/api/auth/" + action, async (c) => {
@@ -57,8 +62,7 @@ export function createApp(storage: Storage) {
       return c.json(user);
     });
   app.use("/api/*", async (c, next) => {
-    const token = getCookie(c, "drawy_session");
-    const user = token ? storage.userFor(token) : undefined;
+    const user = userOf(getCookie(c, "drawy_session"));
     if (!user) return c.json({ error: "请先登录" }, 401);
     c.set("user", user);
     c.set("store", storage.scoped(user.id));
@@ -126,12 +130,15 @@ export function createApp(storage: Storage) {
     publish(store.userId, { type: "work", work });
     return c.json(work);
   });
-  app.get("/api/works/:id/scenes/:scene", (c) => {
+  app.get("/api/works/:id/scenes/:scene", async (c) => {
     const store = c.get("store"),
       rev = c.req.query("revision");
-    const work = rev
-      ? store.revision(c.req.param("id"), Number(rev))
-      : store.work(c.req.param("id"));
+    const work = await freshen(
+      rev
+        ? store.revision(c.req.param("id"), Number(rev))
+        : store.work(c.req.param("id")),
+      store.userId,
+    );
     const sceneId = c.req.param("scene");
     if (!work.scenes[sceneId]) throw new DomainError("场景不存在", 404);
     return c.html(documentFor(work, sceneId));
@@ -152,7 +159,7 @@ export function createApp(storage: Storage) {
         moves: z.array(z.object({ id: z.string(), bounds: boundsSchema })),
       })
       .parse(await c.req.json());
-    const work = moveModules(
+    const work = await moveModules(
       store,
       workId,
       args.sceneId,
@@ -170,70 +177,78 @@ export function createApp(storage: Storage) {
       .object({
         prompt: z.string().min(1),
         sceneId: z.string(),
-        assets: z.array(z.string()).default([]),
+        materials: z.array(z.string()).default([]),
       })
       .parse(await c.req.json());
     return c.json(
-      agent.start(
+      await agent.start(
         c.get("store"),
         c.req.param("id"),
         args.sceneId,
         args.prompt,
-        args.assets,
+        args.materials,
       ),
     );
   });
   app.post("/api/runs/:id/answer", async (c) => {
-    const { answer, assets } = z
+    const { answer, materials } = z
       .object({
         answer: z.string().min(1),
-        assets: z.array(z.string()).default([]),
+        materials: z.array(z.string()).default([]),
       })
       .parse(await c.req.json());
     return c.json(
-      agent.resume(c.get("store"), c.req.param("id"), answer, assets),
+      await agent.resume(c.get("store"), c.req.param("id"), answer, materials),
     );
   });
   app.post("/api/runs/:id/cancel", (c) =>
     c.json(agent.cancel(c.get("store"), c.req.param("id"))),
   );
-  app.get("/api/assets/:id", (c) => {
-    const store = c.get("store"),
-      asset = store.asset(c.req.param("id"));
-    return c.body(new Uint8Array(store.bytes(asset.id)), 200, {
-      "Content-Type": asset.mediaType,
-      "Cache-Control": "private, no-store",
+  app.get("/api/captures/:id", (c) => {
+    const store = c.get("store");
+    return c.body(new Uint8Array(store.captureBytes(c.req.param("id"))), 200, {
+      "Content-Type": "image/png",
+      "Cache-Control": "private, max-age=86400",
     });
-  });
-  app.post("/api/assets", async (c) => {
-    const form = await c.req.formData(),
-      file = form.get("file");
-    if (!(file instanceof File) || !file.type.startsWith("image/"))
-      throw new DomainError("请选择图片");
-    return c.json(
-      c
-        .get("store")
-        .putAsset(
-          new Uint8Array(await file.arrayBuffer()),
-          file.name,
-          file.type,
-        ),
-    );
   });
   app.get("/api/materials", async (c) =>
     c.json(
-      await browseMaterials(
-        c.get("store"),
+      await library.browse(
         c.req.query("q") || "",
         z.coerce
           .number()
           .int()
           .positive()
           .parse(c.req.query("page") || "1"),
+        c.get("user").id,
+        kindSchema
+          .array()
+          .parse(c.req.query("kind")?.split(",").filter(Boolean) ?? []),
       ),
     ),
   );
-  app.get("/api/catalogue", async (c) => c.json(await catalogue()));
+  app.post("/api/materials", async (c) => {
+    const form = await c.req.formData(),
+      file = form.get("file");
+    if (!(file instanceof File) || !file.type.startsWith("image/"))
+      throw new DomainError("请选择图片");
+    return c.json(
+      await upload(
+        new Uint8Array(await file.arrayBuffer()),
+        file.type,
+        file.name,
+        c.get("user").id,
+      ),
+    );
+  });
+  app.get("/api/traces", (c) =>
+    c.json(tracer.list(c.get("user").id, Number(c.req.query("limit") || 60))),
+  );
+  app.get("/api/traces/:id", (c) => {
+    const trace = tracer.get(c.get("user").id, c.req.param("id"));
+    if (!trace) throw new DomainError("没有这次运行的记录", 404);
+    return c.json(trace);
+  });
   app.post("/api/plantuml", async (c) => {
     const { source } = z
       .object({ source: z.string() })
@@ -266,16 +281,21 @@ export function createApp(storage: Storage) {
       if (!set.size) listeners.delete(userId);
     }),
   );
-  app.get("/materials/*", async (c) => {
-    const path = c.req.path.slice("/materials".length);
+  // Pictures are served by the library, as the signed-in user when there is one.
+  app.get("/materials/:route{files|thumbs}/:id", async (c) => {
+    const user = userOf(getCookie(c, "drawy_session"));
     const r = await fetch(
-      (process.env.DRAWY_MATERIALS_URL || "http://localhost:8090") + path,
+      library.base +
+        c.req.path.slice("/materials".length) +
+        new URL(c.req.url).search,
+      { headers: user ? { "x-drawy-user": user.id } : {} },
     );
     return new Response(r.body, {
       status: r.status,
       headers: {
         "Content-Type":
           r.headers.get("content-type") || "application/octet-stream",
+        "Cache-Control": r.headers.get("cache-control") || "no-store",
       },
     });
   });

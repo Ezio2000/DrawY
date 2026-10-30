@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { Questions } from "./Questions.tsx";
 import { X } from "lucide-react";
 import { cx } from "./cx.ts";
 import type {
@@ -31,28 +32,47 @@ function thought(text: string) {
       ? [text.slice(2), ""]
       : [text.split("\n")[0], text.split("\n").slice(1).join("\n").trim()];
 }
+const registers = { formal: "严谨", expressive: "个性" };
 /** What the author is doing, in a word or two. */
 function doing(step: ToolStep) {
   switch (step.name) {
     case "read_work":
       return "翻阅作品";
-    case "find_matirial":
-      return step.query ? `寻找素材 · ${step.query}` : "寻找素材";
-    case "generate_image":
-      return "生成图像";
+    case "set_brief":
+      return [
+        "定下方向",
+        step.subject,
+        step.register && registers[step.register],
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    case "find_materials":
+      return ["寻找素材", step.subjects.join("、")].filter(Boolean).join(" · ");
+    case "generate_images":
+      return ["生成图片", step.images.map((i) => i.name).join("、")]
+        .filter(Boolean)
+        .join(" · ");
     case "write_work":
       return step.revision ? `落笔 · 第 ${step.revision} 稿` : "落笔";
     case "view_canvas":
-      return ["端详画面", focusNames[step.focus]].filter(Boolean).join(" · ");
+      return step.waiting
+        ? `等 ${step.waiting} 张图片显影`
+        : ["端详画面", focusNames[step.focus]].filter(Boolean).join(" · ");
   }
 }
-const picturesOf = (step: Step): Picture[] =>
+/** The pictures a step brings: the best candidates per subject, or what it generated. */
+export const picturesOf = (step: Step): Picture[] =>
   step.kind !== "tool"
     ? []
-    : step.name === "find_matirial"
-      ? step.materials || []
-      : step.name === "generate_image"
-        ? step.images || []
+    : step.name === "find_materials" || step.name === "set_brief"
+      ? (step.found || []).flatMap((f) =>
+          f.candidates
+            .filter((c) => c.url)
+            .slice(0, 3)
+            .map((c) => ({ id: c.id, name: c.name, url: c.url! })),
+        )
+      : step.name === "generate_images"
+        ? step.images.filter((p) => p.url)
         : [];
 /** One line under the canvas: what the author is doing now, the pictures it is weighing,
  * its question, or how the last run ended. */
@@ -82,19 +102,8 @@ export function Now({
       </div>
     );
   if (!run) return null;
-  if (run.status === "waiting" && run.question)
-    return (
-      <div className={cx("question")}>
-        <p>{run.question.text}</p>
-        <div>
-          {run.question.options.map((o) => (
-            <button key={o} onClick={() => answer(o)}>
-              {o}
-            </button>
-          ))}
-        </div>
-      </div>
-    );
+  if (run.status === "waiting" && run.questions)
+    return <Questions questions={run.questions} answer={answer} />;
   if (!live(run)) {
     const reply = run.steps.at(-1);
     const text =
@@ -117,14 +126,21 @@ export function Now({
       </div>
     );
   }
-  const used = new Set(Object.values(work.resources).map((r) => r.url));
+  const used = new Set(Object.keys(work.materials));
   const board = pictures ? run.steps.flatMap(picturesOf).slice(-6) : [];
   // A tool still at work outranks the thoughts and notes that stream alongside it.
   const busy = run.steps.findLast(
       (s): s is ToolStep => s.kind === "tool" && s.status === "running",
     ),
     tail = run.steps.at(-1),
-    painting = pictures && busy?.name === "generate_image";
+    painting =
+      pictures &&
+      run.steps.some(
+        (s) =>
+          s.kind === "tool" &&
+          s.name === "generate_images" &&
+          s.images.some((i) => i.status === "developing"),
+      );
   const line =
     run.status === "viewing"
       ? "端详画面"
@@ -145,7 +161,7 @@ export function Now({
               key={p.url + i}
               src={p.url}
               alt={p.name}
-              data-used={used.has(p.url) || undefined}
+              data-used={(p.id && used.has(p.id)) || undefined}
             />
           ))}
           {painting && <i className={cx("developing")} />}
@@ -162,7 +178,7 @@ export function Now({
 export function Activity({ runs, work }: { runs: Run[]; work: Work }) {
   const [zoom, Z] = useState<Picture>();
   const [open, O] = useState<Record<string, boolean>>({});
-  const used = new Set(Object.values(work.resources).map((r) => r.url));
+  const used = new Set(Object.keys(work.materials));
   const last = runs.at(-1);
   return (
     <>
@@ -282,26 +298,38 @@ function Trace({
   return (
     <li data-status={step.status}>
       <span>{doing(step)}</span>
-      {step.name === "generate_image" && step.status === "running" && (
-        <i className={cx("developing")} title={step.prompt} />
-      )}
+
       {!!shots.length && (
         <div className={cx("thumbs")} data-kind={step.name}>
           {shots.map((p, i) => (
             <button
               key={p.url + i}
-              title={p.name}
-              data-used={used.has(p.url) || undefined}
+              title={p.id ? `${p.name} · ${p.id}` : p.name}
+              data-used={(p.id && used.has(p.id)) || undefined}
+              data-status={p.status}
               onClick={() => zoom(p)}
             >
-              <img src={p.url} alt={p.name} loading="lazy" />
+              {p.status === "developing" ? (
+                <i className={cx("developing")} />
+              ) : p.status === "failed" ? (
+                <i className={cx("failed")}>×</i>
+              ) : (
+                <img src={p.url} alt={p.name} loading="lazy" />
+              )}
             </button>
           ))}
         </div>
       )}
-      {step.name === "find_matirial" && step.materials?.length === 0 && (
-        <small>没有合适的素材</small>
-      )}
+      {(step.name === "find_materials" || step.name === "set_brief") &&
+        step.found?.some((f) => !f.candidates.length) && (
+          <small>
+            库里没有：
+            {step.found
+              .filter((f) => !f.candidates.length)
+              .map((f) => f.subject)
+              .join("、")}
+          </small>
+        )}
       {[
         ...(step.name === "view_canvas" ? step.errors || [] : []),
         ...(step.error ? [step.error] : []),

@@ -4,6 +4,8 @@ services:
       context: .
       target: materials
     restart: unless-stopped
+    volumes:
+      - ./data/materials:/data
     healthcheck:
       test:
         [

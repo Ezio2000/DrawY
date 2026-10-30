@@ -45,7 +45,7 @@ export function OrbitSketch() {
           />
         ))}
         <image
-          href="/materials/paintings/sun.webp"
+          href="/materials/files/sun"
           x="-88"
           y="-88"
           width="176"
@@ -55,7 +55,7 @@ export function OrbitSketch() {
           <image
             data-orbit
             key={b.a}
-            href={`/materials/paintings/${b.painting}.webp`}
+            href={`/materials/files/${b.painting}`}
             width={b.size * 2}
             height={b.size * 2}
           />

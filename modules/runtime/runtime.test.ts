@@ -1,11 +1,37 @@
 import { beforeAll, afterAll, beforeEach, afterEach, it, expect } from "vitest";
 import { chromium, type Browser, type Page } from "playwright";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { documentFor } from "./document.ts";
 import { fixture } from "./fixture.ts";
 import { capture } from "../observation/capture.ts";
 import { fit, zoom } from "../contracts/geometry.ts";
+import { useOf } from "../materials/index.ts";
+import type { Material } from "@drawy/materials/schema";
+
+/** Curated materials as the library serves them. */
+const seed = (name: string) =>
+  (
+    JSON.parse(
+      readFileSync(
+        new URL(`../../materials/seed/${name}.json`, import.meta.url),
+        "utf8",
+      ),
+    ) as Material[]
+  ).map(
+    (m) =>
+      ({
+        ...m,
+        status: "ready",
+        ...(m.kind === "picture"
+          ? { file: { ...m.file, url: `/materials/files/${m.id}` } }
+          : {}),
+      }) as Material,
+  );
+/** Requests for the developing picture, held back until the test lets them through. */
+const held: (() => void)[] = [];
+const develop = () => held.splice(0).forEach((send) => send());
 
 let browser: Browser, page: Page, server: Server, origin: string;
 let work = fixture();
@@ -16,6 +42,21 @@ beforeAll(async () => {
     if (url.pathname === "/runtime/runtime.js") {
       res.setHeader("content-type", "application/javascript");
       res.end(bundle);
+    } else if (url.pathname.startsWith("/materials/files/")) {
+      const id = url.pathname.split("/").at(-1)!;
+      const send = () => {
+        res.setHeader("content-type", "image/webp");
+        res.end(
+          readFileSync(
+            new URL(
+              `../../materials/seed/files/${id === "g-late" ? "apple" : id}.webp`,
+              import.meta.url,
+            ),
+          ),
+        );
+      };
+      if (id === "g-late") held.push(send);
+      else send();
     } else if (url.pathname === "/api/plantuml") {
       res.setHeader("content-type", "image/svg+xml");
       res.end(
@@ -244,4 +285,107 @@ it("swaps a later revision into the open canvas and reports the scene it shows",
   expect(result.drawn).not.toContain("heading");
   expect(result.zoomedOut).toBe(true);
   expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+});
+
+it("draws with materials: fitted pictures, library drawing code, effects, and pictures that develop later", async () => {
+  const pictures = seed("pictures");
+  const apple = useOf(pictures.find((m) => m.id === "apple")!)!;
+  const arrow = seed("drawings").find((m) => m.id === "arrow")!;
+  work.materials = {
+    apple,
+    "g-late": {
+      ...(apple as Extract<typeof apple, { kind: "picture" }>),
+      id: "g-late",
+      url: "/materials/files/g-late",
+      status: "developing",
+    },
+    arrow: useOf({
+      ...arrow,
+      source: readFileSync(
+        new URL("../../materials/seed/drawings/arrow.js", import.meta.url),
+        "utf8",
+      ),
+    } as Material)!,
+    "pencil-grain": useOf(
+      seed("effects").find((m) => m.id === "pencil-grain")!,
+    )!,
+  };
+  work.drawings.picture = {
+    id: "picture",
+    name: "图",
+    source: "return api.material(api.data.id)",
+  };
+  work.drawings.flow = {
+    id: "flow",
+    name: "流",
+    source: `const svg = await api.draw("arrow", { label: "光", flow: true });
+svg.querySelector("path").setAttribute("filter", api.effect("pencil-grain"));
+return svg;`,
+  };
+  const at = (id: string, x: number, drawingId: string) => ({
+    id,
+    label: id,
+    drawingId,
+    data: { id },
+    bounds: { x, y: 0, width: 300, height: 150 },
+    anchors: {},
+    group: null,
+    target: null,
+  });
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      at("apple", 0, "picture"),
+      at("g-late", 400, "picture"),
+      at("flow", 800, "flow"),
+    ],
+    links: [],
+    checks: [],
+    interactionId: null,
+  };
+  // A developing picture holds up the page's load event, but not the canvas.
+  await page.goto(origin + "/api/works/fixture/scenes/root?revision=1", {
+    waitUntil: "domcontentloaded",
+  });
+  await page.waitForFunction(() => window.drawyReady);
+  const result = await page.evaluate(() => {
+    const host = (id: string) =>
+      document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!;
+    const img = host("apple").querySelector("img")!;
+    const frame = host("apple")
+      .querySelector<HTMLElement>("[data-material]")!
+      .getBoundingClientRect();
+    const b = img.getBoundingClientRect();
+    return {
+      // The picture's visible content fills the box's height: its frame is a little larger.
+      contained: b.height >= frame.height && b.height < frame.height * 1.05,
+      late: host("g-late")
+        .querySelector("img")!
+        .hasAttribute("data-developing"),
+      arrow:
+        !!host("flow").querySelector("path.flow") &&
+        !!host("flow").querySelector("text"),
+      effect: !!host("flow").querySelector("filter#fx-pencil-grain"),
+      errors: window.drawyErrors,
+    };
+  });
+  expect(result).toEqual({
+    contained: true,
+    late: true,
+    arrow: true,
+    effect: true,
+    errors: [],
+  });
+  // The canvas was ready before the late picture; the capture waits for it.
+  const developed = page.evaluate(() => window.drawyView.renderer.developed());
+  develop();
+  await developed;
+  expect(
+    await page.evaluate(() =>
+      document
+        .querySelector('[data-module-id="g-late"]')!
+        .shadowRoot!.querySelector("img")!
+        .hasAttribute("data-developing"),
+    ),
+  ).toBe(false);
 });

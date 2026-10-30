@@ -48,12 +48,59 @@ export const interactionSchema = z.object({
   source: z.string().min(1),
 });
 export const detailSchema = z.object({ id: key, title: key, html: z.string() });
-export const resourceSchema = z.object({
-  id: key,
-  name: z.string(),
-  url: z.string().min(1),
-  assetId: z.string().nullable(),
+/** What the work is meant to be, settled before drawing. Each basis quotes the user's own
+ * words (a request, an answer or a standing preference) that decide that part. */
+export const briefSchema = z.object({
+  subject: z.string().min(1),
+  intent: z.string().min(1),
+  audience: z.string().min(1),
+  register: z.enum(["formal", "expressive"]),
+  style: key,
+  direction: z
+    .string()
+    .min(1)
+    .describe(
+      "How the work looks, never what it shows: palette, line, light, mood, level of detail",
+    ),
+  cast: z
+    .array(z.string().min(1))
+    .max(12)
+    .describe("Recognizable things that will appear, one per entry"),
+  basis: z.object({
+    subject: z.string().min(1),
+    intent: z.string().min(1),
+    register: z.string().min(1),
+  }),
 });
+/** A material as a work uses it: what the runtime needs, copied when the work took it, so
+ * the work keeps drawing the same way whatever happens to the library. */
+export type MaterialUse =
+  | {
+      id: string;
+      kind: "picture";
+      name: string;
+      role: string;
+      style: string | null;
+      url: string;
+      /** The visible content's size in pixels; anchors are relative to it. */
+      width: number;
+      height: number;
+      /** The visible content within the file's frame. */
+      content: { x: number; y: number; width: number; height: number };
+      anchors: Record<string, { x: number; y: number }>;
+      recolor: boolean;
+      /** A whole painted picture rather than a cut-out. */
+      opaque: boolean;
+      status: "developing" | "ready" | "failed";
+    }
+  | {
+      id: string;
+      kind: "drawing";
+      name: string;
+      source: string;
+      defaults: Record<string, unknown>;
+    }
+  | { id: string; kind: "effect"; name: string; defs: string };
 export type Point = z.infer<typeof pointSchema>;
 export type Bounds = z.infer<typeof boundsSchema>;
 export type Target = z.infer<typeof targetSchema>;
@@ -63,7 +110,7 @@ export type Link = z.infer<typeof linkSchema>;
 export type Scene = z.infer<typeof sceneSchema>;
 export type Interaction = z.infer<typeof interactionSchema>;
 export type Detail = z.infer<typeof detailSchema>;
-export type Resource = z.infer<typeof resourceSchema>;
+export type Brief = z.infer<typeof briefSchema>;
 export interface Work {
   id: string;
   title: string;
@@ -72,7 +119,8 @@ export interface Work {
   scenes: Record<string, Scene>;
   interactions: Record<string, Interaction>;
   details: Record<string, Detail>;
-  resources: Record<string, Resource>;
+  brief: Brief | null;
+  materials: Record<string, MaterialUse>;
   style: Record<string, string>;
   revision: number;
   updatedAt: number;
@@ -84,7 +132,8 @@ export const workEditSchema = z.object({
   drawings: z.array(drawingSchema).optional(),
   interactions: z.array(interactionSchema).optional(),
   details: z.array(detailSchema).optional(),
-  resources: z.array(resourceSchema).optional(),
+  /** Material ids to take into the work besides those its drawings name literally. */
+  materials: z.array(key).optional(),
   style: z.record(z.string(), z.string()).optional(),
   remove: z
     .object({
@@ -92,7 +141,7 @@ export const workEditSchema = z.object({
       scenes: z.array(key).optional(),
       interactions: z.array(key).optional(),
       details: z.array(key).optional(),
-      resources: z.array(key).optional(),
+      materials: z.array(key).optional(),
     })
     .optional(),
 });
@@ -102,14 +151,11 @@ export interface Selection {
   label: string;
   data: Record<string, unknown>;
 }
-export interface Asset {
+/** A screenshot of the canvas taken for the author. */
+export interface Capture {
   id: string;
   name: string;
-  mediaType: string;
-  size: number;
-  source: "upload" | "generated" | "observation";
   url: string;
-  generationId?: string;
 }
 export interface Role {
   channel: "api" | "oauth";
@@ -163,15 +209,34 @@ export const settingsSchema = z.object({
   preferences: z.string(),
 });
 export interface Observation {
+  /** When the canvas was looked at. */
+  at: number;
   revision: number;
   sceneIds: string[];
   overview: boolean;
-  screenshots: Asset[];
+  screenshots: Capture[];
   errors: string[];
 }
 export interface Picture {
   name: string;
   url: string;
+  /** The material it shows, if it is one. */
+  id?: string;
+  status?: "developing" | "ready" | "failed";
+}
+/** A material the author is weighing, as the journal shows it. */
+export interface Candidate {
+  id: string;
+  kind: "picture" | "drawing" | "effect" | "style";
+  name: string;
+  /** A picture to show: the picture itself, or a style's sample. */
+  url?: string;
+}
+export interface Question {
+  id: string;
+  text: string;
+  options: { label: string; detail?: string; pictures?: Picture[] }[];
+  multiple?: boolean;
 }
 /** A module as the author lays it out, while its write is still streaming. */
 export interface Sketch {
@@ -183,8 +248,21 @@ export interface Sketch {
 }
 export type ToolActivity =
   | { name: "read_work"; revision?: number }
-  | { name: "find_matirial"; query: string; materials?: Picture[] }
-  | { name: "generate_image"; prompt: string; images?: Picture[] }
+  | {
+      name: "set_brief";
+      subject: string;
+      register?: "formal" | "expressive";
+      style?: string;
+      /** Materials found for the cast, by subject. */
+      found?: { subject: string; candidates: Candidate[] }[];
+      revision?: number;
+    }
+  | {
+      name: "find_materials";
+      subjects: string[];
+      found?: { subject: string; candidates: Candidate[] }[];
+    }
+  | { name: "generate_images"; images: Picture[] }
   | {
       name: "write_work";
       /** IDs of the drawing definitions whose source has fully arrived. */
@@ -193,7 +271,8 @@ export type ToolActivity =
       writing?: string;
       scenes: { id: string; title: string; modules: Sketch[] }[];
       details: string[];
-      resources: Picture[];
+      /** Materials taken into the work by this write. */
+      materials: string[];
       removed: number;
       revision?: number;
     }
@@ -202,6 +281,8 @@ export type ToolActivity =
       sceneId?: string;
       focus: "overview" | "region" | "annotate" | "actions";
       region?: Bounds;
+      /** Pictures still developing that the look waits for. */
+      waiting?: number;
       screenshots?: Picture[];
       errors?: string[];
     };
@@ -210,7 +291,8 @@ export type Step =
       kind: "message";
       role: "user" | "assistant";
       text: string;
-      assets?: string[];
+      /** Pictures attached to the message, as material ids. */
+      materials?: string[];
     }
   | { kind: "thinking"; text: string }
   | ({
@@ -226,7 +308,7 @@ export interface Run {
   status:
     "running" | "waiting" | "viewing" | "completed" | "failed" | "cancelled";
   steps: Step[];
-  question?: { text: string; options: string[] };
+  questions?: Question[];
   observations: Observation[];
   error?: string;
   startedAt: number;

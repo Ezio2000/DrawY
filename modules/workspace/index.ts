@@ -2,11 +2,14 @@ import {
   DomainError,
   id,
   workEditSchema,
+  briefSchema,
+  type Brief,
   type Work,
   type WorkEdit,
   type Bounds,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
+import { take, used, styleOf } from "../materials/index.ts";
 export function createWork(store: UserStore, title: string) {
   return store.commit(
     {
@@ -27,7 +30,8 @@ export function createWork(store: UserStore, title: string) {
       },
       interactions: {},
       details: {},
-      resources: {},
+      brief: null,
+      materials: {},
       style: {
         ink: "#24312e",
         accent: "#d97757",
@@ -40,31 +44,64 @@ export function createWork(store: UserStore, title: string) {
     0,
   );
 }
-const sections = [
-  "drawings",
-  "scenes",
-  "interactions",
-  "details",
-  "resources",
-] as const;
-export function writeWork(store: UserStore, workId: string, input: WorkEdit) {
+const sections = ["drawings", "scenes", "interactions", "details"] as const;
+/** Applies an edit atomically: records are upserted or removed, the materials the work
+ * now names are taken from the library, and the result must be a valid work. */
+export async function writeWork(
+  store: UserStore,
+  workId: string,
+  input: WorkEdit,
+) {
   const edit = workEditSchema.parse(input),
     work = structuredClone(store.work(workId));
+  if (work.revision !== edit.baseRevision)
+    throw new DomainError("作品版本已更新，请重新读取", 409);
   for (const section of sections) {
     for (const item of edit[section] || [])
       Object.assign(work[section], { [item.id]: item });
     for (const key of edit.remove?.[section] || []) delete work[section][key];
   }
+  for (const key of edit.remove?.materials || []) delete work.materials[key];
   if (edit.title !== undefined) work.title = edit.title;
   if (edit.style) work.style = edit.style;
+  if (!work.brief && Object.values(work.scenes).some((s) => s.modules.length))
+    throw new DomainError("请先用 set_brief 确定创作简报，再绘制");
+  const added = await take(work, edit.materials || [], store.userId);
   validateWork(work);
-  for (const r of Object.values(work.resources))
-    if (r.assetId) {
-      const asset = store.asset(r.assetId);
-      if (r.url !== asset.url)
-        throw new DomainError("资源地址必须与所属文件一致");
-    }
-  return store.commit(work, edit.baseRevision);
+  const saved = store.commit(work, edit.baseRevision);
+  used(added, workId, store.userId);
+  return { work: saved, added };
+}
+const quoteable = (text: string) =>
+  text
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]/gu, "");
+/** Settles what the work is meant to be. Every basis must quote what the user said, so a
+ * brief cannot rest on guesses; choosing a style gives the work that style's tokens. */
+export async function setBrief(
+  store: UserStore,
+  workId: string,
+  input: Brief,
+  said: string[],
+) {
+  const brief = briefSchema.parse(input);
+  const corpus = quoteable(said.join("\n"));
+  for (const [part, quote] of Object.entries(brief.basis)) {
+    const pieces = quote
+      .split(/…|\.\.\.|\/|；|;/)
+      .map(quoteable)
+      .filter(Boolean);
+    if (!pieces.length || pieces.some((p) => !corpus.includes(p)))
+      throw new DomainError(
+        `brief.basis.${part}「${quote}」不是用户说过的话。依据必须逐字引用用户的请求、回答或长期偏好；用户没有说清时，先用 ask_user 询问`,
+      );
+  }
+  const style = await styleOf(brief.style);
+  const work = structuredClone(store.work(workId));
+  if (work.brief?.style !== brief.style) work.style = { ...style.tokens };
+  work.brief = brief;
+  return { work: store.commit(work, work.revision), style };
 }
 export function validateWork(work: Work) {
   const root = work.scenes[work.rootSceneId];
@@ -108,7 +145,7 @@ export function validateWork(work: Work) {
       if (!modules.has(c.moduleId)) throw new DomainError("检查目标不存在");
   }
 }
-export function moveModules(
+export async function moveModules(
   store: UserStore,
   workId: string,
   sceneId: string,
@@ -121,18 +158,20 @@ export function moveModules(
   for (const move of moves)
     if (!scene.modules.some((m) => m.id === move.id))
       throw new DomainError("模块不存在", 404);
-  return writeWork(store, workId, {
-    baseRevision,
-    scenes: [
-      {
-        ...scene,
-        modules: scene.modules.map((m) => ({
-          ...m,
-          bounds: moves.find((v) => v.id === m.id)?.bounds || m.bounds,
-        })),
-      },
-    ],
-  });
+  return (
+    await writeWork(store, workId, {
+      baseRevision,
+      scenes: [
+        {
+          ...scene,
+          modules: scene.modules.map((m) => ({
+            ...m,
+            bounds: moves.find((v) => v.id === m.id)?.bounds || m.bounds,
+          })),
+        },
+      ],
+    })
+  ).work;
 }
 export function restore(store: UserStore, workId: string, revision: number) {
   return store.commit(

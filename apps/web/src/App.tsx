@@ -16,6 +16,7 @@ import {
   Trash2,
   X,
   PanelRight,
+  ScrollText,
 } from "lucide-react";
 import { Lantern, PanelMark } from "@drawy/ui/brand";
 import { ModelSketch, KinshipSketch } from "@drawy/ui/sketches";
@@ -26,10 +27,12 @@ import { SettingsDialog, MaterialsDialog, HistoryDialog } from "./Dialogs.tsx";
 import type {
   Work,
   Run,
-  Asset,
   Selection,
   Target,
 } from "../../../modules/contracts/index.ts";
+import type { Material } from "@drawy/materials/schema";
+import { TraceView } from "./TraceView.tsx";
+type Attachment = { id: string; url: string; name: string };
 const examples = [
   "太阳系是如何运转的？",
   "大语言模型是怎么工作的？",
@@ -46,7 +49,8 @@ export function App() {
     [runs, R] = useState<Run[]>([]),
     [dialog, D] = useState(""),
     [prompt, Q] = useState(""),
-    [assets, A] = useState<Asset[]>([]),
+    [assets, A] = useState<Attachment[]>([]),
+    [tracing, T] = useState(location.pathname.startsWith("/traces")),
     [selected, S] = useState<Selection>(),
     [detailId, setDetail] = useState<string>(),
     [journal, J] = useState(false),
@@ -156,6 +160,7 @@ export function App() {
   }, [scenes]);
   useEffect(() => {
     const pop = () => {
+      T(location.pathname.startsWith("/traces"));
       const id = location.pathname.match(/^\/a\/([^/]+)/)?.[1];
       if (id) void attempt(() => load(id));
       else home(false);
@@ -177,8 +182,9 @@ export function App() {
     for (const file of Array.from(files)) {
       const data = new FormData();
       data.append("file", file);
-      const a = await api<Asset>("/assets", "POST", data);
-      A((old) => [...old, a]);
+      const m = await api<Material>("/materials", "POST", data);
+      if (m.kind === "picture")
+        A((old) => [...old, { id: m.id, url: m.file.url, name: m.name.zh }]);
     }
   }
   async function send(text = prompt, target = sceneId) {
@@ -200,12 +206,12 @@ export function App() {
         run?.status === "waiting"
           ? await api<Run>("/runs/" + run.id + "/answer", "POST", {
               answer: request,
-              assets: assets.map((a) => a.id),
+              materials: assets.map((a) => a.id),
             })
           : await api<Run>("/works/" + w.id + "/runs", "POST", {
               prompt: request,
               sceneId: target,
-              assets: assets.map((a) => a.id),
+              materials: assets.map((a) => a.id),
             });
       R((old) =>
         old.some((x) => x.id === r.id)
@@ -433,6 +439,18 @@ export function App() {
             <div className={cx("rail-foot")}>
               <button
                 className={cx("rail-button")}
+                aria-label="运行记录"
+                onClick={() => {
+                  history.pushState(null, "", "/traces");
+                  T(true);
+                  O(false);
+                }}
+              >
+                <ScrollText size={17} />
+                <span className={cx("rail-label")}>运行记录</span>
+              </button>
+              <button
+                className={cx("rail-button")}
                 aria-label="模型设置"
                 onClick={() => D("settings")}
               >
@@ -467,6 +485,13 @@ export function App() {
             </div>
           ) : !user ? (
             <Auth done={U} />
+          ) : tracing ? (
+            <TraceView
+              close={() => {
+                history.pushState(null, "", work ? "/a/" + work.id : "/");
+                T(false);
+              }}
+            />
           ) : !work ? (
             <div className={cx("home")}>
               <section className={cx("hero")}>
@@ -685,7 +710,9 @@ export function App() {
             close={() => D("")}
             pick={(m) => {
               Q(
-                `将${selected ? "选中的部分" : "当前场景"}使用的素材改为“${m.name}”，地址 ${m.url}${m.kind === "personal" ? `，assetId ${m.id}` : ""}`,
+                (q) =>
+                  (q ? q + "\n" : "") +
+                  `${selected ? "选中的部分" : "当前场景"}使用素材「${m.name.zh}」（${m.id}）`,
               );
             }}
           />

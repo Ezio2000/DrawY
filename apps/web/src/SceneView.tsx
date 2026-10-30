@@ -121,14 +121,23 @@ export function SceneView({
     .flatMap((s, i) =>
       s.kind !== "tool"
         ? []
-        : s.name === "generate_image"
-          ? (s.status === "running" ? [undefined] : s.images || []).map(
-              (p, j) => ({ key: `${i}:${j}`, picture: p, made: true }),
-            )
-          : s.name === "find_matirial"
-            ? (s.materials || [])
-                .slice(0, 5)
-                .map((p, j) => ({ key: `${i}:${j}`, picture: p, made: false }))
+        : s.name === "generate_images"
+          ? s.images.map((p, j) => ({
+              key: `${i}:${j}`,
+              picture: p.url && p.status !== "developing" ? p : undefined,
+              made: true,
+            }))
+          : s.name === "find_materials" || s.name === "set_brief"
+            ? (s.found || []).flatMap((f, j) =>
+                f.candidates
+                  .filter((c) => c.url)
+                  .slice(0, 1)
+                  .map((c) => ({
+                    key: `${i}:${j}`,
+                    picture: { name: c.name, url: c.url! },
+                    made: false,
+                  })),
+              )
             : [],
     )
     .slice(-7);

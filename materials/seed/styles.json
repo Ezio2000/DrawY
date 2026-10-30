@@ -1,0 +1,517 @@
+[
+  {
+    "id": "colored-pencil",
+    "kind": "style",
+    "name": {
+      "zh": "彩铅写实",
+      "en": "Coloured pencil"
+    },
+    "aliases": [
+      "彩铅",
+      "彩色铅笔",
+      "科普绘本",
+      "手绘写实",
+      "coloured pencil",
+      "colored pencil",
+      "picture book",
+      "hand drawn"
+    ],
+    "category": "style",
+    "about": "Coloured-pencil rendering on warm white paper: visible pencil grain, soft hatched shading, warm natural colours and a thin dark outline; isolated, gently idealised objects like a well-made science picture book. Suits explanations for a general audience and stories alike.",
+    "tags": [
+      "pencil",
+      "hand drawn",
+      "warm",
+      "picture book",
+      "science"
+    ],
+    "style": "colored-pencil",
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "register": "any",
+    "prompt": "Coloured-pencil drawing on white paper: every area built from visible pencil strokes and paper grain, soft hatched shading, warm natural colours, a thin dark grey outline; hand-drawn, not painted, not photorealistic. The subject isolated on a transparent background with no ground shadow, no text.",
+    "tokens": {
+      "ink": "#3b3632",
+      "muted": "#8a817a",
+      "accent": "#c8553d",
+      "accent2": "#4f7c8a",
+      "paper": "#fbf8f2",
+      "stroke": "1.6",
+      "font": "\"Songti SC\",\"Noto Serif CJK SC\",\"Source Han Serif SC\",serif"
+    },
+    "guide": "Draw hand-made parts as if with the same pencils: warm dark-grey strokes 1.4–2 units with round caps, slightly irregular paths rather than ruler-straight ones, colour fills at 70–85% opacity with the pencil-grain effect, shading by a darker tint along one side. Labels in the serif font at 15–17 units, ink colour, placed beside the thing with a thin muted leader line. Ground objects with a soft shadow rather than a baseline.",
+    "effects": [
+      "pencil-grain",
+      "rough-edge"
+    ],
+    "samples": [
+      "apple",
+      "microscope",
+      "butterfly",
+      "lighthouse"
+    ]
+  },
+  {
+    "id": "ink-figure",
+    "kind": "style",
+    "name": {
+      "zh": "墨线人物",
+      "en": "Ink portrait"
+    },
+    "aliases": [
+      "墨线",
+      "铅笔素描人物",
+      "人物肖像",
+      "白描",
+      "ink portrait",
+      "graphite portrait",
+      "line portrait",
+      "character sketch"
+    ],
+    "category": "style",
+    "about": "Graphite and ink line portraits, mostly greyscale with small vermilion accents on ribbons or collars; lively hair strokes, busts turned slightly sideways. The library's people; pairs naturally with coloured-pencil objects.",
+    "tags": [
+      "portrait",
+      "people",
+      "ink",
+      "graphite",
+      "vermilion"
+    ],
+    "style": "ink-figure",
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "register": "any",
+    "prompt": "Graphite and ink line drawing, mostly greyscale with small vermilion-red accents, delicate lively strokes and light grey shading, a bust portrait on a transparent background, no text.",
+    "tokens": {
+      "ink": "#2b2b2b",
+      "muted": "#8c8c8c",
+      "accent": "#d4502a",
+      "accent2": "#5d6b73",
+      "paper": "#faf8f4",
+      "stroke": "1.3",
+      "font": "\"Kaiti SC\",\"STKaiti\",\"AR PL UKai CN\",\"KaiTi\",serif"
+    },
+    "guide": "Relationships and annotations in fine ink: 1–1.4 unit greyscale lines, vermilion only for the one relationship or person that matters most. Names in the kaiti font at 16–18 units under each portrait; relation words small (13 units) on the line, never boxed.",
+    "effects": [
+      "rough-edge"
+    ],
+    "samples": [
+      "lady",
+      "savant",
+      "schoolgirl",
+      "elder"
+    ]
+  },
+  {
+    "id": "crayon",
+    "kind": "style",
+    "name": {
+      "zh": "蜡笔童趣",
+      "en": "Crayon"
+    },
+    "aliases": [
+      "蜡笔",
+      "儿童画",
+      "童趣",
+      "可爱",
+      "crayon",
+      "childlike",
+      "kids drawing",
+      "playful"
+    ],
+    "category": "style",
+    "about": "Bold black wax-crayon outlines and flat saturated crayon fills with visible texture; chunky, simple and childlike. For children and playful takes.",
+    "tags": [
+      "crayon",
+      "children",
+      "playful",
+      "bold",
+      "flat"
+    ],
+    "style": "crayon",
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "register": "expressive",
+    "prompt": "Children's wax-crayon drawing: bold black crayon outline, flat saturated crayon fill with visible waxy texture and gaps, simple chunky shapes; childlike, not polished. Transparent background, no text.",
+    "tokens": {
+      "ink": "#1d1d1d",
+      "muted": "#7a7a7a",
+      "accent": "#f08a24",
+      "accent2": "#2e86de",
+      "paper": "#fffdf7",
+      "stroke": "3",
+      "font": "\"Kaiti SC\",\"STKaiti\",\"AR PL UKai CN\",\"KaiTi\",serif"
+    },
+    "guide": "Thick black strokes (2.5–3.5 units) with the rough-edge effect, saturated flat fills with pencil-grain, rounded chunky shapes, big friendly labels (18–22 units). Wobble is welcome; precision is not the point.",
+    "effects": [
+      "rough-edge",
+      "pencil-grain"
+    ],
+    "samples": [
+      "apple-crayon",
+      "earth",
+      "sun",
+      "saturn"
+    ]
+  },
+  {
+    "id": "textbook",
+    "kind": "style",
+    "name": {
+      "zh": "教科书线描",
+      "en": "Textbook line art"
+    },
+    "aliases": [
+      "教科书",
+      "教材",
+      "课本插图",
+      "科学插图",
+      "严谨",
+      "线描",
+      "textbook",
+      "scientific illustration",
+      "school figure",
+      "line art"
+    ],
+    "category": "style",
+    "about": "Clean scientific line art: even dark linework, flat restrained colour fills, accurate proportions and simple flat shading, like a figure in a modern school textbook. Precise, quiet and trustworthy.",
+    "tags": [
+      "textbook",
+      "scientific",
+      "formal",
+      "line art",
+      "education"
+    ],
+    "style": "textbook",
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "register": "formal",
+    "prompt": "Flat textbook line illustration, like a figure in a modern school science book: crisp dark outlines of one even weight, flat solid colour fills in a muted palette, at most one flat shadow tone, no gradients, no texture, no photorealism; clean and diagrammatic. Isolated on a transparent background, no text or labels.",
+    "tokens": {
+      "ink": "#1f2a30",
+      "muted": "#6b7780",
+      "accent": "#2f7fb5",
+      "accent2": "#d0632f",
+      "paper": "#ffffff",
+      "stroke": "1.4",
+      "font": "\"PingFang SC\",\"Noto Sans CJK SC\",\"Source Han Sans SC\",\"Microsoft YaHei\",system-ui,sans-serif"
+    },
+    "guide": "Even 1.2–1.6 unit dark strokes, no texture, flat fills in pale tints of at most three hues that each encode a category; thin (0.8–1 unit) leader lines ending at a small dot on the part; labels in the sans font at 14–16 units, horizontal, outside the object where possible; arrows with filled heads sized to the line. Conventional notation wins over invention.",
+    "effects": [
+      "hatch"
+    ],
+    "samples": [
+      "apple-textbook"
+    ]
+  },
+  {
+    "id": "realistic",
+    "kind": "style",
+    "name": {
+      "zh": "写实精绘",
+      "en": "Realistic painting"
+    },
+    "aliases": [
+      "写实",
+      "精细",
+      "百科",
+      "博物",
+      "realistic",
+      "encyclopedia",
+      "museum plate",
+      "detailed"
+    ],
+    "category": "style",
+    "about": "Detailed realistic digital painting with true materials, lighting and proportions; reads like a museum or encyclopedia plate. For serious subjects where the real look matters.",
+    "tags": [
+      "realistic",
+      "encyclopedia",
+      "detailed",
+      "formal"
+    ],
+    "style": "realistic",
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "register": "formal",
+    "prompt": "Detailed realistic digital painting with accurate materials, natural lighting and true proportions, encyclopedia plate quality, isolated on a transparent background, no text.",
+    "tokens": {
+      "ink": "#262626",
+      "muted": "#7d7d7d",
+      "accent": "#b5562b",
+      "accent2": "#3e6e8e",
+      "paper": "#f7f5f0",
+      "stroke": "1.2",
+      "font": "\"Songti SC\",\"Noto Serif CJK SC\",\"Source Han Serif SC\",serif"
+    },
+    "guide": "Let the paintings carry the realism; everything drawn by hand stays quiet: fine 1–1.2 unit grey leader lines, small serif labels (14–15 units), a soft-shadow under each object, no decorative shapes.",
+    "effects": [
+      "soft-shadow"
+    ],
+    "samples": [
+      "apple-realistic"
+    ]
+  },
+  {
+    "id": "flat",
+    "kind": "style",
+    "name": {
+      "zh": "扁平信息图",
+      "en": "Flat infographic"
+    },
+    "aliases": [
+      "扁平",
+      "信息图",
+      "矢量",
+      "现代",
+      "商务",
+      "flat",
+      "infographic",
+      "vector",
+      "modern",
+      "business"
+    ],
+    "category": "style",
+    "about": "Flat vector infographic art: geometric shapes, solid fills without texture or gradients, a limited harmonious palette and crisp edges. For business, data and product explanations.",
+    "tags": [
+      "flat",
+      "infographic",
+      "vector",
+      "modern",
+      "formal"
+    ],
+    "style": "flat",
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "register": "formal",
+    "prompt": "Flat vector infographic illustration: simple geometric shapes, solid flat colour fills, no outlines or one uniform outline, no texture, no gradients, a limited harmonious palette. Isolated on a transparent background, no text.",
+    "tokens": {
+      "ink": "#22303c",
+      "muted": "#7b8a97",
+      "accent": "#ef6f3c",
+      "accent2": "#2a9d8f",
+      "paper": "#ffffff",
+      "stroke": "2",
+      "font": "\"PingFang SC\",\"Noto Sans CJK SC\",\"Source Han Sans SC\",\"Microsoft YaHei\",system-ui,sans-serif"
+    },
+    "guide": "Geometric shapes with solid fills and no outlines (or one uniform 2-unit outline), corners consistently rounded, one accent colour for emphasis; numbers and labels in the sans font with clear weight contrast (semibold names, regular values).",
+    "effects": [],
+    "samples": [
+      "apple-flat"
+    ]
+  },
+  {
+    "id": "watercolor",
+    "kind": "style",
+    "name": {
+      "zh": "水彩绘本",
+      "en": "Watercolour picture book"
+    },
+    "aliases": [
+      "水彩",
+      "绘本",
+      "童话",
+      "温暖",
+      "梦幻",
+      "watercolour",
+      "watercolor",
+      "storybook",
+      "dreamy",
+      "whimsical"
+    ],
+    "category": "style",
+    "about": "Loose watercolour picture-book art: soft translucent washes, gently bleeding edges, warm light and a few loose pencil lines; dreamy and inviting. For stories, journeys and imaginative explanations.",
+    "tags": [
+      "watercolour",
+      "picture book",
+      "dreamy",
+      "warm",
+      "expressive"
+    ],
+    "style": "watercolor",
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "register": "expressive",
+    "prompt": "Loose hand-painted watercolour on paper: wet-on-wet washes and blooms, colour bleeding softly past the edges, white paper showing through, a few loose pencil lines; painterly and airy, not photorealistic, not digital. Isolated on a transparent background, no text.",
+    "tokens": {
+      "ink": "#3d3a4b",
+      "muted": "#8f8aa0",
+      "accent": "#e07a5f",
+      "accent2": "#81b29a",
+      "paper": "#fdf9f2",
+      "stroke": "1.4",
+      "font": "\"Kaiti SC\",\"STKaiti\",\"AR PL UKai CN\",\"KaiTi\",serif"
+    },
+    "guide": "Paths and areas as translucent washes (fill-opacity 0.35–0.6) with the watercolor-edge effect, loose pencil lines in muted ink, warm light from one side; labels in kaiti at 16–18 units like handwritten captions; curved, meandering paths over straight arrows.",
+    "effects": [
+      "watercolor-edge",
+      "pencil-grain"
+    ],
+    "samples": [
+      "apple-watercolor"
+    ]
+  },
+  {
+    "id": "ink-wash",
+    "kind": "style",
+    "name": {
+      "zh": "水墨淡彩",
+      "en": "Ink wash"
+    },
+    "aliases": [
+      "水墨",
+      "国画",
+      "中国风",
+      "古风",
+      "写意",
+      "ink wash",
+      "chinese painting",
+      "sumi-e",
+      "shan shui"
+    ],
+    "category": "style",
+    "about": "Chinese ink-wash painting with pale colour: expressive brushwork, graded black ink, muted mineral greens and ochres, generous empty space. For poetry, history and Chinese culture.",
+    "tags": [
+      "ink wash",
+      "chinese",
+      "poetry",
+      "brush",
+      "expressive"
+    ],
+    "style": "ink-wash",
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "register": "expressive",
+    "prompt": "Traditional Chinese ink-wash painting (xieyi): bold expressive black ink brushstrokes with dry-brush texture, graded grey ink washes, only faint touches of pale mineral colour, generous empty paper; minimal and calligraphic, not realistic. Transparent background, no text, no seal.",
+    "tokens": {
+      "ink": "#2a2a28",
+      "muted": "#8b8a80",
+      "accent": "#b23a2a",
+      "accent2": "#6f8f72",
+      "paper": "#f6f1e6",
+      "stroke": "1.8",
+      "font": "\"Kaiti SC\",\"STKaiti\",\"AR PL UKai CN\",\"KaiTi\",serif"
+    },
+    "guide": "Leave most of the paper empty; brush-like strokes with varying width (draw tapered paths, not uniform lines) and the rough-edge effect; graded ink greys, one vermilion accent at most (a seal or a sun); text vertical in kaiti where it reads as an inscription.",
+    "effects": [
+      "rough-edge",
+      "watercolor-edge"
+    ],
+    "samples": [
+      "apple-ink-wash"
+    ]
+  },
+  {
+    "id": "line-icon",
+    "kind": "style",
+    "name": {
+      "zh": "线性图标",
+      "en": "Line icon"
+    },
+    "aliases": [
+      "线性图标",
+      "图标",
+      "技术架构",
+      "系统图",
+      "line icon",
+      "outline icon",
+      "architecture",
+      "system diagram"
+    ],
+    "category": "style",
+    "about": "Monoline glyphs on a 24-unit grid with round caps, drawn in the work's ink colour; symbols for systems, data and everyday things. For technical architecture and process diagrams.",
+    "tags": [
+      "icon",
+      "line",
+      "technical",
+      "architecture",
+      "formal"
+    ],
+    "style": "line-icon",
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "register": "formal",
+    "prompt": "Minimal monoline icon, uniform round-capped strokes, no fill, transparent background, no text.",
+    "tokens": {
+      "ink": "#2b2f33",
+      "muted": "#7a8086",
+      "accent": "#d97757",
+      "accent2": "#4a7fa8",
+      "paper": "#ffffff",
+      "stroke": "1.5",
+      "font": "\"PingFang SC\",\"Noto Sans CJK SC\",\"Source Han Sans SC\",\"Microsoft YaHei\",system-ui,sans-serif"
+    },
+    "guide": "Icons inked in the ink token at 40–64 units, lines and arrows at the same visual weight as the icon strokes (1.5 units), one accent colour for the path that matters; components named by short sans labels under the icon; group with spacing, not boxes.",
+    "effects": [],
+    "samples": [
+      "line-microscope",
+      "line-server",
+      "line-leaf",
+      "line-rocket"
+    ]
+  },
+  {
+    "id": "duotone-icon",
+    "kind": "style",
+    "name": {
+      "zh": "双色图标",
+      "en": "Duotone icon"
+    },
+    "aliases": [
+      "双色图标",
+      "彩色图标",
+      "duotone icon",
+      "colour icon",
+      "friendly icon"
+    ],
+    "category": "style",
+    "about": "Rounded glyphs with a dark grey outline and terracotta, blue-grey and cream fills; friendly symbols for systems and concepts.",
+    "tags": [
+      "icon",
+      "duotone",
+      "friendly",
+      "concept"
+    ],
+    "style": "duotone-icon",
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "register": "any",
+    "prompt": "Simple rounded duotone icon: dark grey outline, flat terracotta and soft blue-grey fills, cream highlights, transparent background, no text.",
+    "tokens": {
+      "ink": "#555555",
+      "muted": "#8eaebd",
+      "accent": "#d97757",
+      "accent2": "#8eaebd",
+      "paper": "#faf9f5",
+      "stroke": "1.4",
+      "font": "\"PingFang SC\",\"Noto Sans CJK SC\",\"Source Han Sans SC\",\"Microsoft YaHei\",system-ui,sans-serif"
+    },
+    "guide": "Grey 1.4-unit outlines with terracotta and blue-grey fills used meaningfully (terracotta for the active or main element); rounded joins everywhere; short sans labels.",
+    "effects": [],
+    "samples": [
+      "icon-server",
+      "icon-database",
+      "icon-cloud",
+      "icon-user"
+    ]
+  }
+]
