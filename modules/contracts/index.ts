@@ -105,7 +105,7 @@ export interface Asset {
   name: string;
   mediaType: string;
   size: number;
-  source: "upload" | "generated" | "review";
+  source: "upload" | "generated" | "observation";
   url: string;
   generationId?: string;
 }
@@ -120,7 +120,6 @@ export interface Role {
 }
 export interface Settings {
   author: Role;
-  reviewer: Role;
   image: {
     channel: "api" | "oauth";
     baseUrl: string;
@@ -132,14 +131,6 @@ export interface Settings {
 }
 export const defaultSettings = (): Settings => ({
   author: {
-    channel: "api",
-    baseUrl: "https://api.openai.com/v1",
-    credential: "",
-    model: "gpt-6-astra",
-    effort: "medium",
-    fast: false,
-  },
-  reviewer: {
     channel: "api",
     baseUrl: "https://api.openai.com/v1",
     credential: "",
@@ -166,22 +157,15 @@ export const roleSchema = z.object({
 });
 export const settingsSchema = z.object({
   author: roleSchema,
-  reviewer: roleSchema,
   image: roleSchema.omit({ effort: true, fast: true }),
   preferences: z.string(),
 });
-export interface Issue {
-  sceneId: string;
-  area: string;
-  severity: "blocking" | "minor";
-  detail: string;
-}
-export interface ReviewResult {
+export interface Observation {
   revision: number;
-  status: "passed" | "issues" | "failed";
-  issues: Issue[];
+  sceneIds: string[];
+  overview: boolean;
   screenshots: Asset[];
-  error?: string;
+  errors: string[];
 }
 export interface Message {
   role: "user" | "assistant";
@@ -193,10 +177,10 @@ export interface Run {
   workId: string;
   sceneId: string;
   status:
-    "running" | "waiting" | "reviewing" | "completed" | "failed" | "cancelled";
+    "running" | "waiting" | "viewing" | "completed" | "failed" | "cancelled";
   messages: Message[];
   question?: { text: string; options: string[] };
-  review?: ReviewResult;
+  observations: Observation[];
   error?: string;
   startedAt: number;
   elapsedMs?: number;

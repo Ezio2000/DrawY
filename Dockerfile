@@ -16,12 +16,12 @@ ENV DRAWY_DATA=/data PORT=8080
 EXPOSE 8080
 CMD ["pnpm","start"]
 
-FROM dependencies AS review
+FROM dependencies AS capture
 RUN pnpm exec playwright install --with-deps chromium
-COPY apps/review apps/review
-COPY modules/review/capture.ts modules/review/capture.ts
+COPY apps/capture apps/capture
+COPY modules/observation/capture.ts modules/observation/capture.ts
 EXPOSE 8091
-CMD ["pnpm","exec","tsx","apps/review/main.ts"]
+CMD ["pnpm","exec","tsx","apps/capture/main.ts"]
 
 FROM dependencies AS materials
 COPY materials materials

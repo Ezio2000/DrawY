@@ -3,17 +3,13 @@ import type { UserStore } from "../storage/index.ts";
 import { writeWork } from "../workspace/index.ts";
 import { findMaterials } from "../materials/index.ts";
 import { generateImage } from "../images/index.ts";
-import { review } from "../review/index.ts";
+import { observe, requireObserved } from "../observation/index.ts";
 import { AUTHOR } from "./prompts.ts";
 import { generate, textOf, type Item } from "../models/index.ts";
 import { tools } from "./tools.ts";
 interface Context {
   input: Item[];
-  changed: string[];
-  repairs: number;
   generations: number;
-  request: string;
-  refs: string[];
 }
 export class Agent {
   active = new Map<string, AbortController>();
@@ -33,7 +29,7 @@ export class Agent {
     if (
       store
         .runs(workId)
-        .some((r) => ["running", "reviewing", "waiting"].includes(r.status))
+        .some((r) => ["running", "viewing", "waiting"].includes(r.status))
     )
       throw new DomainError("请先完成或取消当前任务", 409);
     for (const a of assets) store.asset(a);
@@ -44,6 +40,7 @@ export class Agent {
       sceneId,
       status: "running",
       messages: [{ role: "user", text: prompt, assets }],
+      observations: [],
       startedAt: Date.now(),
     };
     const history = store
@@ -66,11 +63,7 @@ export class Agent {
     }
     const ctx: Context = {
       input: [...history, { role: "user", content }],
-      changed: [],
-      repairs: 0,
       generations: 0,
-      request: prompt,
-      refs: assets,
     };
     this.emit(store, run);
     void this.execute(store, run, ctx);
@@ -83,7 +76,6 @@ export class Agent {
     run.messages.push({ role: "user", text: answer });
     run.question = undefined;
     run.status = "running";
-    ctx.request += "\n" + answer;
     ctx.input.push({ role: "user", content: answer });
     this.emit(store, run);
     void this.execute(store, run, ctx);
@@ -139,6 +131,7 @@ export class Agent {
         for (const call of calls) {
           abort.signal.throwIfAborted();
           let output: unknown;
+          let images: Item[] = [];
           try {
             const args = JSON.parse(call.arguments);
             switch (call.name) {
@@ -159,10 +152,6 @@ export class Agent {
               }
               case "write_work": {
                 const work = writeWork(store, run.workId, args);
-                ctx.changed = [
-                  ...new Set([...ctx.changed, ...Object.keys(work.scenes)]),
-                ];
-                run.review = undefined;
                 run.firstSceneMs ??= Date.now() - start;
                 this.publish(store.userId, { type: "work", work });
                 output = { revision: work.revision };
@@ -182,43 +171,39 @@ export class Agent {
                 this.emit(store, run);
                 return;
               }
+              case "view_canvas": {
+                if (calls.length !== 1)
+                  throw Error("view_canvas must be the only tool call");
+                run.status = "viewing";
+                this.emit(store, run);
+                try {
+                  const result = await observe(
+                    store,
+                    run.workId,
+                    args,
+                    abort.signal,
+                  );
+                  run.observations.push(result.observation);
+                  output = result.observation;
+                  images = result.content;
+                } finally {
+                  run.status = "running";
+                }
+                break;
+              }
               case "finish": {
                 if (calls.length !== 1)
                   throw Error("finish must be the only tool call");
-                run.status = "reviewing";
-                this.emit(store, run);
-                run.review = await review(
-                  store,
-                  run.workId,
-                  ctx.changed.length ? ctx.changed : [run.sceneId],
-                  ctx.request,
-                  ctx.refs,
-                  abort.signal,
-                );
-                this.emit(store, run);
-                if (run.review.status === "passed") {
-                  run.status = "completed";
-                  run.messages.push({ role: "assistant", text: args.message });
-                  return;
-                }
-                if (run.review.status === "failed" || ctx.repairs++ >= 2) {
-                  run.status = "failed";
-                  run.error = run.review.error || "视觉检查仍有未解决的问题";
-                  run.messages.push({
-                    role: "assistant",
-                    text:
-                      run.error +
-                      "\n" +
-                      run.review.issues
-                        .filter((i) => i.severity === "blocking")
-                        .map((i) => i.detail)
-                        .join("\n"),
-                  });
-                  return;
-                }
-                run.status = "running";
-                output = run.review;
-                break;
+                requireObserved(store.work(run.workId), run.observations);
+                run.status = "completed";
+                run.messages.push({ role: "assistant", text: args.message });
+                ctx.input.push({
+                  type: "function_call_output",
+                  call_id: call.call_id,
+                  output: "Completed",
+                });
+                store.context(run.id, ctx);
+                return;
               }
               default:
                 throw Error("Unknown tool " + call.name);
@@ -232,6 +217,7 @@ export class Agent {
             call_id: call.call_id,
             output: JSON.stringify(output),
           });
+          if (images.length) ctx.input.push({ role: "user", content: images });
           store.context(run.id, ctx);
           this.emit(store, run);
         }

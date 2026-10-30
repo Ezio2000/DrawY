@@ -35,15 +35,9 @@ export function SettingsDialog({ close }: { close: () => void }) {
     >
       <div className={cx("drawy-settings")}>
         {value &&
-          (["author", "reviewer", "image"] as const).map((key) => (
+          (["author", "image"] as const).map((key) => (
             <fieldset key={key}>
-              <legend>
-                {
-                  { author: "绘制", reviewer: "视觉检查", image: "图片生成" }[
-                    key
-                  ]
-                }
-              </legend>
+              <legend>{{ author: "绘制", image: "图片生成" }[key]}</legend>
               <label>
                 接入方式
                 <select
@@ -98,7 +92,11 @@ export function SettingsDialog({ close }: { close: () => void }) {
                     onChange={(e) =>
                       set({
                         ...value,
-                        [key]: { ...value[key], effort: e.target.value },
+                        [key]: {
+                          ...value[key],
+                          effort: e.target
+                            .value as Settings["author"]["effort"],
+                        },
                       })
                     }
                   >

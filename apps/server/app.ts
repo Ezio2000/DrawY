@@ -102,7 +102,7 @@ export function createApp(storage: Storage) {
   app.delete("/api/works/:id", (c) => {
     const store = c.get("store");
     for (const r of store.runs(c.req.param("id")))
-      if (["running", "reviewing", "waiting"].includes(r.status))
+      if (["running", "viewing", "waiting"].includes(r.status))
         throw new DomainError("请先取消当前任务", 409);
     store.delete(c.req.param("id"));
     return c.json({ ok: true });
@@ -116,7 +116,7 @@ export function createApp(storage: Storage) {
     if (
       store
         .runs(workId)
-        .some((r) => ["running", "reviewing", "waiting"].includes(r.status))
+        .some((r) => ["running", "viewing", "waiting"].includes(r.status))
     )
       throw new DomainError("请先完成或取消当前任务", 409);
     const { revision } = z
@@ -142,7 +142,7 @@ export function createApp(storage: Storage) {
     if (
       store
         .runs(workId)
-        .some((r) => ["running", "reviewing", "waiting"].includes(r.status))
+        .some((r) => ["running", "viewing", "waiting"].includes(r.status))
     )
       throw new DomainError("请先完成当前任务", 409);
     const args = z

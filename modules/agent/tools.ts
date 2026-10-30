@@ -1,3 +1,4 @@
+import { viewSchema } from "../observation/index.ts";
 import { z } from "zod";
 import { workEditSchema } from "../contracts/index.ts";
 const string = { type: "string" };
@@ -15,6 +16,11 @@ const fn = (name: string, description: string, parameters: object) => ({
   strict: false,
 });
 export const tools = [
+  fn(
+    "view_canvas",
+    "See current saved scenes as images in this conversation. Includes overview, declared interaction checks and geometry. Optionally focus a world-coordinate region, annotate object IDs/bounds, or perform a sequence of CSS-selector clicks in one scene. Call alone.",
+    z.toJSONSchema(viewSchema),
+  ),
   fn(
     "read_work",
     "Read the current work, scene compositions and drawing sources and revision.",
@@ -54,7 +60,7 @@ export const tools = [
   ),
   fn(
     "finish",
-    "Finish saving and request actual visual review. Do not claim success until this returns passed.",
+    "Finish after visually inspecting the latest saved revision of every populated scene and fixing concrete defects. Call alone; a write invalidates earlier observations.",
     obj({ message: string }, ["message"]),
   ),
 ];

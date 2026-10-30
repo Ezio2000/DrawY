@@ -58,7 +58,7 @@ export function App() {
   const current = useRef(work);
   current.current = work;
   const run = runs.at(-1),
-    working = run && ["running", "reviewing"].includes(run.status);
+    working = run && ["running", "viewing"].includes(run.status);
   const active = work?.scenes[sceneId];
   useEffect(() => {
     if (work && !work.scenes[sceneId]) {
@@ -538,7 +538,7 @@ export function App() {
                       sceneId={sceneId}
                       disabled={
                         !!run &&
-                        ["running", "reviewing", "waiting"].includes(run.status)
+                        ["running", "viewing", "waiting"].includes(run.status)
                       }
                       open={(target: Target) =>
                         target.kind === "scene"
@@ -613,34 +613,19 @@ export function App() {
                             ))}
                           </div>
                         )}
-                        {run?.review &&
-                          run.review.revision === work.revision && (
-                            <div className={cx("drawy-review")}>
-                              <b>
-                                {run.review.status === "passed"
-                                  ? "视觉检查通过"
-                                  : run.review.status === "issues"
-                                    ? "正在修正画面"
-                                    : "视觉检查失败"}
-                              </b>
-                              {run.review.issues.map((i, n) => (
-                                <p key={n}>
-                                  {i.severity === "minor" ? "建议：" : ""}
-                                  {i.detail}
-                                </p>
-                              ))}
-                              {run.review.error && <p>{run.review.error}</p>}
-                            </div>
-                          )}
-                        {run?.error && (
-                          <p className={cx("error")}>{run.error}</p>
-                        )}
+                        {run?.observations.filter(
+                          (o) => o.revision === work.revision && o.overview,
+                        ).length ? (
+                          <p className={cx("drawy-observation")}>
+                            已查看当前画布 · 版本 {work.revision}
+                          </p>
+                        ) : null}
                         {working && (
                           <p className={cx("drawy-progress")}>
                             <Spinner size={14} />
                             {progress ||
-                              (run.status === "reviewing"
-                                ? "正在检查实际画面…"
+                              (run.status === "viewing"
+                                ? "正在查看画布…"
                                 : "正在绘制…")}
                           </p>
                         )}

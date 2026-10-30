@@ -18,10 +18,10 @@ services:
   plantuml:
     image: plantuml/plantuml-server:jetty
     restart: unless-stopped
-  review:
+  capture:
     build:
       context: .
-      target: review
+      target: capture
     restart: unless-stopped
     shm_size: 1gb
     healthcheck:
@@ -45,9 +45,9 @@ services:
       NODE_USE_ENV_PROXY: "1"
       HTTP_PROXY: ${DRAWY_OUTBOUND_PROXY:-}
       HTTPS_PROXY: ${DRAWY_OUTBOUND_PROXY:-}
-      NO_PROXY: localhost,127.0.0.1,drawy-app,materials,review,plantuml
+      NO_PROXY: localhost,127.0.0.1,drawy-app,materials,capture,plantuml
       DRAWY_MATERIALS_URL: http://materials:8090
-      DRAWY_REVIEW_URL: http://review:8091
+      DRAWY_CAPTURE_URL: http://capture:8091
       DRAWY_PLANTUML_URL: http://plantuml:8080
       DRAWY_INTERNAL_URL: http://drawy-app:8080
     networks:
@@ -60,7 +60,7 @@ services:
     depends_on:
       materials:
         condition: service_healthy
-      review:
+      capture:
         condition: service_healthy
       plantuml:
         condition: service_started

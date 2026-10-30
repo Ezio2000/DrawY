@@ -10,7 +10,7 @@ AI 创作可以探索和修改的图。界面沿用 SeeY；画布负责平移、
 docker compose up -d --build
 ```
 
-访问 http://localhost:8088。注册账号后在设置中配置绘制、视觉检查和生图模型；支持 OpenAI API Key 与 ChatGPT OAuth。绘制和检查各有独立的 Fast 与思考强度设置，生图模型单独选择。数据位于 `./data`；`DRAWY_PORT` 设置端口；可在本地 `.env` 中设置 `DRAWY_OUTBOUND_PROXY` 和 `DRAWY_NODE_OPTIONS`。
+访问 http://localhost:8088。注册账号后在设置中配置创作和生图模型；支持 OpenAI API Key 与 ChatGPT OAuth。创作模型有 Fast 与思考强度设置，生图模型单独选择。数据位于 `./data`；`DRAWY_PORT` 设置端口；可在本地 `.env` 中设置 `DRAWY_OUTBOUND_PROXY` 和 `DRAWY_NODE_OPTIONS`。
 
 ```sh
 pnpm install
@@ -18,8 +18,10 @@ pnpm typecheck
 pnpm test
 ```
 
-`contracts` 定义作品协议；`workspace` 管理原子修改与版本；`runtime` 执行画法和场景交互；`canvas` 管理视角与编辑手势；`agent` 编排创作工具；`review` 用相同运行时获取整图、局部和交互截图，再交给视觉模型；`models/images/materials` 分别负责模型、生图与素材；`identity/storage` 按用户隔离账号、作品、版本、任务、素材和设置。
+`contracts` 定义作品协议；`workspace` 管理原子修改与版本；`runtime` 执行画法和场景交互；`canvas` 管理视角与编辑手势；`agent` 编排创作工具；`observation` 调用截图服务，将整图、局部、坐标标注和交互状态作为图片送回作者的同一段对话；`models/images/materials` 分别负责模型、生图与素材；`identity/storage` 按用户隔离账号、作品、版本、任务、素材和设置。
 
-提示词参考 [GPT-6 Astra 官方指南](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra)和 [Opus 5.5 官方指南](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)，保留明确的作品协议、简短工具约定和实际视觉验收。
+提示词参考 [GPT-6 Astra 官方指南](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra)和 [Opus 5.5 官方指南](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)，保留明确的作品协议、简短工具约定和实际看图修改。
 
 主程序沿用 SeeY 的 MIT 授权；`materials` 和 `modules/ui/brand` 为原 SeeY Art 私有素材，保留独立授权。
+
+作者通过 `write_work → view_canvas → write_work` 逐步绘制与查看。`view_canvas` 可指定场景、画布坐标区域、对象标注和连续点击操作；完成前必须看过最新版本的所有非空场景，且截图没有运行错误。`capture` 服务只负责浏览器截图，作品没有独立检查模型或评分关卡。

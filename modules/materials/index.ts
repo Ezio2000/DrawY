@@ -27,7 +27,7 @@ async function searchMaterials(store: UserStore, query: string) {
   const all: Material[] = [
     ...store
       .assets()
-      .filter((a) => a.source !== "review")
+      .filter((a) => a.source !== "observation")
       .map((a) => ({ ...a, kind: "personal", about: a.name })),
     ...c.shelves
       .flatMap((s) => s.pieces)

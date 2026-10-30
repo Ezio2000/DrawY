@@ -34,6 +34,7 @@ describe("user owned works", () => {
       status: "waiting",
       startedAt: 1,
       messages: [],
+      observations: [],
     });
     const settings = a.settings();
     settings.preferences = "blue";
@@ -186,6 +187,7 @@ describe("user owned works", () => {
       status: "waiting",
       startedAt: 0,
       messages: [],
+      observations: [],
       question: { text: "which?", options: ["a", "b"] },
     });
     s.context("waiting", { input: [{ role: "user", content: "a" }] });

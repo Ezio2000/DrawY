@@ -3046,12 +3046,12 @@ button.share-button:hover:not(:disabled) {
 .drawy-question strong {
   width: 100%;
 }
-.drawy-review {
+.drawy-observation {
   border-top: 1px solid var(--line);
   padding-top: 12px;
   color: var(--text-2);
 }
-.drawy-review p {
+.drawy-observation p {
   font-size: 12px;
   margin: 5px 0;
 }

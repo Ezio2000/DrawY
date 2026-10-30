@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { documentFor } from "./document.ts";
 import { fixture } from "./fixture.ts";
-import { capture } from "../review/capture.ts";
+import { capture } from "../observation/capture.ts";
 import { fit, zoom } from "../contracts/geometry.ts";
 
 let browser: Browser, page: Page, server: Server, origin: string;
@@ -183,15 +183,23 @@ it("captures full scenes and completed interaction states through the same runti
   const shots = await capture(browser, {
     origin,
     cookie: "fixture",
+    annotate: true,
     scenes: [
       {
         id: "root",
         url: origin + "/api/works/fixture/scenes/root?revision=1",
         checks: work.scenes.root.checks,
+        region: work.scenes.root.modules[4].bounds,
+        actions: [
+          { moduleId: "control", selector: '[data-action="emphasize"]' },
+        ],
       },
     ],
   });
-  expect(shots).toHaveLength(3);
+  expect(shots).toHaveLength(5);
+  expect(shots[0].modules.map((m) => m.id)).toContain("level-4");
+  expect(shots[3].camera.scale).toBeGreaterThan(shots[0].camera.scale);
+  expect(shots[4].label).toContain("操作");
   expect(shots.every((s) => s.label.startsWith("1440px"))).toBe(true);
   expect(shots.every((s) => s.errors.length === 0)).toBe(true);
   expect(shots.filter((s) => s.sceneId === "child")).toHaveLength(1);
