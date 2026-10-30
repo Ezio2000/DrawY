@@ -167,18 +167,51 @@ export interface Observation {
   screenshots: Asset[];
   errors: string[];
 }
-export interface Message {
-  role: "user" | "assistant";
-  text: string;
-  assets?: string[];
+export interface Picture {
+  name: string;
+  url: string;
 }
+export type ToolActivity =
+  | { name: "read_work"; revision?: number }
+  | { name: "find_matirial"; query: string; materials?: Picture[] }
+  | { name: "generate_image"; prompt: string; images?: Picture[] }
+  | {
+      name: "write_work";
+      drawings: string[];
+      scenes: { title: string; modules: number }[];
+      details: string[];
+      resources: Picture[];
+      removed: number;
+      revision?: number;
+    }
+  | {
+      name: "view_canvas";
+      sceneId?: string;
+      focus: "overview" | "region" | "annotate" | "actions";
+      screenshots?: Picture[];
+      errors?: string[];
+    };
+export type Step =
+  | {
+      kind: "message";
+      role: "user" | "assistant";
+      text: string;
+      assets?: string[];
+    }
+  | { kind: "thinking"; text: string }
+  | ({
+      kind: "tool";
+      id: string;
+      status: "running" | "done" | "failed";
+      error?: string;
+    } & ToolActivity);
 export interface Run {
   id: string;
   workId: string;
   sceneId: string;
   status:
     "running" | "waiting" | "viewing" | "completed" | "failed" | "cancelled";
-  messages: Message[];
+  steps: Step[];
   question?: { text: string; options: string[] };
   observations: Observation[];
   error?: string;

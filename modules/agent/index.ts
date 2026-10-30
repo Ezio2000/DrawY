@@ -1,4 +1,11 @@
-import { id, DomainError, type Run, type Message } from "../contracts/index.ts";
+import {
+  id,
+  DomainError,
+  type Run,
+  type Step,
+  type ToolActivity,
+  type Asset,
+} from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { writeWork } from "../workspace/index.ts";
 import { findMaterials } from "../materials/index.ts";
@@ -7,6 +14,48 @@ import { observe, requireObserved } from "../observation/index.ts";
 import { AUTHOR } from "./prompts.ts";
 import { generate, textOf, type Item } from "../models/index.ts";
 import { tools } from "./tools.ts";
+type ToolStep = Extract<Step, { kind: "tool" }>;
+const pictures = (assets: Asset[]) =>
+  assets.map(({ name, url }) => ({ name, url }));
+function activity(name: string, args: any): ToolActivity {
+  switch (name) {
+    case "read_work":
+      return { name };
+    case "find_matirial":
+      return { name, query: args.query ?? "" };
+    case "generate_image":
+      return { name, prompt: args.prompt ?? "" };
+    case "write_work":
+      return {
+        name,
+        drawings: (args.drawings || []).map((d: any) => d.name),
+        scenes: (args.scenes || []).map((s: any) => ({
+          title: s.title,
+          modules: s.modules?.length || 0,
+        })),
+        details: (args.details || []).map((d: any) => d.title),
+        resources: (args.resources || []).map((r: any) => ({
+          name: r.name,
+          url: r.url,
+        })),
+        removed: Object.values(args.remove || {}).flat().length,
+      };
+    case "view_canvas":
+      return {
+        name,
+        sceneId: args.sceneId,
+        focus: args.actions?.length
+          ? "actions"
+          : args.region
+            ? "region"
+            : args.annotate
+              ? "annotate"
+              : "overview",
+      };
+    default:
+      throw Error("Unknown tool " + name);
+  }
+}
 interface Context {
   input: Item[];
   generations: number;
@@ -39,13 +88,14 @@ export class Agent {
       workId,
       sceneId,
       status: "running",
-      messages: [{ role: "user", text: prompt, assets }],
+      steps: [{ kind: "message", role: "user", text: prompt, assets }],
       observations: [],
       startedAt: Date.now(),
     };
     const history = store
       .runs(workId)
-      .flatMap((r) => r.messages)
+      .flatMap((r) => r.steps)
+      .filter((s) => s.kind === "message")
       .slice(-12)
       .map((m) => ({ role: m.role, content: m.text }));
     const content: Item[] = [
@@ -73,7 +123,7 @@ export class Agent {
     const run = store.run(runId);
     if (run.status !== "waiting") throw new DomainError("当前任务没有等待回答");
     const ctx = store.context(runId) as Context;
-    run.messages.push({ role: "user", text: answer });
+    run.steps.push({ kind: "message", role: "user", text: answer });
     run.question = undefined;
     run.status = "running";
     ctx.input.push({ role: "user", content: answer });
@@ -98,7 +148,15 @@ export class Agent {
     const start = Date.now();
     try {
       const settings = store.settings();
+      let flush: ReturnType<typeof setTimeout> | undefined;
+      const emitSoon = () => {
+        flush ??= setTimeout(() => {
+          flush = undefined;
+          this.emit(store, run);
+        }, 250);
+      };
       while (ctx.generations++ < 24) {
+        let thinking: Extract<Step, { kind: "thinking" }> | undefined;
         abort.signal.throwIfAborted();
         const result = await generate(
           settings.author,
@@ -106,17 +164,51 @@ export class Agent {
           ctx.input,
           tools,
           abort.signal,
-          () => {
-            if (run.firstOutputMs === undefined) {
+          (event) => {
+            if (
+              run.firstOutputMs === undefined &&
+              event.type.endsWith(".delta")
+            ) {
               run.firstOutputMs = Date.now() - start;
               this.emit(store, run);
+            }
+            switch (event.type) {
+              case "response.reasoning_summary_part.added":
+                thinking = { kind: "thinking", text: "" };
+                run.steps.push(thinking);
+                emitSoon();
+                break;
+              case "response.reasoning_summary_text.delta":
+                if (thinking) thinking.text += event.delta;
+                emitSoon();
+                break;
+              case "response.reasoning_summary_text.done":
+                if (thinking) thinking.text = event.text;
+                emitSoon();
+                break;
+              case "response.output_item.added": {
+                const { type, name, call_id } = event.item;
+                if (
+                  type === "function_call" &&
+                  name !== "ask_question" &&
+                  name !== "finish"
+                ) {
+                  run.steps.push({
+                    kind: "tool",
+                    id: call_id,
+                    status: "running",
+                    ...activity(name, {}),
+                  });
+                  this.emit(store, run);
+                }
+              }
             }
           },
         );
         ctx.input.push(...result.items);
         const text = textOf(result.items);
         if (text) {
-          run.messages.push({ role: "assistant", text });
+          run.steps.push({ kind: "message", role: "assistant", text });
           this.emit(store, run);
         }
         const calls = result.items.filter((i) => i.type === "function_call");
@@ -132,22 +224,43 @@ export class Agent {
           abort.signal.throwIfAborted();
           let output: unknown;
           let images: Item[] = [];
+          let step: ToolStep | undefined;
           try {
             const args = JSON.parse(call.arguments);
+            if (call.name !== "ask_question" && call.name !== "finish") {
+              step = run.steps.find(
+                (s): s is ToolStep =>
+                  s.kind === "tool" && s.id === call.call_id,
+              );
+              if (step) Object.assign(step, activity(call.name, args));
+              else {
+                step = {
+                  kind: "tool",
+                  id: call.call_id,
+                  status: "running",
+                  ...activity(call.name, args),
+                };
+                run.steps.push(step);
+              }
+              this.emit(store, run);
+            }
             switch (call.name) {
-              case "read_work":
-                output = store.work(run.workId);
+              case "read_work": {
+                const work = store.work(run.workId);
+                output = work;
+                Object.assign(step!, { revision: work.revision });
                 break;
-              case "find_matirial":
-                output = await findMaterials(store, args.query);
+              }
+              case "find_matirial": {
+                const materials = await findMaterials(store, args.query);
+                output = materials;
+                Object.assign(step!, { materials: materials.slice(0, 12) });
                 break;
+              }
               case "generate_image": {
-                this.publish(store.userId, {
-                  type: "progress",
-                  workId: run.workId,
-                  text: "正在绘制图片…",
-                });
-                output = await generateImage(store, args, abort.signal);
+                const assets = await generateImage(store, args, abort.signal);
+                output = assets;
+                Object.assign(step!, { images: pictures(assets) });
                 break;
               }
               case "write_work": {
@@ -155,6 +268,7 @@ export class Agent {
                 run.firstSceneMs ??= Date.now() - start;
                 this.publish(store.userId, { type: "work", work });
                 output = { revision: work.revision };
+                Object.assign(step!, { revision: work.revision });
                 break;
               }
               case "ask_question": {
@@ -186,6 +300,10 @@ export class Agent {
                   run.observations.push(result.observation);
                   output = result.observation;
                   images = result.content;
+                  Object.assign(step!, {
+                    screenshots: pictures(result.observation.screenshots),
+                    errors: result.observation.errors,
+                  });
                 } finally {
                   run.status = "running";
                 }
@@ -196,7 +314,11 @@ export class Agent {
                   throw Error("finish must be the only tool call");
                 requireObserved(store.work(run.workId), run.observations);
                 run.status = "completed";
-                run.messages.push({ role: "assistant", text: args.message });
+                run.steps.push({
+                  kind: "message",
+                  role: "assistant",
+                  text: args.message,
+                });
                 ctx.input.push({
                   type: "function_call_output",
                   call_id: call.call_id,
@@ -208,9 +330,12 @@ export class Agent {
               default:
                 throw Error("Unknown tool " + call.name);
             }
+            if (step) step.status = "done";
           } catch (e) {
             abort.signal.throwIfAborted();
-            output = { error: e instanceof Error ? e.message : String(e) };
+            const error = e instanceof Error ? e.message : String(e);
+            output = { error };
+            if (step) Object.assign(step, { status: "failed", error });
           }
           ctx.input.push({
             type: "function_call_output",

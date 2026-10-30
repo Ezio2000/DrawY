@@ -33,7 +33,7 @@ describe("user owned works", () => {
       sceneId: "root",
       status: "waiting",
       startedAt: 1,
-      messages: [],
+      steps: [],
       observations: [],
     });
     const settings = a.settings();
@@ -186,7 +186,7 @@ describe("user owned works", () => {
       sceneId: "root",
       status: "waiting",
       startedAt: 0,
-      messages: [],
+      steps: [],
       observations: [],
       question: { text: "which?", options: ["a", "b"] },
     });

@@ -18,7 +18,7 @@ pnpm typecheck
 pnpm test
 ```
 
-`contracts` 定义作品协议；`workspace` 管理原子修改与版本；`runtime` 执行画法和场景交互；`canvas` 管理视角与编辑手势；`agent` 编排创作工具；`observation` 调用截图服务，将整图、局部、坐标标注和交互状态作为图片送回作者的同一段对话；`models/images/materials` 分别负责模型、生图与素材；`identity/storage` 按用户隔离账号、作品、版本、任务、素材和设置。
+`contracts` 定义作品协议；`workspace` 管理原子修改与版本；`runtime` 执行画法和场景交互；`canvas` 管理视角与编辑手势；`agent` 编排创作工具，并把思考摘要和每次工具调用及其结果（素材候选、生成图片、保存内容、画布截图）记录为运行步骤，对话面板按步骤实时展示；`observation` 调用截图服务，将整图、局部、坐标标注和交互状态作为图片送回作者的同一段对话；`models/images/materials` 分别负责模型、生图与素材；`identity/storage` 按用户隔离账号、作品、版本、任务、素材和设置。
 
 提示词参考 [GPT-6 Astra 官方指南](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra)和 [Opus 5.5 官方指南](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)，保留明确的作品协议、简短工具约定和实际看图修改。
 

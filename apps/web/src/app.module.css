@@ -3010,56 +3010,320 @@ button.share-button:hover:not(:disabled) {
   width: min(620px, calc(100vw - 100px));
   min-height: 58px;
 }
-.drawy-conversation {
+/* An open conversation becomes one panel: the record above, the composer at its foot. It keeps
+   a steady height so streaming steps never make it jump, and the canvas fits beside it. */
+.exploration {
+  --drawy-panel: max(min(480px, 100% - 32px), min(640px, 46%, 100% - 32px));
+}
+.exploration:has(.drawy-ask[data-open]) .drawy-canvas {
+  right: calc(var(--drawy-panel) + 32px);
+}
+.ask.drawy-ask[data-open] {
+  pointer-events: auto;
+  gap: 0;
+  width: var(--drawy-panel);
+  min-width: 0;
+  height: min(880px, calc(100% - 88px));
+  border-radius: 22px;
   background: var(--surface);
-  box-shadow: var(--shadow-2);
-  border-radius: 18px;
-  margin-bottom: 12px;
-  padding: 16px 20px;
-  max-height: 48vh;
-  overflow: auto;
-  width: min(620px, calc(100vw - 100px));
-  font-size: 13px;
-  line-height: 1.7;
+  box-shadow:
+    0 0 0 0.5px var(--line-strong),
+    0 24px 60px -18px rgba(60, 45, 20, 0.28);
+  overflow: hidden;
+  transform-origin: 100% 100%;
+  animation: drawy-panel-in 0.42s var(--spring) backwards;
+}
+@keyframes drawy-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+}
+.ask.drawy-ask[data-open] .ask-bar {
+  width: 100%;
+  padding: 10px 10px 10px 16px;
+  border-radius: 0;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: none;
+  scale: 1;
+  animation: none;
+  cursor: auto;
+}
+.drawy-conversation {
+  flex: 1;
+  min-height: 0;
+  align-self: stretch;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 24px 20px;
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: var(--text);
 }
 .drawy-conversation > header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  margin: 0 -24px 6px;
+  padding: 14px 18px 12px 24px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(12px);
+}
+.drawy-conversation > header button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   color: var(--text-3);
-  font-size: 12px;
+  transition: background-color 0.2s var(--ease);
+}
+.drawy-conversation > header button:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+.drawy-conversation > :not(header) {
+  animation: drawy-step-in 0.32s var(--ease-out) backwards;
+}
+@keyframes drawy-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 .drawy-conversation > p {
   white-space: pre-wrap;
-  margin: 15px 0;
+  margin: 14px 0;
 }
 .drawy-conversation > p[data-role="user"] {
+  width: fit-content;
+  max-width: 86%;
+  margin-left: auto;
   background: var(--fill);
-  border-radius: 10px;
-  padding: 10px 13px;
-  margin-left: 30px;
+  border-radius: 16px 16px 4px 16px;
+  padding: 9px 14px;
 }
 .drawy-question {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin: 14px 0;
 }
 .drawy-question strong {
   width: 100%;
-}
-.drawy-observation {
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
-  color: var(--text-2);
-}
-.drawy-observation p {
-  font-size: 12px;
-  margin: 5px 0;
 }
 .drawy-progress {
   display: flex;
   gap: 8px;
   align-items: center;
+  margin: 12px 0;
   color: var(--ai-deep);
+}
+.drawy-thinking {
+  margin: 10px 0;
+  color: var(--text-2);
+}
+.drawy-thinking summary {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+  font-style: italic;
+}
+.drawy-thinking summary::-webkit-details-marker {
+  display: none;
+}
+.drawy-thinking summary svg {
+  flex: none;
+  color: var(--lamp);
+}
+.drawy-thinking p {
+  white-space: pre-wrap;
+  margin: 4px 0 0 21px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-3);
+}
+.drawy-step {
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  transition: background-color 0.3s var(--ease);
+  background: var(--bg-2);
+  display: grid;
+  gap: 7px;
+}
+.drawy-step > header {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  color: var(--text);
+}
+.drawy-step-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drawy-step > header > svg:first-child {
+  flex: none;
+  color: var(--ai-deep);
+}
+.drawy-step > header > svg:last-child {
+  flex: none;
+  color: var(--green);
+}
+.drawy-step[data-status="failed"] > header > svg:last-child {
+  color: var(--red);
+}
+.drawy-step small {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.drawy-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.drawy-step .drawy-step-error {
+  color: var(--red-text);
+}
+.drawy-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.drawy-chips span {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-2);
+}
+.drawy-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 6px;
+}
+.drawy-thumbs[data-kind="image"],
+.drawy-thumbs[data-kind="screenshot"] {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+.drawy-thumbs button {
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+  cursor: zoom-in;
+  aspect-ratio: 1;
+}
+.drawy-thumbs[data-kind="screenshot"] button {
+  aspect-ratio: 16 / 10;
+}
+.drawy-thumbs button[data-used] {
+  border: 2px solid var(--ai);
+}
+.drawy-thumbs img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.drawy-thumbs[data-kind="screenshot"] img {
+  object-fit: cover;
+  object-position: top;
+}
+.drawy-painting {
+  height: 120px;
+  border-radius: 8px;
+  background: linear-gradient(
+    100deg,
+    var(--fill) 30%,
+    var(--surface) 50%,
+    var(--fill) 70%
+  );
+  background-size: 300% 100%;
+  animation: drawy-painting 1.6s var(--ease-in-out) infinite;
+}
+@keyframes drawy-painting {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+.drawy-ending {
+  margin: 14px 0 22px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--green) 9%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 26%, transparent);
+}
+.drawy-ending > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--green);
+}
+.drawy-ending > header small {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.drawy-ending > p {
+  white-space: pre-wrap;
+  margin: 6px 0 0;
+  color: var(--text);
+}
+.drawy-ending[data-status="failed"] {
+  background: color-mix(in srgb, var(--red) 7%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red) 24%, transparent);
+}
+.drawy-ending[data-status="failed"] > header {
+  color: var(--red-text);
+}
+.drawy-ending[data-status="failed"] > p {
+  font-size: 13px;
+  color: var(--red-text);
+}
+.drawy-ending[data-status="cancelled"] {
+  background: var(--bg-2);
+  box-shadow: none;
+}
+.drawy-ending[data-status="cancelled"] > header {
+  color: var(--text-2);
+}
+.drawy-thinking[open] summary {
+  color: var(--text);
+}
+.drawy-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  background: rgb(20 20 19 / 0.6);
+  cursor: zoom-out;
+}
+.drawy-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
 }
 .drawy-error {
   position: fixed;

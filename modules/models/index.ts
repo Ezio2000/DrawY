@@ -22,7 +22,7 @@ export async function generate(
   input: Item[],
   tools: Item[],
   signal: AbortSignal,
-  onProgress: () => void = () => {},
+  onEvent: (event: Item) => void = () => {},
   budget = 32768,
 ) {
   if (!role.credential) throw Error("请先配置模型凭证");
@@ -36,7 +36,7 @@ export async function generate(
       tools,
       stream: true,
       store: false,
-      reasoning: { effort: role.effort },
+      reasoning: { effort: role.effort, summary: "auto" },
       service_tier: role.fast ? "priority" : "default",
       ...(role.channel === "api" ? { max_output_tokens: budget } : {}),
     }),
@@ -56,7 +56,7 @@ export async function generate(
       buffer = buffer.slice(i + 1);
       if (!line.startsWith("data:") || line === "data: [DONE]") continue;
       const e = JSON.parse(line.slice(5).trim());
-      if (e.type.endsWith(".delta")) onProgress();
+      onEvent(e);
       if (e.type === "response.output_item.done") items.push(e.item);
       if (e.type === "response.completed") {
         complete = true;

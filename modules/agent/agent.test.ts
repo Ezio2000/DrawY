@@ -41,7 +41,7 @@ it("feeds canvas images into the author conversation and requires another look a
       workId: work.id,
       sceneId: "root",
       status: "running",
-      messages: [],
+      steps: [],
       observations: [],
       startedAt: Date.now(),
     };
@@ -58,7 +58,19 @@ it("feeds canvas images into the author conversation and requires another look a
     let turn = 0,
       sawImage = false;
     vi.mocked(generate).mockImplementation(
-      async (_role, _instructions, input) => {
+      async (_role, _instructions, input, _tools, _signal, onEvent) => {
+        if (turn === 0)
+          for (const event of [
+            { type: "response.reasoning_summary_part.added" },
+            { type: "response.reasoning_summary_text.delta", delta: "**Checking" },
+            { type: "response.reasoning_summary_text.delta", delta: " the canvas**" },
+          ])
+            onEvent!(event);
+        if (turn === 1)
+          onEvent!({
+            type: "response.output_item.added",
+            item: { type: "function_call", name: "view_canvas", call_id: "c2" },
+          });
         if (turn === 2)
           sawImage = input.some(
             (x) =>
@@ -82,7 +94,18 @@ it("feeds canvas images into the author conversation and requires another look a
     await new Agent(() => {}).execute(store, run, ctx);
     expect(sawImage).toBe(true);
     expect(run.status).toBe("completed");
-    expect(run.messages.map((m) => m.text)).toEqual(["done"]);
+    expect(
+      run.steps.map((s) =>
+        s.kind === "tool" ? [s.name, s.status] : [s.kind, s.text],
+      ),
+    ).toEqual([
+      ["thinking", "**Checking the canvas**"],
+      ["view_canvas", "done"],
+      ["write_work", "done"],
+      ["view_canvas", "done"],
+      ["message", "done"],
+    ]);
+    expect(run.steps[2]).toMatchObject({ revision: 2, removed: 0 });
     expect(run.observations.map((o) => o.revision)).toEqual([1, 2]);
     const errors = ctx.input.filter(
       (x) => x.type === "function_call_output" && x.output.startsWith('{"error":'),

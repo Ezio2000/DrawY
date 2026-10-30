@@ -1,4 +1,5 @@
 import { SceneView, DetailView } from "./SceneView.tsx";
+import { Activity } from "./Activity.tsx";
 import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -50,11 +51,13 @@ export function App() {
     [selected, S] = useState<Selection>(),
     [detailId, setDetail] = useState<string>(),
     [chat, C] = useState(false),
-    [progress, G] = useState(""),
+    [offline, G] = useState(false),
     [busy, B] = useState(false),
     [outline, N] = useState(false),
     [query, F] = useState("");
   const picker = useRef<HTMLInputElement>(null);
+  const conversation = useRef<HTMLElement>(null);
+  const following = useRef(true);
   const current = useRef(work);
   current.current = work;
   const run = runs.at(-1),
@@ -100,6 +103,7 @@ export function App() {
     });
     const events = new EventSource("/api/events");
     events.onmessage = (e) => {
+      G(false);
       const event = JSON.parse(e.data);
       if (event.type === "connected") {
         void refreshList();
@@ -124,14 +128,21 @@ export function App() {
             ? old.map((r) => (r.id === event.run.id ? event.run : r))
             : [...old, event.run];
         });
-        G("");
       }
-      if (event.type === "progress" && event.workId === current.current?.id)
-        G(event.text);
     };
-    events.onerror = () => G("连接中断，正在重连…");
+    events.onerror = () => G(true);
     return () => events.close();
   }, [user?.id]);
+  useEffect(() => {
+    const el = conversation.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    following.current = true;
+  }, [chat]);
+  useEffect(() => {
+    const el = conversation.current;
+    if (el && following.current)
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [runs]);
   useEffect(() => {
     const pop = () => {
       const id = location.pathname.match(/^\/a\/([^/]+)/)?.[1];
@@ -582,7 +593,17 @@ export function App() {
                     data-shape="pill"
                   >
                     {chat && (
-                      <section className={cx("drawy-conversation")}>
+                      <section
+                        className={cx("drawy-conversation")}
+                        ref={conversation}
+                        onWheel={(e) => {
+                          const el = e.currentTarget;
+                          following.current =
+                            e.deltaY > 0 &&
+                            el.scrollHeight - el.scrollTop - el.clientHeight <
+                              160;
+                        }}
+                      >
                         <header>
                           <span>与 DrawY 一起探索</span>
                           <button
@@ -592,13 +613,7 @@ export function App() {
                             <X size={16} />
                           </button>
                         </header>
-                        {runs.flatMap((r) =>
-                          r.messages.map((m, i) => (
-                            <p key={r.id + i} data-role={m.role}>
-                              {m.text}
-                            </p>
-                          )),
-                        )}
+                        <Activity runs={runs} work={work} offline={offline} />
                         {run?.status === "waiting" && (
                           <div className={cx("drawy-question")}>
                             <strong>{run.question?.text}</strong>
@@ -612,22 +627,6 @@ export function App() {
                               </button>
                             ))}
                           </div>
-                        )}
-                        {run?.observations.filter(
-                          (o) => o.revision === work.revision && o.overview,
-                        ).length ? (
-                          <p className={cx("drawy-observation")}>
-                            已查看当前画布 · 版本 {work.revision}
-                          </p>
-                        ) : null}
-                        {working && (
-                          <p className={cx("drawy-progress")}>
-                            <Spinner size={14} />
-                            {progress ||
-                              (run.status === "viewing"
-                                ? "正在查看画布…"
-                                : "正在绘制…")}
-                          </p>
                         )}
                       </section>
                     )}
