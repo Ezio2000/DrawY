@@ -33,7 +33,7 @@ export function SettingsDialog({ close }: { close: () => void }) {
         </button>
       }
     >
-      <div className={cx("drawy-settings")}>
+      <div className={cx("settings")}>
         {value &&
           (["author", "image"] as const).map((key) => (
             <fieldset key={key}>
@@ -107,7 +107,7 @@ export function SettingsDialog({ close }: { close: () => void }) {
                 </label>
               )}
               {key !== "image" && (
-                <label className={cx("drawy-fast")}>
+                <label className={cx("fast")}>
                   <span>
                     Fast<small>优先处理，额度消耗更高</small>
                   </span>
@@ -199,7 +199,7 @@ export function MaterialsDialog({
   return (
     <Dialog title="素材" wide onClose={close}>
       <input
-        className={cx("rail-search")}
+        className={cx("search")}
         placeholder="搜索公共与个人素材"
         value={q}
         onChange={(e) => {
@@ -230,7 +230,7 @@ export function MaterialsDialog({
         />
       </label>
       <p className={cx("error")}>{error}</p>
-      <div className={cx("drawy-materials")} aria-busy={loading}>
+      <div className={cx("materials")} aria-busy={loading}>
         {result.items.map((m) => (
           <button
             key={m.kind + ":" + m.id}
@@ -245,7 +245,7 @@ export function MaterialsDialog({
           </button>
         ))}
       </div>
-      <nav className={cx("drawy-pagination")} aria-label="素材分页">
+      <nav className={cx("pagination")} aria-label="素材分页">
         <span aria-live="polite">
           {loading
             ? "加载中…"
@@ -273,10 +273,12 @@ export function MaterialsDialog({
 }
 export function HistoryDialog({
   id,
+  current,
   close,
   restore,
 }: {
   id: string;
+  current: number;
   close: () => void;
   restore: (revision: number) => void;
 }) {
@@ -286,12 +288,16 @@ export function HistoryDialog({
   }, [id]);
   return (
     <Dialog title="版本历史" onClose={close}>
-      <div className={cx("drawy-history")}>
+      <div className={cx("history")}>
         {rows.map((r) => (
-          <button key={r.revision} onClick={() => restore(r.revision)}>
-            <span>版本 {r.revision}</span>
+          <button
+            key={r.revision}
+            disabled={r.revision === current}
+            onClick={() => restore(r.revision)}
+          >
+            <span>第 {r.revision} 稿</span>
             <small>{new Date(r.updatedAt).toLocaleString()}</small>
-            <b>恢复</b>
+            <b>{r.revision === current ? "当前" : "恢复"}</b>
           </button>
         ))}
       </div>

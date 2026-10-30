@@ -95,6 +95,10 @@ export class SceneRenderer {
   get bounds() {
     return union([...this.instances.values()].map((m) => m.bounds));
   }
+  /** The element that holds a drawn module or link. */
+  host(kind: "module" | "link", id: string) {
+    return this.views.get(kind + ":" + id)?.host;
+  }
   async mount() {
     await Promise.all(
       [...this.instances.values()].map((m) => this.drawModule(m)),
@@ -244,11 +248,17 @@ export class SceneRenderer {
           for (const [k, v] of Object.entries(this.work.style))
             host.style.setProperty("--" + k, v);
           host.shadowRoot!.replaceChildren(style, result);
-          host.title = kind === "module" ? this.instances.get(id)!.label : "";
+          host.removeAttribute("data-error");
+          if (kind === "module") {
+            const m = this.instances.get(id)!;
+            host.title = m.label;
+            host.toggleAttribute("data-explorable", !!m.target);
+          }
         } catch (e) {
           if (!this.disposed) {
             this.options.error(id + ": " + String(e));
             host.shadowRoot!.textContent = String(e);
+            host.setAttribute("data-error", "");
           }
         }
       })(),

@@ -6,6 +6,7 @@ import { Storage } from "../storage/index.ts";
 import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { Agent } from "./index.ts";
+import { partialJson } from "./partial.ts";
 import { generate } from "../models/index.ts";
 import type { Run } from "../contracts/index.ts";
 vi.mock("../models/index.ts", async (original) => ({
@@ -62,8 +63,14 @@ it("feeds canvas images into the author conversation and requires another look a
         if (turn === 0)
           for (const event of [
             { type: "response.reasoning_summary_part.added" },
-            { type: "response.reasoning_summary_text.delta", delta: "**Checking" },
-            { type: "response.reasoning_summary_text.delta", delta: " the canvas**" },
+            {
+              type: "response.reasoning_summary_text.delta",
+              delta: "**Checking",
+            },
+            {
+              type: "response.reasoning_summary_text.delta",
+              delta: " the canvas**",
+            },
           ])
             onEvent!(event);
         if (turn === 1)
@@ -108,7 +115,8 @@ it("feeds canvas images into the author conversation and requires another look a
     expect(run.steps[2]).toMatchObject({ revision: 2, removed: 0 });
     expect(run.observations.map((o) => o.revision)).toEqual([1, 2]);
     const errors = ctx.input.filter(
-      (x) => x.type === "function_call_output" && x.output.startsWith('{"error":'),
+      (x) =>
+        x.type === "function_call_output" && x.output.startsWith('{"error":'),
     );
     expect(errors).toHaveLength(2);
     expect(
@@ -120,6 +128,140 @@ it("feeds canvas images into the author conversation and requires another look a
             x.content?.some((v: any) => v.type === "input_image"),
         ),
     ).toBe(true);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+it("parses the finished part of streamed tool arguments", () => {
+  expect(partialJson('{"a":[1,2')).toEqual({ a: [1] });
+  expect(partialJson('{"s":"x,{y')).toEqual({});
+  expect(partialJson('[{"b":{"x":1,"w":2}},{"b":{"x":')).toEqual([
+    { b: { x: 1, w: 2 } },
+    { b: {} },
+  ]);
+  expect(partialJson('{"q":"a\\"],"')).toEqual({});
+  expect(partialJson("tru")).toBeUndefined();
+});
+it("lays out streamed modules on the write step before the write is saved", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0);
+    const run: Run = {
+      id: "run",
+      workId: work.id,
+      sceneId: "root",
+      status: "running",
+      steps: [],
+      observations: [],
+      startedAt: Date.now(),
+    };
+    store.saveRun(run);
+    const scene = work.scenes.root,
+      args = JSON.stringify({
+        baseRevision: 1,
+        scenes: [scene],
+        drawings: Object.values(work.drawings),
+      }),
+      cut = args.indexOf(JSON.stringify(scene.modules[3])),
+      writing = Object.values(work.drawings)[0],
+      // Part way through the first drawing's source.
+      within = args.indexOf(JSON.stringify(writing.source)) + 8;
+    const laid: number[] = [],
+      written: (string | undefined)[] = [];
+    const calls = [
+      ["write_work", args],
+      ["view_canvas", "{}"],
+      ["finish", '{"message":"done"}'],
+    ];
+    let turn = 0;
+    vi.mocked(generate).mockImplementation(
+      async (_role, _instructions, _input, _tools, _signal, onEvent) => {
+        if (turn === 0) {
+          onEvent!({
+            type: "response.output_item.added",
+            item: { id: "m", type: "message" },
+          });
+          onEvent!({ type: "response.output_text.delta", delta: "先起稿" });
+          onEvent!({
+            type: "response.output_item.added",
+            item: {
+              id: "w",
+              type: "function_call",
+              name: "write_work",
+              call_id: "c0",
+            },
+          });
+          for (const delta of [
+            args.slice(0, cut),
+            args.slice(cut, within),
+            args.slice(within),
+          ]) {
+            onEvent!({
+              type: "response.function_call_arguments.delta",
+              item_id: "w",
+              delta,
+            });
+            await new Promise((r) => setTimeout(r, 300));
+          }
+          onEvent!({ type: "response.output_item.done", item: { id: "w" } });
+        }
+        const [name, value] = calls[turn];
+        return {
+          items: [
+            ...(turn === 0
+              ? [
+                  {
+                    type: "message",
+                    content: [{ type: "output_text", text: "先起稿" }],
+                  },
+                ]
+              : []),
+            {
+              type: "function_call",
+              name,
+              arguments: value,
+              call_id: "c" + turn++,
+            },
+          ],
+          usage: {},
+        };
+      },
+    );
+    await new Agent((_user, event: any) => {
+      const step = event.run?.steps.find((s: any) => s.name === "write_work");
+      if (step?.status === "running") {
+        laid.push(step.scenes[0]?.modules.length);
+        written.push(step.writing);
+      }
+    }).execute(store, run, { input: [], generations: 0 });
+    expect(run.status).toBe("completed");
+    expect(laid).toContain(3);
+    expect(written).toContain(writing.id);
+    expect(run.steps[0]).toEqual({
+      kind: "message",
+      role: "assistant",
+      text: "先起稿",
+    });
+    expect(run.steps[1]).toMatchObject({
+      status: "done",
+      drawings: Object.keys(work.drawings),
+      scenes: [
+        {
+          id: "root",
+          modules: scene.modules.map(({ id, label, bounds }) => ({
+            id,
+            label,
+            bounds,
+          })),
+        },
+      ],
+    });
   } finally {
     db.close();
     rmSync(dir, { recursive: true });

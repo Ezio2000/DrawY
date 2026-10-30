@@ -18,7 +18,7 @@ pnpm typecheck
 pnpm test
 ```
 
-`contracts` 定义作品协议；`workspace` 管理原子修改与版本；`runtime` 执行画法和场景交互；`canvas` 管理视角与编辑手势；`agent` 编排创作工具，并把思考摘要和每次工具调用及其结果（素材候选、生成图片、保存内容、画布截图）记录为运行步骤，对话面板按步骤实时展示；`observation` 调用截图服务，将整图、局部、坐标标注和交互状态作为图片送回作者的同一段对话；`models/images/materials` 分别负责模型、生图与素材；`identity/storage` 按用户隔离账号、作品、版本、任务、素材和设置。
+`contracts` 定义作品协议；`workspace` 管理原子修改与版本；`runtime` 执行画法和场景交互；`canvas` 管理视角与编辑手势，并把创作过程画在纸上：作者工作时有一支铅笔，`write_work` 的构图一到就用石墨线起稿并写上名字，某个画法的代码到齐后给用到它的草稿排上阴影；保存的新版本在后台绘好后原地替换，新增或改动的模块按作者列出的顺序落笔，线条沿路径勾出、填色随后铺上、图片显影、文字逐字写出，铅笔跟着笔尖走，移动的模块滑到新位置，镜头随构图平滑过渡；`agent` 编排创作工具，把思考摘要、进度说明和每次工具调用及其结果（素材候选、生成图片、保存内容、画布截图）按发生顺序记录为运行步骤，并在工具参数流式到达时解析出已完成的部分（作品修改先写场景构图、后写画法，模块先写名字和位置），`view_canvas` 的查看区域显示为取景框；空白画布上会钉出作者找到的素材和正在显影的生成图片，画布下方一行展示当前动作，创作过程面板按步骤展示每次运行；`observation` 调用截图服务，将整图、局部、坐标标注和交互状态作为图片送回作者的同一段对话；`models/images/materials` 分别负责模型、生图与素材；`identity/storage` 按用户隔离账号、作品、版本、任务、素材和设置。
 
 提示词参考 [GPT-6 Astra 官方指南](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra)和 [Opus 5.5 官方指南](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)，保留明确的作品协议、简短工具约定和实际看图修改。
 

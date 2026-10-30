@@ -1,6 +1,7 @@
 import {
   id,
   DomainError,
+  boundsSchema,
   type Run,
   type Step,
   type ToolActivity,
@@ -14,6 +15,7 @@ import { observe, requireObserved } from "../observation/index.ts";
 import { AUTHOR } from "./prompts.ts";
 import { generate, textOf, type Item } from "../models/index.ts";
 import { tools } from "./tools.ts";
+import { partialJson } from "./partial.ts";
 type ToolStep = Extract<Step, { kind: "tool" }>;
 const pictures = (assets: Asset[]) =>
   assets.map(({ name, url }) => ({ name, url }));
@@ -28,22 +30,41 @@ function activity(name: string, args: any): ToolActivity {
     case "write_work":
       return {
         name,
-        drawings: (args.drawings || []).map((d: any) => d.name),
-        scenes: (args.scenes || []).map((s: any) => ({
-          title: s.title,
-          modules: s.modules?.length || 0,
-        })),
+        drawings: (args.drawings || [])
+          .filter((d: any) => d?.id && typeof d.source === "string")
+          .map((d: any) => d.id),
+        writing: (args.drawings || []).findLast(
+          (d: any) => d?.id && typeof d.source !== "string",
+        )?.id,
+        scenes: (args.scenes || [])
+          .filter((s: any) => s?.id)
+          .map((s: any) => ({
+            id: s.id,
+            title: s.title ?? "",
+            modules: (s.modules || []).flatMap((m: any) =>
+              m?.id && boundsSchema.safeParse(m.bounds).success
+                ? [
+                    {
+                      id: m.id,
+                      label: m.label ?? "",
+                      bounds: m.bounds,
+                      ...(m.drawingId ? { drawingId: m.drawingId } : {}),
+                    },
+                  ]
+                : [],
+            ),
+          })),
         details: (args.details || []).map((d: any) => d.title),
-        resources: (args.resources || []).map((r: any) => ({
-          name: r.name,
-          url: r.url,
-        })),
+        resources: (args.resources || [])
+          .filter((r: any) => r?.url)
+          .map((r: any) => ({ name: r.name ?? "", url: r.url })),
         removed: Object.values(args.remove || {}).flat().length,
       };
     case "view_canvas":
       return {
         name,
         sceneId: args.sceneId,
+        region: boundsSchema.safeParse(args.region).data,
         focus: args.actions?.length
           ? "actions"
           : args.region
@@ -146,17 +167,26 @@ export class Agent {
       15 * 60 * 1000,
     );
     const start = Date.now();
+    let flush: ReturnType<typeof setTimeout> | undefined;
     try {
       const settings = store.settings();
-      let flush: ReturnType<typeof setTimeout> | undefined;
+      // Tool arguments stream in; each flush shows what has been laid out so far.
+      const drafts = new Map<
+        string,
+        { step: ToolStep; name: string; text: string }
+      >();
       const emitSoon = () => {
         flush ??= setTimeout(() => {
           flush = undefined;
+          for (const d of drafts.values())
+            Object.assign(d.step, activity(d.name, partialJson(d.text) ?? {}));
           this.emit(store, run);
         }, 250);
       };
       while (ctx.generations++ < 24) {
         let thinking: Extract<Step, { kind: "thinking" }> | undefined;
+        // Progress the author writes takes its place among the steps as it streams.
+        let said: Extract<Step, { kind: "message" }> | undefined;
         abort.signal.throwIfAborted();
         const result = await generate(
           settings.author,
@@ -186,31 +216,55 @@ export class Agent {
                 if (thinking) thinking.text = event.text;
                 emitSoon();
                 break;
+              case "response.output_text.delta":
+                if (said) said.text += event.delta;
+                emitSoon();
+                break;
               case "response.output_item.added": {
-                const { type, name, call_id } = event.item;
+                const { type, name, call_id, id: item } = event.item;
+                if (type === "message" && !said) {
+                  said = { kind: "message", role: "assistant", text: "" };
+                  run.steps.push(said);
+                }
                 if (
                   type === "function_call" &&
                   name !== "ask_question" &&
                   name !== "finish"
                 ) {
-                  run.steps.push({
+                  const step: ToolStep = {
                     kind: "tool",
                     id: call_id,
                     status: "running",
                     ...activity(name, {}),
-                  });
+                  };
+                  run.steps.push(step);
+                  drafts.set(item, { step, name, text: "" });
                   this.emit(store, run);
                 }
+                break;
               }
+              case "response.function_call_arguments.delta": {
+                const draft = drafts.get(event.item_id);
+                if (draft) {
+                  draft.text += event.delta;
+                  emitSoon();
+                }
+                break;
+              }
+              case "response.output_item.done":
+                drafts.delete(event.item.id);
             }
           },
         );
+        drafts.clear();
         ctx.input.push(...result.items);
         const text = textOf(result.items);
-        if (text) {
+        if (said) {
+          said.text = text;
+          if (!text) run.steps.splice(run.steps.indexOf(said), 1);
+        } else if (text)
           run.steps.push({ kind: "message", role: "assistant", text });
-          this.emit(store, run);
-        }
+        this.emit(store, run);
         const calls = result.items.filter((i) => i.type === "function_call");
         if (!calls.length) {
           ctx.input.push({
@@ -354,6 +408,7 @@ export class Agent {
       run.error = String(abort.signal.reason || e);
     } finally {
       clearTimeout(timeout);
+      clearTimeout(flush);
       this.active.delete(run.id);
       run.elapsedMs = (run.elapsedMs || 0) + Date.now() - start;
       this.emit(store, run);

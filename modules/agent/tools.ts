@@ -28,7 +28,7 @@ export const tools = [
   ),
   fn(
     "write_work",
-    "Atomically upsert or remove drawing definitions, scene compositions, interactions, details and resources. Sections contain complete records by ID; omitted records remain. Supply the current baseRevision.",
+    "Atomically upsert or remove scene compositions, drawing definitions, interactions, details and resources. Sections contain complete records by ID; omitted records remain. Supply the current baseRevision. Write scenes before drawings and each module's label and bounds before its data: the layout is shown to the viewer while the rest streams.",
     z.toJSONSchema(workEditSchema),
   ),
   fn(

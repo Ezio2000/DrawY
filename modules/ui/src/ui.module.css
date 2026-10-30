@@ -437,7 +437,7 @@
 }
 
 .switch[aria-checked="true"] {
-  background: var(--green);
+  background: var(--ai);
 }
 
 .switch i {

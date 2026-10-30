@@ -14,15 +14,17 @@ export const drawingSchema = z.object({
   name: key,
   source: z.string().min(1),
 });
+// Layout comes before content, in the order writes stream, so a composition can be
+// sketched while its drawing code is still arriving.
 export const instanceSchema = z.object({
   id: key,
-  drawingId: key,
   label: z.string(),
-  data: z.record(z.string(), z.unknown()),
   bounds: boundsSchema,
-  anchors: z.record(z.string(), pointSchema),
+  drawingId: key,
   group: z.string().nullable(),
   target: targetSchema.nullable(),
+  anchors: z.record(z.string(), pointSchema),
+  data: z.record(z.string(), z.unknown()),
 });
 const endpointSchema = z.object({ moduleId: key, anchor: key });
 export const linkSchema = z.object({
@@ -78,8 +80,8 @@ export interface Work {
 export const workEditSchema = z.object({
   baseRevision: z.number().int(),
   title: z.string().optional(),
-  drawings: z.array(drawingSchema).optional(),
   scenes: z.array(sceneSchema).optional(),
+  drawings: z.array(drawingSchema).optional(),
   interactions: z.array(interactionSchema).optional(),
   details: z.array(detailSchema).optional(),
   resources: z.array(resourceSchema).optional(),
@@ -171,14 +173,25 @@ export interface Picture {
   name: string;
   url: string;
 }
+/** A module as the author lays it out, while its write is still streaming. */
+export interface Sketch {
+  id: string;
+  label: string;
+  bounds: Bounds;
+  /** The drawing it uses, once that much of the module has streamed. */
+  drawingId?: string;
+}
 export type ToolActivity =
   | { name: "read_work"; revision?: number }
   | { name: "find_matirial"; query: string; materials?: Picture[] }
   | { name: "generate_image"; prompt: string; images?: Picture[] }
   | {
       name: "write_work";
+      /** IDs of the drawing definitions whose source has fully arrived. */
       drawings: string[];
-      scenes: { title: string; modules: number }[];
+      /** The drawing definition whose source is arriving now. */
+      writing?: string;
+      scenes: { id: string; title: string; modules: Sketch[] }[];
       details: string[];
       resources: Picture[];
       removed: number;
@@ -188,6 +201,7 @@ export type ToolActivity =
       name: "view_canvas";
       sceneId?: string;
       focus: "overview" | "region" | "annotate" | "actions";
+      region?: Bounds;
       screenshots?: Picture[];
       errors?: string[];
     };

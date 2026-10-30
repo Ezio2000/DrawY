@@ -212,3 +212,36 @@ it("leaves keyboard input inside a drawing control to that control", async () =>
   await input.pressSequentially("20");
   expect(await input.inputValue()).toBe("20");
 });
+it("swaps a later revision into the open canvas and reports the scene it shows", async () => {
+  await open();
+  const result = await page.evaluate(async () => {
+    const view = window.drawyView,
+      work = structuredClone(window.drawyData.work),
+      scene = work.scenes.root,
+      heading = scene.modules.find((m) => m.id === "heading")!;
+    scene.modules = scene.modules.filter((m) => m.id !== "heading");
+    scene.modules.push({
+      ...heading,
+      id: "added",
+      bounds: { ...heading.bounds, x: heading.bounds.x + 1600 },
+    });
+    const before = view.view.scale;
+    const shown = new Promise<string[]>((resolve) => {
+      view.options.shown = (s) => resolve(s.modules.map((m) => m.id));
+    });
+    view.update(work, scene);
+    const ids = await shown;
+    return {
+      ids,
+      drawn: [...document.querySelectorAll<HTMLElement>("[data-module-id]")]
+        .map((e) => e.dataset.moduleId)
+        .sort(),
+      zoomedOut: view.view.scale < before,
+    };
+  });
+  expect(result.drawn).toEqual([...result.ids].sort());
+  expect(result.drawn).toContain("added");
+  expect(result.drawn).not.toContain("heading");
+  expect(result.zoomedOut).toBe(true);
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+});
