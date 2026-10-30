@@ -1,0 +1,875 @@
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--red-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.error svg {
+  margin-top: 1px;
+}
+
+/* ---------- Motion primitives ---------- */
+
+.activity {
+  position: relative;
+  display: inline-block;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+
+.activity i {
+  position: absolute;
+  left: 45.5%;
+  top: 0;
+  width: 9%;
+  height: 28%;
+  border-radius: 99px;
+  background: currentColor;
+  transform-origin: 50% 178%;
+  transform: rotate(calc(var(--i) * 45deg));
+  opacity: 0.2;
+  animation: activity 0.8s linear infinite;
+  animation-delay: calc(var(--i) * 0.1s - 0.8s);
+}
+
+/* ---------- Buttons and forms ---------- */
+
+.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--ink-hover);
+}
+
+.primary:active:not(:disabled) {
+  background: #000;
+  transform: scale(0.97);
+  transition-duration: 0.1s;
+}
+
+.primary.small,
+.secondary.small {
+  min-height: 30px;
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.secondary:active:not(:disabled),
+.icon-button:active:not(:disabled) {
+  transform: scale(0.94);
+  transition-duration: 0.1s;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--text-2);
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--link);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.quiet:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  flex-shrink: 0;
+}
+
+.close-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+
+.close-button:hover {
+  background: var(--fill-2);
+  color: var(--text);
+}
+
+.close-button:active {
+  transform: scale(0.9);
+}
+
+/* ---------- Segmented control: sliding selection block ---------- */
+
+.segmented {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--bg-2);
+  box-shadow: inset 0 0 0 0.5px var(--line-strong);
+}
+
+.segmented::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: var(--thumb-w, 0);
+  transform: translateX(var(--thumb-x, 0));
+  border-radius: 7px;
+  background: #fff;
+  box-shadow:
+    0 0 0 0.5px var(--line-strong),
+    0 1px 3px rgba(60, 45, 20, 0.08);
+  opacity: 0;
+}
+
+.segmented[data-thumb="on"]::before {
+  opacity: 1;
+}
+
+.segmented[data-ready]::before {
+  transition:
+    transform 0.5s var(--spring),
+    width 0.5s var(--spring),
+    opacity 0.2s var(--ease);
+}
+
+.segmented > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 4px 14px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.segmented > button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.segmented > button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.segmented > button[aria-pressed="true"] {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* The name of a control that shows only an icon (Tooltips in ui.tsx). */
+
+.tooltip {
+  position: fixed;
+  z-index: 200;
+  translate: -50% 0;
+  max-width: 260px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(60, 45, 20, 0.18);
+  animation: tip-in 0.16s var(--ease-out) both;
+}
+
+.tooltip[data-above] {
+  translate: -50% -100%;
+}
+
+/* ---------- Secondary action menu ---------- */
+
+.menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.menu-list {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 8px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 196px;
+  padding: 5px;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow:
+    0 0 0 0.5px var(--line-strong),
+    0 8px 28px rgba(60, 45, 20, 0.1);
+  transform-origin: top right;
+  animation: menu-in 0.34s var(--spring);
+}
+
+.menu-list.closing {
+  pointer-events: none;
+  animation: menu-out 0.18s var(--ease-in) both;
+}
+
+.menu-list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.menu-list button svg {
+  color: var(--text-2);
+}
+
+.menu-list button:hover {
+  background: var(--fill);
+}
+
+.menu-list button:active {
+  background: var(--fill-2);
+}
+
+/* A menu whose name shows beside its icon, as in a sidebar. */
+
+.menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 36px;
+  padding: 0 9px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.menu-trigger:hover,
+.menu-trigger[aria-expanded="true"] {
+  background: var(--fill);
+  color: var(--text);
+}
+
+/* ---------- Dialog ---------- */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(20, 20, 19, calc(0.32 - var(--swipe-progress, 0) * 0.16));
+  transition: background-color 0.4s var(--ease);
+  animation: fade-in 0.3s var(--ease) both;
+}
+
+.dialog-overlay.closing {
+  pointer-events: none;
+  animation: vt-fade-out 0.22s var(--ease) both;
+}
+
+.dialog {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: min(780px, calc(100dvh - 48px));
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--paper);
+  outline: none;
+  box-shadow:
+    0 0 0 0.5px var(--line-strong),
+    0 24px 64px rgba(20, 20, 19, 0.16);
+  translate: 0 var(--swipe, 0px);
+  transition: translate 0.5s var(--spring);
+  animation: dialog-in 0.6s var(--spring) both;
+}
+
+.dialog-header {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.dialog-overlay.closing .dialog {
+  animation: dialog-out 0.22s var(--ease-in) both;
+}
+
+.dialog.wide {
+  width: min(840px, 100%);
+}
+
+.dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 22px 4px 26px;
+}
+
+.dialog-header h2 {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.dialog-header p {
+  margin-top: 6px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 26px 26px;
+}
+
+.dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 22px 18px 26px;
+}
+
+.footer-note {
+  margin-right: auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.footer-note code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--fill);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.dialog .error {
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: rgba(191, 77, 67, 0.08);
+  animation: pane-in 0.35s var(--ease-out) backwards;
+}
+
+.section-label {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
+
+/* ---------- Gestures and controls ---------- */
+
+.gesture-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.gesture-presets button {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--separator);
+  text-align: left;
+  transition:
+    box-shadow 0.25s var(--ease),
+    background-color 0.25s var(--ease),
+    transform 0.4s var(--spring);
+}
+
+.gesture-presets button:hover {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.1),
+    0 8px 22px rgba(0, 0, 0, 0.07);
+}
+
+.gesture-presets button:active {
+  transform: scale(0.98);
+}
+
+.gesture-presets button[aria-checked="true"] {
+  background: var(--blue-soft);
+  box-shadow: 0 0 0 1.5px var(--blue);
+}
+
+.gesture-presets strong {
+  display: block;
+  padding-right: 18px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gesture-presets small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.gesture-check {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  color: var(--blue);
+  opacity: 0;
+  scale: 0.6;
+  transition:
+    opacity 0.2s var(--ease),
+    scale 0.4s var(--spring);
+}
+
+[aria-checked="true"] > .gesture-check {
+  opacity: 1;
+  scale: 1;
+}
+
+.gesture-group {
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--bg-2);
+}
+
+.gesture-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  padding: 12px 14px;
+}
+
+.gesture-option + .gesture-option {
+  box-shadow: 0 -1px 0 var(--separator);
+}
+
+label.gesture-option {
+  cursor: pointer;
+}
+
+.gesture-option > span {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.gesture-option strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.gesture-option small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+
+.gesture-option .segmented {
+  background: var(--fill-2);
+}
+
+.gesture-option .segmented > button:disabled {
+  opacity: 0.4;
+}
+
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 46px;
+  height: 28px;
+  border-radius: 980px;
+  background: var(--fill-2);
+  transition: background-color 0.25s var(--ease);
+}
+
+.switch[aria-checked="true"] {
+  background: var(--green);
+}
+
+.switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.15),
+    0 1px 1px rgba(0, 0, 0, 0.06);
+  transition:
+    translate 0.4s var(--spring),
+    width 0.25s var(--ease);
+}
+
+.switch[aria-checked="true"] i {
+  translate: 18px 0;
+}
+
+/* Pressing stretches the knob towards where it will go. */
+
+.switch:active:not(:disabled) i {
+  width: 30px;
+}
+
+.switch[aria-checked="true"]:active:not(:disabled) i {
+  translate: 12px 0;
+}
+
+.switch:disabled {
+  opacity: 0.4;
+}
+
+/* ---------- Prompts ---------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 8px 8px 8px 16px;
+  border-radius: 12px;
+  background: var(--ink);
+  box-shadow: 0 12px 36px rgba(20, 20, 19, 0.22);
+  font-size: 13px;
+  color: var(--paper);
+  translate: -50% var(--swipe, 0px);
+  touch-action: none;
+  transition: translate 0.45s var(--spring);
+  animation: toast-in 0.6s var(--spring) both;
+}
+
+.toast > svg {
+  color: var(--ai);
+}
+
+.toast span {
+  line-height: 1.4;
+}
+
+.toast button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  color: rgba(250, 249, 245, 0.7);
+}
+
+.toast button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.toast.undo button {
+  width: auto;
+  padding: 0 12px;
+  font-weight: 600;
+  color: #f0a585;
+}
+
+.toast.closing {
+  pointer-events: none;
+  animation: toast-out 0.28s var(--ease-in) both;
+}
+
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 0.5px var(--line-strong);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.dialog-overlay[data-swipe="on"],
+.dialog-overlay[data-swipe="on"] .dialog,
+.toast[data-swipe="on"] {
+  transition: none;
+}
+
+.stage-bar {
+  position: absolute;
+  z-index: 25;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 0;
+  pointer-events: none;
+  color: var(--text);
+  /* Its own layer over the stage's, so moving between levels does not fade the path and
+     tools out with the scene beneath them. */
+  view-transition-name: chrome;
+}
+
+.stage-lead,
+.stage-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px;
+  border-radius: 12px;
+  pointer-events: auto;
+  background: transparent;
+  transition:
+    background-color 0.35s var(--ease),
+    box-shadow 0.35s var(--ease);
+}
+
+.stage-lead:hover,
+.stage-tools:hover,
+.stage-lead:focus-within,
+.stage-tools:focus-within {
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  box-shadow: 0 0 0 0.5px var(--line-strong);
+}
+
+.stage-tools {
+  flex-shrink: 0;
+  margin-left: auto;
+  gap: 4px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.field :is(input, textarea, select) {
+  width: 100%;
+  color: var(--text);
+  font-weight: 400;
+}
+
+.field small {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.field.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-weight: 400;
+}
+
+.field.check input {
+  width: auto;
+}
+
+.field .field-error {
+  color: var(--red-text);
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px 20px;
+  font-size: 14px;
+  color: var(--text-3);
+}
+
+.muted {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.code-editor {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  min-height: 140px;
+  white-space: pre;
+  tab-size: 2;
+}
+
+@keyframes activity {
+  from {
+    opacity: 0.95;
+  }
+  to {
+    opacity: 0.2;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.94);
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.88) translateY(-4px);
+  }
+}
+
+@keyframes menu-out {
+  to {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+@keyframes pane-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.92);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(14px) scale(0.95);
+  }
+}
+
+@keyframes vt-fade-out {
+  to {
+    opacity: 0;
+  }
+}

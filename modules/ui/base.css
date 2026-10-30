@@ -1,0 +1,365 @@
+/* SeeY · a warm sheet of paper
+   Home and work share one paper surface: ivory background, ink-colored text, warm gray hairlines, white cards floating on the paper; terracotta is the AI's lamp,
+   and the only accent color. The interface is subtractive: the canvas fills the space, controls float on the paper and appear only when needed,
+   motion is responsive and smooth, and whitespace is left to the diagram itself. */
+
+@property --angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+:root {
+  --font:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "PingFang SC",
+    "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+  --font-display:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", "PingFang SC",
+    "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  /* A bookish serif for titles;
+  a hand for what the page writes itself. */
+  --font-serif:
+    "Tiempos Headline", "Iowan Old Style", "Palatino Linotype", Palatino, "Noto Serif SC",
+    "Source Han Serif SC", "Songti SC", "STSong", Georgia, serif;
+  /* Ink is for type and the one primary action;
+  the AI's terracotta marks links, focus
+     and selection;
+  yellow is the highlighter under a title. */
+  --paper: #faf9f5;
+  --ink: #141413;
+  --ink-hover: #2e2d2a;
+  --blue: #c15f3c;
+  --blue-hover: #a9502f;
+  --blue-press: #8f4327;
+  --blue-soft: rgba(217, 119, 87, 0.12);
+  --link: #b4532f;
+  --marker: #ffe066;
+  /* The AI's colour: its mark and what it brings forward. */
+  --ai: #d97757;
+  --lamp: #e9a93a;
+  --ai-deep: #c15f3c;
+  --red: #ef4444;
+  --red-text: #c81e1e;
+  --green: #16a34a;
+  --orange: #f59e0b;
+  --purple: #8b5cf6;
+  --indigo: #4f46e5;
+  --text: #141413;
+  --text-2: #5e5d59;
+  --text-3: #8b887f;
+  --bg: #fff;
+  --bg-2: #f2f0ea;
+  --surface: #fcfbf8;
+  --fill: rgba(20, 20, 19, 0.05);
+  --fill-2: rgba(20, 20, 19, 0.09);
+  --field: #f4f2ec;
+  --line: #e6e3da;
+  --line-strong: #d8d4c8;
+  --separator: #ece9e1;
+  --nav-bg: transparent;
+  --glass: rgba(252, 251, 248, 0.82);
+  --canvas-bg: #faf9f5;
+  --canvas-dots: #dcd6c9;
+  --shadow-1: 0 0 0 1px var(--line), 0 1px 2px rgba(60, 45, 20, 0.04);
+  --shadow-2: 0 0 0 1px rgba(60, 45, 20, 0.06), 0 14px 40px rgba(60, 45, 20, 0.12);
+  --shadow-glass: 0 0 0 1px rgba(60, 45, 20, 0.06), 0 10px 30px rgba(60, 45, 20, 0.1);
+  --shadow-float: 0 1px 2px rgba(60, 45, 20, 0.05), 0 8px 26px rgba(60, 45, 20, 0.09);
+  --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* The curve iOS moves sheets and app launches along. */
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --spring: linear(
+    0,
+    0.013,
+    0.048 2.3%,
+    0.196 5.2%,
+    0.408 8.6%,
+    0.625 12.3%,
+    0.803 16.1%,
+    0.925 19.8%,
+    0.995 23.3%,
+    1.025 26.5%,
+    1.032 29.6%,
+    1.029 33.3%,
+    1.012 40.5%,
+    1.001 47.4%,
+    0.998 55.8%,
+    1
+  );
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.47;
+  color: var(--text);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+input,
+textarea,
+select {
+  font-size: 14px;
+}
+
+button {
+  cursor: pointer;
+  border: 0;
+  background: none;
+  padding: 0;
+  transition:
+    background-color 0.2s var(--ease),
+    color 0.2s var(--ease),
+    box-shadow 0.25s var(--ease),
+    transform 0.35s var(--ease-out),
+    opacity 0.2s var(--ease);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+}
+
+svg {
+  flex-shrink: 0;
+}
+
+img {
+  max-width: 100%;
+}
+
+::selection {
+  background: rgba(193, 95, 60, 0.2);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid rgba(193, 95, 60, 0.6);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+kbd {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-3);
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: var(--bg);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.1),
+    0 1px 0 rgba(0, 0, 0, 0.05);
+}
+
+code {
+  font-family: var(--font-mono);
+}
+
+:where(
+  input:not([type="range"], [type="checkbox"], [type="radio"], [type="file"]),
+  textarea,
+  select
+) {
+  max-width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  outline: none;
+  transition:
+    background-color 0.2s var(--ease),
+    border-color 0.2s var(--ease),
+    box-shadow 0.25s var(--ease);
+}
+
+:where(
+  input:not([type="range"], [type="checkbox"], [type="radio"], [type="file"]),
+  textarea,
+  select
+):where(:hover) {
+  border-color: var(--line-strong);
+}
+
+:where(
+  input:not([type="range"], [type="checkbox"], [type="radio"], [type="file"]),
+  textarea,
+  select
+):where(:focus) {
+  background: var(--bg);
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(60, 45, 20, 0.08);
+}
+
+:where(textarea) {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+:where(select) {
+  appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236e6e73' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 13px center;
+  cursor: pointer;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-3);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--blue);
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(to right, var(--ink) var(--fill, 0%), #e3e5e9 var(--fill, 0%));
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 4px;
+  background: #e3e3e8;
+}
+
+input[type="range"]::-moz-range-progress {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--ink);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    0 2px 6px rgba(0, 0, 0, 0.14);
+  transition: transform 0.25s var(--spring);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.06),
+    0 4px 10px rgba(0, 0, 0, 0.14);
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.14);
+}
+
+input[type="range"]:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+}

@@ -1,0 +1,77 @@
+services:
+  materials:
+    build:
+      context: .
+      target: materials
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://localhost:8090/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  plantuml:
+    image: plantuml/plantuml-server:jetty
+    restart: unless-stopped
+  review:
+    build:
+      context: .
+      target: review
+    restart: unless-stopped
+    shm_size: 1gb
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://localhost:8091/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  app:
+    build:
+      context: .
+      target: app
+    restart: unless-stopped
+    environment:
+      NODE_OPTIONS: ${DRAWY_NODE_OPTIONS:-}
+      NODE_USE_ENV_PROXY: "1"
+      HTTP_PROXY: ${DRAWY_OUTBOUND_PROXY:-}
+      HTTPS_PROXY: ${DRAWY_OUTBOUND_PROXY:-}
+      NO_PROXY: localhost,127.0.0.1,drawy-app,materials,review,plantuml
+      DRAWY_MATERIALS_URL: http://materials:8090
+      DRAWY_REVIEW_URL: http://review:8091
+      DRAWY_PLANTUML_URL: http://plantuml:8080
+      DRAWY_INTERNAL_URL: http://drawy-app:8080
+    networks:
+      default:
+        aliases: [drawy-app]
+    ports:
+      - "${DRAWY_PORT:-8088}:8080"
+    volumes:
+      - ./data:/data
+    depends_on:
+      materials:
+        condition: service_healthy
+      review:
+        condition: service_healthy
+      plantuml:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://localhost:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
