@@ -13,7 +13,10 @@ export const pictureRequestSchema = z.object({
   /** What is in the frame: the subject, its state, view and details. Not the style. */
   depicts: z.string().min(1),
   aspect: z.enum(["square", "landscape", "portrait"]).default("square"),
-  /** Materials to work from: a picture to restyle, vary or keep consistent with. */
+  /** A name other pictures in the same request can refer to. */
+  key: z.string().optional(),
+  /** Pictures to work from, to restyle, vary or keep consistent with: material ids, or
+   * keys of pictures in the same request, which are then made first. */
   references: z.array(z.string()).default([]),
 });
 export type PictureRequest = z.input<typeof pictureRequestSchema>;
@@ -134,15 +137,27 @@ export async function develop(
   const requests = input.map((r) => pictureRequestSchema.parse(r));
   const style = await styleOf(work.brief.style);
   const model = store.settings().image.model;
-  return Promise.all(
-    requests.map(async (r) => {
-      const slug =
+  const ids = requests.map(
+    (r) =>
+      `g-${
         r.name.en
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-|-$/g, "")
-          .slice(0, 28) || "picture";
-      const id = `g-${slug}-${crypto.randomUUID().slice(0, 4)}`;
+          .slice(0, 28) || "picture"
+      }-${crypto.randomUUID().slice(0, 4)}`,
+  );
+  const keyed = new Map(
+    requests.flatMap((r, i) => (r.key ? [[r.key, ids[i]] as const] : [])),
+  );
+  return Promise.all(
+    requests.map(async (request, i) => {
+      // A reference to a picture in this request waits for that picture to develop.
+      const r = {
+        ...request,
+        references: request.references.map((ref) => keyed.get(ref) ?? ref),
+      };
+      const id = ids[i];
       const prompt = promptFor(r, style.prompt, work.brief!.direction);
       const [width, height] = sizes[r.aspect];
       await library.reserve(

@@ -15,7 +15,13 @@ export interface CaptureRequest {
 }
 export interface Shot {
   camera: { x: number; y: number; scale: number };
-  modules: { id: string; label: string; bounds: Bounds }[];
+  modules: {
+    id: string;
+    label: string;
+    bounds: Bounds;
+    /** Where each picture's visible content actually is, in scene units. */
+    pictures?: ({ material: string } & Bounds)[];
+  }[];
   sceneId: string;
   label: string;
   base64: string;
@@ -58,12 +64,52 @@ export async function capture(
         }
       };
       const shot = async (label: string) => {
-        const geometry = await page.evaluate(() => ({
-          camera: window.drawyView.view,
-          modules: [...window.drawyView.renderer.instances.values()].map(
-            ({ id, label, bounds }) => ({ id, label, bounds }),
-          ),
-        }));
+        const geometry = await page.evaluate(() => {
+          const camera = window.drawyView.view;
+          const { materials } = window.drawyData.work;
+          const round = (n: number) => Math.round(n);
+          return {
+            camera,
+            modules: [...window.drawyView.renderer.instances.values()].map(
+              ({ id, label, bounds }) => {
+                const host = document.querySelector(
+                  `[data-module-id="${CSS.escape(id)}"]`,
+                );
+                // A picture's frame includes its margins; only its content is seen.
+                const pictures = [
+                  ...(host?.shadowRoot?.querySelectorAll<HTMLElement>(
+                    "[data-material]",
+                  ) ?? []),
+                ].flatMap((frame) => {
+                  const m = materials[frame.dataset.material!];
+                  const img = frame.querySelector("img");
+                  if (m?.kind !== "picture" || !img) return [];
+                  const r = img.getBoundingClientRect(),
+                    c = m.content;
+                  return [
+                    {
+                      material: m.id,
+                      x: round(
+                        (r.left + r.width * c.x - camera.x) / camera.scale,
+                      ),
+                      y: round(
+                        (r.top + r.height * c.y - camera.y) / camera.scale,
+                      ),
+                      width: round((r.width * c.width) / camera.scale),
+                      height: round((r.height * c.height) / camera.scale),
+                    },
+                  ];
+                });
+                return {
+                  id,
+                  label,
+                  bounds,
+                  ...(pictures.length ? { pictures } : {}),
+                };
+              },
+            ),
+          };
+        });
         if (request.annotate)
           await page.evaluate(({ camera, modules }) => {
             const overlay = document.createElement("div");

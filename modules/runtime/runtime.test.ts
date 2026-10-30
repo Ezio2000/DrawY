@@ -389,3 +389,110 @@ return svg;`,
     ),
   ).toBe(false);
 });
+it("stands pictures on their box, reports where they are seen and wires library controls to the scene", async () => {
+  const apple = useOf(seed("pictures").find((m) => m.id === "apple")!)!;
+  const slider = seed("drawings").find((m) => m.id === "slider")!;
+  work.materials = {
+    apple,
+    slider: useOf({
+      ...slider,
+      source: readFileSync(
+        new URL("../../materials/seed/drawings/slider.js", import.meta.url),
+        "utf8",
+      ),
+    } as Material)!,
+  };
+  work.drawings.picture = {
+    id: "picture",
+    name: "图",
+    source: 'return api.material("apple")',
+  };
+  work.drawings.control = {
+    id: "control",
+    name: "滑块",
+    source: 'return api.draw("slider", api.data)',
+  };
+  work.drawings.readout = {
+    id: "readout",
+    name: "读数",
+    source: "return api.html(`<b>${api.data.value}</b>`)",
+  };
+  work.interactions.react = {
+    id: "react",
+    source:
+      'api.on("length", "change", (v) => api.set("readout", { value: v }));',
+  };
+  const at = (
+    id: string,
+    drawingId: string,
+    y: number,
+    height: number,
+    data = {},
+  ) => ({
+    id,
+    label: id,
+    drawingId,
+    data,
+    bounds: { x: 0, y, width: 300, height },
+    anchors: {},
+    group: null,
+    target: null,
+  });
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      at("apple", "picture", 0, 400),
+      at("length", "control", 420, 56, {
+        label: "摆长",
+        min: 0,
+        max: 2,
+        step: 0.5,
+        value: 1,
+        unit: "m",
+      }),
+      at("readout", "readout", 500, 40, { value: 1 }),
+    ],
+    links: [],
+    checks: [],
+    interactionId: "react",
+  };
+  const [shot] = await capture(browser, {
+    origin,
+    cookie: "fixture",
+    scenes: [
+      {
+        id: "root",
+        url: origin + "/api/works/fixture/scenes/root?revision=1",
+        checks: [],
+      },
+    ],
+  });
+  const seen = shot.modules.find((m) => m.id === "apple")!.pictures![0];
+  // The box is taller than the apple: the apple fills its width and rests on the bottom.
+  expect(seen.material).toBe("apple");
+  expect(seen.x).toBeLessThanOrEqual(2);
+  expect(Math.abs(seen.y + seen.height - 400)).toBeLessThanOrEqual(2);
+  expect(seen.height).toBeLessThan(330);
+  await open();
+  await page.evaluate(() => {
+    const input = document
+      .querySelector('[data-module-id="length"]')!
+      .shadowRoot!.querySelector("input")!;
+    input.value = "1.5";
+    input.dispatchEvent(new Event("input"));
+  });
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-module-id="readout"]')!
+        .shadowRoot!.querySelector("b")?.textContent === "1.5",
+  );
+  expect(
+    await page.evaluate(
+      () =>
+        document
+          .querySelector('[data-module-id="length"]')!
+          .shadowRoot!.querySelector(".v")!.textContent,
+    ),
+  ).toBe("1.5 m");
+});

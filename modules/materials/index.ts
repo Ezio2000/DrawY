@@ -89,6 +89,24 @@ function named(work: Work) {
   return { called, mentioned };
 }
 
+/** The materials a module is drawn with; none means it is drawn by hand. */
+export function drawnWith(work: Work, sceneId: string, moduleId: string) {
+  const m = work.scenes[sceneId]?.modules.find((x) => x.id === moduleId);
+  if (!m) return [];
+  const ids = new Set<string>();
+  for (const [, id] of (work.drawings[m.drawingId]?.source ?? "").matchAll(
+    CALL,
+  ))
+    ids.add(id);
+  const scan = (v: unknown) => {
+    if (typeof v === "string") ids.add(v);
+    else if (Array.isArray(v)) v.forEach(scan);
+    else if (v && typeof v === "object") Object.values(v).forEach(scan);
+  };
+  scan(m.data);
+  return [...ids].filter((id) => work.materials[id]);
+}
+
 /** Takes into the work every material it names, refreshing pictures that were still
  * developing. Returns the ids newly taken. */
 export async function take(work: Work, explicit: string[], user: string) {

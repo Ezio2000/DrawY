@@ -100,8 +100,10 @@ export function createApp(storage: Storage) {
       .parse(await c.req.json());
     return c.json(createWork(c.get("store"), title));
   });
-  app.get("/api/works/:id", (c) =>
-    c.json(c.get("store").work(c.req.param("id"))),
+  app.get("/api/works/:id", async (c) =>
+    c.json(
+      await freshen(c.get("store").work(c.req.param("id")), c.get("user").id),
+    ),
   );
   app.delete("/api/works/:id", (c) => {
     const store = c.get("store");

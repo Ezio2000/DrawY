@@ -20,6 +20,7 @@ import {
   look,
   styleList,
   useOf,
+  freshen,
 } from "../materials/index.ts";
 import { develop, type Development } from "../images/index.ts";
 import { observe, requireObserved } from "../observation/index.ts";
@@ -233,7 +234,11 @@ async function questions(
       m.kind === "style"
         ? m.samples
             .slice(0, 3)
-            .map((s) => ({ id: s, name: m.name.zh, url: `/materials/files/${s}` }))
+            .map((s) => ({
+              id: s,
+              name: m.name.zh,
+              url: `/materials/files/${s}`,
+            }))
         : m.kind === "picture"
           ? [{ id: m.id, name: m.name.zh, url: m.file.url }]
           : [],
@@ -769,9 +774,16 @@ export class Agent {
           }));
           Object.assign(step!, { images: shown });
           for (const [i, d] of made.entries())
-            void d.done.then((r) => {
+            void d.done.then(async (r) => {
               shown[i].status = r.status;
               this.emit(store, run);
+              // An open canvas redraws the picture with its measured content.
+              const work = store.works().find((w) => w.id === run.workId);
+              if (r.status === "ready" && work?.materials[d.id])
+                this.publish(store.userId, {
+                  type: "work",
+                  work: await freshen(work, store.userId),
+                });
             });
           output = {
             developing: made.map((d, i) => ({

@@ -18,6 +18,12 @@ import type {
 } from "../../../modules/contracts/index.ts";
 import { cx } from "./cx.ts";
 type ToolStep = Extract<Step, { kind: "tool" }>;
+/** What the canvas shows of a work: its revision and which pictures have developed. */
+const drawnAs = (work: Work) =>
+  work.revision +
+  Object.values(work.materials)
+    .map((m) => (m.kind === "picture" ? m.status : ""))
+    .join();
 const place = (b: Bounds): CSSProperties => ({
   left: b.x,
   top: b.y,
@@ -85,7 +91,7 @@ export function SceneView({
     };
   }, [work.id, sceneId]);
   useEffect(() => {
-    if (!canvas || drawn.current.revision === work.revision) return;
+    if (!canvas || drawnAs(drawn.current) === drawnAs(work)) return;
     drawn.current = work;
     setError("");
     canvas.update(work, work.scenes[sceneId]);

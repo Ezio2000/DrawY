@@ -77,6 +77,27 @@ const palette = [t.accent || "#d97757", t.accent2 || "#4a7fa8", ink, muted];
     out += `<text x="${X(x) - 4}" y="${Y(y) - size * 0.8}" text-anchor="end" font-size="${size}" fill="${color}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4">${esc(s.label)}</text>`;
   }
 });
+// The current value on the first curve, with guides down to both axes.
+const mark = d.marker && (d.series || [])[0];
+if (mark) {
+  const s = mark,
+    x = Number(d.marker.x);
+  const f = s.fn ? new Function("x", "return " + s.fn) : null;
+  const pts = s.points || [];
+  const near = pts.length
+    ? pts.reduce((a, b) => (Math.abs(b[0] - x) < Math.abs(a[0] - x) ? b : a))
+    : null;
+  const y = f ? f(x) : near ? near[1] : NaN;
+  if (Number.isFinite(y)) {
+    const color = d.marker.color || t.accent || "#d97757";
+    out += `<path d="M${X(x)} ${pad.t + ph}V${Y(y)}H${pad.l}" fill="none" stroke="${color}" stroke-width="1.2" stroke-dasharray="4 4"/>`;
+    out += `<circle cx="${X(x)}" cy="${Y(y)}" r="5" fill="${color}" stroke="${t.paper || "#fff"}" stroke-width="2"/>`;
+    const text =
+      d.marker.label ??
+      (ys.format ? ys.format.replace("{}", y.toFixed(2)) : y.toFixed(2));
+    out += `<text x="${X(x) + 9}" y="${Y(y) - 9}" font-size="${size}" fill="${color}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4">${esc(text)}</text>`;
+  }
+}
 return api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="${esc(t.font || "system-ui")}">${out}</svg>`,
 );

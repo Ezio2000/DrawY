@@ -54,8 +54,8 @@ for (const channel of ["api", "oauth"] as const)
     expect(m).toMatchObject({
       style: "textbook",
       origin: { kind: "generated", references: ["microscope"] },
-      // Made from a reference, so it stays the user's own.
-      owner: store.userId,
+      // Made from a public picture, so it joins the library.
+      owner: null,
       file: { mediaType: "image/webp" },
     });
     const sent = calls[0];
@@ -100,4 +100,71 @@ it("records a failed picture so the work and the author both learn of it", async
       { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
     ]),
   ).rejects.toThrow("set_brief");
+});
+
+it("makes pictures that reference another in the same request after it, privately when the reference is private", async () => {
+  const store = db.scoped(register(db, "author", "abcdef").id);
+  const settings = store.settings();
+  settings.image = {
+    ...settings.image,
+    channel: "oauth",
+    credential: "test",
+    baseUrl: "https://example.invalid",
+  };
+  store.saveSettings(settings);
+  const png = await picture();
+  const prompts: { subject: string; references: number }[] = [];
+  library.route(async (_url, init) => {
+    const body = JSON.parse(init!.body as string);
+    prompts.push({
+      subject: body.prompt.split("\n")[1],
+      references: body.images?.length ?? 0,
+    });
+    return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+  });
+  const mine = await client.ingest(
+    png,
+    "image/png",
+    {
+      role: "figure",
+      name: { zh: "我的兔子", en: "my rabbit" },
+      style: null,
+      origin: { kind: "upload" },
+    },
+    store.userId,
+  );
+  const [rabbit, scene, kept] = await develop(store, fixture(), [
+    {
+      key: "rabbit",
+      name: { zh: "兔子", en: "rabbit" },
+      role: "figure",
+      depicts: "a white rabbit",
+    },
+    {
+      name: { zh: "迷路", en: "lost" },
+      role: "scene",
+      depicts: "the rabbit lost in a wood",
+      references: ["rabbit"],
+    },
+    {
+      name: { zh: "我的兔子回家", en: "home" },
+      role: "scene",
+      depicts: "my rabbit at home",
+      references: [mine.id],
+    },
+  ]);
+  await Promise.all([rabbit.done, scene.done, kept.done]);
+  const made = await client.get([rabbit.id, scene.id, kept.id], store.userId);
+  expect(made.map((m) => [m.status, m.owner, m.origin.references])).toEqual([
+    ["ready", null, undefined],
+    ["ready", null, [rabbit.id]],
+    ["ready", store.userId, [mine.id]],
+  ]);
+  // The scene was painted from the rabbit, after the rabbit existed.
+  expect(
+    prompts.findIndex((p) => p.subject.includes("lost in a wood")),
+  ).toBeGreaterThan(
+    prompts.findIndex((p) => p.subject.includes("a white rabbit")),
+  );
+  expect(prompts.find((p) => p.subject.includes("lost"))!.references).toBe(1);
 });

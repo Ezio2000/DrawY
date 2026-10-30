@@ -690,7 +690,14 @@ export function App() {
                       el.scrollHeight - el.scrollTop - el.clientHeight < 160;
                   }}
                 >
-                  <Activity runs={runs} work={work} />
+                  <Activity
+                    runs={runs}
+                    work={work}
+                    openTrace={(id) => {
+                      history.pushState(null, "", "/traces/" + id);
+                      T(true);
+                    }}
+                  />
                 </section>
               </aside>
             </div>

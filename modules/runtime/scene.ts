@@ -44,6 +44,9 @@ export interface PictureOptions {
   color?: string;
   /** How a whole painted picture meets the paper: feathered by default, or hard. */
   edge?: "feather" | "hard";
+  /** Where a picture sits when the box is taller than it: on the bottom edge, as things
+   * stand on the ground, unless centred or hung from the top. */
+  align?: "bottom" | "center" | "top";
 }
 type Picture = Extract<MaterialUse, { kind: "picture" }>;
 export interface PictureInfo {
@@ -215,7 +218,11 @@ export class SceneRenderer {
     img.src =
       m.url +
       (o.color && m.recolor ? "?color=" + encodeURIComponent(o.color) : "");
-    img.style.cssText = `position:absolute;max-width:none;left:${(width - m.width * k) / 2 - c.x * fw * k}px;top:${(height - m.height * k) / 2 - c.y * fh * k}px;width:${fw * k}px;height:${fh * k}px`;
+    const spare = height - m.height * k;
+    const top = { bottom: spare, center: spare / 2, top: 0 }[
+      o.align ?? "bottom"
+    ];
+    img.style.cssText = `position:absolute;max-width:none;left:${(width - m.width * k) / 2 - c.x * fw * k}px;top:${top - c.y * fh * k}px;width:${fw * k}px;height:${fh * k}px`;
     // A painted picture fades into the paper instead of showing its rectangle.
     if (m.opaque && o.edge !== "hard") {
       const fade = (to: string) =>

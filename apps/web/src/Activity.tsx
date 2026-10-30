@@ -175,7 +175,16 @@ export function Now({
   );
 }
 /** Every run of this work: the request, how the author went about it, and its reply. */
-export function Activity({ runs, work }: { runs: Run[]; work: Work }) {
+export function Activity({
+  runs,
+  work,
+  openTrace,
+}: {
+  runs: Run[];
+  work: Work;
+  /** Opens the record of a run. */
+  openTrace: (runId: string) => void;
+}) {
   const [zoom, Z] = useState<Picture>();
   const [open, O] = useState<Record<string, boolean>>({});
   const used = new Set(Object.keys(work.materials));
@@ -244,6 +253,18 @@ export function Activity({ runs, work }: { runs: Run[]; work: Work }) {
                 <span>{live(r) ? "正在创作" : "过程"}</span>
                 <small>{facts.join(" · ")}</small>
               </button>
+            )}
+            {unfolded && (
+              <a
+                className={cx("run-trace")}
+                href={"/traces/" + r.id}
+                onClick={(e) => {
+                  e.preventDefault();
+                  openTrace(r.id);
+                }}
+              >
+                运行记录
+              </a>
             )}
             {items.slice(1)}
             {reply >= 0 && (

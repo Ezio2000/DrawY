@@ -9,6 +9,7 @@ import type { UserStore } from "../storage/index.ts";
 import type { Item } from "../models/index.ts";
 import type { Shot } from "./capture.ts";
 import { tracer } from "../trace/index.ts";
+import { drawnWith } from "../materials/index.ts";
 export const viewSchema = z.object({
   sceneId: z.string().optional(),
   region: boundsSchema.optional(),
@@ -95,7 +96,10 @@ export async function observe(
               sceneId: s.sceneId,
               view: s.label,
               camera: s.camera,
-              modules: s.modules,
+              modules: s.modules.map((m) => ({
+                ...m,
+                uses: drawnWith(work, s.sceneId, m.id),
+              })),
               errors: s.errors,
             }),
           },
