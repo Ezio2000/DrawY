@@ -1,0 +1,16 @@
+{
+  "name": "drawy-promo",
+  "private": true,
+  "description": "DrawY 60-second promo film: a deterministic HTML timeline rendered frame by frame with Playwright, scored by a numpy synth.",
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "@fontsource/fraunces": "^5.3.0",
+    "@fontsource/instrument-serif": "^5.3.0",
+    "@fontsource/noto-sans-sc": "^5.3.1",
+    "@fontsource/noto-serif-sc": "^5.3.1",
+    "lxgw-wenkai-webfont": "^1.7.0"
+  }
+}

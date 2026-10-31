@@ -2,6 +2,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Questions } from "./Questions.tsx";
 import { X } from "lucide-react";
 import { cx } from "./cx.ts";
+import { span } from "./time.ts";
+import { useT, type Words } from "./i18n.tsx";
+import { useLocale } from "@drawy/ui";
+import { localize } from "../../../modules/contracts/messages.ts";
 import type {
   Run,
   Step,
@@ -9,18 +13,6 @@ import type {
   Picture,
 } from "../../../modules/contracts/index.ts";
 type ToolStep = Extract<Step, { kind: "tool" }>;
-const focusNames = {
-  overview: "",
-  region: "局部",
-  annotate: "标注",
-  actions: "交互",
-};
-const duration = (ms = 0) => {
-  const seconds = Math.round(ms / 1000);
-  return seconds < 60
-    ? `${seconds} 秒`
-    : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
-};
 export const live = (run?: Run) =>
   !!run && ["running", "viewing"].includes(run.status);
 /** A thought's headline and the reasoning under it. */
@@ -32,32 +24,32 @@ function thought(text: string) {
       ? [text.slice(2), ""]
       : [text.split("\n")[0], text.split("\n").slice(1).join("\n").trim()];
 }
-const registers = { formal: "严谨", expressive: "个性" };
 /** What the author is doing, in a word or two. */
-function doing(step: ToolStep) {
+function doing(step: ToolStep, t: Words) {
+  const w = t.now;
   switch (step.name) {
     case "read_work":
-      return "翻阅作品";
+      return w.reading;
     case "set_brief":
       return [
-        "定下方向",
+        w.briefing,
         step.subject,
-        step.register && registers[step.register],
+        step.register && t.registers[step.register],
       ]
         .filter(Boolean)
         .join(" · ");
     case "find_materials":
-      return ["寻找素材", step.subjects.join("、")].filter(Boolean).join(" · ");
+      return [w.finding, step.subjects.join(w.list)].filter(Boolean).join(" · ");
     case "generate_images":
-      return ["生成图片", step.images.map((i) => i.name).join("、")]
+      return [w.generating, step.images.map((i) => i.name).join(w.list)]
         .filter(Boolean)
         .join(" · ");
     case "write_work":
-      return step.revision ? `落笔 · 第 ${step.revision} 稿` : "落笔";
+      return step.revision ? w.writingRevision(step.revision) : w.writing;
     case "view_canvas":
       return step.waiting
-        ? `等 ${step.waiting} 张图片显影`
-        : ["端详画面", focusNames[step.focus]].filter(Boolean).join(" · ");
+        ? w.waitingImages(step.waiting)
+        : [w.viewing, w.focus[step.focus]].filter(Boolean).join(" · ");
   }
 }
 /** The pictures a step brings: the best candidates per subject, or what it generated. */
@@ -74,8 +66,9 @@ export const picturesOf = (step: Step): Picture[] =>
       : step.name === "generate_images"
         ? step.images.filter((p) => p.url)
         : [];
-/** One line under the canvas: what the author is doing now, the pictures it is weighing,
- * its question, or how the last run ended. */
+/** The top of the composer under the canvas: what the author is doing now and the pictures
+ * it is weighing, its question, or how the last run ended. Pressing the line opens the
+ * whole process. */
 export function Now({
   run,
   work,
@@ -90,7 +83,7 @@ export function Now({
   run?: Run;
   work: Work;
   offline: boolean;
-  /** Whether the pictures being weighed show here rather than on the canvas. */
+  /** Whether the pictures being weighed show here rather than pinned on a blank canvas. */
   pictures: boolean;
   answer: (text: string) => void;
   choose: (text: string) => void;
@@ -98,11 +91,13 @@ export function Now({
   reveal: () => void;
   dismiss: () => void;
 }) {
+  const t = useT(),
+    locale = useLocale();
   if (offline)
     return (
       <div className={cx("now")} data-tone="quiet">
         <i className={cx("now-dot")} />
-        <span>连接中断，正在重连…</span>
+        <span className={cx("now-line")}>{t.now.offline}</span>
       </div>
     );
   if (!run) return null;
@@ -124,31 +119,27 @@ export function Now({
           ? reply.text
           : ""
         : run.status === "failed"
-          ? run.error || "这次没有画完"
-          : "已停止";
+          ? (run.error && localize(run.error, locale)) || t.now.unfinished
+          : t.now.stopped;
     if (!text) return null;
     return (
       <div className={cx("now")} data-tone={run.status}>
-        <button
-          className={cx("now-reply")}
-          title="查看创作过程"
-          onClick={reveal}
-        >
+        <button className={cx("now-reply")} data-tip={t.now.open} onClick={reveal}>
           {text}
         </button>
         <button
           className={cx("now-close")}
-          aria-label="收起"
-          data-tip="收起（Esc）"
+          aria-label={t.collapse}
+          data-tip={t.now.dismiss}
           onClick={dismiss}
         >
-          <X size={15} />
+          <X size={14} />
         </button>
       </div>
     );
   }
   const used = new Set(Object.keys(work.materials));
-  const board = pictures ? run.steps.flatMap(picturesOf).slice(-6) : [];
+  const board = pictures ? run.steps.flatMap(picturesOf).slice(-5) : [];
   // A tool still at work outranks the thoughts and notes that stream alongside it.
   const busy = run.steps.findLast(
       (s): s is ToolStep => s.kind === "tool" && s.status === "running",
@@ -157,24 +148,29 @@ export function Now({
     painting =
       pictures &&
       run.steps.some(
-        (s) =>
-          s.kind === "tool" &&
-          s.name === "generate_images" &&
-          s.images.some((i) => i.status === "developing"),
-      );
+      (s) =>
+        s.kind === "tool" &&
+        s.name === "generate_images" &&
+        s.images.some((i) => i.status === "developing"),
+    );
   const line =
     run.status === "viewing"
-      ? "端详画面"
+      ? t.now.viewing
       : busy
-        ? doing(busy)
+        ? doing(busy, t)
         : tail?.kind === "thinking"
-          ? thought(tail.text)[0] || "构思"
+          ? thought(tail.text)[0] || t.now.thinking
           : tail?.kind === "message" && tail.role === "assistant"
             ? tail.text
-            : "构思";
+            : t.now.thinking;
   const at = run.status === "viewing" ? -1 : run.steps.indexOf((busy ?? tail)!);
   return (
-    <div className={cx("now")} data-tone="live">
+    <button className={cx("now")} data-tone="live" data-tip={t.now.open} onClick={reveal}>
+      <i className={cx("now-dot")} />
+      <span key={at} className={cx("now-line")}>
+        {line}
+      </span>
+      <Elapsed key={"t" + at} />
       {(!!board.length || painting) && (
         <span className={cx("board")}>
           {board.map((p, i) => (
@@ -188,12 +184,7 @@ export function Now({
           {painting && <i className={cx("developing")} />}
         </span>
       )}
-      <i className={cx("now-dot")} />
-      <span key={at} className={cx("now-line")}>
-        {line}
-      </span>
-      <Elapsed key={"t" + at} />
-    </div>
+    </button>
   );
 }
 /** How long the author has been at its current step, once that is long enough to wonder. */
@@ -204,8 +195,9 @@ function Elapsed() {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+  const t = useT();
   const s = Math.round((now - since) / 1000);
-  return s >= 8 ? <small className={cx("now-time")}>{s} 秒</small> : null;
+  return s >= 8 ? <small className={cx("now-time")}>{t.now.seconds(s)}</small> : null;
 }
 /** Every run of this work: the request, how the author went about it, and its reply. */
 export function Activity({
@@ -218,13 +210,15 @@ export function Activity({
   /** Opens the record of a run. */
   openTrace: (runId: string) => void;
 }) {
+  const t = useT(),
+    locale = useLocale();
   const [zoom, Z] = useState<Picture>();
   const [open, O] = useState<Record<string, boolean>>({});
   const used = new Set(Object.keys(work.materials));
   const last = runs.at(-1);
   return (
     <>
-      {!runs.length && <p className={cx("journal-empty")}>还没有对话</p>}
+      {!runs.length && <p className={cx("journal-empty")}>{t.journal.empty}</p>}
       {runs.map((r) => {
         const reply =
           r.status === "completed" && r.steps.at(-1)?.kind === "message"
@@ -270,9 +264,9 @@ export function Activity({
           (s) => s.kind === "tool" && s.name === "write_work" && s.revision,
         ) as Extract<ToolStep, { name: "write_work" }> | undefined;
         const facts = [
-          !!steps && `${steps} 步`,
-          r.elapsedMs && duration(r.elapsedMs),
-          saved && `第 ${saved.revision} 稿`,
+          !!steps && t.journal.steps(steps),
+          r.elapsedMs && span(r.elapsedMs),
+          saved && t.journal.revision(saved.revision!),
         ].filter(Boolean);
         return (
           <article key={r.id} className={cx("run")} data-status={r.status}>
@@ -283,7 +277,7 @@ export function Activity({
                 aria-expanded={unfolded}
                 onClick={() => O({ ...open, [r.id]: !unfolded })}
               >
-                <span>{live(r) ? "正在创作" : "过程"}</span>
+                <span>{live(r) ? t.journal.working : t.journal.process}</span>
                 <small>{facts.join(" · ")}</small>
               </button>
             )}
@@ -296,7 +290,7 @@ export function Activity({
                   openTrace(r.id);
                 }}
               >
-                运行记录
+                {t.journal.trace}
               </a>
             )}
             {items.slice(1)}
@@ -306,10 +300,10 @@ export function Activity({
               </div>
             )}
             {r.status === "failed" && (
-              <p className={cx("run-error")}>{r.error || "运行失败"}</p>
+              <p className={cx("run-error")}>{(r.error && localize(r.error, locale)) || t.journal.failed}</p>
             )}
             {r.status === "cancelled" && (
-              <p className={cx("run-note")}>已停止</p>
+              <p className={cx("run-note")}>{t.journal.stopped}</p>
             )}
           </article>
         );
@@ -320,6 +314,7 @@ export function Activity({
 }
 /** A picture enlarged over everything; a click anywhere, the button or Escape closes it. */
 function Lightbox({ picture, close }: { picture: Picture; close: () => void }) {
+  const t = useT();
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -331,7 +326,7 @@ function Lightbox({ picture, close }: { picture: Picture; close: () => void }) {
   }, []);
   return (
     <div className={cx("lightbox")} onClick={close}>
-      <button aria-label="关闭">
+      <button aria-label={t.close}>
         <X size={18} />
       </button>
       <img src={picture.url} alt={picture.name} />
@@ -349,6 +344,7 @@ function Trace({
   used: Set<string>;
   zoom: (p: Picture) => void;
 }) {
+  const t = useT();
   if (step.kind === "message")
     return <li className={cx("trace-note")}>{step.text}</li>;
   if (step.kind === "thinking") {
@@ -356,7 +352,7 @@ function Trace({
     return (
       <li data-status={live ? "running" : "done"}>
         <details>
-          <summary>{title || "构思"}</summary>
+          <summary>{title || t.now.thinking}</summary>
           {body && <p>{body}</p>}
         </details>
       </li>
@@ -367,7 +363,7 @@ function Trace({
   );
   return (
     <li data-status={step.status}>
-      <span>{doing(step)}</span>
+      <span>{doing(step, t)}</span>
 
       {!!shots.length && (
         <div className={cx("thumbs")} data-kind={step.name}>
@@ -393,11 +389,11 @@ function Trace({
       {(step.name === "find_materials" || step.name === "set_brief") &&
         step.found?.some((f) => !f.candidates.length) && (
           <small>
-            库里没有：
+            {t.journal.missing}
             {step.found
               .filter((f) => !f.candidates.length)
               .map((f) => f.subject)
-              .join("、")}
+              .join(t.now.list)}
           </small>
         )}
       {[

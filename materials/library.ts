@@ -189,7 +189,10 @@ export class Library {
     page: number,
     user?: string,
     kinds?: MaterialKind[],
+    /** How many to a page: as many as the shelf showing them holds. */
+    size = PAGE,
   ): MaterialPage {
+    size = Math.min(Math.max(1, Math.floor(size) || PAGE), 200);
     const items = query.trim()
       ? this.index.search(query, { user, kinds }, 10_000).map((h) => h.material)
       : this.index
@@ -201,9 +204,9 @@ export class Library {
               b.origin.createdAt - a.origin.createdAt ||
               b.uses - a.uses,
           );
-    const pages = Math.max(1, Math.ceil(items.length / PAGE));
+    const pages = Math.max(1, Math.ceil(items.length / size));
     const at = Math.min(Math.max(1, page), pages);
-    const shown = items.slice((at - 1) * PAGE, at * PAGE);
+    const shown = items.slice((at - 1) * size, at * size);
     // Styles are shown with their pictures, as everywhere else.
     const styles = shown.some((m) => m.kind === "style")
       ? new Map(this.styles().map((s) => [s.id, s]))

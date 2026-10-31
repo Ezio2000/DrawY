@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Plus,
-  LayoutGrid,
+  House,
   Shapes,
   Settings2,
   ScrollText,
@@ -13,7 +12,8 @@ import {
 } from "lucide-react";
 import { PanelMark } from "@drawy/ui/brand";
 import { cx } from "./cx.ts";
-import { Lettering } from "./Lettering.tsx";
+import { Brand } from "./Title.tsx";
+import { LanguageSwitch, useT } from "./i18n.tsx";
 import type { Summary, User } from "./api.ts";
 
 /** Closes a popover on a press outside `ref` or on Escape. */
@@ -52,13 +52,14 @@ export function Rename({
   title: string;
   done: (title: string | null) => void;
 }) {
+  const t = useT();
   const [value, set] = useState(title);
   const finish = (keep: boolean) =>
     done(keep && value.trim() && value.trim() !== title ? value.trim() : null);
   return (
     <input
       className={cx("rename")}
-      aria-label="作品名称"
+      aria-label={t.rail.workName}
       autoFocus
       value={value}
       maxLength={80}
@@ -77,8 +78,8 @@ export function Rename({
   );
 }
 
-/** The app's navigation: new work, all works, the library, the recent works and the
- * account. Collapsed it shows icons; open it slides over the page. */
+/** The app's navigation: home (where a new work starts), the library, the recent works
+ * and the account. Collapsed it shows icons; open it slides over the page. */
 export function Rail({
   user,
   open,
@@ -102,6 +103,7 @@ export function Rail({
   remove: (work: Summary) => void;
   logout: () => void;
 }) {
+  const t = useT();
   const [menu, setMenu] = useState<string>(),
     [renaming, setRenaming] = useState<string>(),
     [account, setAccount] = useState(false);
@@ -116,7 +118,7 @@ export function Rail({
   const link = (
     path: string,
     label: string,
-    Icon: typeof Plus,
+    Icon: typeof House,
     active: boolean,
   ) => (
     <button
@@ -131,37 +133,26 @@ export function Rail({
     </button>
   );
   return (
-    <nav className={cx("rail")} data-open={open} aria-label="导航">
+    <nav className={cx("rail")} data-open={open} aria-label={t.rail.nav}>
       <div className={cx("rail-head")}>
         <button
           className={cx("rail-button")}
-          aria-label={open ? "收起侧栏" : "展开侧栏"}
-          data-tip={open ? undefined : "展开侧栏"}
+          aria-label={open ? t.rail.close : t.rail.open}
+          data-tip={open ? undefined : t.rail.open}
           onClick={() => setOpen(!open)}
         >
           <PanelMark size={22} open={open} />
         </button>
         <span className={cx("rail-brand")}>
-          <Lettering name="brand" height={28} />
+          <Brand size={20} />
         </span>
       </div>
-      <button
-        className={cx("rail-button rail-new")}
-        aria-label="新作品"
-        data-tip={open ? undefined : "新作品"}
-        onClick={() => nav("/")}
-      >
-        <span className={cx("rail-plus")}>
-          <Plus size={15} />
-        </span>
-        <span className={cx("rail-label")}>新作品</span>
-      </button>
-      {link("/works", "作品", LayoutGrid, page === "works")}
-      {link("/library", "素材库", Shapes, page === "library")}
+      {link("/", t.rail.home, House, page === "home")}
+      {link("/library", t.rail.library, Shapes, page === "library")}
       <section className={cx("rail-recents")} inert={!open}>
-        <h2>最近</h2>
+        <h2>{t.rail.recents}</h2>
         <ul>
-          {works.slice(0, 30).map((w) => (
+          {works.map((w) => (
             <li
               className={cx("rail-work")}
               data-current={w.id === current || undefined}
@@ -187,7 +178,7 @@ export function Rail({
               )}
               <div className={cx("rail-work-more")} ref={menu === w.id ? menuRef : undefined}>
                 <button
-                  aria-label={"更多操作：" + w.title}
+                  aria-label={t.rail.more(w.title)}
                   aria-expanded={menu === w.id}
                   onClick={() => setMenu(menu === w.id ? undefined : w.id)}
                 >
@@ -203,7 +194,7 @@ export function Rail({
                       }}
                     >
                       <PenLine size={15} />
-                      重命名
+                      {t.rail.rename}
                     </button>
                     <button
                       role="menuitem"
@@ -214,7 +205,7 @@ export function Rail({
                       }}
                     >
                       <Trash2 size={15} />
-                      删除
+                      {t.rail.remove}
                     </button>
                   </div>
                 )}
@@ -222,11 +213,6 @@ export function Rail({
             </li>
           ))}
         </ul>
-        {works.length > 30 && (
-          <button className={cx("rail-all")} onClick={() => nav("/works")}>
-            全部 {works.length} 个作品
-          </button>
-        )}
       </section>
       <div className={cx("rail-foot")} ref={accountRef}>
         {account && (
@@ -234,12 +220,13 @@ export function Rail({
             <p>{user.name}</p>
             <button role="menuitem" onClick={() => (setAccount(false), nav("/settings"))}>
               <Settings2 size={15} />
-              设置
+              {t.rail.settings}
             </button>
             <button role="menuitem" onClick={() => (setAccount(false), nav("/traces"))}>
               <ScrollText size={15} />
-              运行记录
+              {t.rail.traces}
             </button>
+            <LanguageSwitch label />
             <hr />
             <button
               role="menuitem"
@@ -249,13 +236,13 @@ export function Rail({
               }}
             >
               <LogOut size={15} />
-              退出登录
+              {t.rail.logout}
             </button>
           </div>
         )}
         <button
           className={cx("rail-button rail-account")}
-          aria-label="账户"
+          aria-label={t.rail.account}
           aria-expanded={account}
           data-tip={open ? undefined : user.name}
           onClick={() => setAccount(!account)}

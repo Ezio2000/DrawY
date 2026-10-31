@@ -1,14 +1,14 @@
 import { SceneView, DetailView } from "./SceneView.tsx";
 import { Activity, Now, live } from "./Activity.tsx";
 import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Undo2,
   ChevronDown,
   X,
-  PanelRight,
   History,
-  Shapes,
+  MessagesSquare,
+  PanelRightClose,
   ImagePlus,
 } from "lucide-react";
 import { Lantern } from "@drawy/ui/brand";
@@ -17,17 +17,17 @@ import {
   Spinner,
   LocaleContext,
   Tooltips,
-  Dialog,
   Presence,
   UndoToast,
+  Dialog,
+  type Locale,
 } from "@drawy/ui";
 import { api, type Summary, type User } from "./api.ts";
 import { cx } from "./cx.ts";
-import { HistoryDialog } from "./Dialogs.tsx";
+import { Versions } from "./Versions.tsx";
 import { Rail, Rename } from "./Rail.tsx";
 import { Auth } from "./Auth.tsx";
 import { Composer, type Attachment } from "./Composer.tsx";
-import { Works } from "./Works.tsx";
 import { Library } from "./Library.tsx";
 import { Settings } from "./Settings.tsx";
 import type {
@@ -38,20 +38,14 @@ import type {
 } from "../../../modules/contracts/index.ts";
 import type { Material, StyleMaterial } from "@drawy/materials/schema";
 import { TraceView } from "./TraceView.tsx";
-import { Lettering } from "./Lettering.tsx";
-const examples = [
-  "太阳系是如何运转的？",
-  "大语言模型是怎么工作的？",
-  "红楼梦中的人物关系",
-];
+import { Title } from "./Title.tsx";
+import { ChooseLocale, dictionaries, useLanguage } from "./i18n.tsx";
 const sketches = [OrbitSketch, ModelSketch, KinshipSketch];
-type Page = "home" | "work" | "works" | "library" | "settings" | "traces";
+type Page = "home" | "work" | "library" | "settings" | "traces";
 const pageOf = (path: string): Page =>
   path.startsWith("/a/")
     ? "work"
-    : path === "/works"
-      ? "works"
-      : path === "/library"
+    : path === "/library"
         ? "library"
         : path === "/settings"
           ? "settings"
@@ -59,11 +53,13 @@ const pageOf = (path: string): Page =>
             ? "traces"
             : "home";
 const workIdOf = (path: string) => path.match(/^\/a\/([^/]+)/)?.[1];
+/** What the panel beside the canvas shows. */
+type Panel = "" | "journal" | "history";
 /** How a library material rides along with a message. */
-const attachmentOf = (m: Material): Attachment => ({
+const attachmentOf = (m: Material, locale: Locale): Attachment => ({
   id: m.id,
   kind: m.kind,
-  name: m.name.zh,
+  name: m.name[locale],
   url:
     m.kind === "picture"
       ? m.file.url
@@ -72,6 +68,8 @@ const attachmentOf = (m: Material): Attachment => ({
         : undefined,
 });
 export function App() {
+  const [locale, setLocale] = useLanguage();
+  const t = dictionaries[locale];
   const [user, U] = useState<User | null | undefined>(),
     [path, setPath] = useState(location.pathname),
     [error, E] = useState(""),
@@ -80,14 +78,14 @@ export function App() {
     [work, W] = useState<Work>(),
     [sceneId, P] = useState("root"),
     [runs, R] = useState<Run[]>([]),
-    [dialog, D] = useState(""),
     [prompt, Q] = useState(""),
     [attachments, A] = useState<Attachment[]>([]),
     [uploading, setUploading] = useState(0),
     [style, setStyle] = useState<StyleMaterial>(),
     [selected, S] = useState<Selection>(),
     [detailId, setDetail] = useState<string>(),
-    [journal, J] = useState(false),
+    [panel, setPanel] = useState<Panel>(""),
+    [picking, setPicking] = useState(false),
     [scenes, M] = useState(false),
     [dismissed, setDismissed] = useState(""),
     [offline, G] = useState(false),
@@ -98,6 +96,9 @@ export function App() {
     // Options picked on the author's questions, sent with whatever the user writes.
     [choices, setChoices] = useState("");
   const page = pageOf(path);
+  const journal = panel === "journal";
+  const J = (on: boolean) => setPanel(on ? "journal" : "");
+  const toggle = (p: Panel) => setPanel(panel === p ? "" : p);
   const conversation = useRef<HTMLElement>(null);
   const following = useRef(true);
   const current = useRef(work);
@@ -165,7 +166,7 @@ export function App() {
       setDetail(undefined);
       R([]);
       S(undefined);
-      J(false);
+      setPanel("");
     }
   }, [path, user?.id]);
   useEffect(() => {
@@ -242,15 +243,15 @@ export function App() {
   const replying =
     !!run && !working && run.status !== "waiting" && run.id !== dismissed;
   useEffect(() => {
-    if (!replying || journal || dialog || detailId) return;
+    if (!replying || journal || detailId) return;
     const key = (e: KeyboardEvent) =>
       e.key === "Escape" && setDismissed(run!.id);
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
-  }, [replying, journal, dialog, detailId]);
+  }, [replying, journal, detailId]);
   async function upload(files: FileList | File[]) {
     const images = Array.from(files).filter((f) => f.type.startsWith("image/"));
-    if (!images.length) throw Error("只能添加图片");
+    if (!images.length) throw Error(t.composer.imagesOnly);
     setUploading((n) => n + images.length);
     let left = images.length;
     try {
@@ -258,7 +259,7 @@ export function App() {
         const data = new FormData();
         data.append("file", file);
         const m = await api<Material>("/materials", "POST", data);
-        A((old) => [...old, attachmentOf(m)]);
+        A((old) => [...old, attachmentOf(m, locale)]);
         left--;
         setUploading((n) => n - 1);
       }
@@ -271,7 +272,8 @@ export function App() {
     B(true);
     try {
       let w = work;
-      const message = !w && style ? `${text.trim()}\n画风：${style.name.zh}` : text;
+      const message =
+        !w && style ? `${text.trim()}\n${t.home.styleLine(style.name[locale])}` : text;
       if (!w) {
         w = await api<Work>("/works", "POST", { title: text.trim().slice(0, 36) });
         W(w);
@@ -309,17 +311,14 @@ export function App() {
   }
   async function enter(id: string, title?: string) {
     if (!work?.scenes[id]) {
-      throw Error("这个入口还没有子场景，请让 AI 补充");
+      throw Error(t.work.noScene);
     }
     P(id);
     setDetail(undefined);
     S(undefined);
     M(false);
     if (!work.scenes[id].modules.length && !working)
-      await send(
-        `展开“${title || work.scenes[id].title}”场景，保持作品风格。`,
-        id,
-      );
+      await send(t.work.expand(title || work.scenes[id].title), id);
   }
   async function restore(revision: number) {
     const w = await api<Work>("/works/" + work!.id + "/restore", "POST", {
@@ -327,7 +326,6 @@ export function App() {
     });
     W(w);
     if (!w.scenes[sceneId]) P(w.rootSceneId);
-    D("");
   }
   async function rename(id: string, title: string) {
     L((old) => old.map((w) => (w.id === id ? { ...w, title } : w)));
@@ -362,9 +360,12 @@ export function App() {
   }
   function use(m: Material) {
     if (m.kind === "style") setStyle(m);
-    else A((old) => (old.some((a) => a.id === m.id) ? old : [...old, attachmentOf(m)]));
-    D("");
-    if (page !== "work") go("/");
+    else
+      A((old) =>
+        old.some((a) => a.id === m.id) ? old : [...old, attachmentOf(m, locale)],
+      );
+    setPicking(false);
+    if (page !== "work" && page !== "home") go("/");
   }
   const crumbs = [];
   let at = active;
@@ -373,6 +374,24 @@ export function App() {
     at = at.parentId ? work?.scenes[at.parentId] : undefined;
   }
   const shownWorks = works.filter((w) => w.id !== trash?.id);
+  const status = work &&
+    (offline ||
+      run?.status === "waiting" ||
+      (!journal && (working || run?.id !== dismissed))) && (
+      <Now
+        run={run}
+        work={work}
+        offline={offline}
+        pictures={!!active?.modules.length}
+        answer={(o) => void attempt(() => send(o, sceneId, ""))}
+        choose={setChoices}
+        cancel={() =>
+          void attempt(() => api("/runs/" + run!.id + "/cancel", "POST"))
+        }
+        reveal={() => J(true)}
+        dismiss={() => setDismissed(run?.id || "")}
+      />
+    );
   const composer = (place: "home" | "dock") => (
     <Composer
       place={place}
@@ -385,15 +404,16 @@ export function App() {
       unquote={() => S(undefined)}
       placeholder={
         place === "home"
-          ? "想把什么画出来？"
+          ? t.home.placeholder
           : run?.status === "waiting"
-            ? "回答问题，或补充你的想法…"
+            ? t.composer.answering
             : selected
-              ? "要怎样修改选中的部分？"
+              ? t.composer.selected
               : working
-                ? "正在创作…"
-                : "继续探索，或修改这幅作品"
+                ? t.composer.working
+                : t.composer.continue
       }
+      status={place === "dock" ? status : undefined}
       style={place === "home" ? style : undefined}
       setStyle={place === "home" ? setStyle : undefined}
       working={working}
@@ -403,11 +423,13 @@ export function App() {
         void attempt(() => api("/runs/" + run!.id + "/cancel", "POST"))
       }
       attach={(files) => void attempt(() => upload(files))}
+      pick={() => setPicking(true)}
     />
   );
   const droppable = page === "home" || page === "work";
   return (
-    <LocaleContext.Provider value="zh">
+    <LocaleContext.Provider value={locale}>
+      <ChooseLocale.Provider value={setLocale}>
       <Tooltips />
       <div className={cx("app")}>
         {user && (
@@ -426,7 +448,6 @@ export function App() {
                 await api("/auth/logout", "POST");
                 L([]);
                 U(null);
-                D("");
                 go("/");
               })
             }
@@ -468,35 +489,25 @@ export function App() {
             <TraceView />
           ) : page === "settings" ? (
             <Settings />
-          ) : page === "works" ? (
-            <Works
-              works={shownWorks}
-              go={go}
-              rename={(id, title) => void attempt(() => rename(id, title))}
-              remove={remove}
-            />
           ) : page === "library" ? (
             <div className={cx("page")}>
               <header className={cx("page-head")}>
                 <h1>
-                  <Lettering name="library" height={64} />
+                  <Title name="library" />
                 </h1>
               </header>
-              <p className={cx("page-lede")}>
-                AI 作画时取用的现成素材。挑一个用来创作，或上传你自己的图片。
-              </p>
-              <Library use={use} action="用它创作" />
+              <Library use={use} action={t.work.useIt} />
             </div>
           ) : page === "home" ? (
             <div className={cx("home")}>
               <section className={cx("hero")}>
                 <h1 className={cx("hero-title")}>
-                  <Lantern size={44} className={cx("hero-mark")} />
-                  <Lettering name="hero" height={80} />
+                  <Lantern size={40} className={cx("hero-mark")} />
+                  <Title name="hero" size="hero" />
                 </h1>
                 {composer("home")}
                 <nav className={cx("examples")}>
-                  {examples.map((text, i) => {
+                  {t.home.examples.map((text, i) => {
                     const Sketch = sketches[i];
                     return (
                       <button
@@ -505,14 +516,7 @@ export function App() {
                         style={{ animationDelay: 240 + i * 80 + "ms" }}
                         onClick={() => void attempt(() => send(text))}
                       >
-                        <span
-                          className={cx("example-art")}
-                          style={
-                            {
-                              "--tint": ["#f2e1df", "#dbe6e1", "#e2e1ec"][i],
-                            } as CSSProperties
-                          }
-                        >
+                        <span className={cx("example-art")}>
                           <Sketch />
                         </span>
                         <span className={cx("example-text")}>{text}</span>
@@ -527,10 +531,7 @@ export function App() {
               <Spinner />
             </div>
           ) : (
-            <div
-              className={cx("workspace")}
-              data-journal={journal || undefined}
-            >
+            <div className={cx("workspace")} data-panel={panel || undefined}>
               <section
                 className={cx("stage")}
                 data-working={working || undefined}
@@ -559,9 +560,9 @@ export function App() {
                         ) : (
                           <button
                             aria-current={p.id === sceneId || undefined}
-                            title={
+                            data-tip={
                               i === 0 && p.id === sceneId
-                                ? "点击重命名"
+                                ? t.work.rename
                                 : undefined
                             }
                             onClick={() =>
@@ -578,7 +579,7 @@ export function App() {
                     {Object.keys(work.scenes).length > 1 && (
                       <span className={cx("scene-menu")} data-scene-menu>
                         <button
-                          aria-label="全部场景"
+                          aria-label={t.work.scenes}
                           aria-expanded={scenes}
                           onClick={() => M(!scenes)}
                         >
@@ -601,41 +602,6 @@ export function App() {
                       </span>
                     )}
                   </nav>
-                  <div className={cx("actions")}>
-                    <button
-                      aria-label="撤销上一稿"
-                      data-tip="撤销上一稿"
-                      disabled={working || work.revision < 2}
-                      onClick={() =>
-                        void attempt(() => restore(work.revision - 1))
-                      }
-                    >
-                      <Undo2 size={17} />
-                    </button>
-                    <button
-                      aria-label="版本"
-                      data-tip="版本"
-                      onClick={() => D("history")}
-                    >
-                      <History size={17} />
-                    </button>
-                    <button
-                      aria-label="从素材库添加"
-                      data-tip="从素材库添加"
-                      onClick={() => D("library")}
-                    >
-                      <Shapes size={17} />
-                    </button>
-                    <button
-                      aria-label="创作过程"
-                      data-tip="创作过程"
-                      aria-pressed={journal}
-                      data-live={working || undefined}
-                      onClick={() => J(!journal)}
-                    >
-                      <PanelRight size={17} />
-                    </button>
-                  </div>
                 </header>
                 <SceneView
                   key={work.id}
@@ -656,7 +622,7 @@ export function App() {
                   }}
                   commit={(moves) =>
                     void attempt(async () => {
-                      if (working) throw Error("请等待当前绘制完成");
+                      if (working) throw Error(t.work.wait);
                       W(
                         await api("/works/" + work.id + "/modules", "PATCH", {
                           sceneId,
@@ -671,29 +637,10 @@ export function App() {
                   {error && (
                     <div className={cx("toast-error")} role="alert">
                       <span>{error}</span>
-                      <button aria-label="关闭" onClick={() => E("")}>
+                      <button aria-label={t.close} onClick={() => E("")}>
                         <X size={13} />
                       </button>
                     </div>
-                  )}
-                  {(offline ||
-                    run?.status === "waiting" ||
-                    (!journal && (working || run?.id !== dismissed))) && (
-                    <Now
-                      run={run}
-                      work={work}
-                      offline={offline}
-                      pictures={!!active?.modules.length}
-                      answer={(o) => void attempt(() => send(o, sceneId, ""))}
-                      choose={setChoices}
-                      cancel={() =>
-                        void attempt(() =>
-                          api("/runs/" + run!.id + "/cancel", "POST"),
-                        )
-                      }
-                      reveal={() => J(true)}
-                      dismiss={() => setDismissed(run?.id || "")}
-                    />
                   )}
                   {composer("dock")}
                 </div>
@@ -704,38 +651,84 @@ export function App() {
                   />
                 )}
               </section>
-              <aside className={cx("journal")} inert={!journal}>
-                <header>
-                  <h2>
-                    <Lettering name="journal" height={34} />
-                  </h2>
-                  <button aria-label="收起" onClick={() => J(false)}>
-                    <X size={16} />
+              <aside className={cx("side")} aria-label={t.work.panel}>
+                <nav className={cx("side-tools")}>
+                  <button
+                    aria-label={t.work.undo}
+                    data-tip={t.work.undo}
+                    disabled={working || work.revision < 2}
+                    onClick={() => void attempt(() => restore(work.revision - 1))}
+                  >
+                    <Undo2 size={17} />
                   </button>
-                </header>
-                <section
-                  className={cx("journal-body")}
-                  ref={conversation}
-                  onWheel={(e) => {
-                    const el = e.currentTarget;
-                    following.current =
-                      e.deltaY > 0 &&
-                      el.scrollHeight - el.scrollTop - el.clientHeight < 160;
-                  }}
-                >
-                  <Activity
-                    runs={runs}
-                    work={work}
-                    openTrace={(id) => go("/traces/" + id)}
-                  />
-                </section>
+                  <button
+                    aria-label={t.work.history}
+                    data-tip={t.work.history}
+                    aria-pressed={panel === "history"}
+                    onClick={() => toggle("history")}
+                  >
+                    <History size={17} />
+                  </button>
+                  <button
+                    aria-label={t.work.journal}
+                    data-tip={t.work.journal}
+                    aria-pressed={journal}
+                    data-live={working || undefined}
+                    onClick={() => toggle("journal")}
+                  >
+                    <MessagesSquare size={17} />
+                  </button>
+                </nav>
+                <div className={cx("side-panel")} data-kind={panel || undefined} inert={!panel}>
+                  <header>
+                    <h2>
+                      {panel === "history" ? (
+                        <Title name="history" size="section" />
+                      ) : (
+                        <Title name="journal" size="section" />
+                      )}
+                    </h2>
+                    <button
+                      aria-label={t.collapse}
+                      data-tip={t.collapse}
+                      onClick={() => setPanel("")}
+                    >
+                      <PanelRightClose size={17} />
+                    </button>
+                  </header>
+                  <section
+                    className={cx("side-body")}
+                    ref={conversation}
+                    onWheel={(e) => {
+                      if (!journal) return;
+                      const el = e.currentTarget;
+                      following.current =
+                        e.deltaY > 0 &&
+                        el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+                    }}
+                  >
+                    {panel === "history" ? (
+                      <Versions
+                        id={work.id}
+                        current={work.revision}
+                        restore={(r) => void attempt(() => restore(r))}
+                      />
+                    ) : (
+                      <Activity
+                        runs={runs}
+                        work={work}
+                        openTrace={(id) => go("/traces/" + id)}
+                      />
+                    )}
+                  </section>
+                </div>
               </aside>
             </div>
           )}
           {error && page !== "work" && (
             <div className={cx("toast-error")} data-floating role="alert">
               <span>{error}</span>
-              <button aria-label="关闭" onClick={() => E("")}>
+              <button aria-label={t.close} onClick={() => E("")}>
                 <X size={13} />
               </button>
             </div>
@@ -743,32 +736,25 @@ export function App() {
           {dragging && (
             <div className={cx("dropzone")}>
               <ImagePlus size={28} />
-              <p>松开即可添加参考图</p>
+              <p>{t.composer.drop}</p>
             </div>
           )}
         </main>
-        <Presence show={!!trash}>
-          <UndoToast text={`已删除「${trash?.title ?? ""}」`} onUndo={keep} />
-        </Presence>
-        {dialog === "library" && (
+        {picking && (
           <Dialog
-            title="素材库"
-            heading={<Lettering name="library" height={44} />}
+            title={t.titles.library}
+            heading={<Title name="library" size="section" />}
             wide
-            onClose={() => D("")}
+            onClose={() => setPicking(false)}
           >
-            <Library use={use} action="加入对话" />
+            <Library use={use} action={t.work.addIt} />
           </Dialog>
         )}
-        {dialog === "history" && work && (
-          <HistoryDialog
-            id={work.id}
-            current={work.revision}
-            close={() => D("")}
-            restore={(r) => void attempt(() => restore(r))}
-          />
-        )}
+        <Presence show={!!trash}>
+          <UndoToast text={t.work.deleted(trash?.title ?? "")} onUndo={keep} />
+        </Presence>
       </div>
+      </ChooseLocale.Provider>
     </LocaleContext.Provider>
   );
 }

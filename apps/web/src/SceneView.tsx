@@ -1,8 +1,8 @@
 import { detailElement } from "../../../modules/runtime/detail.ts";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { Minus, Plus, Scan, MousePointer2, Hand } from "lucide-react";
-import { reducedMotion } from "@drawy/ui";
+import { ZoomOut, ZoomIn, Scan, MousePointer2, Hand } from "lucide-react";
+import { reducedMotion, useLocale } from "@drawy/ui";
 import { Pen } from "@drawy/ui/brand";
 import { Canvas } from "../../../modules/canvas/index.ts";
 import type { Camera } from "../../../modules/contracts/geometry.ts";
@@ -17,7 +17,8 @@ import type {
   Detail,
 } from "../../../modules/contracts/index.ts";
 import { cx } from "./cx.ts";
-import { styleList, registers } from "./Composer.tsx";
+import { styleList } from "./Composer.tsx";
+import { useT } from "./i18n.tsx";
 import type { StyleMaterial } from "@drawy/materials/schema";
 type ToolStep = Extract<Step, { kind: "tool" }>;
 /** What the canvas shows of a work: its revision and which pictures have developed. */
@@ -50,6 +51,8 @@ export function SceneView({
   select: (value: Selection | null) => void;
   commit: (moves: { id: string; bounds: Bounds }[]) => void;
 }) {
+  const t = useT(),
+    locale = useLocale();
   const host = useRef<HTMLDivElement>(null),
     cameras = useRef(new Map<string, Camera>()),
     drawn = useRef(work),
@@ -146,8 +149,8 @@ export function SceneView({
         intent: brief.intent,
         tags: [
           brief.audience,
-          styles.find((s) => s.id === brief.style)?.name.zh,
-          registers[brief.register],
+          styles.find((s) => s.id === brief.style)?.name[locale],
+          t.registers[brief.register],
         ].filter(Boolean),
       }
     : briefing?.subject
@@ -205,7 +208,7 @@ export function SceneView({
         )}
       {canvas && createPortal(<Pen size={30} />, canvas.pen)}
       {gaze && !gaze.region && <div className={cx("viewfinder")} data-screen />}
-      {empty && !run && <p className={cx("blank")}>这里还空着</p>}
+      {empty && !run && <p className={cx("blank")}>{t.work.blank}</p>}
       {empty && run && (!!references.length || note) && (
         <div
           className={cx("references")}
@@ -245,30 +248,30 @@ export function SceneView({
       <div className={cx("camera")}>
         <button
           disabled={disabled}
-          aria-label={editing ? "移动模块中，点击回到浏览" : "移动模块"}
-          data-tip={editing ? "回到浏览" : "移动模块"}
+          aria-label={editing ? t.work.moving : t.work.move}
+          data-tip={editing ? t.work.moving : t.work.move}
           data-on={editing || undefined}
           onClick={() => setEditing(!editing)}
         >
           {editing ? <MousePointer2 size={15} /> : <Hand size={15} />}
         </button>
         <button
-          aria-label="缩小"
-          data-tip="缩小"
+          aria-label={t.work.zoomOut}
+          data-tip={t.work.zoomOut}
           onClick={() => canvas?.zoom(1 / 1.25)}
         >
-          <Minus size={15} />
+          <ZoomOut size={15} />
         </button>
         <button
-          aria-label="放大"
-          data-tip="放大"
+          aria-label={t.work.zoomIn}
+          data-tip={t.work.zoomIn}
           onClick={() => canvas?.zoom(1.25)}
         >
-          <Plus size={15} />
+          <ZoomIn size={15} />
         </button>
         <button
-          aria-label="适应画布"
-          data-tip="适应画布（0）"
+          aria-label={t.work.fit}
+          data-tip={t.work.fit}
           onClick={() => {
             cameras.current.delete(work.id + ":" + sceneId);
             canvas?.fit();
