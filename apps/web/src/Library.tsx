@@ -64,7 +64,7 @@ export function Library({
       () =>
         fetch(
           `/api/materials?q=${encodeURIComponent(q)}&page=${page}&kind=${kind}`,
-          { signal: a.signal },
+          { signal: a.signal, headers: { "X-Drawy-Locale": locale } },
         )
           .then(async (r) => {
             if (!r.ok) throw Error((await r.json()).error);
@@ -87,7 +87,7 @@ export function Library({
       clearTimeout(t);
       a.abort();
     };
-  }, [q, page, kind, stamp]);
+  }, [q, page, kind, stamp, locale]);
   const styleName = (id: string | null) =>
     styles.find((s) => s.id === id)?.name[locale];
   async function upload(files: FileList) {

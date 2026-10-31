@@ -28,6 +28,7 @@ import { kindSchema } from "@drawy/materials/schema";
 import { Agent } from "../../modules/agent/index.ts";
 import { tracer } from "../../modules/trace/index.ts";
 import encoder from "plantuml-encoder";
+import { localize, requestLocale } from "../../modules/contracts/messages.ts";
 type Env = {
   Variables: { store: UserStore; user: { id: string; name: string } };
 };
@@ -39,7 +40,7 @@ export function createApp(storage: Storage) {
   const agent = new Agent(publish);
   app.onError((e, c) =>
     c.json(
-      { error: e.message },
+      { error: localize(e.message, requestLocale((k) => c.req.header(k))) },
       e instanceof DomainError || e instanceof MaterialsError
         ? (e.status as 400)
         : e instanceof z.ZodError
@@ -68,7 +69,11 @@ export function createApp(storage: Storage) {
     });
   app.use("/api/*", async (c, next) => {
     const user = userOf(getCookie(c, "drawy_session"));
-    if (!user) return c.json({ error: "请先登录" }, 401);
+    if (!user)
+      return c.json(
+        { error: localize("请先登录", requestLocale((k) => c.req.header(k))) },
+        401,
+      );
     c.set("user", user);
     c.set("store", storage.scoped(user.id));
     await next();

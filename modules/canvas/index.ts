@@ -106,7 +106,10 @@ export class Canvas {
       "position:absolute;border:1px solid #d97757;border-radius:6px;box-shadow:0 0 0 4px rgba(217,119,87,.12);pointer-events:none;display:none;z-index:3;box-sizing:border-box";
     this.resize.style.cssText =
       "position:absolute;right:-6px;bottom:-6px;width:11px;height:11px;border-radius:50%;background:#fff;border:1.5px solid #d97757;pointer-events:auto;cursor:nwse-resize;padding:0";
-    this.resize.setAttribute("aria-label", "调整模块大小");
+    this.resize.setAttribute(
+      "aria-label",
+      /^en/i.test(document.documentElement.lang) ? "Resize module" : "调整模块大小",
+    );
     this.outline.append(this.resize);
     this.element.append(this.outline);
     const signal = this.abort.signal;

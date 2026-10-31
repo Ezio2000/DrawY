@@ -4,6 +4,8 @@ import { X } from "lucide-react";
 import { cx } from "./cx.ts";
 import { span } from "./time.ts";
 import { useT, type Words } from "./i18n.tsx";
+import { useLocale } from "@drawy/ui";
+import { localize } from "../../../modules/contracts/messages.ts";
 import type {
   Run,
   Step,
@@ -89,7 +91,8 @@ export function Now({
   reveal: () => void;
   dismiss: () => void;
 }) {
-  const t = useT();
+  const t = useT(),
+    locale = useLocale();
   if (offline)
     return (
       <div className={cx("now")} data-tone="quiet">
@@ -116,7 +119,7 @@ export function Now({
           ? reply.text
           : ""
         : run.status === "failed"
-          ? run.error || t.now.unfinished
+          ? (run.error && localize(run.error, locale)) || t.now.unfinished
           : t.now.stopped;
     if (!text) return null;
     return (
@@ -207,7 +210,8 @@ export function Activity({
   /** Opens the record of a run. */
   openTrace: (runId: string) => void;
 }) {
-  const t = useT();
+  const t = useT(),
+    locale = useLocale();
   const [zoom, Z] = useState<Picture>();
   const [open, O] = useState<Record<string, boolean>>({});
   const used = new Set(Object.keys(work.materials));
@@ -296,7 +300,7 @@ export function Activity({
               </div>
             )}
             {r.status === "failed" && (
-              <p className={cx("run-error")}>{r.error || t.journal.failed}</p>
+              <p className={cx("run-error")}>{(r.error && localize(r.error, locale)) || t.journal.failed}</p>
             )}
             {r.status === "cancelled" && (
               <p className={cx("run-note")}>{t.journal.stopped}</p>

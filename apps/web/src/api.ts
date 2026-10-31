@@ -1,3 +1,4 @@
+import { pageLocale } from "@drawy/ui";
 export async function api<T = any>(
   path: string,
   method = "GET",
@@ -5,8 +6,10 @@ export async function api<T = any>(
 ): Promise<T> {
   const r = await fetch("/api" + path, {
     method,
-    headers:
-      data instanceof FormData ? {} : { "Content-Type": "application/json" },
+    headers: {
+      "X-Drawy-Locale": pageLocale(),
+      ...(data instanceof FormData ? {} : { "Content-Type": "application/json" }),
+    },
     body:
       data === undefined
         ? undefined
