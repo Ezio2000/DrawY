@@ -177,6 +177,7 @@ async function compact(
       signal,
       undefined,
       4096,
+      run.workId,
     );
     const references = [
       ...new Set(
@@ -618,6 +619,8 @@ export class Agent {
                       drafts.delete(event.item.id);
                   }
                 },
+                undefined,
+                run.workId,
               );
               break;
             } catch (e) {

@@ -24,6 +24,8 @@ export async function generate(
   signal: AbortSignal,
   onEvent: (event: Item) => void = () => {},
   budget = 32768,
+  /** Requests sharing a key are routed to the same prompt cache. */
+  cacheKey?: string,
 ) {
   if (!role.credential) throw Error("请先配置模型凭证");
   const r = await fetch(role.baseUrl.replace(/\/$/, "") + "/responses", {
@@ -38,6 +40,7 @@ export async function generate(
       store: false,
       reasoning: { effort: role.effort, summary: "auto" },
       service_tier: role.fast ? "priority" : "default",
+      ...(cacheKey ? { prompt_cache_key: cacheKey } : {}),
       ...(role.channel === "api" ? { max_output_tokens: budget } : {}),
     }),
     signal,
