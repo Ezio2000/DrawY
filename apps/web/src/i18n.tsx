@@ -133,6 +133,7 @@ const zh = {
   questions: {
     drop: "不画了",
     yours: "你来决定",
+    own: "其他，自己写…",
     yoursMessage: "你来决定，直接画。",
     ok: "确定",
   },
@@ -435,6 +436,7 @@ const en: Words = {
   questions: {
     drop: "Never mind",
     yours: "You decide",
+    own: "Something else…",
     yoursMessage: "You decide, just draw it.",
     ok: "Done",
   },
