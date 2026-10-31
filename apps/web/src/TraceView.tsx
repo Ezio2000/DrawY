@@ -3,32 +3,16 @@ import { RefreshCw } from "lucide-react";
 import { api } from "./api.ts";
 import { cx } from "./cx.ts";
 import { ago } from "./time.ts";
-import { Lettering } from "./Lettering.tsx";
+import { Title } from "./Title.tsx";
+import { pageLocale } from "@drawy/ui";
+import { dictionaries } from "./i18n.tsx";
 import type { Span, TraceSummary } from "../../../modules/trace/index.ts";
 
-const kindNames: Record<Span["kind"], string> = {
-  execution: "执行",
-  turn: "模型",
-  tool: "工具",
-  search: "检索",
-  generation: "生图",
-  capture: "截图",
-  compact: "压缩",
-  note: "记录",
-};
+/** The trace page's words in the page's language. */
+const w = () => dictionaries[pageLocale()].traces;
 const seconds = (ms: number) =>
   ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
 const live = (status: string) => ["running", "viewing"].includes(status);
-const statuses: Record<string, string> = {
-  running: "进行中",
-  viewing: "进行中",
-  waiting: "等待回答",
-  completed: "完成",
-  failed: "失败",
-  cancelled: "已停止",
-  ok: "完成",
-  error: "出错",
-};
 const pretty = (v: unknown) => {
   if (typeof v === "string")
     try {
@@ -43,7 +27,7 @@ const thousands = (n: number) =>
 function Status({ value }: { value: string }) {
   return (
     <i className={cx("status")} data-status={value}>
-      {statuses[value] || value}
+      {w().statuses[value] || value}
     </i>
   );
 }
@@ -87,11 +71,11 @@ export function TraceView() {
       <aside>
         <header>
           <h1>
-            <Lettering name="traces" height={44} />
+            <Title name="traces" size="section" />
           </h1>
           <button
-            aria-label="刷新"
-            data-tip="刷新"
+            aria-label={w().refresh}
+            data-tip={w().refresh}
             onClick={() => void refresh()}
           >
             <RefreshCw size={14} />
@@ -109,9 +93,9 @@ export function TraceView() {
                 <small>
                   <Status value={t.status} />
                   {ago(t.startedAt)} · {seconds(t.durationMs)}
-                  {t.counts.generation ? ` · ${t.counts.generation} 张图` : ""}
+                  {t.counts.generation ? w().images(t.counts.generation) : ""}
                   {t.counts.errors ? (
-                    <em> · {t.counts.errors} 个错误</em>
+                    <em>{w().errors(t.counts.errors)}</em>
                   ) : null}
                 </small>
               </button>
@@ -119,7 +103,7 @@ export function TraceView() {
           ))}
         </ol>
         {!list.length && !error && (
-          <p className={cx("traces-empty")}>还没有运行记录</p>
+          <p className={cx("traces-empty")}>{w().empty}</p>
         )}
       </aside>
       <main>
@@ -160,40 +144,40 @@ function Timeline({ trace, spans }: { trace: TraceSummary; spans: Span[] }) {
         <p>{trace.prompt}</p>
         <dl>
           <div>
-            <dt>状态</dt>
+            <dt>{w().status}</dt>
             <dd>
               <Status value={trace.status} />
             </dd>
           </div>
           <div>
-            <dt>耗时</dt>
+            <dt>{w().duration}</dt>
             <dd>{seconds(trace.durationMs)}</dd>
           </div>
           <div>
-            <dt>模型轮次</dt>
+            <dt>{w().turns}</dt>
             <dd>{trace.counts.turn}</dd>
           </div>
           <div>
-            <dt>工具调用</dt>
+            <dt>{w().tools}</dt>
             <dd>{trace.counts.tool}</dd>
           </div>
           <div>
-            <dt>输入 Token</dt>
-            <dd title={`缓存 ${trace.tokens.cached.toLocaleString()}`}>
+            <dt>{w().inputTokens}</dt>
+            <dd title={`${w().cached} ${trace.tokens.cached.toLocaleString()}`}>
               {thousands(trace.tokens.input)}
-              <small> 缓存 {thousands(trace.tokens.cached)}</small>
+              <small> {w().cached} {thousands(trace.tokens.cached)}</small>
             </dd>
           </div>
           <div>
-            <dt>输出 Token</dt>
-            <dd title={`推理 ${trace.tokens.reasoning.toLocaleString()}`}>
+            <dt>{w().outputTokens}</dt>
+            <dd title={`${w().reasoning} ${trace.tokens.reasoning.toLocaleString()}`}>
               {thousands(trace.tokens.output)}
-              <small> 推理 {thousands(trace.tokens.reasoning)}</small>
+              <small> {w().reasoning} {thousands(trace.tokens.reasoning)}</small>
             </dd>
           </div>
         </dl>
         <nav>
-          {(Object.keys(kindNames) as Span["kind"][])
+          {(Object.keys(w().kinds) as Span["kind"][])
             .filter((k) => trace.counts[k])
             .map((k) => (
               <button
@@ -206,7 +190,7 @@ function Timeline({ trace, spans }: { trace: TraceSummary; spans: Span[] }) {
                   setKinds(next);
                 }}
               >
-                {kindNames[k]} {trace.counts[k]}
+                {w().kinds[k]} {trace.counts[k]}
               </button>
             ))}
         </nav>
@@ -224,7 +208,7 @@ function Timeline({ trace, spans }: { trace: TraceSummary; spans: Span[] }) {
                   className={cx("span-name")}
                   style={{ paddingLeft: depth * 14 }}
                 >
-                  <i>{kindNames[s.kind]}</i>
+                  <i>{w().kinds[s.kind]}</i>
                   {s.name}
                   {metric(s) && <small>{metric(s)}</small>}
                   {s.error && <em>{s.error.slice(0, 80)}</em>}
@@ -269,12 +253,12 @@ function metric(s: Span) {
   const a = s.attrs as Item;
   if ((s.kind === "turn" || s.kind === "compact") && a.usage) {
     const u = usageOf(a);
-    return `输入 ${k(u.input)} · 缓存 ${u.hit}% · 输出 ${k(u.output)}`;
+    return w().metric(k(u.input), u.hit, k(u.output));
   }
   if (s.kind === "generation") return a.size;
   if (s.kind === "search")
-    return (a.subjects as string[] | undefined)?.join("、");
-  if (s.kind === "capture") return `${(a.shots || []).length} 张`;
+    return (a.subjects as string[] | undefined)?.join(", ");
+  if (s.kind === "capture") return w().shots((a.shots || []).length);
   if (s.kind === "note" && a.status) return `HTTP ${a.status} · ${a.ms}ms`;
   return "";
 }
@@ -317,7 +301,7 @@ function Copy({ value }: { value: unknown }) {
         setTimeout(() => setDone(false), 1200);
       }}
     >
-      {done ? "已复制" : "复制"}
+      {done ? w().copied : w().copy}
     </button>
   );
 }
@@ -352,7 +336,7 @@ function Text({ text }: { text: string }) {
       <pre>{long && !all ? text.slice(0, 1200) + "…" : text}</pre>
       {long && (
         <button onClick={() => setAll(!all)}>
-          {all ? "收起" : `展开全部 ${text.length.toLocaleString()} 字符`}
+          {all ? w().fold : w().unfold(text.length.toLocaleString())}
         </button>
       )}
     </div>
@@ -387,25 +371,25 @@ function Conversation({ items }: { items: Item[] }) {
         if (item.type === "function_call")
           return (
             <li key={i} data-role="call">
-              <b>调用 {item.name}</b>
+              <b>{w().call(item.name)}</b>
               <Text text={pretty(item.arguments)} />
             </li>
           );
         if (item.type === "function_call_output")
           return (
             <li key={i} data-role="result">
-              <b>工具结果</b>
+              <b>{w().toolResult}</b>
               <Text text={pretty(item.output)} />
             </li>
           );
         if (item.type === "reasoning")
           return (
             <li key={i} data-role="reasoning">
-              <b>思考摘要</b>
+              <b>{w().thoughts}</b>
               <Text
                 text={
                   (item.summary || []).map((s: Item) => s.text).join("\n\n") ||
-                  "（无）"
+                  w().nothing
                 }
               />
             </li>
@@ -415,7 +399,7 @@ function Conversation({ items }: { items: Item[] }) {
           typeof item.content === "string" ? [item.content] : item.content || [];
         return (
           <li key={i} data-role={role}>
-            <b>{{ user: "用户", assistant: "模型", developer: "开发者", system: "系统" }[role as string] || role}</b>
+            <b>{w().roles[role as string] || role}</b>
             {parts.map((p, j) => (
               <Content key={j} part={p} />
             ))}
@@ -437,45 +421,45 @@ function Attributes({
   const a = span.attrs as Item;
   const [view, setView] = useState(context?.complete ? "whole" : "added");
   const parts: ReactNode[] = [];
-  if (span.error) parts.push(<Part key="error" title="错误" value={span.error} />);
+  if (span.error) parts.push(<Part key="error" title={w().error} value={span.error} />);
   switch (span.kind) {
     case "turn": {
       const u = usageOf(a);
       parts.push(
-        <Part key="usage" title="用量与请求">
+        <Part key="usage" title={w().usage}>
           <dl className={cx("facts")}>
-            <dt>输入</dt>
+            <dt>{w().input}</dt>
             <dd>{u.input.toLocaleString()} tokens</dd>
-            <dt>缓存命中</dt>
+            <dt>{w().hit}</dt>
             <dd>
-              {u.cached.toLocaleString()}（{u.hit}%），未命中{" "}
+              {u.cached.toLocaleString()} ({u.hit}%) · {w().missed}{" "}
               {(u.input - u.cached).toLocaleString()}
             </dd>
-            <dt>输出</dt>
+            <dt>{w().output}</dt>
             <dd>
-              {u.output.toLocaleString()}，其中推理 {u.reasoning.toLocaleString()}
+              {u.output.toLocaleString()} · {w().ofWhichReasoning} {u.reasoning.toLocaleString()}
             </dd>
-            <dt>首个输出</dt>
+            <dt>{w().firstOutput}</dt>
             <dd>{a.firstOutputMs !== undefined ? seconds(a.firstOutputMs) : "—"}</dd>
-            <dt>总耗时</dt>
-            <dd>{span.endedAt ? seconds(span.endedAt - span.startedAt) : "进行中"}</dd>
-            <dt>上下文</dt>
+            <dt>{w().total}</dt>
+            <dd>{span.endedAt ? seconds(span.endedAt - span.startedAt) : w().inProgress}</dd>
+            <dt>{w().context}</dt>
             <dd>
-              {a.inputItems} 项，估算 {k(a.estimatedTokens)} tokens
+              {w().items(a.inputItems, k(a.estimatedTokens))}
             </dd>
             {a.request && (
               <>
-                <dt>请求</dt>
+                <dt>{w().request}</dt>
                 <dd>
-                  {a.request.model} · 思考 {a.request.effort} ·{" "}
-                  {a.request.serviceTier} · 系统提示词{" "}
-                  {k(a.request.instructionsChars)} 字符 · {a.request.tools} 个工具
+                  {a.request.model} · {w().thinkingEffort} {a.request.effort} ·{" "}
+                  {a.request.serviceTier} · {w().instructionsChars(k(a.request.instructionsChars))} ·{" "}
+                  {w().toolCount(a.request.tools)}
                 </dd>
               </>
             )}
             {a.response?.id && (
               <>
-                <dt>响应</dt>
+                <dt>{w().response}</dt>
                 <dd>
                   <code>{a.response.id}</code> · {a.response.model} ·{" "}
                   {a.response.service_tier}
@@ -491,27 +475,27 @@ function Attributes({
           key="input"
           title={
             view === "whole" && whole
-              ? `输入 · 完整 ${whole.length} 项`
-              : `输入 · 本轮新增 ${(a.input || []).length} 项`
+              ? w().inputWhole(whole.length)
+              : w().inputAdded((a.input || []).length)
           }
           value={view === "whole" && whole ? whole : a.input}
         >
           <nav className={cx("views")}>
             {whole && (
               <button aria-pressed={view === "whole"} onClick={() => setView("whole")}>
-                完整输入
+                {w().whole}
               </button>
             )}
             <button aria-pressed={view === "added"} onClick={() => setView("added")}>
-              本轮新增
+              {w().added}
             </button>
             <button aria-pressed={view === "raw"} onClick={() => setView("raw")}>
-              原始 JSON
+              {w().raw}
             </button>
           </nav>
           {view === "whole" && whole && !context.complete && (
             <p className={cx("hint")}>
-              这次执行没有记录起始上下文，这里只包含执行中逐轮新增的部分。
+              {w().noContext}
             </p>
           )}
           {view === "raw" ? (
@@ -520,7 +504,7 @@ function Attributes({
             <Conversation items={view === "whole" && whole ? whole : a.input || []} />
           )}
         </Part>,
-        <Part key="output" title={`输出 · ${(a.output || []).length} 项`} value={a.output}>
+        <Part key="output" title={w().outputItems((a.output || []).length)} value={a.output}>
           <Conversation items={a.output || []} />
         </Part>,
       );
@@ -528,12 +512,12 @@ function Attributes({
     }
     case "tool":
       parts.push(
-        <Part key="args" title="参数" value={a.args} />,
-        <Part key="out" title="结果" value={a.output} />,
+        <Part key="args" title={w().args} value={a.args} />,
+        <Part key="out" title={w().result} value={a.output} />,
       );
       if (Array.isArray(a.images) && a.images.length)
         parts.push(
-          <Part key="images" title={`返回给模型的图片 · ${a.images.length}`}>
+          <Part key="images" title={w().images2(a.images.length)}>
             <div className={cx("shots")}>
               {a.images.map((url: string, i: number) => (
                 <Shot key={i} url={url} />
@@ -544,45 +528,45 @@ function Attributes({
       break;
     case "generation":
       parts.push(
-        <Part key="result" title="结果">
+        <Part key="result" title={w().result}>
           <dl className={cx("facts")}>
-            <dt>尺寸</dt>
+            <dt>{w().size}</dt>
             <dd>{a.size}</dd>
-            <dt>模型</dt>
+            <dt>{w().model}</dt>
             <dd>{a.model}</dd>
             {a.bytes && (
               <>
-                <dt>大小</dt>
+                <dt>{w().bytes}</dt>
                 <dd>{k(a.bytes)}B</dd>
               </>
             )}
             {!!a.references?.length && (
               <>
-                <dt>参考</dt>
-                <dd>{a.references.join("、")}</dd>
+                <dt>{w().references}</dt>
+                <dd>{a.references.join(", ")}</dd>
               </>
             )}
           </dl>
           <div className={cx("shots")}>
             {(a.referenceImages || []).map((url: string, i: number) => (
-              <Shot key={i} url={url} label={`参考 ${a.references?.[i] ?? ""}`} />
+              <Shot key={i} url={url} label={w().reference(a.references?.[i] ?? "")} />
             ))}
-            {a.url && <Shot url={a.url} label="生成结果" />}
+            {a.url && <Shot url={a.url} label={w().generated} />}
           </div>
         </Part>,
-        <Part key="prompt" title="提示词" value={a.prompt}>
+        <Part key="prompt" title={w().prompt} value={a.prompt}>
           <Text text={a.prompt || ""} />
         </Part>,
       );
       break;
     case "search":
       parts.push(
-        <Part key="request" title="请求" value={{ subjects: a.subjects, style: a.style, kinds: a.kinds, roles: a.roles, limit: a.limit }} />,
-        <Part key="results" title="结果" value={a.results}>
+        <Part key="request" title={w().request} value={{ subjects: a.subjects, style: a.style, kinds: a.kinds, roles: a.roles, limit: a.limit }} />,
+        <Part key="results" title={w().result} value={a.results}>
           {(a.results || []).map((r: Item) => (
             <section key={r.subject} className={cx("hits")}>
               <h5>{r.subject}</h5>
-              {!r.hits.length && <p className={cx("hint")}>没有命中</p>}
+              {!r.hits.length && <p className={cx("hint")}>{w().noHits}</p>}
               <ol>
                 {r.hits.map((h: Item | string, i: number) =>
                   typeof h === "string" ? (
@@ -606,7 +590,7 @@ function Attributes({
       break;
     case "capture":
       parts.push(
-        <Part key="request" title="请求" value={{ revision: a.revision, sceneId: a.sceneId, region: a.region, annotate: a.annotate, actions: a.actions }} />,
+        <Part key="request" title={w().request} value={{ revision: a.revision, sceneId: a.sceneId, region: a.region, annotate: a.annotate, actions: a.actions }} />,
         ...(a.shots || []).map((shot: Item, i: number) => (
           <Part key={"shot" + i} title={shot.view} value={shot}>
             <div className={cx("shots")}>
@@ -614,7 +598,7 @@ function Attributes({
             </div>
             {!!shot.errors?.length && <Text text={shot.errors.join("\n")} />}
             {shot.modules && (
-              <Part title={`交给模型的几何 · ${shot.modules.length} 个模块`} value={shot.modules} open={false} />
+              <Part title={w().geometry(shot.modules.length)} value={shot.modules} open={false} />
             )}
           </Part>
         )),
@@ -622,42 +606,42 @@ function Attributes({
       break;
     case "compact":
       parts.push(
-        <Part key="summary" title="压缩后的摘要" value={a.summary}>
+        <Part key="summary" title={w().summary} value={a.summary}>
           <Text text={a.summary || ""} />
         </Part>,
-        <Part key="usage" title="用量" value={{ size: a.size, usage: a.usage, response: a.response }} />,
+        <Part key="usage" title={w().usageOnly} value={{ size: a.size, usage: a.usage, response: a.response }} />,
       );
       break;
     case "execution": {
       const { instructions, context: start, tools, ...rest } = a;
-      parts.push(<Part key="settings" title="设置" value={rest} />);
+      parts.push(<Part key="settings" title={w().settings} value={rest} />);
       if (tools)
         parts.push(
-          <Part key="tools" title={`工具 · ${tools.length}`} value={tools}>
-            <p className={cx("hint")}>{tools.join("、")}</p>
+          <Part key="tools" title={w().toolList(tools.length)} value={tools}>
+            <p className={cx("hint")}>{tools.join(", ")}</p>
           </Part>,
         );
       if (instructions)
         parts.push(
-          <Part key="instructions" title={`系统提示词 · ${instructions.length.toLocaleString()} 字符`} value={instructions} open={false}>
+          <Part key="instructions" title={w().instructions(instructions.length.toLocaleString())} value={instructions} open={false}>
             <Text text={instructions} />
           </Part>,
         );
       if (start)
         parts.push(
-          <Part key="context" title={`起始上下文 · ${start.length} 项`} value={start} open={false}>
+          <Part key="context" title={w().start(start.length)} value={start} open={false}>
             <Conversation items={start} />
           </Part>,
         );
       break;
     }
     default:
-      parts.push(<Part key="attrs" title="属性" value={a} />);
+      parts.push(<Part key="attrs" title={w().attrs} value={a} />);
   }
   return (
     <div className={cx("span-detail")}>
       {parts}
-      <Part title="原始记录" value={span} open={false} />
+      <Part title={w().record} value={span} open={false} />
     </div>
   );
 }

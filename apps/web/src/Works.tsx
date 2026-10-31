@@ -4,7 +4,8 @@ import { Lantern } from "@drawy/ui/brand";
 import { cx } from "./cx.ts";
 import { ago } from "./time.ts";
 import { Rename, useDismiss } from "./Rail.tsx";
-import { Lettering } from "./Lettering.tsx";
+import { Title } from "./Title.tsx";
+import { useT } from "./i18n.tsx";
 import type { Summary } from "./api.ts";
 
 /** Every work, each by the last overview the author took of it. */
@@ -19,6 +20,7 @@ export function Works({
   rename: (id: string, title: string) => void;
   remove: (work: Summary) => void;
 }) {
+  const t = useT();
   const [query, setQuery] = useState(""),
     [menu, setMenu] = useState<string>(),
     [renaming, setRenaming] = useState<string>();
@@ -31,33 +33,30 @@ export function Works({
     <div className={cx("page")}>
       <header className={cx("page-head")}>
         <h1>
-          <Lettering name="works" height={64} />
+          <Title name="works" />
         </h1>
         <button className={cx("primary")} onClick={() => go("/")}>
           <Plus size={16} />
-          新作品
+          {t.works.newWork}
         </button>
       </header>
-      <p className={cx("page-lede")}>你画过的每一幅图，最近改过的在前。</p>
       <label className={cx("page-search")}>
         <Search size={16} />
         <input
-          placeholder="搜索作品"
+          placeholder={t.works.search}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
       </label>
       <p className={cx("page-count")}>
-        {query.trim()
-          ? `${shown.length} 个匹配的作品`
-          : `共 ${works.length} 个作品`}
+        {query.trim() ? t.works.matched(shown.length) : t.works.total(works.length)}
       </p>
       {!works.length ? (
         <div className={cx("page-empty")}>
           <Lantern size={36} />
-          <p>还没有作品</p>
+          <p>{t.works.empty}</p>
           <button className={cx("secondary")} onClick={() => go("/")}>
-            画第一幅
+            {t.works.first}
           </button>
         </div>
       ) : (
@@ -70,13 +69,13 @@ export function Works({
             >
               <button
                 className={cx("gallery-cover")}
-                aria-label={"打开 " + w.title}
+                aria-label={t.works.open(w.title)}
                 onClick={() => go("/a/" + w.id)}
               >
                 {w.cover ? (
                   <img src={w.cover} alt="" loading="lazy" />
                 ) : (
-                  <span>还没有画面</span>
+                  <span>{t.works.noCover}</span>
                 )}
               </button>
               <div className={cx("gallery-text")}>
@@ -94,7 +93,7 @@ export function Works({
                   </b>
                 )}
                 <small>
-                  {ago(w.updatedAt)} · 第 {w.revision} 稿
+                  {ago(w.updatedAt)} · {t.works.revision(w.revision)}
                 </small>
               </div>
               <div
@@ -102,7 +101,7 @@ export function Works({
                 ref={menu === w.id ? ref : undefined}
               >
                 <button
-                  aria-label={"更多操作：" + w.title}
+                  aria-label={t.rail.more(w.title)}
                   aria-expanded={menu === w.id}
                   onClick={() => setMenu(menu === w.id ? undefined : w.id)}
                 >
@@ -118,7 +117,7 @@ export function Works({
                       }}
                     >
                       <PenLine size={15} />
-                      重命名
+                      {t.rail.rename}
                     </button>
                     <button
                       role="menuitem"
@@ -129,7 +128,7 @@ export function Works({
                       }}
                     >
                       <Trash2 size={15} />
-                      删除
+                      {t.rail.remove}
                     </button>
                   </div>
                 )}

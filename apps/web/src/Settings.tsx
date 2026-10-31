@@ -3,16 +3,14 @@ import { Segmented, Switch, Spinner } from "@drawy/ui";
 import type { Settings as Value } from "../../../modules/contracts/index.ts";
 import { api } from "./api.ts";
 import { cx } from "./cx.ts";
-import { Lettering } from "./Lettering.tsx";
+import { Title } from "./Title.tsx";
+import { useT } from "./i18n.tsx";
 
 const channels = {
-  api: { label: "OpenAI API", baseUrl: "https://api.openai.com/v1" },
-  oauth: {
-    label: "ChatGPT 账号",
-    baseUrl: "https://chatgpt.com/backend-api/codex",
-  },
+  api: { baseUrl: "https://api.openai.com/v1" },
+  oauth: { baseUrl: "https://chatgpt.com/backend-api/codex" },
 } as const;
-const efforts = { low: "低", medium: "中", high: "高", xhigh: "极高" } as const;
+const efforts = ["low", "medium", "high", "xhigh"] as const;
 const account = ["channel", "baseUrl", "credential", "accountId"] as const;
 
 /** One setting: what it is and why it matters on the left, its control on the right. */
@@ -40,6 +38,8 @@ function Row({
 
 /** The user's standing preferences and the models that draw and paint for them. */
 export function Settings() {
+  const t = useT();
+  const w = t.settings;
   const [saved, setSaved] = useState<Value>(),
     [value, set] = useState<Value>(),
     [error, E] = useState(""),
@@ -59,7 +59,7 @@ export function Settings() {
       <div className={cx("page")}>
         <header className={cx("page-head")}>
           <h1>
-            <Lettering name="settings" height={64} />
+            <Title name="settings" />
           </h1>
         </header>
         {error ? <p className={cx("error")}>{error}</p> : <Spinner />}
@@ -80,8 +80,8 @@ export function Settings() {
   };
   const connection = (key: "author" | "image") => (
     <>
-      <Row label="接入方式">
-        <Segmented label="接入方式">
+      <Row label={w.channel}>
+        <Segmented label={w.channel}>
           {(Object.keys(channels) as (keyof typeof channels)[]).map((c) => (
             <button
               key={c}
@@ -90,12 +90,12 @@ export function Settings() {
                 role(key, { channel: c, baseUrl: channels[c].baseUrl })
               }
             >
-              {channels[c].label}
+              {c === "api" ? "OpenAI API" : w.chatgpt}
             </button>
           ))}
         </Segmented>
       </Row>
-      <Row label="服务地址">
+      <Row label={w.baseUrl}>
         <input
           value={value[key].baseUrl}
           onChange={(e) => role(key, { baseUrl: e.target.value })}
@@ -103,11 +103,6 @@ export function Settings() {
       </Row>
       <Row
         label={value[key].channel === "api" ? "API Key" : "OAuth Token"}
-        hint={
-          value[key].channel === "api"
-            ? "在 OpenAI 平台创建的密钥"
-            : "ChatGPT 登录后得到的访问令牌"
-        }
       >
         <input
           className={cx("mono")}
@@ -132,21 +127,17 @@ export function Settings() {
     <div className={cx("page settings")}>
       <header className={cx("page-head")}>
         <h1>
-          <Lettering name="settings" height={64} />
+          <Title name="settings" />
         </h1>
       </header>
       <section>
         <h2>
-          <Lettering name="preferences" height={36} />
+          <Title name="preferences" size="section" />
         </h2>
-        <Row
-          label="长期偏好"
-          hint="每次创作都会参考，比如你是谁、常给谁看、喜欢或不要的画风。"
-          wide
-        >
+        <Row label={w.longTerm} hint={w.longTermHint} wide>
           <textarea
             value={value.preferences}
-            placeholder="例如：我是初中物理老师，图要严谨、标注清楚，不要卡通人物。"
+            placeholder={w.longTermExample}
             onChange={(e) => {
               D(false);
               set({ ...value, preferences: e.target.value });
@@ -156,30 +147,29 @@ export function Settings() {
       </section>
       <section>
         <h2>
-          <Lettering name="author" height={36} />
+          <Title name="author" size="section" />
         </h2>
-        <p className={cx("section-note")}>理解你的想法、构图并写出画面的模型。</p>
         {connection("author")}
-        <Row label="模型">
+        <Row label={w.model}>
           <input
             value={value.author.model}
             onChange={(e) => role("author", { model: e.target.value })}
           />
         </Row>
-        <Row label="思考强度" hint="越高越周到，也越慢">
-          <Segmented label="思考强度">
-            {(Object.keys(efforts) as (keyof typeof efforts)[]).map((v) => (
+        <Row label={w.effort}>
+          <Segmented label={w.effort}>
+            {efforts.map((v) => (
               <button
                 key={v}
                 aria-pressed={value.author.effort === v}
                 onClick={() => role("author", { effort: v })}
               >
-                {efforts[v]}
+                {w.efforts[v]}
               </button>
             ))}
           </Segmented>
         </Row>
-        <Row label="Fast" hint="优先处理，额度消耗更高">
+        <Row label={w.fast} hint={w.fastHint}>
           <Switch
             checked={value.author.fast}
             onChange={(fast) => role("author", { fast })}
@@ -188,10 +178,9 @@ export function Settings() {
       </section>
       <section>
         <h2>
-          <Lettering name="image" height={36} />
+          <Title name="image" size="section" />
         </h2>
-        <p className={cx("section-note")}>为作品画出插图、人物和场景的模型。</p>
-        <Row label="与绘制模型共用账号">
+        <Row label={w.shared}>
           <Switch
             checked={shared}
             onChange={(on) =>
@@ -205,7 +194,7 @@ export function Settings() {
           />
         </Row>
         {!shared && connection("image")}
-        <Row label="模型">
+        <Row label={w.model}>
           <input
             value={value.image.model}
             onChange={(e) => role("image", { model: e.target.value })}
@@ -215,7 +204,7 @@ export function Settings() {
       {(dirty || done || error) && (
         <div className={cx("savebar")} role="status">
           <span data-error={!!error || undefined}>
-            {error || (dirty ? "有未保存的更改" : "已保存")}
+            {error || (dirty ? w.unsaved : w.saved)}
           </span>
           {dirty && (
             <>
@@ -226,7 +215,7 @@ export function Settings() {
                   E("");
                 }}
               >
-                放弃
+                {w.discard}
               </button>
               <button
                 className={cx("primary small")}
@@ -245,7 +234,7 @@ export function Settings() {
                   }
                 }}
               >
-                {busy ? <Spinner size={14} /> : "保存"}
+                {busy ? <Spinner size={14} /> : w.save}
               </button>
             </>
           )}

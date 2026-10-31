@@ -1,6 +1,7 @@
 /* DrawY · a quiet studio
-   The drawing is the stage. Chrome floats on warm paper and stays out of the way: a slim rail,
-   a title in serif type, one composer at the bottom and a journal that slides in when asked.
+   The drawing is the stage. Chrome floats on warm paper and stays out of the way: a slim rail
+   on the left, the title in serif type along the top, one composer at the bottom that also
+   tells what the author is doing, and a strip of tools on the right that unfolds into a panel.
    While the author works, its process appears on the canvas itself: pencilled outlines where
    modules will land, a pencil that draws each line as it goes, a viewfinder where it looks. */
 
@@ -80,10 +81,6 @@
   transition: opacity 0.2s var(--ease);
 }
 
-.rail-brand .lettering {
-  animation: none;
-}
-
 .rail-button {
   display: flex;
   align-items: center;
@@ -125,35 +122,6 @@
   transition-delay: 0.1s;
 }
 
-.rail-new {
-  padding-left: 9px;
-  color: var(--text);
-  font-weight: 500;
-}
-
-.rail-new:hover {
-  background: transparent;
-}
-
-.rail-plus {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--ai);
-  color: #fff;
-  transition:
-    transform 0.4s var(--spring),
-    background-color 0.2s var(--ease);
-}
-
-.rail-new:hover .rail-plus {
-  transform: rotate(90deg);
-  background: var(--ai-deep);
-}
-
 .rail-recents {
   flex: 1;
   min-height: 0;
@@ -176,11 +144,21 @@
 }
 
 .rail-recents h2 {
-  padding: 0 11px 6px;
+  margin: 0 0 4px;
   font-family: var(--font);
   font-size: 12px;
   font-weight: 500;
+}
+
+.rail-recents h2 button {
+  padding: 4px 11px;
+  border-radius: 7px;
   color: var(--text-3);
+}
+
+.rail-recents h2 button:hover,
+.rail-recents h2 button[aria-current] {
+  color: var(--text);
 }
 
 .rail-recents ul {
@@ -410,20 +388,83 @@
   margin: 0;
 }
 
-/* Hand-lettered titles are written onto the page from left to right. */
-.lettering {
-  display: block;
-  width: auto;
-  max-width: 100%;
-  user-select: none;
-  -webkit-user-drag: none;
-  animation: write 1.1s cubic-bezier(0.45, 0.05, 0.35, 1) 0.1s both;
+/* Titles are set in the serif, like the rest of the page's headings. */
+.title {
+  display: inline-block;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  color: var(--ink);
+  animation: rise 0.6s var(--ease-out) both;
 }
 
-h1:has(> .lettering),
-h2:has(> .lettering) {
+.title[data-size="hero"] {
+  font-size: clamp(30px, 4.2vw, 42px);
+  letter-spacing: -0.02em;
+}
+
+.title[data-size="page"] {
+  font-size: 32px;
+  letter-spacing: -0.015em;
+}
+
+.title[data-size="section"] {
+  font-size: 19px;
+  animation: none;
+}
+
+h1:has(> .title),
+h2:has(> .title) {
   margin: 0;
-  line-height: 0;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-family: var(--font-serif);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.brand b {
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.language {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.language:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.language b {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.popover > .language {
+  justify-content: flex-start;
+  gap: 10px;
+  height: auto;
+  padding: 8px 10px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.popover > .language > svg {
+  color: var(--text-2);
 }
 
 .hero-mark {
@@ -490,74 +531,88 @@ h2:has(> .lettering) {
   color: var(--text);
 }
 
-/* ---------- Auth: the words and a form beside a drawing ---------- */
+/* ---------- Auth: a headline and one card, beside what DrawY makes ---------- */
 
 .auth {
   display: grid;
-  grid-template-columns: minmax(340px, 440px) minmax(0, 1fr);
-  grid-template-rows: auto 1fr;
-  column-gap: clamp(40px, 6vw, 96px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   height: 100%;
-  padding: 28px clamp(28px, 5vw, 72px) 40px;
   overflow-y: auto;
 }
 
-.auth-brand {
-  grid-column: 1 / -1;
+.auth-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 24px clamp(24px, 4vw, 48px) 40px;
+}
+
+.auth-top {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
   height: 44px;
 }
 
 .auth-copy {
-  align-self: center;
   display: flex;
   flex-direction: column;
-  margin-top: -4vh;
+  align-items: center;
+  width: min(440px, 100%);
+  margin: auto;
+  padding: 40px 0;
 }
 
-.auth h1 .lettering {
-  height: auto;
-  width: min(100%, 420px);
-}
-
-.auth-copy > p {
-  margin: 18px 0 32px;
+.auth-copy h1 {
+  margin: 0 0 36px;
+  text-align: center;
   text-wrap: balance;
   font-family: var(--font-serif);
-  font-size: 17px;
-  line-height: 1.6;
-  color: var(--text-2);
-  animation: rise 0.9s var(--ease-out) 0.08s both;
+  font-size: clamp(34px, 3.8vw, 46px);
+  font-weight: 400;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  animation: rise 0.8s var(--ease-out) both;
 }
 
 .auth-card {
   display: grid;
-  gap: 14px;
-  padding: 26px;
+  gap: 12px;
+  width: 100%;
+  padding: 24px;
   border-radius: 24px;
-  box-shadow: inset 0 0 0 1px var(--line-strong);
-  animation: rise 0.9s var(--ease-out) 0.16s both;
+  background: var(--bg);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 2px 6px rgba(60, 45, 20, 0.04),
+    0 18px 44px rgba(60, 45, 20, 0.07);
+  animation: rise 0.8s var(--ease-out) 0.1s both;
 }
 
-.auth-card label {
-  display: grid;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 500;
+.auth-greeting {
+  margin: 0 0 4px;
+  text-align: center;
+  font-family: var(--font-serif);
+  font-size: 17px;
   color: var(--text-2);
 }
 
 .auth-card input {
-  height: 44px;
-  padding: 0 14px;
+  height: 46px;
+  padding: 0 16px;
+  border-radius: 12px;
   font-size: 15px;
 }
 
 .auth-card .primary {
-  height: 44px;
-  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  margin-top: 2px;
+  border-radius: 12px;
   font-size: 15px;
 }
 
@@ -567,39 +622,52 @@ h2:has(> .lettering) {
   background: rgba(191, 77, 67, 0.08);
 }
 
+.auth-card hr {
+  width: 100%;
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--separator);
+}
+
 .auth-switch {
   justify-self: center;
+  padding: 4px 10px;
+  border-radius: 8px;
   font-size: 13.5px;
   color: var(--text-2);
 }
 
-.auth-switch button {
-  margin-left: 4px;
-  font-weight: 500;
-  color: var(--ink);
-  text-decoration: underline;
-  text-decoration-color: var(--line-strong);
-  text-underline-offset: 3px;
-}
-
-.auth-switch button:hover {
-  text-decoration-color: currentColor;
+.auth-switch:hover {
+  background: var(--fill);
+  color: var(--text);
 }
 
 .auth-art {
-  align-self: center;
-  margin: 0;
+  position: sticky;
+  top: 0;
+  height: calc(100vh - 24px);
+  margin: 12px 12px 12px 0;
   overflow: hidden;
-  border-radius: 24px;
-  box-shadow: 0 0 0 1px var(--line);
+  border-radius: 28px;
+  background: var(--oat);
   animation: fade-in 1.2s var(--ease) 0.2s both;
 }
 
 .auth-art img {
   display: block;
   width: 100%;
-  aspect-ratio: 3 / 2;
+  height: 100%;
   object-fit: cover;
+}
+
+@media (max-width: 860px) {
+  .auth {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-art {
+    display: none;
+  }
 }
 
 /* ---------- Composer ---------- */
@@ -687,6 +755,11 @@ h2:has(> .lettering) {
 
 .composer-gap {
   flex: 1;
+}
+
+.composer[data-place="dock"]:has(> .now, > .question) {
+  padding-top: 9px;
+  border-radius: 20px;
 }
 
 .composer[data-place="dock"] .composer-gap {
@@ -1054,40 +1127,6 @@ h2:has(> .lettering) {
   font-weight: 500;
 }
 
-.actions {
-  display: flex;
-  gap: 2px;
-}
-
-.actions button {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 11px;
-  color: var(--text-3);
-}
-
-.actions button:hover:not(:disabled),
-.actions button[aria-pressed="true"] {
-  background: var(--fill);
-  color: var(--text);
-}
-
-.actions button[data-live]::after {
-  content: "";
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--ai);
-  box-shadow: 0 0 0 2px var(--paper);
-  animation: breathe 1.8s var(--ease-in-out) infinite;
-}
-
 .camera {
   position: absolute;
   z-index: 10;
@@ -1387,23 +1426,24 @@ h2:has(> .lettering) {
   translate: -50% 0;
 }
 
+/* What the author is doing sits at the top of the composer, in the same box: one line, a
+   few pictures, a reply, or its questions. */
 .now {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 10px;
-  max-width: 100%;
-  min-height: 36px;
-  padding: 5px 16px 5px 12px;
-  border-radius: 99px;
-  background: var(--glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow:
-    0 0 0 1px rgba(60, 45, 20, 0.06),
-    0 6px 20px rgba(60, 45, 20, 0.06);
+  min-height: 34px;
+  margin: -2px -7px 6px -18px;
+  padding: 2px 14px 9px 18px;
+  border-bottom: 1px solid var(--separator);
+  text-align: left;
   font-size: 13.5px;
   color: var(--text-2);
-  animation: rise 0.5s var(--ease-out) both;
+  animation: line-in 0.4s var(--ease-out) both;
+}
+
+button.now:hover .now-line {
+  color: var(--text);
 }
 
 .now-dot {
@@ -1420,10 +1460,13 @@ h2:has(> .lettering) {
 }
 
 .now-line {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   animation: line-in 0.5s var(--ease-out) both;
+  transition: color 0.2s var(--ease);
 }
 
 .now-time {
@@ -1433,19 +1476,16 @@ h2:has(> .lettering) {
   color: var(--text-3);
 }
 
-.now:not([data-tone="live"]):not([data-tone="quiet"]) {
-  padding: 8px 8px 8px 18px;
-  border-radius: 18px;
-}
-
 .now-reply {
+  flex: 1;
+  min-width: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-align: left;
   font-family: var(--font-serif);
-  font-size: 15px;
+  font-size: 14.5px;
   line-height: 1.55;
   color: var(--ink);
 }
@@ -1470,15 +1510,15 @@ h2:has(> .lettering) {
   display: grid;
   place-items: center;
   flex: none;
-  width: 30px;
-  height: 30px;
+  align-self: flex-start;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: var(--fill);
-  color: var(--text-2);
+  color: var(--text-3);
 }
 
 .now-close:hover {
-  background: var(--fill-2);
+  background: var(--fill);
   color: var(--text);
 }
 
@@ -1488,16 +1528,17 @@ h2:has(> .lettering) {
   display: inline-flex;
   flex: none;
   padding-left: 6px;
+  margin-right: 2px;
 }
 
 .board > * {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   margin-left: -6px;
   border-radius: 8px;
-  background: var(--bg);
+  background: var(--paper);
   box-shadow:
-    0 0 0 2px var(--paper),
+    0 0 0 2px #fff,
     0 1px 3px rgba(60, 45, 20, 0.12);
   animation: pop 0.5s var(--spring) both;
 }
@@ -1516,7 +1557,7 @@ h2:has(> .lettering) {
   opacity: 1;
   filter: none;
   box-shadow:
-    0 0 0 2px var(--paper),
+    0 0 0 2px #fff,
     0 0 0 3.5px rgba(217, 119, 87, 0.7);
 }
 
@@ -1530,17 +1571,13 @@ h2:has(> .lettering) {
 .question {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  width: 100%;
-  max-height: 58vh;
+  gap: 14px;
+  max-height: 50vh;
   overflow: auto;
-  padding: 16px 18px 14px;
-  border-radius: 20px;
-  background: var(--bg);
-  box-shadow:
-    0 0 0 1px var(--line),
-    0 14px 36px rgba(60, 45, 20, 0.08);
-  animation: rise 0.5s var(--ease-out) both;
+  margin: -2px -7px 6px -18px;
+  padding: 4px 14px 0 18px;
+  border-bottom: 1px solid var(--separator);
+  animation: line-in 0.4s var(--ease-out) both;
 }
 
 .question p {
@@ -1621,7 +1658,7 @@ h2:has(> .lettering) {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin: -4px -6px -6px 0;
+  margin: -2px 0 -8px;
 }
 
 .question > header small {
@@ -1645,19 +1682,13 @@ h2:has(> .lettering) {
 
 .question footer {
   position: sticky;
-  bottom: -14px;
+  bottom: 0;
   display: flex;
+  justify-content: flex-end;
   gap: 8px;
-  margin: 0 -18px -14px;
-  padding: 10px 18px 14px;
-  background: linear-gradient(rgba(255, 255, 255, 0), var(--bg) 14px);
-}
-
-.question footer small {
-  flex: 1;
-  align-self: center;
-  font-size: 12.5px;
-  color: var(--text-3);
+  margin-top: -8px;
+  padding: 0 0 10px;
+  background: linear-gradient(rgba(255, 255, 255, 0), #fff 10px);
 }
 
 .question footer .quiet-button {
@@ -1724,41 +1755,106 @@ h2:has(> .lettering) {
   animation: detail-in 0.5s var(--ease-out) both;
 }
 
-/* ---------- Journal ---------- */
+/* ---------- Side: a strip of tools on the right that unfolds into a panel ---------- */
 
-.journal {
+.side {
   position: relative;
+  z-index: 20;
   flex: none;
+  display: flex;
+  background: var(--paper);
+  box-shadow: -0.5px 0 0 var(--separator);
+}
+
+.side-tools {
+  order: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 52px;
+  padding: 12px 0;
+}
+
+.side-tools button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  color: var(--text-2);
+}
+
+.side-tools button:hover:not(:disabled),
+.side-tools button[aria-pressed="true"] {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.side-tools button[aria-pressed="true"] {
+  background: var(--fill-2);
+}
+
+.side-tools button:disabled {
+  opacity: 0.35;
+}
+
+/* A step apart: undo acts at once, the rest open panels. */
+.side-tools button:first-child {
+  margin-bottom: 8px;
+}
+
+.side-tools button[data-live]::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ai);
+  box-shadow: 0 0 0 2px var(--paper);
+  animation: breathe 1.8s var(--ease-in-out) infinite;
+}
+
+.side-panel {
+  --panel: var(--journal);
+  order: 1;
   width: 0;
   overflow: hidden;
   background: var(--surface);
-  box-shadow: -0.5px 0 0 var(--line);
+  box-shadow: 0.5px 0 0 var(--separator);
   transition: width 0.42s var(--ease-sheet);
+  /* The library's inspector opens over the panel, not the page. */
+  contain: layout;
 }
 
-.workspace[data-journal] .journal {
-  width: var(--journal);
+.side-panel[data-kind="library"] {
+  --panel: 520px;
 }
 
-.journal > * {
-  width: var(--journal);
+.side-panel[data-kind="history"] {
+  --panel: 320px;
 }
 
-.journal > header {
+.side-panel[data-kind] {
+  width: var(--panel);
+}
+
+.side-panel > * {
+  width: var(--panel);
+}
+
+.side-panel > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 60px;
-  padding: 0 14px 0 24px;
+  padding: 0 12px 0 24px;
 }
 
-.journal h2 {
-  font-family: var(--font-serif);
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.journal > header button {
+.side-panel > header button {
   display: grid;
   place-items: center;
   width: 32px;
@@ -1767,16 +1863,37 @@ h2:has(> .lettering) {
   color: var(--text-3);
 }
 
-.journal > header button:hover {
+.side-panel > header button:hover {
   background: var(--fill);
   color: var(--text);
 }
 
-.journal-body {
+.side-body {
   height: calc(100% - 60px);
   padding: 0 24px 80px;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.side-panel[data-kind="library"] .side-body {
+  padding: 0 20px 40px;
+}
+
+.side-panel[data-kind="library"] .shelf,
+.side-panel[data-kind="library"] .shelf:is([data-kind="effect"], [data-kind="style"]),
+.side-panel[data-kind="library"] .shelf[data-kind="drawing"] {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.side-panel[data-kind="library"] .library-bar .page-search {
+  min-width: 0;
+}
+
+.side-panel .inspector {
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  width: calc(100% - 16px);
 }
 
 .journal-empty {
@@ -2103,18 +2220,7 @@ h2:has(> .lettering) {
   margin-bottom: 10px;
 }
 
-.page-head .lettering {
-  margin-left: -6px;
-}
 
-.page-lede {
-  margin: 0 0 26px;
-  font-family: var(--font-serif);
-  font-size: 16.5px;
-  line-height: 1.6;
-  color: var(--text-2);
-  animation: rise 0.6s var(--ease-out) 0.1s both;
-}
 
 .page-search {
   display: flex;
@@ -2624,15 +2730,7 @@ h2:has(> .lettering) {
   padding-bottom: 8px;
 }
 
-.settings h2 .lettering {
-  margin-left: -4px;
-}
 
-.section-note {
-  margin-bottom: 4px;
-  font-size: 13px;
-  color: var(--text-3);
-}
 
 .setting {
   display: grid;
@@ -2728,7 +2826,7 @@ h2:has(> .lettering) {
 
 .history li {
   display: grid;
-  grid-template-columns: 1fr auto 64px;
+  grid-template-columns: 1fr auto 40px;
   align-items: center;
   gap: 16px;
   min-height: 48px;
@@ -2756,6 +2854,27 @@ h2:has(> .lettering) {
   color: var(--ai-deep);
 }
 
+
+.history-restore {
+  justify-self: center;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--text-3);
+}
+
+.history-restore:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.library-bar > label.upload {
+  width: 42px;
+  padding: 0;
+  justify-content: center;
+}
 
 /* ---------- Dropping pictures anywhere ---------- */
 
@@ -3360,10 +3479,12 @@ h2:has(> .lettering) {
 /* ---------- Narrow windows ---------- */
 
 @media (max-width: 1080px) {
-  .journal {
+  .side-panel {
     position: absolute;
-    z-index: 20;
-    inset: 0 0 0 auto;
+    inset: 0 52px 0 auto;
+  }
+
+  .side-panel[data-kind] {
     box-shadow:
       -0.5px 0 0 var(--line),
       -24px 0 60px rgba(60, 45, 20, 0.1);
@@ -3372,15 +3493,6 @@ h2:has(> .lettering) {
   .dock {
     width: min(660px, calc(100% - 32px));
     bottom: 72px;
-  }
-
-  .auth {
-    grid-template-columns: minmax(0, 480px);
-    justify-content: center;
-  }
-
-  .auth-art {
-    display: none;
   }
 
   .traces {

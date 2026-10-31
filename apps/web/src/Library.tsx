@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Search, Upload, X } from "lucide-react";
-import { Segmented, Spinner, reducedMotion } from "@drawy/ui";
+import { Segmented, Spinner, reducedMotion, useLocale } from "@drawy/ui";
 import type {
   Material,
   MaterialPage,
@@ -12,23 +12,11 @@ import { Canvas } from "../../../modules/canvas/index.ts";
 import type { Work } from "../../../modules/contracts/index.ts";
 import { api } from "./api.ts";
 import { cx } from "./cx.ts";
-import { styleList, registers } from "./Composer.tsx";
+import { styleList } from "./Composer.tsx";
 import { ago } from "./time.ts";
+import { useT } from "./i18n.tsx";
 
-const kinds = [
-  ["picture", "图片"],
-  ["drawing", "画法"],
-  ["effect", "质感"],
-  ["style", "风格"],
-] as const;
-const roles: Record<string, string> = {
-  object: "物体",
-  figure: "人物",
-  scene: "场景",
-  icon: "图标",
-  texture: "纹理",
-};
-const origins = { curated: "精选", generated: "AI 生成", upload: "上传" };
+const kinds = ["picture", "drawing", "effect", "style"] as const;
 /** Soft grounds for the shelf, after the Anthropic palette: oat, cactus, heather, coral,
  * manilla, sky, clay and olive, each faded to a tint. */
 const tints = [
@@ -41,13 +29,6 @@ const tints = [
   "#f3e0d6",
   "#e3e8d8",
 ];
-const blurbs: Record<Material["kind"], string> = {
-  picture: "摆进画面的物体、人物、场景和图标",
-  drawing: "现成的画法代码：箭头、标注、曲线、时间轴、交互控件",
-  effect: "给手绘部分加上的笔触与纸张质感",
-  style: "一幅作品从图片到线条的整体画风",
-};
-
 /** The material library: browse each kind, look closely at one, and use it. */
 export function Library({
   use,
@@ -57,6 +38,8 @@ export function Library({
   use: (m: Material) => void;
   action: string;
 }) {
+  const t = useT(),
+    locale = useLocale();
   const [q, Q] = useState(""),
     [kind, K] = useState<Material["kind"]>("picture"),
     [result, R] = useState<MaterialPage>({
@@ -106,7 +89,7 @@ export function Library({
     };
   }, [q, page, kind, stamp]);
   const styleName = (id: string | null) =>
-    styles.find((s) => s.id === id)?.name.zh;
+    styles.find((s) => s.id === id)?.name[locale];
   async function upload(files: FileList) {
     U(true);
     E("");
@@ -129,8 +112,8 @@ export function Library({
   return (
     <div className={cx("library")}>
       <div className={cx("library-bar")}>
-        <Segmented label="素材种类">
-          {kinds.map(([k, label]) => (
+        <Segmented label={t.library.kind}>
+          {kinds.map((k) => (
             <button
               key={k}
               aria-pressed={kind === k}
@@ -140,14 +123,14 @@ export function Library({
                 O(undefined);
               }}
             >
-              {label}
+              {t.library.kinds[k]}
             </button>
           ))}
         </Segmented>
         <label className={cx("page-search")}>
           <Search size={16} />
           <input
-            placeholder="搜索素材，中文或英文"
+            placeholder={t.library.search}
             value={q}
             onChange={(e) => {
               Q(e.target.value);
@@ -155,14 +138,18 @@ export function Library({
             }}
           />
           {q && (
-            <button aria-label="清除" onClick={() => (Q(""), setPage(1))}>
+            <button aria-label={t.library.clear} onClick={() => (Q(""), setPage(1))}>
               <X size={14} />
             </button>
           )}
         </label>
-        <label className={cx("secondary")} data-busy={uploading || undefined}>
+        <label
+          className={cx("secondary upload")}
+          data-busy={uploading || undefined}
+          aria-label={t.library.upload}
+          data-tip={t.library.upload}
+        >
           {uploading ? <Spinner size={15} /> : <Upload size={15} />}
-          上传图片
           <input
             type="file"
             accept="image/*"
@@ -176,8 +163,7 @@ export function Library({
         </label>
       </div>
       <p className={cx("page-count")} aria-live="polite">
-        {blurbs[kind]}
-        {result.page > 0 && !loading && ` · ${result.total} 个`}
+        {result.page > 0 && !loading && t.library.count(result.total)}
       </p>
       {error && (
         <p className={cx("error")} role="alert">
@@ -199,19 +185,19 @@ export function Library({
           >
             <Look m={m} />
             <span className={cx("item-name")}>
-              <b>{m.name.zh}</b>
+              <b>{m.name[locale]}</b>
               <small>
                 {m.kind === "picture"
-                  ? styleName(m.style) || roles[m.role]
+                  ? styleName(m.style) || t.library.roles[m.role]
                   : m.kind === "style"
-                    ? registers[m.register]
-                    : m.name.en}
+                    ? t.registers[m.register]
+                    : m.name[locale === "zh" ? "en" : "zh"]}
               </small>
             </span>
           </button>
         ))}
         {!loading && !result.items.length && (
-          <p className={cx("shelf-empty")}>没有找到“{q}”相关的素材</p>
+          <p className={cx("shelf-empty")}>{t.library.none(q)}</p>
         )}
       </div>
       {result.page < result.pages && result.page > 0 && (
@@ -220,7 +206,7 @@ export function Library({
           disabled={loading}
           onClick={() => setPage(result.page + 1)}
         >
-          {loading ? <Spinner size={15} /> : "加载更多"}
+          {loading ? <Spinner size={15} /> : t.library.more}
         </button>
       )}
       {open && (
@@ -347,6 +333,9 @@ function Inspector({
   use: () => void;
   action: string;
 }) {
+  const t = useT(),
+    locale = useLocale(),
+    f = t.library.facts;
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -358,41 +347,41 @@ function Inspector({
     return () => removeEventListener("keydown", key, true);
   }, []);
   const facts: [string, string][] = [
-    ["种类", { picture: "图片", drawing: "画法", effect: "质感", style: "风格" }[m.kind]],
+    [f.kind, t.library.kinds[m.kind]],
     ...(m.kind === "picture"
       ? ([
-          ["角色", roles[m.role]],
-          ["画风", styleName(m.style) || "不限"],
+          [f.role, t.library.roles[m.role]],
+          [f.style, styleName(m.style) || f.any],
           [
-            "尺寸",
+            f.size,
             `${Math.round(m.form.width * m.form.content.width)} × ${Math.round(m.form.height * m.form.content.height)}`,
           ],
         ] as [string, string][])
       : []),
     ...(m.kind === "style"
       ? ([
-          ["适合", registers[m.register]],
-          ["图片", `${m.count} 张`],
+          [f.fits, t.registers[m.register]],
+          [f.pictures, f.picturesCount(m.count)],
         ] as [string, string][])
       : []),
     ...(m.kind === "drawing"
       ? ([
-          ["用法", m.use === "link" ? "连线或模块" : "模块"],
-          ["参数", Object.keys(m.params).join("、")],
+          [f.use, m.use === "link" ? f.link : f.module],
+          [f.params, Object.keys(m.params).join(t.now.list)],
         ] as [string, string][])
       : []),
-    ["来源", origins[m.origin.kind]],
-    ["加入", ago(m.origin.createdAt)],
-    ["被使用", `${m.uses} 次`],
+    [f.origin, t.library.origins[m.origin.kind]],
+    [f.added, ago(m.origin.createdAt)],
+    [f.used, f.usedCount(m.uses)],
   ];
   return (
-    <aside className={cx("inspector")} aria-label={m.name.zh}>
+    <aside className={cx("inspector")} aria-label={m.name[locale]}>
       <header>
         <div>
-          <h2>{m.name.zh}</h2>
-          <p>{m.name.en}</p>
+          <h2>{m.name[locale]}</h2>
+          <p>{m.name[locale === "zh" ? "en" : "zh"]}</p>
         </div>
-        <button className={cx("close-button")} aria-label="关闭" onClick={close}>
+        <button className={cx("close-button")} aria-label={t.close} onClick={close}>
           <X size={15} />
         </button>
       </header>
@@ -423,7 +412,7 @@ function Inspector({
       <p className={cx("inspector-about")}>{m.about}</p>
       {m.origin.prompt && (
         <details className={cx("inspector-prompt")}>
-          <summary>生成提示词</summary>
+          <summary>{t.library.prompt}</summary>
           <p>{m.origin.prompt}</p>
         </details>
       )}

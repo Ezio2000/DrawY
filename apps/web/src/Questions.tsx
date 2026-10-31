@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { cx } from "./cx.ts";
+import { useT } from "./i18n.tsx";
 import type { Question } from "../../../modules/contracts/index.ts";
 
 /** The author's questions before it draws. A single question answers on one click; with
@@ -19,12 +20,13 @@ export function Questions({
   choose: (text: string) => void;
   cancel: () => void;
 }) {
+  const t = useT();
   const [chosen, setChosen] = useState<Record<string, string[]>>({});
   const quick = questions.length === 1 && !questions[0].multiple;
   const said = (picked: Record<string, string[]>) =>
     questions
       .filter((q) => picked[q.id]?.length)
-      .map((q) => `${q.text}\n→ ${picked[q.id].join("、")}`)
+      .map((q) => `${q.text}\n→ ${picked[q.id].join(t.now.list)}`)
       .join("\n");
   const send = (picked: Record<string, string[]>) => answer(said(picked));
   const pick = (q: Question, label: string) => {
@@ -47,8 +49,8 @@ export function Questions({
   return (
     <div className={cx("question")}>
       <header>
-        <small>画之前想先确认{questions.length > 1 ? ` ${questions.length} 件事` : "一下"}</small>
-        <button aria-label="不画了" data-tip="不画了" onClick={cancel}>
+        <small>{t.questions.confirm(questions.length)}</small>
+        <button aria-label={t.questions.drop} data-tip={t.questions.drop} onClick={cancel}>
           <X size={15} />
         </button>
       </header>
@@ -78,13 +80,12 @@ export function Questions({
         </section>
       ))}
       <footer>
-        <small>也可以在下面直接说你的想法</small>
         {!Object.keys(chosen).length && (
           <button
             className={cx("quiet-button")}
-            onClick={() => answer("你来决定，直接画。")}
+            onClick={() => answer(t.questions.yoursMessage)}
           >
-            你来决定
+            {t.questions.yours}
           </button>
         )}
         {!quick && (
@@ -93,7 +94,7 @@ export function Questions({
             disabled={!ready}
             onClick={() => send(chosen)}
           >
-            确定
+            {t.questions.ok}
           </button>
         )}
       </footer>
