@@ -178,7 +178,7 @@ async function compact(
       undefined,
       4096,
       // A summary asks with other instructions; it keeps off the author's cached prefix.
-      run.workId + ":compact",
+      store.userId + ":compact",
     );
     const references = [
       ...new Set(
@@ -621,7 +621,9 @@ export class Agent {
                   }
                 },
                 undefined,
-                run.workId,
+                // One key for all of a user's works: every request begins with the same
+                // instructions and tools, and a work's turns extend its earlier ones.
+                store.userId,
               );
               break;
             } catch (e) {

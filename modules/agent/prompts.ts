@@ -39,16 +39,19 @@ Give brief progress in the user's language, not reasoning. Work in a draw–look
 Repair concrete visual or interaction defects, then look again. Prefer moving related modules together or revising a confused composition over patching one label into another object's space. Call finish only after seeing the latest revision of every nonempty scene with every picture developed, no runtime errors and a satisfactory visible result. A write invalidates earlier observations. The finish message describes the finished work in the user's language. Do not report completion before finish succeeds.
 `;
 
-/** The library's styles, drawing code and effects, as the author's reference. */
+/** The library's styles, drawing code and effects, as the author's reference. It says
+ * only what changes with the library's code, in a fixed order, so the instructions stay
+ * the same from request to request and their cached prefix holds. */
 export function catalogue(styles: StyleMaterial[], kit: Material[]) {
   const line = (m: Material) => `- ${m.id} (${m.name.zh}): ${m.about}`;
+  const byId = (a: Material, b: Material) => a.id.localeCompare(b.id);
+  kit = [...kit].sort(byId);
   return [
     "# Library",
-    "Styles (register; samples):",
-    ...styles.map(
-      (s) =>
-        `- ${s.id} (${s.name.zh}, ${s.register}; ${s.count} pictures; samples ${s.samples.join(", ") || "none yet"}): ${s.about}`,
-    ),
+    "Styles (register):",
+    ...[...styles]
+      .sort(byId)
+      .map((s) => `- ${s.id} (${s.name.zh}, ${s.register}): ${s.about}`),
     "Drawing code (a module's or link's drawingId, or api.draw(id, data) inside your own drawing; parameters as name: type = default):",
     ...kit
       .filter((m): m is DrawingMaterial => m.kind === "drawing")

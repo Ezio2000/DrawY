@@ -812,3 +812,43 @@ it("tries a turn again when the model's stream breaks, without the broken attemp
     rmSync(dir, { recursive: true });
   }
 }, 20000);
+
+it("keeps the library catalogue the same as the library grows, so the cached prefix holds", async () => {
+  const { catalogue } = await import("./prompts.ts");
+  const style = {
+    id: "watercolor",
+    name: { zh: "水彩绘本", en: "Watercolour" },
+    register: "expressive",
+    about: "washes",
+    count: 30,
+    samples: ["a", "b"],
+  } as never;
+  const kit = [
+    {
+      id: "plot",
+      kind: "drawing",
+      name: { zh: "曲线" },
+      about: "p",
+      params: {},
+      size: { width: 1, height: 1 },
+      example: {},
+      uses: 1,
+    },
+    {
+      id: "arrow",
+      kind: "drawing",
+      name: { zh: "箭头" },
+      about: "a",
+      params: {},
+      size: { width: 1, height: 1 },
+      example: {},
+      uses: 9,
+    },
+  ] as never[];
+  const grown = {
+    ...(style as object),
+    count: 36,
+    samples: ["b", "c"],
+  } as never;
+  expect(catalogue([grown], [...kit].reverse())).toBe(catalogue([style], kit));
+});
