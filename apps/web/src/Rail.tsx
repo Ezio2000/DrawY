@@ -150,13 +150,9 @@ export function Rail({
       {link("/", t.rail.home, House, page === "home")}
       {link("/library", t.rail.library, Shapes, page === "library")}
       <section className={cx("rail-recents")} inert={!open}>
-        <h2>
-          <button aria-current={page === "works" || undefined} onClick={() => nav("/works")}>
-            {t.rail.recents}
-          </button>
-        </h2>
+        <h2>{t.rail.recents}</h2>
         <ul>
-          {works.slice(0, 30).map((w) => (
+          {works.map((w) => (
             <li
               className={cx("rail-work")}
               data-current={w.id === current || undefined}
@@ -217,11 +213,6 @@ export function Rail({
             </li>
           ))}
         </ul>
-        {works.length > 30 && (
-          <button className={cx("rail-all")} onClick={() => nav("/works")}>
-            {t.rail.all(works.length)}
-          </button>
-        )}
       </section>
       <div className={cx("rail-foot")} ref={accountRef}>
         {account && (

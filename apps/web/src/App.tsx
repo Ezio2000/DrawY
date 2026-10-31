@@ -1,13 +1,12 @@
 import { SceneView, DetailView } from "./SceneView.tsx";
 import { Activity, Now, live } from "./Activity.tsx";
 import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Undo2,
   ChevronDown,
   X,
   History,
-  PackagePlus,
   MessagesSquare,
   PanelRightClose,
   ImagePlus,
@@ -20,6 +19,7 @@ import {
   Tooltips,
   Presence,
   UndoToast,
+  Dialog,
   type Locale,
 } from "@drawy/ui";
 import { api, type Summary, type User } from "./api.ts";
@@ -28,7 +28,6 @@ import { Versions } from "./Versions.tsx";
 import { Rail, Rename } from "./Rail.tsx";
 import { Auth } from "./Auth.tsx";
 import { Composer, type Attachment } from "./Composer.tsx";
-import { Works } from "./Works.tsx";
 import { Library } from "./Library.tsx";
 import { Settings } from "./Settings.tsx";
 import type {
@@ -42,13 +41,11 @@ import { TraceView } from "./TraceView.tsx";
 import { Title } from "./Title.tsx";
 import { ChooseLocale, dictionaries, useLanguage } from "./i18n.tsx";
 const sketches = [OrbitSketch, ModelSketch, KinshipSketch];
-type Page = "home" | "work" | "works" | "library" | "settings" | "traces";
+type Page = "home" | "work" | "library" | "settings" | "traces";
 const pageOf = (path: string): Page =>
   path.startsWith("/a/")
     ? "work"
-    : path === "/works"
-      ? "works"
-      : path === "/library"
+    : path === "/library"
         ? "library"
         : path === "/settings"
           ? "settings"
@@ -57,7 +54,7 @@ const pageOf = (path: string): Page =>
             : "home";
 const workIdOf = (path: string) => path.match(/^\/a\/([^/]+)/)?.[1];
 /** What the panel beside the canvas shows. */
-type Panel = "" | "journal" | "history" | "library";
+type Panel = "" | "journal" | "history";
 /** How a library material rides along with a message. */
 const attachmentOf = (m: Material, locale: Locale): Attachment => ({
   id: m.id,
@@ -88,6 +85,7 @@ export function App() {
     [selected, S] = useState<Selection>(),
     [detailId, setDetail] = useState<string>(),
     [panel, setPanel] = useState<Panel>(""),
+    [picking, setPicking] = useState(false),
     [scenes, M] = useState(false),
     [dismissed, setDismissed] = useState(""),
     [offline, G] = useState(false),
@@ -366,8 +364,8 @@ export function App() {
       A((old) =>
         old.some((a) => a.id === m.id) ? old : [...old, attachmentOf(m, locale)],
       );
-    if (page === "work") setPanel("");
-    else go("/");
+    setPicking(false);
+    if (page !== "work" && page !== "home") go("/");
   }
   const crumbs = [];
   let at = active;
@@ -425,6 +423,7 @@ export function App() {
         void attempt(() => api("/runs/" + run!.id + "/cancel", "POST"))
       }
       attach={(files) => void attempt(() => upload(files))}
+      pick={() => setPicking(true)}
     />
   );
   const droppable = page === "home" || page === "work";
@@ -490,13 +489,6 @@ export function App() {
             <TraceView />
           ) : page === "settings" ? (
             <Settings />
-          ) : page === "works" ? (
-            <Works
-              works={shownWorks}
-              go={go}
-              rename={(id, title) => void attempt(() => rename(id, title))}
-              remove={remove}
-            />
           ) : page === "library" ? (
             <div className={cx("page")}>
               <header className={cx("page-head")}>
@@ -524,14 +516,7 @@ export function App() {
                         style={{ animationDelay: 240 + i * 80 + "ms" }}
                         onClick={() => void attempt(() => send(text))}
                       >
-                        <span
-                          className={cx("example-art")}
-                          style={
-                            {
-                              "--tint": ["#f2e1df", "#dbe6e1", "#e2e1ec"][i],
-                            } as CSSProperties
-                          }
-                        >
+                        <span className={cx("example-art")}>
                           <Sketch />
                         </span>
                         <span className={cx("example-text")}>{text}</span>
@@ -685,14 +670,6 @@ export function App() {
                     <History size={17} />
                   </button>
                   <button
-                    aria-label={t.work.addMaterial}
-                    data-tip={t.work.addMaterial}
-                    aria-pressed={panel === "library"}
-                    onClick={() => toggle("library")}
-                  >
-                    <PackagePlus size={17} />
-                  </button>
-                  <button
                     aria-label={t.work.journal}
                     data-tip={t.work.journal}
                     aria-pressed={journal}
@@ -707,8 +684,6 @@ export function App() {
                     <h2>
                       {panel === "history" ? (
                         <Title name="history" size="section" />
-                      ) : panel === "library" ? (
-                        <Title name="library" size="section" />
                       ) : (
                         <Title name="journal" size="section" />
                       )}
@@ -738,8 +713,6 @@ export function App() {
                         current={work.revision}
                         restore={(r) => void attempt(() => restore(r))}
                       />
-                    ) : panel === "library" ? (
-                      <Library use={use} action={t.work.addIt} />
                     ) : (
                       <Activity
                         runs={runs}
@@ -767,6 +740,16 @@ export function App() {
             </div>
           )}
         </main>
+        {picking && (
+          <Dialog
+            title={t.titles.library}
+            heading={<Title name="library" size="section" />}
+            wide
+            onClose={() => setPicking(false)}
+          >
+            <Library use={use} action={t.work.addIt} />
+          </Dialog>
+        )}
         <Presence show={!!trash}>
           <UndoToast text={t.work.deleted(trash?.title ?? "")} onUndo={keep} />
         </Presence>

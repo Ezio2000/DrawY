@@ -249,6 +249,7 @@ export function createApp(storage: Storage) {
         kindSchema
           .array()
           .parse(c.req.query("kind")?.split(",").filter(Boolean) ?? []),
+        Number(c.req.query("size")) || undefined,
       ),
     ),
   );

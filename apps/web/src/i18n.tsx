@@ -18,7 +18,6 @@ const zh = {
   // Titles
   titles: {
     hero: "每个想法，都值得探索",
-    works: "作品",
     library: "素材库",
     settings: "设置",
     traces: "运行记录",
@@ -50,7 +49,6 @@ const zh = {
     home: "首页",
     library: "素材库",
     recents: "最近",
-    all: (n: number) => `全部 ${n} 个作品`,
     more: (title: string) => "更多操作：" + title,
     rename: "重命名",
     remove: "删除",
@@ -73,7 +71,9 @@ const zh = {
   // Composer
   composer: {
     describe: "描述你想画的内容",
-    attach: "添加参考图",
+    attach: "添加",
+    upload: "上传图片",
+    fromLibrary: "从素材库选择",
     clearQuote: "清除选择",
     detach: (name: string) => "移除 " + name,
     stop: "停止",
@@ -94,7 +94,6 @@ const zh = {
     scenes: "全部场景",
     undo: "撤销上一稿",
     history: "版本",
-    addMaterial: "从素材库添加",
     journal: "创作过程",
     panel: "工具栏",
     noScene: "这个入口还没有子场景，请让 AI 补充",
@@ -132,7 +131,6 @@ const zh = {
     list: "、",
   },
   questions: {
-    confirm: (n: number) => (n > 1 ? `先确认 ${n} 件事` : "先确认一下"),
     drop: "不画了",
     yours: "你来决定",
     yoursMessage: "你来决定，直接画。",
@@ -154,17 +152,6 @@ const zh = {
     current: "当前",
     restore: "恢复",
   },
-  works: {
-    newWork: "新作品",
-    search: "搜索作品",
-    matched: (n: number) => `${n} 个匹配`,
-    total: (n: number) => `共 ${n} 个`,
-    empty: "还没有作品",
-    first: "画第一幅",
-    open: (title: string) => "打开 " + title,
-    noCover: "还没有画面",
-    revision: (n: number) => `第 ${n} 稿`,
-  },
   library: {
     kinds: { picture: "图片", drawing: "画法", effect: "质感", style: "风格" },
     kind: "素材种类",
@@ -181,7 +168,8 @@ const zh = {
     upload: "上传图片",
     count: (n: number) => `${n} 个`,
     none: (q: string) => (q ? `没有找到“${q}”` : "这里还没有素材"),
-    more: "加载更多",
+    previous: "上一页",
+    next: "下一页",
     facts: {
       kind: "种类",
       role: "角色",
@@ -338,7 +326,6 @@ const en: Words = {
   retry: "Retry",
   titles: {
     hero: "Every idea is worth exploring",
-    works: "Works",
     library: "Library",
     settings: "Settings",
     traces: "Run records",
@@ -368,7 +355,6 @@ const en: Words = {
     home: "Home",
     library: "Library",
     recents: "Recents",
-    all: (n) => `All ${n} works`,
     more: (title) => "More: " + title,
     rename: "Rename",
     remove: "Delete",
@@ -389,7 +375,9 @@ const en: Words = {
   },
   composer: {
     describe: "Describe what you want to draw",
-    attach: "Add reference images",
+    attach: "Add",
+    upload: "Upload images",
+    fromLibrary: "Choose from library",
     clearQuote: "Clear selection",
     detach: (name) => "Remove " + name,
     stop: "Stop",
@@ -409,7 +397,6 @@ const en: Words = {
     scenes: "All scenes",
     undo: "Undo last draft",
     history: "Versions",
-    addMaterial: "Add from library",
     journal: "Process",
     panel: "Tools",
     noScene: "This entry has no scene yet; ask the AI to add one",
@@ -446,7 +433,6 @@ const en: Words = {
     list: ", ",
   },
   questions: {
-    confirm: (n) => (n > 1 ? `${n} things first` : "One thing first"),
     drop: "Never mind",
     yours: "You decide",
     yoursMessage: "You decide, just draw it.",
@@ -468,17 +454,6 @@ const en: Words = {
     current: "Current",
     restore: "Restore",
   },
-  works: {
-    newWork: "New work",
-    search: "Search works",
-    matched: (n) => `${n} matching`,
-    total: (n) => `${n} in total`,
-    empty: "No works yet",
-    first: "Draw the first one",
-    open: (title) => "Open " + title,
-    noCover: "No picture yet",
-    revision: (n) => `draft ${n}`,
-  },
   library: {
     kinds: { picture: "Pictures", drawing: "Drawings", effect: "Effects", style: "Styles" },
     kind: "Material kind",
@@ -495,7 +470,8 @@ const en: Words = {
     upload: "Upload images",
     count: (n) => `${n}`,
     none: (q) => (q ? `Nothing found for “${q}”` : "Nothing here yet"),
-    more: "Load more",
+    previous: "Previous page",
+    next: "Next page",
     facts: {
       kind: "Kind",
       role: "Role",

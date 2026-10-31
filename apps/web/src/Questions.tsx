@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { X, Check, Sparkles } from "lucide-react";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 import type { Question } from "../../../modules/contracts/index.ts";
@@ -48,52 +48,51 @@ export function Questions({
   const ready = questions.every((q) => chosen[q.id]?.length);
   return (
     <div className={cx("question")}>
-      <header>
-        <small>{t.questions.confirm(questions.length)}</small>
-        <button aria-label={t.questions.drop} data-tip={t.questions.drop} onClick={cancel}>
-          <X size={15} />
-        </button>
-      </header>
+      <button
+        className={cx("question-drop")}
+        aria-label={t.questions.drop}
+        data-tip={t.questions.drop}
+        onClick={cancel}
+      >
+        <X size={15} />
+      </button>
       {questions.map((q) => (
         <section key={q.id}>
           <p>{q.text}</p>
-          <div>
-            {q.options.map((o) => (
-              <button
-                key={o.label}
-                aria-pressed={chosen[q.id]?.includes(o.label) || false}
-                data-pictures={!!o.pictures?.length || undefined}
-                onClick={() => pick(q, o.label)}
-              >
-                {!!o.pictures?.length && (
-                  <span className={cx("question-pictures")}>
-                    {o.pictures.map((p) => (
-                      <img key={p.url} src={p.url} alt={p.name} />
-                    ))}
-                  </span>
-                )}
-                <b>{o.label}</b>
-                {o.detail && <small>{o.detail}</small>}
-              </button>
-            ))}
-          </div>
+          <ol>
+            {q.options.map((o, i) => {
+              const on = chosen[q.id]?.includes(o.label) || false;
+              return (
+                <li key={o.label}>
+                  <button aria-pressed={on} onClick={() => pick(q, o.label)}>
+                    <i>{on ? <Check size={13} strokeWidth={2.6} /> : i + 1}</i>
+                    <b>{o.label}</b>
+                    {o.detail && <small>{o.detail}</small>}
+                    {!!o.pictures?.length && (
+                      <span className={cx("question-pictures")}>
+                        {o.pictures.slice(0, 3).map((p) => (
+                          <img key={p.url} src={p.url} alt={p.name} />
+                        ))}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
         </section>
       ))}
       <footer>
         {!Object.keys(chosen).length && (
-          <button
-            className={cx("quiet-button")}
-            onClick={() => answer(t.questions.yoursMessage)}
-          >
+          <button className={cx("question-yours")} onClick={() => answer(t.questions.yoursMessage)}>
+            <i>
+              <Sparkles size={13} />
+            </i>
             {t.questions.yours}
           </button>
         )}
         {!quick && (
-          <button
-            className={cx("primary")}
-            disabled={!ready}
-            onClick={() => send(chosen)}
-          >
+          <button className={cx("primary small")} disabled={!ready} onClick={() => send(chosen)}>
             {t.questions.ok}
           </button>
         )}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUp, Paperclip, Square, X, Palette, Check } from "lucide-react";
+import { ArrowUp, Paperclip, Square, X, Palette, Check, ImageUp, Shapes } from "lucide-react";
 import { Spinner, useLocale } from "@drawy/ui";
 import type { StyleMaterial } from "@drawy/materials/schema";
 import { api } from "./api.ts";
@@ -44,6 +44,7 @@ export function Composer({
   send,
   stop,
   attach,
+  pick,
   status,
 }: {
   place: "home" | "dock";
@@ -62,6 +63,8 @@ export function Composer({
   send: () => void;
   stop: () => void;
   attach: (files: FileList | File[]) => void;
+  /** Opens the library to pick materials from. */
+  pick: () => void;
   /** What the author is doing, its question or its reply, shown in the box. */
   status?: ReactNode;
 }) {
@@ -149,14 +152,10 @@ export function Composer({
           }}
         />
         <div className={cx("composer-tools")}>
-          <button
-            className={cx("composer-tool")}
-            aria-label={t.composer.attach}
-            data-tip={t.composer.attach}
-            onClick={() => picker.current?.click()}
-          >
-            <Paperclip size={17} />
-          </button>
+          <AddMenu
+            upload={() => picker.current?.click()}
+            pick={pick}
+          />
           {setStyle && <StylePicker style={style} pick={setStyle} />}
           <span className={cx("composer-gap")} />
           {working ? (
@@ -180,6 +179,43 @@ export function Composer({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Adding to the message: a picture from this computer, or anything from the library. */
+function AddMenu({ upload, pick }: { upload: () => void; pick: () => void }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useDismiss(open, () => setOpen(false), ref);
+  const choose = (fn: () => void) => {
+    setOpen(false);
+    fn();
+  };
+  return (
+    <div className={cx("add-menu")} ref={ref}>
+      <button
+        className={cx("composer-tool")}
+        aria-label={t.composer.attach}
+        data-tip={open ? undefined : t.composer.attach}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <Paperclip size={17} />
+      </button>
+      {open && (
+        <div className={cx("popover")} role="menu">
+          <button role="menuitem" onClick={() => choose(upload)}>
+            <ImageUp size={15} />
+            {t.composer.upload}
+          </button>
+          <button role="menuitem" onClick={() => choose(pick)}>
+            <Shapes size={15} />
+            {t.composer.fromLibrary}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

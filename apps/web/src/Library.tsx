@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Search, Upload, X } from "lucide-react";
+import { Search, Upload, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Segmented, Spinner, reducedMotion, useLocale } from "@drawy/ui";
 import type {
   Material,
@@ -29,7 +29,17 @@ const tints = [
   "#f3e0d6",
   "#e3e8d8",
 ];
-/** The material library: browse each kind, look closely at one, and use it. */
+/** Each kind's cell on the shelf: wide enough to see what it is, no larger. */
+const cells: Record<Material["kind"], { width: number; height: number }> = {
+  picture: { width: 96, height: 124 },
+  effect: { width: 132, height: 112 },
+  style: { width: 150, height: 104 },
+  drawing: { width: 232, height: 168 },
+};
+const GAP = 10;
+
+/** The material library: browse each kind a page at a time, look closely at one, and use
+ * it. A page holds what the shelf holds; nothing scrolls. */
 export function Library({
   use,
   action,
@@ -40,6 +50,7 @@ export function Library({
 }) {
   const t = useT(),
     locale = useLocale();
+  const shelf = useRef<HTMLDivElement>(null);
   const [q, Q] = useState(""),
     [kind, K] = useState<Material["kind"]>("picture"),
     [result, R] = useState<MaterialPage>({
@@ -49,32 +60,49 @@ export function Library({
       pages: 1,
     }),
     [page, setPage] = useState(1),
+    [grid, setGrid] = useState<{ columns: number; rows: number }>(),
     [loading, setLoading] = useState(true),
     [error, E] = useState(""),
     [open, O] = useState<Material>(),
     [styles, setStyles] = useState<StyleMaterial[]>([]),
     [uploading, U] = useState(false),
     [stamp, setStamp] = useState(0);
+  const cell = cells[kind];
   useEffect(() => void styleList().then(setStyles, () => {}), []);
+  // How many cells the shelf holds, as the space it has changes.
   useEffect(() => {
+    const el = shelf.current;
+    if (!el) return;
+    const measure = () => {
+      const { width, height } = el.getBoundingClientRect();
+      const columns = Math.max(1, Math.floor((width + GAP) / (cell.width + GAP))),
+        rows = Math.max(1, Math.floor((height + GAP) / (cell.height + GAP)));
+      setGrid((old) =>
+        old?.columns === columns && old.rows === rows ? old : { columns, rows },
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [cell]);
+  const size = grid ? grid.columns * grid.rows : 0;
+  useEffect(() => {
+    if (!size) return;
     const a = new AbortController();
     setLoading(true);
     E("");
     const t = setTimeout(
       () =>
         fetch(
-          `/api/materials?q=${encodeURIComponent(q)}&page=${page}&kind=${kind}`,
+          `/api/materials?q=${encodeURIComponent(q)}&page=${page}&kind=${kind}&size=${size}`,
           { signal: a.signal, headers: { "X-Drawy-Locale": locale } },
         )
           .then(async (r) => {
             if (!r.ok) throw Error((await r.json()).error);
             return r.json() as Promise<MaterialPage>;
           })
-          .then((next) =>
-            R((old) =>
-              page > 1 ? { ...next, items: [...old.items, ...next.items] } : next,
-            ),
-          )
+          .then(R)
           .catch((e) => {
             if (!a.signal.aborted) E(e.message);
           })
@@ -87,7 +115,7 @@ export function Library({
       clearTimeout(t);
       a.abort();
     };
-  }, [q, page, kind, stamp, locale]);
+  }, [q, page, kind, stamp, locale, size]);
   const styleName = (id: string | null) =>
     styles.find((s) => s.id === id)?.name[locale];
   async function upload(files: FileList) {
@@ -162,53 +190,62 @@ export function Library({
           />
         </label>
       </div>
-      <p className={cx("page-count")} aria-live="polite">
-        {result.page > 0 && !loading && t.library.count(result.total)}
-      </p>
       {error && (
         <p className={cx("error")} role="alert">
           {error}
         </p>
       )}
       <div
+        ref={shelf}
         className={cx("shelf")}
         data-kind={kind}
-        aria-busy={(loading && page === 1) || undefined}
+        aria-busy={loading || undefined}
+        style={
+          {
+            gridTemplateColumns: `repeat(${grid?.columns ?? 1}, minmax(0, 1fr))`,
+            gridAutoRows: cell.height + "px",
+          } as CSSProperties
+        }
       >
         {result.items.map((m, i) => (
           <button
             key={m.id}
             className={cx("item")}
             aria-current={open?.id === m.id || undefined}
+            title={m.name[locale]}
             style={{ "--tint": tints[i % tints.length] } as CSSProperties}
             onClick={() => O(m)}
           >
             <Look m={m} />
-            <span className={cx("item-name")}>
-              <b>{m.name[locale]}</b>
-              <small>
-                {m.kind === "picture"
-                  ? styleName(m.style) || t.library.roles[m.role]
-                  : m.kind === "style"
-                    ? t.registers[m.register]
-                    : m.name[locale === "zh" ? "en" : "zh"]}
-              </small>
-            </span>
+            <span className={cx("item-name")}>{m.name[locale]}</span>
           </button>
         ))}
         {!loading && !result.items.length && (
           <p className={cx("shelf-empty")}>{t.library.none(q)}</p>
         )}
       </div>
-      {result.page < result.pages && result.page > 0 && (
+      <nav className={cx("pager")} aria-live="polite">
+        <small>{result.page > 0 && t.library.count(result.total)}</small>
         <button
-          className={cx("secondary more")}
-          disabled={loading}
+          aria-label={t.library.previous}
+          data-tip={t.library.previous}
+          disabled={loading || result.page <= 1}
+          onClick={() => setPage(result.page - 1)}
+        >
+          <ChevronLeft size={16} />
+        </button>
+        <span>
+          {Math.max(result.page, 1)} / {result.pages}
+        </span>
+        <button
+          aria-label={t.library.next}
+          data-tip={t.library.next}
+          disabled={loading || result.page >= result.pages}
           onClick={() => setPage(result.page + 1)}
         >
-          {loading ? <Spinner size={15} /> : t.library.more}
+          <ChevronRight size={16} />
         </button>
-      )}
+      </nav>
       {open && (
         <Inspector
           key={open.id}

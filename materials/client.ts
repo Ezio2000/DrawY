@@ -47,9 +47,10 @@ export class MaterialsClient {
     page: number,
     user?: string,
     kinds: MaterialKind[] = [],
+    size?: number,
   ) {
     return this.call<MaterialPage>(
-      `/browse?q=${encodeURIComponent(query)}&page=${page}&kind=${kinds.join(",")}`,
+      `/browse?q=${encodeURIComponent(query)}&page=${page}&kind=${kinds.join(",")}${size ? "&size=" + size : ""}`,
       user,
     );
   }

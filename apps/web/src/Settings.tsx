@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { UserRound, PenTool, Image as ImageIcon } from "lucide-react";
 import { Segmented, Switch, Spinner } from "@drawy/ui";
 import type { Settings as Value } from "../../../modules/contracts/index.ts";
 import { api } from "./api.ts";
@@ -40,6 +41,9 @@ function Row({
 export function Settings() {
   const t = useT();
   const w = t.settings;
+  const [tab, setTab] = useState<"preferences" | "author" | "image">(
+    "preferences",
+  );
   const [saved, setSaved] = useState<Value>(),
     [value, set] = useState<Value>(),
     [error, E] = useState(""),
@@ -75,7 +79,8 @@ export function Settings() {
     const next = { ...value, [key]: { ...value[key], ...patch } };
     // While the image model shares the account, it follows every change to it.
     if (key === "author" && shared)
-      for (const k of account) (next.image as Record<string, unknown>)[k] = next.author[k];
+      for (const k of account)
+        (next.image as Record<string, unknown>)[k] = next.author[k];
     set(next);
   };
   const connection = (key: "author" | "image") => (
@@ -101,9 +106,7 @@ export function Settings() {
           onChange={(e) => role(key, { baseUrl: e.target.value })}
         />
       </Row>
-      <Row
-        label={value[key].channel === "api" ? "API Key" : "OAuth Token"}
-      >
+      <Row label={value[key].channel === "api" ? "API Key" : "OAuth Token"}>
         <input
           className={cx("mono")}
           value={value[key].credential}
@@ -123,6 +126,11 @@ export function Settings() {
       )}
     </>
   );
+  const tabs = [
+    ["preferences", UserRound],
+    ["author", PenTool],
+    ["image", ImageIcon],
+  ] as const;
   return (
     <div className={cx("page settings")}>
       <header className={cx("page-head")}>
@@ -130,77 +138,90 @@ export function Settings() {
           <Title name="settings" />
         </h1>
       </header>
-      <section>
-        <h2>
-          <Title name="preferences" size="section" />
-        </h2>
-        <Row label={w.longTerm} hint={w.longTermHint} wide>
-          <textarea
-            value={value.preferences}
-            placeholder={w.longTermExample}
-            onChange={(e) => {
-              D(false);
-              set({ ...value, preferences: e.target.value });
-            }}
-          />
-        </Row>
-      </section>
-      <section>
-        <h2>
-          <Title name="author" size="section" />
-        </h2>
-        {connection("author")}
-        <Row label={w.model}>
-          <input
-            value={value.author.model}
-            onChange={(e) => role("author", { model: e.target.value })}
-          />
-        </Row>
-        <Row label={w.effort}>
-          <Segmented label={w.effort}>
-            {efforts.map((v) => (
-              <button
-                key={v}
-                aria-pressed={value.author.effort === v}
-                onClick={() => role("author", { effort: v })}
-              >
-                {w.efforts[v]}
-              </button>
-            ))}
-          </Segmented>
-        </Row>
-        <Row label={w.fast} hint={w.fastHint}>
-          <Switch
-            checked={value.author.fast}
-            onChange={(fast) => role("author", { fast })}
-          />
-        </Row>
-      </section>
-      <section>
-        <h2>
-          <Title name="image" size="section" />
-        </h2>
-        <Row label={w.shared}>
-          <Switch
-            checked={shared}
-            onChange={(on) =>
-              role(
-                "image",
-                on
-                  ? Object.fromEntries(account.map((k) => [k, value.author[k]]))
-                  : {},
-              )
-            }
-          />
-        </Row>
-        {!shared && connection("image")}
-        <Row label={w.model}>
-          <input
-            value={value.image.model}
-            onChange={(e) => role("image", { model: e.target.value })}
-          />
-        </Row>
-      </section>
+      <div className={cx("settings-layout")}>
+        <nav className={cx("settings-nav")}>
+          {tabs.map(([k, Icon]) => (
+            <button
+              key={k}
+              aria-current={tab === k || undefined}
+              onClick={() => setTab(k)}
+            >
+              <Icon size={16} />
+              {t.titles[k]}
+            </button>
+          ))}
+        </nav>
+        {tab === "preferences" && (
+          <section>
+            <Row label={w.longTerm} hint={w.longTermHint} wide>
+              <textarea
+                value={value.preferences}
+                placeholder={w.longTermExample}
+                onChange={(e) => {
+                  D(false);
+                  set({ ...value, preferences: e.target.value });
+                }}
+              />
+            </Row>
+          </section>
+        )}
+        {tab === "author" && (
+          <section>
+            {connection("author")}
+            <Row label={w.model}>
+              <input
+                value={value.author.model}
+                onChange={(e) => role("author", { model: e.target.value })}
+              />
+            </Row>
+            <Row label={w.effort}>
+              <Segmented label={w.effort}>
+                {efforts.map((v) => (
+                  <button
+                    key={v}
+                    aria-pressed={value.author.effort === v}
+                    onClick={() => role("author", { effort: v })}
+                  >
+                    {w.efforts[v]}
+                  </button>
+                ))}
+              </Segmented>
+            </Row>
+            <Row label={w.fast} hint={w.fastHint}>
+              <Switch
+                checked={value.author.fast}
+                onChange={(fast) => role("author", { fast })}
+              />
+            </Row>
+          </section>
+        )}
+        {tab === "image" && (
+          <section>
+            <Row label={w.shared}>
+              <Switch
+                checked={shared}
+                onChange={(on) =>
+                  role(
+                    "image",
+                    on
+                      ? Object.fromEntries(
+                          account.map((k) => [k, value.author[k]]),
+                        )
+                      : {},
+                  )
+                }
+              />
+            </Row>
+            {!shared && connection("image")}
+            <Row label={w.model}>
+              <input
+                value={value.image.model}
+                onChange={(e) => role("image", { model: e.target.value })}
+              />
+            </Row>
+          </section>
+        )}
+      </div>
       {(dirty || done || error) && (
         <div className={cx("savebar")} role="status">
           <span data-error={!!error || undefined}>
