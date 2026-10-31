@@ -1,0 +1,413 @@
+import { useEffect, useState, type ReactNode } from "react";
+import { Questions } from "./Questions.tsx";
+import { X } from "lucide-react";
+import { cx } from "./cx.ts";
+import type {
+  Run,
+  Step,
+  Work,
+  Picture,
+} from "../../../modules/contracts/index.ts";
+type ToolStep = Extract<Step, { kind: "tool" }>;
+const focusNames = {
+  overview: "",
+  region: "局部",
+  annotate: "标注",
+  actions: "交互",
+};
+const duration = (ms = 0) => {
+  const seconds = Math.round(ms / 1000);
+  return seconds < 60
+    ? `${seconds} 秒`
+    : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
+};
+export const live = (run?: Run) =>
+  !!run && ["running", "viewing"].includes(run.status);
+/** A thought's headline and the reasoning under it. */
+function thought(text: string) {
+  const closed = text.match(/^\*\*(.+?)\*\*\s*([\s\S]*)$/);
+  return closed
+    ? [closed[1], closed[2]]
+    : text.startsWith("**")
+      ? [text.slice(2), ""]
+      : [text.split("\n")[0], text.split("\n").slice(1).join("\n").trim()];
+}
+const registers = { formal: "严谨", expressive: "个性" };
+/** What the author is doing, in a word or two. */
+function doing(step: ToolStep) {
+  switch (step.name) {
+    case "read_work":
+      return "翻阅作品";
+    case "set_brief":
+      return [
+        "定下方向",
+        step.subject,
+        step.register && registers[step.register],
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    case "find_materials":
+      return ["寻找素材", step.subjects.join("、")].filter(Boolean).join(" · ");
+    case "generate_images":
+      return ["生成图片", step.images.map((i) => i.name).join("、")]
+        .filter(Boolean)
+        .join(" · ");
+    case "write_work":
+      return step.revision ? `落笔 · 第 ${step.revision} 稿` : "落笔";
+    case "view_canvas":
+      return step.waiting
+        ? `等 ${step.waiting} 张图片显影`
+        : ["端详画面", focusNames[step.focus]].filter(Boolean).join(" · ");
+  }
+}
+/** The pictures a step brings: the best candidates per subject, or what it generated. */
+export const picturesOf = (step: Step): Picture[] =>
+  step.kind !== "tool"
+    ? []
+    : step.name === "find_materials" || step.name === "set_brief"
+      ? (step.found || []).flatMap((f) =>
+          f.candidates
+            .filter((c) => c.url)
+            .slice(0, 3)
+            .map((c) => ({ id: c.id, name: c.name, url: c.url! })),
+        )
+      : step.name === "generate_images"
+        ? step.images.filter((p) => p.url)
+        : [];
+/** One line under the canvas: what the author is doing now, the pictures it is weighing,
+ * its question, or how the last run ended. */
+export function Now({
+  run,
+  work,
+  offline,
+  pictures,
+  answer,
+  choose,
+  cancel,
+  reveal,
+  dismiss,
+}: {
+  run?: Run;
+  work: Work;
+  offline: boolean;
+  /** Whether the pictures being weighed show here rather than on the canvas. */
+  pictures: boolean;
+  answer: (text: string) => void;
+  choose: (text: string) => void;
+  cancel: () => void;
+  reveal: () => void;
+  dismiss: () => void;
+}) {
+  if (offline)
+    return (
+      <div className={cx("now")} data-tone="quiet">
+        <i className={cx("now-dot")} />
+        <span>连接中断，正在重连…</span>
+      </div>
+    );
+  if (!run) return null;
+  if (run.status === "waiting" && run.questions)
+    return (
+      <Questions
+        key={run.steps.length}
+        questions={run.questions}
+        answer={answer}
+        choose={choose}
+        cancel={cancel}
+      />
+    );
+  if (!live(run)) {
+    const reply = run.steps.at(-1);
+    const text =
+      run.status === "completed"
+        ? reply?.kind === "message" && reply.role === "assistant"
+          ? reply.text
+          : ""
+        : run.status === "failed"
+          ? run.error || "这次没有画完"
+          : "已停止";
+    if (!text) return null;
+    return (
+      <div className={cx("now")} data-tone={run.status}>
+        <button
+          className={cx("now-reply")}
+          title="查看创作过程"
+          onClick={reveal}
+        >
+          {text}
+        </button>
+        <button
+          className={cx("now-close")}
+          aria-label="收起"
+          data-tip="收起（Esc）"
+          onClick={dismiss}
+        >
+          <X size={15} />
+        </button>
+      </div>
+    );
+  }
+  const used = new Set(Object.keys(work.materials));
+  const board = pictures ? run.steps.flatMap(picturesOf).slice(-6) : [];
+  // A tool still at work outranks the thoughts and notes that stream alongside it.
+  const busy = run.steps.findLast(
+      (s): s is ToolStep => s.kind === "tool" && s.status === "running",
+    ),
+    tail = run.steps.at(-1),
+    painting =
+      pictures &&
+      run.steps.some(
+        (s) =>
+          s.kind === "tool" &&
+          s.name === "generate_images" &&
+          s.images.some((i) => i.status === "developing"),
+      );
+  const line =
+    run.status === "viewing"
+      ? "端详画面"
+      : busy
+        ? doing(busy)
+        : tail?.kind === "thinking"
+          ? thought(tail.text)[0] || "构思"
+          : tail?.kind === "message" && tail.role === "assistant"
+            ? tail.text
+            : "构思";
+  const at = run.status === "viewing" ? -1 : run.steps.indexOf((busy ?? tail)!);
+  return (
+    <div className={cx("now")} data-tone="live">
+      {(!!board.length || painting) && (
+        <span className={cx("board")}>
+          {board.map((p, i) => (
+            <img
+              key={p.url + i}
+              src={p.url}
+              alt={p.name}
+              data-used={(p.id && used.has(p.id)) || undefined}
+            />
+          ))}
+          {painting && <i className={cx("developing")} />}
+        </span>
+      )}
+      <i className={cx("now-dot")} />
+      <span key={at} className={cx("now-line")}>
+        {line}
+      </span>
+      <Elapsed key={"t" + at} />
+    </div>
+  );
+}
+/** How long the author has been at its current step, once that is long enough to wonder. */
+function Elapsed() {
+  const [since] = useState(Date.now()),
+    [now, setNow] = useState(since);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const s = Math.round((now - since) / 1000);
+  return s >= 8 ? <small className={cx("now-time")}>{s} 秒</small> : null;
+}
+/** Every run of this work: the request, how the author went about it, and its reply. */
+export function Activity({
+  runs,
+  work,
+  openTrace,
+}: {
+  runs: Run[];
+  work: Work;
+  /** Opens the record of a run. */
+  openTrace: (runId: string) => void;
+}) {
+  const [zoom, Z] = useState<Picture>();
+  const [open, O] = useState<Record<string, boolean>>({});
+  const used = new Set(Object.keys(work.materials));
+  const last = runs.at(-1);
+  return (
+    <>
+      {!runs.length && <p className={cx("journal-empty")}>还没有对话</p>}
+      {runs.map((r) => {
+        const reply =
+          r.status === "completed" && r.steps.at(-1)?.kind === "message"
+            ? r.steps.length - 1
+            : -1;
+        const unfolded = open[r.id] ?? (r === last && live(r));
+        const items: ReactNode[] = [];
+        let trace: ReactNode[] = [];
+        const flush = () => {
+          if (!trace.length) return;
+          items.push(
+            <ol key={"trace" + items.length} className={cx("trace")}>
+              {trace}
+            </ol>,
+          );
+          trace = [];
+        };
+        r.steps.forEach((s, i) => {
+          if (i === reply) return;
+          if (s.kind === "message" && s.role === "user") {
+            flush();
+            items.push(
+              <p key={i} className={cx("prompt")}>
+                {s.text}
+              </p>,
+            );
+          } else if (unfolded)
+            trace.push(
+              <Trace
+                key={i}
+                step={s}
+                live={live(r) && i === r.steps.length - 1}
+                used={used}
+                zoom={Z}
+              />,
+            );
+        });
+        flush();
+        const steps = r.steps.filter(
+          (s) => s.kind === "tool" || s.kind === "thinking",
+        ).length;
+        const saved = r.steps.findLast(
+          (s) => s.kind === "tool" && s.name === "write_work" && s.revision,
+        ) as Extract<ToolStep, { name: "write_work" }> | undefined;
+        const facts = [
+          !!steps && `${steps} 步`,
+          r.elapsedMs && duration(r.elapsedMs),
+          saved && `第 ${saved.revision} 稿`,
+        ].filter(Boolean);
+        return (
+          <article key={r.id} className={cx("run")} data-status={r.status}>
+            {items[0]}
+            {!!steps && (
+              <button
+                className={cx("run-fold")}
+                aria-expanded={unfolded}
+                onClick={() => O({ ...open, [r.id]: !unfolded })}
+              >
+                <span>{live(r) ? "正在创作" : "过程"}</span>
+                <small>{facts.join(" · ")}</small>
+              </button>
+            )}
+            {unfolded && (
+              <a
+                className={cx("run-trace")}
+                href={"/traces/" + r.id}
+                onClick={(e) => {
+                  e.preventDefault();
+                  openTrace(r.id);
+                }}
+              >
+                运行记录
+              </a>
+            )}
+            {items.slice(1)}
+            {reply >= 0 && (
+              <div className={cx("reply")}>
+                {(r.steps[reply] as { text: string }).text}
+              </div>
+            )}
+            {r.status === "failed" && (
+              <p className={cx("run-error")}>{r.error || "运行失败"}</p>
+            )}
+            {r.status === "cancelled" && (
+              <p className={cx("run-note")}>已停止</p>
+            )}
+          </article>
+        );
+      })}
+      {zoom && <Lightbox picture={zoom} close={() => Z(undefined)} />}
+    </>
+  );
+}
+/** A picture enlarged over everything; a click anywhere, the button or Escape closes it. */
+function Lightbox({ picture, close }: { picture: Picture; close: () => void }) {
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      close();
+    };
+    addEventListener("keydown", key, true);
+    return () => removeEventListener("keydown", key, true);
+  }, []);
+  return (
+    <div className={cx("lightbox")} onClick={close}>
+      <button aria-label="关闭">
+        <X size={18} />
+      </button>
+      <img src={picture.url} alt={picture.name} />
+    </div>
+  );
+}
+function Trace({
+  step,
+  live,
+  used,
+  zoom,
+}: {
+  step: Step;
+  live: boolean;
+  used: Set<string>;
+  zoom: (p: Picture) => void;
+}) {
+  if (step.kind === "message")
+    return <li className={cx("trace-note")}>{step.text}</li>;
+  if (step.kind === "thinking") {
+    const [title, body] = thought(step.text);
+    return (
+      <li data-status={live ? "running" : "done"}>
+        <details>
+          <summary>{title || "构思"}</summary>
+          {body && <p>{body}</p>}
+        </details>
+      </li>
+    );
+  }
+  const shots = picturesOf(step).concat(
+    step.name === "view_canvas" ? step.screenshots || [] : [],
+  );
+  return (
+    <li data-status={step.status}>
+      <span>{doing(step)}</span>
+
+      {!!shots.length && (
+        <div className={cx("thumbs")} data-kind={step.name}>
+          {shots.map((p, i) => (
+            <button
+              key={p.url + i}
+              title={p.id ? `${p.name} · ${p.id}` : p.name}
+              data-used={(p.id && used.has(p.id)) || undefined}
+              data-status={p.status}
+              onClick={() => zoom(p)}
+            >
+              {p.status === "developing" ? (
+                <i className={cx("developing")} />
+              ) : p.status === "failed" ? (
+                <i className={cx("failed")}>×</i>
+              ) : (
+                <img src={p.url} alt={p.name} loading="lazy" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {(step.name === "find_materials" || step.name === "set_brief") &&
+        step.found?.some((f) => !f.candidates.length) && (
+          <small>
+            库里没有：
+            {step.found
+              .filter((f) => !f.candidates.length)
+              .map((f) => f.subject)
+              .join("、")}
+          </small>
+        )}
+      {[
+        ...(step.name === "view_canvas" ? step.errors || [] : []),
+        ...(step.error ? [step.error] : []),
+      ].map((e, i) => (
+        <small key={i} className={cx("trace-error")}>
+          {e}
+        </small>
+      ))}
+    </li>
+  );
+}

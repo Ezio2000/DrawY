@@ -1,0 +1,20 @@
+{
+  "name": "@drawy/materials",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./schema": "./schema.ts",
+    "./client": "./client.ts",
+    "./testing": "./testing.ts"
+  },
+  "scripts": {
+    "start": "tsx server.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.0",
+    "hono": "^4.9.0",
+    "sharp": "^0.35.5",
+    "tsx": "^4.20.0",
+    "zod": "^4.1.0"
+  }
+}

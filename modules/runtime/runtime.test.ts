@@ -1,11 +1,37 @@
 import { beforeAll, afterAll, beforeEach, afterEach, it, expect } from "vitest";
 import { chromium, type Browser, type Page } from "playwright";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { documentFor } from "./document.ts";
 import { fixture } from "./fixture.ts";
 import { capture } from "../observation/capture.ts";
 import { fit, zoom } from "../contracts/geometry.ts";
+import { useOf } from "../materials/index.ts";
+import type { Material } from "@drawy/materials/schema";
+
+/** Curated materials as the library serves them. */
+const seed = (name: string) =>
+  (
+    JSON.parse(
+      readFileSync(
+        new URL(`../../materials/seed/${name}.json`, import.meta.url),
+        "utf8",
+      ),
+    ) as Material[]
+  ).map(
+    (m) =>
+      ({
+        ...m,
+        status: "ready",
+        ...(m.kind === "picture"
+          ? { file: { ...m.file, url: `/materials/files/${m.id}` } }
+          : {}),
+      }) as Material,
+  );
+/** Requests for the developing picture, held back until the test lets them through. */
+const held: (() => void)[] = [];
+const develop = () => held.splice(0).forEach((send) => send());
 
 let browser: Browser, page: Page, server: Server, origin: string;
 let work = fixture();
@@ -16,6 +42,21 @@ beforeAll(async () => {
     if (url.pathname === "/runtime/runtime.js") {
       res.setHeader("content-type", "application/javascript");
       res.end(bundle);
+    } else if (url.pathname.startsWith("/materials/files/")) {
+      const id = url.pathname.split("/").at(-1)!;
+      const send = () => {
+        res.setHeader("content-type", "image/webp");
+        res.end(
+          readFileSync(
+            new URL(
+              `../../materials/seed/files/${id === "g-late" ? "apple" : id}.webp`,
+              import.meta.url,
+            ),
+          ),
+        );
+      };
+      if (id === "g-late") held.push(send);
+      else send();
     } else if (url.pathname === "/api/plantuml") {
       res.setHeader("content-type", "image/svg+xml");
       res.end(
@@ -211,4 +252,247 @@ it("leaves keyboard input inside a drawing control to that control", async () =>
   const input = page.getByRole("textbox", { name: "angle" });
   await input.pressSequentially("20");
   expect(await input.inputValue()).toBe("20");
+});
+it("swaps a later revision into the open canvas and reports the scene it shows", async () => {
+  await open();
+  const result = await page.evaluate(async () => {
+    const view = window.drawyView,
+      work = structuredClone(window.drawyData.work),
+      scene = work.scenes.root,
+      heading = scene.modules.find((m) => m.id === "heading")!;
+    scene.modules = scene.modules.filter((m) => m.id !== "heading");
+    scene.modules.push({
+      ...heading,
+      id: "added",
+      bounds: { ...heading.bounds, x: heading.bounds.x + 1600 },
+    });
+    const before = view.view.scale;
+    const shown = new Promise<string[]>((resolve) => {
+      view.options.shown = (s) => resolve(s.modules.map((m) => m.id));
+    });
+    view.update(work, scene);
+    const ids = await shown;
+    return {
+      ids,
+      drawn: [...document.querySelectorAll<HTMLElement>("[data-module-id]")]
+        .map((e) => e.dataset.moduleId)
+        .sort(),
+      zoomedOut: view.view.scale < before,
+    };
+  });
+  expect(result.drawn).toEqual([...result.ids].sort());
+  expect(result.drawn).toContain("added");
+  expect(result.drawn).not.toContain("heading");
+  expect(result.zoomedOut).toBe(true);
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+});
+
+it("draws with materials: fitted pictures, library drawing code, effects, and pictures that develop later", async () => {
+  const pictures = seed("pictures");
+  const apple = useOf(pictures.find((m) => m.id === "apple")!)!;
+  const arrow = seed("drawings").find((m) => m.id === "arrow")!;
+  work.materials = {
+    apple,
+    "g-late": {
+      ...(apple as Extract<typeof apple, { kind: "picture" }>),
+      id: "g-late",
+      url: "/materials/files/g-late",
+      status: "developing",
+    },
+    arrow: useOf({
+      ...arrow,
+      source: readFileSync(
+        new URL("../../materials/seed/drawings/arrow.js", import.meta.url),
+        "utf8",
+      ),
+    } as Material)!,
+    "pencil-grain": useOf(
+      seed("effects").find((m) => m.id === "pencil-grain")!,
+    )!,
+  };
+  work.drawings.picture = {
+    id: "picture",
+    name: "图",
+    source: "return api.material(api.data.id)",
+  };
+  work.drawings.flow = {
+    id: "flow",
+    name: "流",
+    source: `const svg = await api.draw("arrow", { label: "光", flow: true });
+svg.querySelector("path").setAttribute("filter", api.effect("pencil-grain"));
+return svg;`,
+  };
+  const at = (id: string, x: number, drawingId: string) => ({
+    id,
+    label: id,
+    drawingId,
+    data: { id },
+    bounds: { x, y: 0, width: 300, height: 150 },
+    anchors: {},
+    group: null,
+    target: null,
+  });
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      at("apple", 0, "picture"),
+      at("g-late", 400, "picture"),
+      at("flow", 800, "flow"),
+    ],
+    links: [],
+    checks: [],
+    interactionId: null,
+  };
+  // A developing picture holds up the page's load event, but not the canvas.
+  await page.goto(origin + "/api/works/fixture/scenes/root?revision=1", {
+    waitUntil: "domcontentloaded",
+  });
+  await page.waitForFunction(() => window.drawyReady);
+  const result = await page.evaluate(() => {
+    const host = (id: string) =>
+      document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!;
+    const img = host("apple").querySelector("img")!;
+    const frame = host("apple")
+      .querySelector<HTMLElement>("[data-material]")!
+      .getBoundingClientRect();
+    const b = img.getBoundingClientRect();
+    return {
+      // The picture's visible content fills the box's height: its frame is a little larger.
+      contained: b.height >= frame.height && b.height < frame.height * 1.05,
+      late: host("g-late")
+        .querySelector("img")!
+        .hasAttribute("data-developing"),
+      arrow:
+        !!host("flow").querySelector("path.flow") &&
+        !!host("flow").querySelector("text"),
+      effect: !!host("flow").querySelector("filter#fx-pencil-grain"),
+      errors: window.drawyErrors,
+    };
+  });
+  expect(result).toEqual({
+    contained: true,
+    late: true,
+    arrow: true,
+    effect: true,
+    errors: [],
+  });
+  // The canvas was ready before the late picture; the capture waits for it.
+  const developed = page.evaluate(() => window.drawyView.renderer.developed());
+  develop();
+  await developed;
+  expect(
+    await page.evaluate(() =>
+      document
+        .querySelector('[data-module-id="g-late"]')!
+        .shadowRoot!.querySelector("img")!
+        .hasAttribute("data-developing"),
+    ),
+  ).toBe(false);
+});
+it("stands pictures on their box, reports where they are seen and wires library controls to the scene", async () => {
+  const apple = useOf(seed("pictures").find((m) => m.id === "apple")!)!;
+  const slider = seed("drawings").find((m) => m.id === "slider")!;
+  work.materials = {
+    apple,
+    slider: useOf({
+      ...slider,
+      source: readFileSync(
+        new URL("../../materials/seed/drawings/slider.js", import.meta.url),
+        "utf8",
+      ),
+    } as Material)!,
+  };
+  work.drawings.picture = {
+    id: "picture",
+    name: "图",
+    source: 'return api.material("apple")',
+  };
+  work.drawings.control = {
+    id: "control",
+    name: "滑块",
+    source: 'return api.draw("slider", api.data)',
+  };
+  work.drawings.readout = {
+    id: "readout",
+    name: "读数",
+    source: "return api.html(`<b>${api.data.value}</b>`)",
+  };
+  work.interactions.react = {
+    id: "react",
+    source:
+      'api.on("length", "change", (v) => api.set("readout", { value: v }));',
+  };
+  const at = (
+    id: string,
+    drawingId: string,
+    y: number,
+    height: number,
+    data = {},
+  ) => ({
+    id,
+    label: id,
+    drawingId,
+    data,
+    bounds: { x: 0, y, width: 300, height },
+    anchors: {},
+    group: null,
+    target: null,
+  });
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      at("apple", "picture", 0, 400),
+      at("length", "control", 420, 56, {
+        label: "摆长",
+        min: 0,
+        max: 2,
+        step: 0.5,
+        value: 1,
+        unit: "m",
+      }),
+      at("readout", "readout", 500, 40, { value: 1 }),
+    ],
+    links: [],
+    checks: [],
+    interactionId: "react",
+  };
+  const [shot] = await capture(browser, {
+    origin,
+    cookie: "fixture",
+    scenes: [
+      {
+        id: "root",
+        url: origin + "/api/works/fixture/scenes/root?revision=1",
+        checks: [],
+      },
+    ],
+  });
+  const seen = shot.modules.find((m) => m.id === "apple")!.pictures![0];
+  // The box is taller than the apple: the apple fills its width and rests on the bottom.
+  expect(seen.material).toBe("apple");
+  expect(seen.x).toBeLessThanOrEqual(2);
+  expect(Math.abs(seen.y + seen.height - 400)).toBeLessThanOrEqual(2);
+  expect(seen.height).toBeLessThan(330);
+  await open();
+  await page.evaluate(() => {
+    const input = document
+      .querySelector('[data-module-id="length"]')!
+      .shadowRoot!.querySelector("input")!;
+    input.value = "1.5";
+    input.dispatchEvent(new Event("input"));
+  });
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-module-id="readout"]')!
+        .shadowRoot!.querySelector("b")?.textContent === "1.5",
+  );
+  expect(
+    await page.evaluate(
+      () =>
+        document
+          .querySelector('[data-module-id="length"]')!
+          .shadowRoot!.querySelector(".v")!.textContent,
+    ),
+  ).toBe("1.5 m");
 });

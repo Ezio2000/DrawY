@@ -22,13 +22,20 @@ export async function generate(
   input: Item[],
   tools: Item[],
   signal: AbortSignal,
-  onProgress: () => void = () => {},
+  onEvent: (event: Item) => void = () => {},
   budget = 32768,
+  /** Requests that extend one another share a key, so they reach the machine holding
+   * their cached prefix; the ChatGPT backend routes by the `session_id` header, so it
+   * carries the key there too. */
+  cacheKey?: string,
 ) {
   if (!role.credential) throw Error("请先配置模型凭证");
   const r = await fetch(role.baseUrl.replace(/\/$/, "") + "/responses", {
     method: "POST",
-    headers: headers(role),
+    headers: {
+      ...headers(role),
+      ...(cacheKey && role.channel === "oauth" ? { session_id: cacheKey } : {}),
+    },
     body: JSON.stringify({
       model: role.model,
       instructions,
@@ -36,8 +43,9 @@ export async function generate(
       tools,
       stream: true,
       store: false,
-      reasoning: { effort: role.effort },
+      reasoning: { effort: role.effort, summary: "auto" },
       service_tier: role.fast ? "priority" : "default",
+      ...(cacheKey ? { prompt_cache_key: cacheKey } : {}),
       ...(role.channel === "api" ? { max_output_tokens: budget } : {}),
     }),
     signal,
@@ -47,7 +55,8 @@ export async function generate(
   const decoder = new TextDecoder();
   let buffer = "",
     complete = false,
-    usage: Item = {};
+    usage: Item = {},
+    response: Item = {};
   for await (const bytes of r.body!) {
     buffer += decoder.decode(bytes, { stream: true });
     let i;
@@ -56,11 +65,13 @@ export async function generate(
       buffer = buffer.slice(i + 1);
       if (!line.startsWith("data:") || line === "data: [DONE]") continue;
       const e = JSON.parse(line.slice(5).trim());
-      if (e.type.endsWith(".delta")) onProgress();
+      onEvent(e);
       if (e.type === "response.output_item.done") items.push(e.item);
       if (e.type === "response.completed") {
         complete = true;
         usage = e.response.usage;
+        const { id, model, status, service_tier } = e.response;
+        response = { id, model, status, service_tier };
       }
       if (e.type === "response.failed" || e.type === "error")
         throw Error(JSON.stringify(e.error || e.response?.error));
@@ -69,7 +80,7 @@ export async function generate(
     }
   }
   if (!complete) throw Error("模型连接在完成前中断");
-  return { items, usage };
+  return { items, usage, response };
 }
 export function textOf(items: Item[]) {
   return items

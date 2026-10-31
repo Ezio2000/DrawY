@@ -20,3 +20,16 @@ export async function api<T = any>(
   }
   return r.json();
 }
+/** A work as lists show it. */
+export interface Summary {
+  id: string;
+  title: string;
+  revision: number;
+  updatedAt: number;
+  /** The latest overview the author took of it. */
+  cover: string | null;
+}
+export interface User {
+  id: string;
+  name: string;
+}

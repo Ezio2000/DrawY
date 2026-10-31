@@ -1,0 +1,1020 @@
+[
+  {
+    "id": "arrow",
+    "kind": "drawing",
+    "name": {
+      "zh": "箭头",
+      "en": "Arrow"
+    },
+    "aliases": [
+      "箭头",
+      "连线",
+      "流程箭头",
+      "弯箭头",
+      "流动",
+      "arrow",
+      "connector",
+      "curved arrow",
+      "flow"
+    ],
+    "category": "drawing/connector",
+    "about": "An arrow whose head is sized to its line: straight or curved (bend), dashed, open or filled head, double-ended, an optional label beside the middle, and flow (animated dashes moving along it) for movement of blood, water, data or energy. As a link it runs between the anchors; in a module between data.from and data.to.",
+    "tags": ["arrow", "link", "flow", "connector", "direction"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "link",
+    "size": {
+      "width": 200,
+      "height": 60
+    },
+    "example": {
+      "from": {
+        "x": 0.04,
+        "y": 0.7
+      },
+      "to": {
+        "x": 0.96,
+        "y": 0.5
+      },
+      "bend": 0.18,
+      "flow": true,
+      "label": "能量流动"
+    },
+    "params": {
+      "bend": {
+        "type": "number",
+        "default": 0,
+        "description": "curvature as a fraction of length; positive bends left of the direction of travel"
+      },
+      "head": {
+        "type": "string",
+        "default": "filled",
+        "description": "filled | open | none"
+      },
+      "both": {
+        "type": "boolean",
+        "default": false,
+        "description": "a head at both ends"
+      },
+      "dashed": {
+        "type": "boolean",
+        "default": false,
+        "description": "dashed line"
+      },
+      "flow": {
+        "type": "boolean",
+        "default": false,
+        "description": "dashes move along the arrow"
+      },
+      "speed": {
+        "type": "number",
+        "default": 1.2,
+        "description": "seconds per flow cycle"
+      },
+      "label": {
+        "type": "string",
+        "description": "a few words beside the middle"
+      },
+      "labelSide": {
+        "type": "string",
+        "default": "above",
+        "description": "above | below"
+      },
+      "color": {
+        "type": "color",
+        "description": "defaults to the ink token"
+      },
+      "width": {
+        "type": "number",
+        "description": "line width; defaults to the stroke token"
+      },
+      "gap": {
+        "type": "number",
+        "default": 6,
+        "description": "space left before the anchors"
+      },
+      "from": {
+        "type": "object",
+        "description": "in a module: start point {x,y} 0..1"
+      },
+      "to": {
+        "type": "object",
+        "description": "in a module: end point {x,y} 0..1"
+      }
+    }
+  },
+  {
+    "id": "label",
+    "kind": "drawing",
+    "name": {
+      "zh": "标签",
+      "en": "Label"
+    },
+    "aliases": ["文字", "标注", "名称", "label", "text", "caption", "name tag"],
+    "category": "drawing/text",
+    "about": "A short label in the work's font with a paper-coloured halo that keeps it legible over pictures and lines; multi-line with \\n and an optional smaller note underneath. For naming things on the canvas without boxes.",
+    "tags": ["label", "text", "typography", "halo"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 140,
+      "height": 40
+    },
+    "example": {
+      "text": "光合作用",
+      "note": "在叶绿体中进行"
+    },
+    "params": {
+      "text": {
+        "type": "string",
+        "description": "the label"
+      },
+      "note": {
+        "type": "string",
+        "description": "a smaller second line"
+      },
+      "size": {
+        "type": "number",
+        "default": 16,
+        "description": "font size"
+      },
+      "weight": {
+        "type": "number",
+        "default": 500,
+        "description": "font weight"
+      },
+      "align": {
+        "type": "string",
+        "default": "center",
+        "description": "start | center | end"
+      },
+      "color": {
+        "type": "color",
+        "description": "defaults to ink"
+      },
+      "halo": {
+        "type": "boolean",
+        "default": true,
+        "description": "paper-coloured outline behind the letters"
+      }
+    }
+  },
+  {
+    "id": "leader-label",
+    "kind": "drawing",
+    "name": {
+      "zh": "引线标注",
+      "en": "Leader label"
+    },
+    "aliases": [
+      "引线",
+      "部件标注",
+      "指示线",
+      "标注线",
+      "leader line",
+      "callout",
+      "part label",
+      "annotation"
+    ],
+    "category": "drawing/text",
+    "about": "Names a part the textbook way: a thin leader line from a small dot on the part to the label. The module spans from the part to the text; target is the named point in the module (0..1) and side says where the text sits.",
+    "tags": ["label", "leader", "annotation", "textbook", "part"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 160,
+      "height": 30
+    },
+    "example": {
+      "text": "叶绿体",
+      "side": "right"
+    },
+    "params": {
+      "text": {
+        "type": "string",
+        "description": "the part's name"
+      },
+      "side": {
+        "type": "string",
+        "default": "right",
+        "description": "where the text sits: right | left | above | below"
+      },
+      "target": {
+        "type": "object",
+        "description": "the named point {x,y} 0..1; defaults to the edge opposite the text"
+      },
+      "size": {
+        "type": "number",
+        "default": 15,
+        "description": "font size"
+      },
+      "dot": {
+        "type": "boolean",
+        "default": true,
+        "description": "dot at the target"
+      },
+      "color": {
+        "type": "color",
+        "description": "line colour; defaults to muted"
+      },
+      "textColor": {
+        "type": "color",
+        "description": "defaults to ink"
+      }
+    }
+  },
+  {
+    "id": "ground-shadow",
+    "kind": "drawing",
+    "name": {
+      "zh": "地面投影",
+      "en": "Ground shadow"
+    },
+    "aliases": [
+      "投影",
+      "落地阴影",
+      "接触阴影",
+      "contact shadow",
+      "ground",
+      "cast shadow"
+    ],
+    "category": "drawing/light",
+    "about": "A soft elliptical contact shadow that sets a picture on the ground instead of letting it float. A flat module just under the object's base, about as wide as the object.",
+    "tags": ["shadow", "ground", "depth", "composition"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 160,
+      "height": 22
+    },
+    "example": {},
+    "params": {
+      "opacity": {
+        "type": "number",
+        "default": 0.22,
+        "description": "darkness at the centre"
+      },
+      "color": {
+        "type": "color",
+        "description": "defaults to ink"
+      }
+    }
+  },
+  {
+    "id": "picture",
+    "kind": "drawing",
+    "name": {
+      "zh": "图片",
+      "en": "Picture"
+    },
+    "aliases": [
+      "图片",
+      "插图",
+      "配图",
+      "放置图片",
+      "picture",
+      "image",
+      "illustration",
+      "figure"
+    ],
+    "category": "drawing/picture",
+    "about": "Places a picture material fitted by its visible content, optionally grounded with a soft shadow and captioned underneath. The quickest way to put a found or generated picture on the canvas.",
+    "tags": ["picture", "image", "caption", "material"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 180,
+      "height": 180
+    },
+    "example": {
+      "material": "apple-textbook",
+      "shadow": true,
+      "caption": "苹果"
+    },
+    "params": {
+      "material": {
+        "type": "string",
+        "description": "the picture material's id"
+      },
+      "caption": {
+        "type": "string",
+        "description": "a name under the picture"
+      },
+      "captionSize": {
+        "type": "number",
+        "default": 15,
+        "description": "font size"
+      },
+      "shadow": {
+        "type": "boolean",
+        "default": false,
+        "description": "a soft ground shadow"
+      },
+      "fit": {
+        "type": "string",
+        "default": "contain",
+        "description": "contain | cover"
+      },
+      "color": {
+        "type": "color",
+        "description": "caption colour"
+      }
+    }
+  },
+  {
+    "id": "step-badge",
+    "kind": "drawing",
+    "name": {
+      "zh": "序号圆标",
+      "en": "Step badge"
+    },
+    "aliases": [
+      "序号",
+      "编号",
+      "步骤",
+      "number badge",
+      "step",
+      "order",
+      "numbered"
+    ],
+    "category": "drawing/mark",
+    "about": "A small numbered circle that gives reading order or marks the steps along a path.",
+    "tags": ["number", "step", "order", "sequence"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 26,
+      "height": 26
+    },
+    "example": {
+      "number": "1"
+    },
+    "params": {
+      "number": {
+        "type": "string",
+        "default": "1",
+        "description": "what the badge shows"
+      },
+      "filled": {
+        "type": "boolean",
+        "default": true,
+        "description": "solid or outlined"
+      },
+      "color": {
+        "type": "color",
+        "description": "defaults to accent"
+      }
+    }
+  },
+  {
+    "id": "cycle",
+    "kind": "drawing",
+    "name": {
+      "zh": "循环箭头",
+      "en": "Cycle"
+    },
+    "aliases": [
+      "循环",
+      "周期",
+      "环形箭头",
+      "生命周期",
+      "cycle",
+      "loop",
+      "circular flow",
+      "life cycle"
+    ],
+    "category": "drawing/connector",
+    "about": "Curved arrows running round a circle: the shape of any cycle (water, life, seasons, feedback). Step i sits at angle start + i·360/n on the circle, so stage pictures can be placed there as their own modules; labels optional.",
+    "tags": ["cycle", "loop", "arrows", "process", "circle"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 420,
+      "height": 420
+    },
+    "example": {
+      "steps": ["蒸发", "凝结", "降水", "径流"]
+    },
+    "params": {
+      "steps": {
+        "type": "array",
+        "description": "labels of the stages, or a count"
+      },
+      "start": {
+        "type": "number",
+        "default": -90,
+        "description": "angle of the first stage in degrees (-90 is the top)"
+      },
+      "clockwise": {
+        "type": "boolean",
+        "default": true,
+        "description": "direction of travel"
+      },
+      "labels": {
+        "type": "string",
+        "default": "outside",
+        "description": "outside | inside"
+      },
+      "gap": {
+        "type": "number",
+        "default": 16,
+        "description": "degrees left free around each stage"
+      },
+      "color": {
+        "type": "color",
+        "description": "defaults to accent"
+      },
+      "width": {
+        "type": "number",
+        "description": "line width"
+      },
+      "size": {
+        "type": "number",
+        "default": 15,
+        "description": "label font size"
+      }
+    }
+  },
+  {
+    "id": "plot",
+    "kind": "drawing",
+    "name": {
+      "zh": "函数曲线图",
+      "en": "Plot"
+    },
+    "aliases": [
+      "坐标轴",
+      "曲线",
+      "函数图像",
+      "折线图",
+      "plot",
+      "axes",
+      "graph",
+      "curve",
+      "chart"
+    ],
+    "category": "drawing/chart",
+    "about": "Axes with nicely rounded ticks and one or more curves: functions of x given as JavaScript expressions (\"Math.sin(x)\", \"2*Math.PI*Math.sqrt(x/9.8)\") or measured points. An optional marker shows the current value; set it from a slider to make the plot interactive. For laws, quantities and comparisons over a range.",
+    "tags": ["plot", "axes", "function", "chart", "quantitative"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 420,
+      "height": 280
+    },
+    "example": {
+      "x": {
+        "min": 0,
+        "max": 6.3,
+        "label": "x"
+      },
+      "y": {
+        "min": -1.2,
+        "max": 1.2
+      },
+      "series": [
+        {
+          "fn": "Math.sin(x)",
+          "label": "sin x"
+        }
+      ],
+      "marker": {
+        "x": 1.57
+      }
+    },
+    "params": {
+      "x": {
+        "type": "object",
+        "description": "{min, max, label, ticks (count or list), format ('{} m')}"
+      },
+      "y": {
+        "type": "object",
+        "description": "{min, max, label, ticks, format}"
+      },
+      "series": {
+        "type": "array",
+        "description": "[{fn: 'expression in x'} or {points: [[x,y]]}, label, color, width, dashed, dots}]"
+      },
+      "grid": {
+        "type": "boolean",
+        "default": false,
+        "description": "faint grid lines"
+      },
+      "size": {
+        "type": "number",
+        "default": 13,
+        "description": "font size"
+      },
+      "marker": {
+        "type": "object",
+        "description": "the current value on the first curve {x, label?, color?}: a dot with guides to both axes; update it with api.set"
+      }
+    }
+  },
+  {
+    "id": "timeline",
+    "kind": "drawing",
+    "name": {
+      "zh": "时间轴",
+      "en": "Timeline"
+    },
+    "aliases": [
+      "时间线",
+      "年表",
+      "历史",
+      "大事记",
+      "timeline",
+      "chronology",
+      "history",
+      "milestones"
+    ],
+    "category": "drawing/chart",
+    "about": "A time axis with events: dots on the line, dates beside it, names alternating above and below so neighbours never collide; an event can carry a note and be accented.",
+    "tags": ["timeline", "history", "dates", "events", "sequence"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 760,
+      "height": 200
+    },
+    "example": {
+      "events": [
+        {
+          "at": 1903,
+          "label": "首次动力飞行"
+        },
+        {
+          "at": 1957,
+          "label": "第一颗人造卫星"
+        },
+        {
+          "at": 1969,
+          "label": "登上月球",
+          "accent": true
+        },
+        {
+          "at": 1990,
+          "label": "哈勃望远镜"
+        },
+        {
+          "at": 2021,
+          "label": "韦布望远镜"
+        }
+      ]
+    },
+    "params": {
+      "events": {
+        "type": "array",
+        "description": "[{at: number, date?: shown text, label, note?, accent?}]"
+      },
+      "from": {
+        "type": "number",
+        "description": "start of the axis; defaults to the first event"
+      },
+      "to": {
+        "type": "number",
+        "description": "end of the axis; defaults to the last event"
+      },
+      "size": {
+        "type": "number",
+        "default": 14,
+        "description": "font size"
+      }
+    }
+  },
+  {
+    "id": "bracket",
+    "kind": "drawing",
+    "name": {
+      "zh": "大括号",
+      "en": "Brace"
+    },
+    "aliases": [
+      "括号",
+      "分组",
+      "归类",
+      "brace",
+      "bracket",
+      "group",
+      "curly brace"
+    ],
+    "category": "drawing/mark",
+    "about": "A curly brace that gathers the things beside it, its point toward facing (right, left, up, down), with a label at the point. For grouping without a box.",
+    "tags": ["brace", "group", "annotation"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 120,
+      "height": 200
+    },
+    "example": {
+      "label": "同一组"
+    },
+    "params": {
+      "facing": {
+        "type": "string",
+        "default": "right",
+        "description": "right | left | up | down"
+      },
+      "label": {
+        "type": "string",
+        "description": "the group's name"
+      },
+      "depth": {
+        "type": "number",
+        "default": 14,
+        "description": "how far the brace reaches"
+      },
+      "color": {
+        "type": "color",
+        "description": "defaults to muted"
+      },
+      "size": {
+        "type": "number",
+        "default": 15,
+        "description": "font size"
+      }
+    }
+  },
+  {
+    "id": "region",
+    "kind": "drawing",
+    "name": {
+      "zh": "柔和区域",
+      "en": "Region"
+    },
+    "aliases": [
+      "区域",
+      "范围",
+      "领域",
+      "地带",
+      "region",
+      "zone",
+      "area",
+      "blob",
+      "territory"
+    ],
+    "category": "drawing/area",
+    "about": "A soft organic area that marks a zone (a habitat, a layer, a sphere of influence) without drawing a box: a seeded irregular translucent blob filling the module, optional label and texture effect.",
+    "tags": ["region", "zone", "area", "organic", "background"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 320,
+      "height": 220
+    },
+    "example": {
+      "label": "栖息地"
+    },
+    "params": {
+      "label": {
+        "type": "string",
+        "description": "the zone's name"
+      },
+      "labelAt": {
+        "type": "string",
+        "default": "center",
+        "description": "center | top"
+      },
+      "color": {
+        "type": "color",
+        "description": "defaults to accent2"
+      },
+      "opacity": {
+        "type": "number",
+        "default": 0.18,
+        "description": "fill opacity"
+      },
+      "wobble": {
+        "type": "number",
+        "default": 0.08,
+        "description": "irregularity 0..0.2"
+      },
+      "outline": {
+        "type": "boolean",
+        "default": false,
+        "description": "dashed outline"
+      },
+      "effect": {
+        "type": "string",
+        "description": "an effect id for texture, e.g. watercolor-edge"
+      },
+      "seed": {
+        "type": "number",
+        "description": "changes the shape"
+      }
+    }
+  },
+  {
+    "id": "waves",
+    "kind": "drawing",
+    "name": {
+      "zh": "波浪",
+      "en": "Waves"
+    },
+    "aliases": [
+      "水面",
+      "海浪",
+      "河流",
+      "波",
+      "waves",
+      "water",
+      "sea",
+      "ripples",
+      "sound wave"
+    ],
+    "category": "drawing/nature",
+    "about": "Rows of gentle waves for water, a river, or a sound or light wave; they roll slowly unless still is set.",
+    "tags": ["water", "waves", "sea", "animation"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 400,
+      "height": 60
+    },
+    "example": {},
+    "params": {
+      "rows": {
+        "type": "number",
+        "default": 3,
+        "description": "number of wave lines"
+      },
+      "amplitude": {
+        "type": "number",
+        "description": "wave height"
+      },
+      "wavelength": {
+        "type": "number",
+        "default": 64,
+        "description": "wave length"
+      },
+      "still": {
+        "type": "boolean",
+        "default": false,
+        "description": "no motion"
+      },
+      "period": {
+        "type": "number",
+        "default": 6,
+        "description": "seconds per roll"
+      },
+      "color": {
+        "type": "color",
+        "description": "defaults to accent2"
+      }
+    }
+  },
+  {
+    "id": "orbit",
+    "kind": "drawing",
+    "name": {
+      "zh": "轨道",
+      "en": "Orbit"
+    },
+    "aliases": [
+      "轨道",
+      "公转",
+      "环绕",
+      "椭圆轨道",
+      "orbit",
+      "revolution",
+      "ellipse",
+      "path around"
+    ],
+    "category": "drawing/science",
+    "about": "An orbit: a fine ellipse filling the module, with an optional body (a picture material id) travelling along it, counter-clockwise like planets seen from above the north pole unless clockwise is set.",
+    "tags": ["orbit", "planet", "astronomy", "motion", "animation"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 500,
+      "height": 200
+    },
+    "example": {
+      "body": "earth",
+      "bodySize": 30
+    },
+    "params": {
+      "body": {
+        "type": "string",
+        "description": "picture material id travelling on the orbit"
+      },
+      "bodySize": {
+        "type": "number",
+        "default": 28,
+        "description": "body width"
+      },
+      "period": {
+        "type": "number",
+        "default": 12,
+        "description": "seconds per revolution; 0 keeps it still"
+      },
+      "phase": {
+        "type": "number",
+        "default": 0,
+        "description": "starting position 0..1 (0 is the right end)"
+      },
+      "clockwise": {
+        "type": "boolean",
+        "default": false,
+        "description": "direction"
+      },
+      "dashed": {
+        "type": "boolean",
+        "default": true,
+        "description": "dashed path"
+      },
+      "color": {
+        "type": "color",
+        "description": "path colour; defaults to muted"
+      }
+    }
+  },
+  {
+    "id": "slider",
+    "kind": "drawing",
+    "name": {
+      "zh": "滑块",
+      "en": "Slider"
+    },
+    "aliases": [
+      "滑块",
+      "拖动条",
+      "调节",
+      "参数",
+      "slider",
+      "range",
+      "control",
+      "parameter"
+    ],
+    "category": "drawing/control",
+    "about": "A labelled slider for one quantity, showing its value and unit. It keeps its own position while dragged and sends \"change\" with the number: listen with api.on(moduleId, \"change\", v => …) in the scene interaction and update other modules with api.set.",
+    "tags": ["slider", "control", "interactive", "parameter"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 280,
+      "height": 56
+    },
+    "example": {
+      "label": "本金",
+      "min": 1000,
+      "max": 100000,
+      "value": 10000,
+      "step": 1000,
+      "unit": "元"
+    },
+    "params": {
+      "label": {
+        "type": "string",
+        "description": "what it sets"
+      },
+      "min": {
+        "type": "number",
+        "default": 0,
+        "description": "smallest value"
+      },
+      "max": {
+        "type": "number",
+        "default": 100,
+        "description": "largest value"
+      },
+      "step": {
+        "type": "number",
+        "description": "increment"
+      },
+      "value": {
+        "type": "number",
+        "description": "starting value"
+      },
+      "unit": {
+        "type": "string",
+        "description": "unit shown after the value"
+      },
+      "digits": {
+        "type": "number",
+        "description": "decimals shown"
+      },
+      "color": {
+        "type": "color",
+        "description": "defaults to accent"
+      },
+      "size": {
+        "type": "number",
+        "default": 15,
+        "description": "font size"
+      }
+    }
+  },
+  {
+    "id": "choice",
+    "kind": "drawing",
+    "name": {
+      "zh": "分段选择",
+      "en": "Choice"
+    },
+    "aliases": [
+      "选项",
+      "切换",
+      "分段按钮",
+      "步骤切换",
+      "choice",
+      "segmented control",
+      "toggle",
+      "tabs",
+      "switch",
+      "stepper"
+    ],
+    "category": "drawing/control",
+    "about": "A row of options of which one is chosen: seasons, stages, modes or steps of a story. It marks its own choice and sends \"change\" with {option, index}: listen with api.on(moduleId, \"change\", c => …) and show the chosen state with api.set or api.move.",
+    "tags": ["choice", "control", "interactive", "steps", "toggle"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 360,
+      "height": 48
+    },
+    "example": {
+      "options": ["春", "夏", "秋", "冬"],
+      "value": "春"
+    },
+    "params": {
+      "options": {
+        "type": "array",
+        "description": "the option labels"
+      },
+      "value": {
+        "type": "string",
+        "description": "the option chosen at first"
+      },
+      "color": {
+        "type": "color",
+        "description": "defaults to accent"
+      },
+      "size": {
+        "type": "number",
+        "default": 15,
+        "description": "font size"
+      }
+    }
+  }
+]

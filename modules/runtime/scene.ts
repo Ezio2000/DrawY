@@ -5,6 +5,7 @@ import type {
   Point,
   Bounds,
   Target,
+  MaterialUse,
 } from "../contracts/index.ts";
 import { union } from "../contracts/geometry.ts";
 
@@ -23,10 +24,37 @@ export interface DrawingAPI {
   html: (source: string) => HTMLElement;
   mermaid: (source: string) => Promise<Element>;
   plantuml: (source: string) => Promise<Element>;
-  resource: (id: string) => string;
+  material: (id: string, options?: PictureOptions) => HTMLElement;
+  materials: Record<string, PictureInfo>;
+  draw: (
+    id: string,
+    data?: Record<string, unknown>,
+    size?: { width: number; height: number },
+  ) => Promise<Element>;
+  effect: (id: string) => string;
   emit: (event: string, value?: unknown) => Promise<void>;
   cleanup: (fn: () => void) => void;
   animate: (fn: (seconds: number) => void) => void;
+}
+export interface PictureOptions {
+  width?: number;
+  height?: number;
+  fit?: "contain" | "cover";
+  /** Ink for an icon drawn in currentColor. */
+  color?: string;
+  /** How a whole painted picture meets the paper: feathered by default, or hard. */
+  edge?: "feather" | "hard";
+  /** Where a picture sits when the box is taller than it: on the bottom edge, as things
+   * stand on the ground, unless centred or hung from the top. */
+  align?: "bottom" | "center" | "top";
+}
+type Picture = Extract<MaterialUse, { kind: "picture" }>;
+export interface PictureInfo {
+  name: string;
+  url: string;
+  width: number;
+  height: number;
+  anchors: Picture["anchors"];
 }
 type Listener = (value: unknown) => unknown;
 type View = { host: HTMLElement; cleanup: (() => void)[]; revision: number };
@@ -95,6 +123,10 @@ export class SceneRenderer {
   get bounds() {
     return union([...this.instances.values()].map((m) => m.bounds));
   }
+  /** The element that holds a drawn module or link. */
+  host(kind: "module" | "link", id: string) {
+    return this.views.get(kind + ":" + id)?.host;
+  }
   async mount() {
     await Promise.all(
       [...this.instances.values()].map((m) => this.drawModule(m)),
@@ -117,7 +149,6 @@ export class SceneRenderer {
           ]),
         openScene: (id: string) => this.options.open({ kind: "scene", id }),
         openDetail: (id: string) => this.options.open({ kind: "detail", id }),
-        resource: (id: string) => this.resource(id),
         cleanup: (fn: () => void) => this.interactionCleanup.push(fn),
         animate: (fn: (seconds: number) => void) =>
           this.animate(fn, this.interactionCleanup),
@@ -130,8 +161,116 @@ export class SceneRenderer {
     }
     await this.settled();
   }
-  private resource(id: string) {
-    return this.work.resources[id].url;
+  private use<K extends MaterialUse["kind"]>(id: string, kind: K) {
+    const m = this.work.materials[id];
+    if (!m)
+      throw Error(
+        `素材 ${id} 不在作品中：用 find_materials 或 generate_images 得到的 ID`,
+      );
+    if (m.kind !== kind) throw Error(`素材 ${id} 是 ${m.kind}，不是 ${kind}`);
+    return m as Extract<MaterialUse, { kind: K }>;
+  }
+  /** Pictures whose pixels are still being made; they appear when ready. */
+  private developing = new Set<Promise<void>>();
+  /** Waits for every developing picture shown so far. */
+  async developed() {
+    while (this.developing.size) await Promise.all([...this.developing]);
+  }
+  private get pictures() {
+    return Object.fromEntries(
+      Object.values(this.work.materials)
+        .filter((m): m is Picture => m.kind === "picture")
+        .map((m) => [
+          m.id,
+          {
+            name: m.name,
+            url: m.url,
+            width: m.width,
+            height: m.height,
+            anchors: m.anchors,
+          },
+        ]),
+    );
+  }
+  /** A picture fitted by its visible content into a box (the module by default). */
+  private picture(
+    id: string,
+    box: { width: number; height: number },
+    o: PictureOptions = {},
+  ) {
+    const m = this.use(id, "picture");
+    const width = o.width ?? box.width,
+      height = o.height ?? box.height;
+    const c = m.content;
+    // The whole file's size in pixels, scaled so its visible content fits the box.
+    const fw = m.width / c.width,
+      fh = m.height / c.height;
+    const k = (o.fit === "cover" ? Math.max : Math.min)(
+      width / m.width,
+      height / m.height,
+    );
+    const frame = document.createElement("div");
+    frame.dataset.material = id;
+    frame.style.cssText = `position:relative;width:${width}px;height:${height}px;overflow:${o.fit === "cover" ? "hidden" : "visible"}`;
+    const img = document.createElement("img");
+    img.alt = m.name;
+    img.draggable = false;
+    img.src =
+      m.url +
+      (o.color && m.recolor ? "?color=" + encodeURIComponent(o.color) : "");
+    const spare = height - m.height * k;
+    const top = { bottom: spare, center: spare / 2, top: 0 }[
+      o.align ?? "bottom"
+    ];
+    img.style.cssText = `position:absolute;max-width:none;left:${(width - m.width * k) / 2 - c.x * fw * k}px;top:${top - c.y * fh * k}px;width:${fw * k}px;height:${fh * k}px`;
+    // A painted picture fades into the paper instead of showing its rectangle.
+    if (m.opaque && o.edge !== "hard") {
+      const fade = (to: string) =>
+        `linear-gradient(to ${to},transparent,#000 8%,#000 92%,transparent)`;
+      img.style.maskImage =
+        img.style.webkitMaskImage = `${fade("right")},${fade("bottom")}`;
+      img.style.maskComposite = "intersect";
+      img.style.setProperty("-webkit-mask-composite", "source-in");
+    }
+    if (m.status !== "ready") {
+      img.dataset.developing = "";
+      frame.dataset.developing = "";
+      // Pencil hatching where the picture will appear, until it develops.
+      const sketch = document.createElement("i");
+      // A cut-out is pencilled as an oval of hatching; a whole scene as a pale wash.
+      sketch.dataset.sketch = m.opaque ? "scene" : "cutout";
+      sketch.dataset.name = m.name;
+      sketch.style.cssText = `left:${(width - m.width * k) / 2}px;top:${top}px;width:${m.width * k}px;height:${m.height * k}px`;
+      frame.append(sketch);
+      const loaded = new Promise<void>((resolve) => {
+        img.addEventListener("load", () => {
+          delete img.dataset.developing;
+          delete frame.dataset.developing;
+          sketch.remove();
+          img
+            .animate(
+              [
+                {
+                  opacity: 0,
+                  filter: "blur(12px) saturate(0) brightness(1.12)",
+                },
+                { opacity: 0.85, offset: 0.4 },
+                { opacity: 1, filter: "none" },
+              ],
+              { duration: 1600, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+            )
+            .finished.then(() => resolve(), () => resolve());
+        });
+        img.addEventListener("error", () => {
+          this.options.error("图片没有生成出来: " + id);
+          resolve();
+        });
+      });
+      this.developing.add(loaded);
+      void loaded.then(() => this.developing.delete(loaded));
+    }
+    frame.append(img);
+    return frame;
   }
   private animate(fn: (seconds: number) => void, cleanup: (() => void)[]) {
     let frame = 0;
@@ -157,8 +296,13 @@ export class SceneRenderer {
   async settled() {
     while (this.jobs.size) await Promise.all([...this.jobs]);
     await document.fonts.ready;
+    // Pictures still developing appear on their own; they do not hold up the canvas.
     const images = [...this.views.values()].flatMap((v) =>
-      Array.from(v.host.shadowRoot!.querySelectorAll("img")),
+      Array.from(
+        v.host.shadowRoot!.querySelectorAll<HTMLImageElement>(
+          "img:not([data-developing])",
+        ),
+      ),
     );
     await Promise.all(
       images.map((i) =>
@@ -212,25 +356,47 @@ export class SceneRenderer {
         for (const fn of view.cleanup.splice(0)) fn();
         const cleanup: (() => void)[] = [];
         view.cleanup = cleanup;
-        const api: DrawingAPI = {
+        const effects = new Set<string>();
+        const apiFor = (
+          data: Record<string, unknown>,
+          size: { width: number; height: number },
+        ): DrawingAPI => ({
           data,
-          width: bounds.width,
-          height: bounds.height,
+          ...size,
           theme: this.work.style,
           ...ends,
           svg,
           html,
           mermaid,
           plantuml,
-          resource: (id) => this.resource(id),
+          material: (id, options) => this.picture(id, size, options),
+          materials: this.pictures,
+          draw: (id, data = {}, at = size) => {
+            const m = this.use(id, "drawing");
+            return execute(
+              m.source,
+              apiFor({ ...m.defaults, ...data }, at),
+            ) as Promise<Element>;
+          },
+          effect: (id) => {
+            this.use(id, "effect");
+            effects.add(id);
+            return `url(#fx-${id})`;
+          },
           emit: (event, value) => this.emit(id, event, value),
           cleanup: (fn) => cleanup.push(fn),
           animate: (fn) => this.animate(fn, cleanup),
-        };
+        });
         try {
+          // The work's own definition, or a library drawing used as it is.
+          const own = this.work.drawings[drawingId],
+            library = own ? undefined : this.use(drawingId, "drawing");
           const result = await execute(
-            this.work.drawings[drawingId].source,
-            api,
+            own ? own.source : library!.source,
+            apiFor(own ? data : { ...library!.defaults, ...data }, {
+              width: bounds.width,
+              height: bounds.height,
+            }),
           );
           if (this.disposed || view.revision !== revision) {
             for (const fn of cleanup.splice(0)) fn();
@@ -240,15 +406,38 @@ export class SceneRenderer {
             throw Error("画法必须返回一个 DOM 或 SVG 元素");
           const style = document.createElement("style");
           style.textContent =
-            ":host{display:block;color:var(--ink);font-family:var(--font)}*{box-sizing:border-box}svg{display:block;max-width:100%;max-height:100%}button,input,select{font:inherit}";
+            ":host{display:block;color:var(--ink);font-family:var(--font)}*{box-sizing:border-box}svg{display:block;max-width:100%;max-height:100%}button,input,select{font:inherit}[data-sketch]{position:absolute;display:grid;place-items:center;animation:developing 1.8s ease-in-out infinite alternate}[data-sketch]::after{content:attr(data-name);max-width:80%;font:italic 15px/1.4 'Iowan Old Style','Songti SC',Georgia,serif;color:color-mix(in srgb,var(--ink,#333) 60%,transparent);text-align:center;background:color-mix(in srgb,var(--paper,#faf9f5) 70%,transparent);padding:2px 8px;border-radius:4px}[data-sketch=cutout]{border-radius:50%;box-shadow:inset 0 0 0 1.2px color-mix(in srgb,var(--ink,#333) 30%,transparent);background:repeating-linear-gradient(-45deg,color-mix(in srgb,var(--ink,#333) 20%,transparent) 0 1px,transparent 1px 7px)}[data-sketch=scene]{background:radial-gradient(60% 55% at 35% 40%,color-mix(in srgb,var(--accent2,#7a9bb0) 18%,transparent),transparent),radial-gradient(55% 50% at 70% 65%,color-mix(in srgb,var(--accent,#d97757) 14%,transparent),transparent);-webkit-mask:radial-gradient(closest-side,#000 70%,transparent);mask:radial-gradient(closest-side,#000 70%,transparent)}img[data-developing]{visibility:hidden}@keyframes developing{from{opacity:.3}to{opacity:.85}}";
+          const defs = [...effects].map((e) =>
+            (
+              this.work.materials[e] as Extract<MaterialUse, { kind: "effect" }>
+            ).defs.replaceAll("$id", "fx-" + e),
+          );
+          const shared = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "svg",
+          );
+          shared.setAttribute("aria-hidden", "true");
+          shared.style.cssText =
+            "position:absolute;width:0;height:0;overflow:hidden";
+          shared.innerHTML = "<defs>" + defs.join("") + "</defs>";
           for (const [k, v] of Object.entries(this.work.style))
             host.style.setProperty("--" + k, v);
-          host.shadowRoot!.replaceChildren(style, result);
-          host.title = kind === "module" ? this.instances.get(id)!.label : "";
+          host.shadowRoot!.replaceChildren(
+            style,
+            ...(defs.length ? [shared] : []),
+            result,
+          );
+          host.removeAttribute("data-error");
+          if (kind === "module") {
+            const m = this.instances.get(id)!;
+            host.title = m.label;
+            host.toggleAttribute("data-explorable", !!m.target);
+          }
         } catch (e) {
           if (!this.disposed) {
             this.options.error(id + ": " + String(e));
             host.shadowRoot!.textContent = String(e);
+            host.setAttribute("data-error", "");
           }
         }
       })(),

@@ -15,7 +15,13 @@ export interface CaptureRequest {
 }
 export interface Shot {
   camera: { x: number; y: number; scale: number };
-  modules: { id: string; label: string; bounds: Bounds }[];
+  modules: {
+    id: string;
+    label: string;
+    bounds: Bounds;
+    /** Where each picture's visible content actually is, in scene units. */
+    pictures?: ({ material: string } & Bounds)[];
+  }[];
   sceneId: string;
   label: string;
   base64: string;
@@ -23,13 +29,19 @@ export interface Shot {
 }
 async function ready(page: Page) {
   await page.waitForFunction(() => window.drawyReady, {}, { timeout: 30000 });
-  await page.evaluate(() => window.drawyView.renderer.settled());
+  await page.evaluate(async () => {
+    await window.drawyView.renderer.settled();
+    await window.drawyView.renderer.developed();
+  });
 }
 export async function capture(
   browser: Browser,
   request: CaptureRequest,
 ): Promise<Shot[]> {
   const context = await browser.newContext();
+  // The service runs under tsx, which names functions with a helper; code it sends into
+  // pages finds the same helper there.
+  await context.addInitScript({ content: "globalThis.__name = (f) => f;" });
   await context.addCookies([
     { name: "drawy_session", value: request.cookie, url: request.origin },
   ]);
@@ -46,7 +58,8 @@ export async function capture(
       await page.setViewportSize({ width, height: 900 });
       const load = async () => {
         errors.length = 0;
-        await page.goto(scene.url, { waitUntil: "load" });
+        // The runtime says when it is ready; a developing picture would hold up "load".
+        await page.goto(scene.url, { waitUntil: "domcontentloaded" });
         try {
           await ready(page);
         } catch (e) {
@@ -54,12 +67,51 @@ export async function capture(
         }
       };
       const shot = async (label: string) => {
-        const geometry = await page.evaluate(() => ({
-          camera: window.drawyView.view,
-          modules: [...window.drawyView.renderer.instances.values()].map(
-            ({ id, label, bounds }) => ({ id, label, bounds }),
-          ),
-        }));
+        const geometry = await page.evaluate(() => {
+          const camera = window.drawyView.view;
+          const { materials } = window.drawyData.work;
+          return {
+            camera,
+            modules: [...window.drawyView.renderer.instances.values()].map(
+              ({ id, label, bounds }) => {
+                const host = document.querySelector(
+                  `[data-module-id="${CSS.escape(id)}"]`,
+                );
+                // A picture's frame includes its margins; only its content is seen.
+                const pictures = [
+                  ...(host?.shadowRoot?.querySelectorAll<HTMLElement>(
+                    "[data-material]",
+                  ) ?? []),
+                ].flatMap((frame) => {
+                  const m = materials[frame.dataset.material!];
+                  const img = frame.querySelector("img");
+                  if (m?.kind !== "picture" || !img) return [];
+                  const r = img.getBoundingClientRect(),
+                    c = m.content;
+                  return [
+                    {
+                      material: m.id,
+                      x: Math.round(
+                        (r.left + r.width * c.x - camera.x) / camera.scale,
+                      ),
+                      y: Math.round(
+                        (r.top + r.height * c.y - camera.y) / camera.scale,
+                      ),
+                      width: Math.round((r.width * c.width) / camera.scale),
+                      height: Math.round((r.height * c.height) / camera.scale),
+                    },
+                  ];
+                });
+                return {
+                  id,
+                  label,
+                  bounds,
+                  ...(pictures.length ? { pictures } : {}),
+                };
+              },
+            ),
+          };
+        });
         if (request.annotate)
           await page.evaluate(({ camera, modules }) => {
             const overlay = document.createElement("div");

@@ -1,4 +1,6 @@
 packages:
   - modules/ui
+  - materials
 allowBuilds:
   esbuild: true
+  sharp: true

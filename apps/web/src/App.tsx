@@ -1,64 +1,112 @@
 import { SceneView, DetailView } from "./SceneView.tsx";
+import { Activity, Now, live } from "./Activity.tsx";
 import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
-  ArrowUp,
-  Paperclip,
-  Plus,
-  Settings2,
-  LogOut,
-  History,
-  Palette,
   Undo2,
-  Square,
-  ChevronRight,
-  Trash2,
-  MessageCircle,
+  ChevronDown,
   X,
-  PanelLeft,
+  PanelRight,
+  History,
+  Shapes,
+  ImagePlus,
 } from "lucide-react";
-import { Lantern, PanelMark } from "@drawy/ui/brand";
+import { Lantern } from "@drawy/ui/brand";
 import { ModelSketch, KinshipSketch } from "@drawy/ui/sketches";
-import { Dialog, Spinner, LocaleContext, Tooltips } from "@drawy/ui";
-import { api } from "./api.ts";
+import {
+  Spinner,
+  LocaleContext,
+  Tooltips,
+  Dialog,
+  Presence,
+  UndoToast,
+} from "@drawy/ui";
+import { api, type Summary, type User } from "./api.ts";
 import { cx } from "./cx.ts";
-import { SettingsDialog, MaterialsDialog, HistoryDialog } from "./Dialogs.tsx";
+import { HistoryDialog } from "./Dialogs.tsx";
+import { Rail, Rename } from "./Rail.tsx";
+import { Auth } from "./Auth.tsx";
+import { Composer, type Attachment } from "./Composer.tsx";
+import { Works } from "./Works.tsx";
+import { Library } from "./Library.tsx";
+import { Settings } from "./Settings.tsx";
 import type {
   Work,
   Run,
-  Asset,
   Selection,
   Target,
 } from "../../../modules/contracts/index.ts";
+import type { Material, StyleMaterial } from "@drawy/materials/schema";
+import { TraceView } from "./TraceView.tsx";
+import { Lettering } from "./Lettering.tsx";
 const examples = [
   "太阳系是如何运转的？",
   "大语言模型是怎么工作的？",
   "红楼梦中的人物关系",
 ];
 const sketches = [OrbitSketch, ModelSketch, KinshipSketch];
+type Page = "home" | "work" | "works" | "library" | "settings" | "traces";
+const pageOf = (path: string): Page =>
+  path.startsWith("/a/")
+    ? "work"
+    : path === "/works"
+      ? "works"
+      : path === "/library"
+        ? "library"
+        : path === "/settings"
+          ? "settings"
+          : path.startsWith("/traces")
+            ? "traces"
+            : "home";
+const workIdOf = (path: string) => path.match(/^\/a\/([^/]+)/)?.[1];
+/** How a library material rides along with a message. */
+const attachmentOf = (m: Material): Attachment => ({
+  id: m.id,
+  kind: m.kind,
+  name: m.name.zh,
+  url:
+    m.kind === "picture"
+      ? m.file.url
+      : m.kind === "style" && m.samples[0]
+        ? `/materials/thumbs/${m.samples[0]}?size=96`
+        : undefined,
+});
 export function App() {
-  const [user, U] = useState<{ id: string; name: string } | null | undefined>(),
+  const [user, U] = useState<User | null | undefined>(),
+    [path, setPath] = useState(location.pathname),
     [error, E] = useState(""),
     [open, O] = useState(false),
-    [works, L] = useState<Work[]>([]),
+    [works, L] = useState<Summary[]>([]),
     [work, W] = useState<Work>(),
     [sceneId, P] = useState("root"),
     [runs, R] = useState<Run[]>([]),
     [dialog, D] = useState(""),
     [prompt, Q] = useState(""),
-    [assets, A] = useState<Asset[]>([]),
+    [attachments, A] = useState<Attachment[]>([]),
+    [uploading, setUploading] = useState(0),
+    [style, setStyle] = useState<StyleMaterial>(),
     [selected, S] = useState<Selection>(),
     [detailId, setDetail] = useState<string>(),
-    [chat, C] = useState(false),
-    [progress, G] = useState(""),
+    [journal, J] = useState(false),
+    [scenes, M] = useState(false),
+    [dismissed, setDismissed] = useState(""),
+    [offline, G] = useState(false),
     [busy, B] = useState(false),
-    [outline, N] = useState(false),
-    [query, F] = useState("");
-  const picker = useRef<HTMLInputElement>(null);
+    [titling, setTitling] = useState(false),
+    [dragging, setDragging] = useState(false),
+    [trash, setTrash] = useState<Summary>(),
+    // Options picked on the author's questions, sent with whatever the user writes.
+    [choices, setChoices] = useState("");
+  const page = pageOf(path);
+  const conversation = useRef<HTMLElement>(null);
+  const following = useRef(true);
   const current = useRef(work);
   current.current = work;
+  const deleting = useRef<{ id: string; timer: ReturnType<typeof setTimeout> }>(
+    undefined,
+  );
   const run = runs.at(-1),
-    working = run && ["running", "viewing"].includes(run.status);
+    working = live(run);
   const active = work?.scenes[sceneId];
   useEffect(() => {
     if (work && !work.scenes[sceneId]) {
@@ -75,31 +123,57 @@ export function App() {
       E(e instanceof Error ? e.message : String(e));
     }
   };
-  const refreshList = () => api("/works").then(L);
+  const go = (to: string) => {
+    if (to !== location.pathname) history.pushState(null, "", to);
+    setPath(to);
+  };
+  const refreshList = () => api<Summary[]>("/works").then(L);
   async function load(id: string) {
-    const w = await api<Work>("/works/" + id);
+    const [w, r] = await Promise.all([
+      api<Work>("/works/" + id),
+      api<Run[]>("/works/" + id + "/runs"),
+    ]);
     W(w);
     setDetail(undefined);
     P(w.rootSceneId);
     S(undefined);
-    R(await api("/works/" + id + "/runs"));
-    history.pushState(null, "", "/a/" + id);
-    O(false);
+    R(r);
+    // A reply from an earlier visit stays in the journal, not under the canvas; one still
+    // to come shows when it arrives.
+    const last = r.at(-1);
+    setDismissed(last && !live(last) && last.status !== "waiting" ? last.id : "");
   }
   useEffect(() => {
     fetch("/api/auth/me")
       .then(async (r) => U(r.ok ? await r.json() : null))
       .catch((e) => E(e.message));
+    const pop = () => setPath(location.pathname);
+    addEventListener("popstate", pop);
+    return () => removeEventListener("popstate", pop);
   }, []);
+  // The page follows the address: a work's address opens it, leaving it closes it.
   useEffect(() => {
     if (!user) return;
-    void attempt(async () => {
-      await refreshList();
-      const id = location.pathname.match(/^\/a\/([^/]+)/)?.[1];
-      if (id) await load(id);
-    });
+    const id = workIdOf(path);
+    if (id && id !== current.current?.id)
+      void attempt(async () => {
+        W(undefined);
+        await load(id);
+      });
+    if (!id && current.current) {
+      W(undefined);
+      setDetail(undefined);
+      R([]);
+      S(undefined);
+      J(false);
+    }
+  }, [path, user?.id]);
+  useEffect(() => {
+    if (!user) return;
+    void attempt(refreshList);
     const events = new EventSource("/api/events");
     events.onmessage = (e) => {
+      G(false);
       const event = JSON.parse(e.data);
       if (event.type === "connected") {
         void refreshList();
@@ -124,65 +198,100 @@ export function App() {
             ? old.map((r) => (r.id === event.run.id ? event.run : r))
             : [...old, event.run];
         });
-        G("");
+        if (!live(event.run)) void refreshList();
       }
-      if (event.type === "progress" && event.workId === current.current?.id)
-        G(event.text);
     };
-    events.onerror = () => G("连接中断，正在重连…");
+    events.onerror = () => G(true);
     return () => events.close();
   }, [user?.id]);
   useEffect(() => {
-    const pop = () => {
-      const id = location.pathname.match(/^\/a\/([^/]+)/)?.[1];
-      if (id) void attempt(() => load(id));
-      else home(false);
+    const el = conversation.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    following.current = true;
+  }, [journal]);
+  useEffect(() => {
+    const el = conversation.current;
+    if (el && following.current)
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [runs]);
+  useEffect(() => {
+    if (!scenes) return;
+    const close = (e: PointerEvent) => {
+      if (!(e.target as Element).closest("[data-scene-menu]")) M(false);
     };
-    window.addEventListener("popstate", pop);
-    return () => window.removeEventListener("popstate", pop);
-  }, []);
-  function home(push = true) {
-    W(undefined);
-    setDetail(undefined);
-    R([]);
-    S(undefined);
-    Q("");
-    A([]);
-    C(false);
-    if (push) history.pushState(null, "", "/");
-  }
+    addEventListener("pointerdown", close);
+    return () => removeEventListener("pointerdown", close);
+  }, [scenes]);
+  useEffect(() => {
+    if (!open && !scenes) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      O(false);
+      M(false);
+    };
+    addEventListener("keydown", key);
+    return () => removeEventListener("keydown", key);
+  }, [open, scenes]);
+  // An error says its piece and goes.
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => E(""), 8000);
+    return () => clearTimeout(t);
+  }, [error]);
+  // The author's last reply under the canvas goes with Escape or a press on the drawing.
+  const replying =
+    !!run && !working && run.status !== "waiting" && run.id !== dismissed;
+  useEffect(() => {
+    if (!replying || journal || dialog || detailId) return;
+    const key = (e: KeyboardEvent) =>
+      e.key === "Escape" && setDismissed(run!.id);
+    addEventListener("keydown", key);
+    return () => removeEventListener("keydown", key);
+  }, [replying, journal, dialog, detailId]);
   async function upload(files: FileList | File[]) {
-    for (const file of Array.from(files)) {
-      const data = new FormData();
-      data.append("file", file);
-      const a = await api<Asset>("/assets", "POST", data);
-      A((old) => [...old, a]);
+    const images = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (!images.length) throw Error("只能添加图片");
+    setUploading((n) => n + images.length);
+    let left = images.length;
+    try {
+      for (const file of images) {
+        const data = new FormData();
+        data.append("file", file);
+        const m = await api<Material>("/materials", "POST", data);
+        A((old) => [...old, attachmentOf(m)]);
+        left--;
+        setUploading((n) => n - 1);
+      }
+    } finally {
+      setUploading((n) => n - left);
     }
   }
-  async function send(text = prompt, target = sceneId) {
-    if (!text.trim() || working) return;
+  async function send(text = prompt, target = sceneId, picked = choices) {
+    if (!text.trim() || working || uploading) return;
     B(true);
     try {
       let w = work;
+      const message = !w && style ? `${text.trim()}\n画风：${style.name.zh}` : text;
       if (!w) {
-        w = await api<Work>("/works", "POST", { title: text.slice(0, 36) });
+        w = await api<Work>("/works", "POST", { title: text.trim().slice(0, 36) });
         W(w);
         P(w.rootSceneId);
         target = w.rootSceneId;
-        history.pushState(null, "", "/a/" + w.id);
+        go("/a/" + w.id);
       }
       const request = selected
-        ? `${text}\nSelected module: ${selected.moduleId}\n${selected.label}`
-        : text;
+        ? `${message}\nSelected module: ${selected.moduleId}\n${selected.label}`
+        : message;
       const r =
         run?.status === "waiting"
           ? await api<Run>("/runs/" + run.id + "/answer", "POST", {
-              answer: request,
+              answer: [picked, request].filter(Boolean).join("\n"),
+              materials: attachments.map((a) => a.id),
             })
           : await api<Run>("/works/" + w.id + "/runs", "POST", {
               prompt: request,
               sceneId: target,
-              assets: assets.map((a) => a.id),
+              materials: attachments.map((a) => a.id),
             });
       R((old) =>
         old.some((x) => x.id === r.id)
@@ -191,7 +300,8 @@ export function App() {
       );
       Q("");
       A([]);
-      C(true);
+      setStyle(undefined);
+      setChoices("");
       await refreshList();
     } finally {
       B(false);
@@ -204,6 +314,7 @@ export function App() {
     P(id);
     setDetail(undefined);
     S(undefined);
+    M(false);
     if (!work.scenes[id].modules.length && !working)
       await send(
         `展开“${title || work.scenes[id].title}”场景，保持作品风格。`,
@@ -218,241 +329,172 @@ export function App() {
     if (!w.scenes[sceneId]) P(w.rootSceneId);
     D("");
   }
+  async function rename(id: string, title: string) {
+    L((old) => old.map((w) => (w.id === id ? { ...w, title } : w)));
+    const w = await api<Work>("/works/" + id, "PATCH", { title });
+    if (current.current?.id === id) W(w);
+  }
+  /** Deletes for real a few seconds later, unless the user takes it back. */
+  function remove(w: Summary) {
+    const pending = deleting.current;
+    if (pending) {
+      clearTimeout(pending.timer);
+      void api("/works/" + pending.id, "DELETE").catch(() => {});
+    }
+    if (work?.id === w.id) go("/");
+    setTrash(w);
+    deleting.current = {
+      id: w.id,
+      timer: setTimeout(() => {
+        deleting.current = undefined;
+        setTrash(undefined);
+        void attempt(async () => {
+          await api("/works/" + w.id, "DELETE");
+          await refreshList();
+        });
+      }, 5000),
+    };
+  }
+  function keep() {
+    clearTimeout(deleting.current?.timer);
+    deleting.current = undefined;
+    setTrash(undefined);
+  }
+  function use(m: Material) {
+    if (m.kind === "style") setStyle(m);
+    else A((old) => (old.some((a) => a.id === m.id) ? old : [...old, attachmentOf(m)]));
+    D("");
+    if (page !== "work") go("/");
+  }
   const crumbs = [];
   let at = active;
   while (at) {
     crumbs.unshift(at);
     at = at.parentId ? work?.scenes[at.parentId] : undefined;
   }
-  const composer = (homePage: boolean) => (
-    <div
-      className={cx(homePage ? "composer" : "ask-bar")}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        e.preventDefault();
-        void attempt(() => upload(e.dataTransfer.files));
-      }}
-    >
-      {!homePage && <Lantern size={28} className={cx("ask-mark")} />}
-      <div className={cx("drawy-input")}>
-        {selected && !homePage && (
-          <div className={cx("ask-quote")}>
-            <span>{selected.label.slice(0, 80)}</span>
-            <button onClick={() => S(undefined)} aria-label="清除选择">
-              <X size={12} />
-            </button>
-          </div>
-        )}
-        {!!assets.length && (
-          <div className={cx("composer-attachments")}>
-            {assets.map((a) => (
-              <span className={cx("attached-image")} key={a.id}>
-                <img src={a.url} />
-                <button
-                  onClick={() => A((old) => old.filter((x) => x.id !== a.id))}
-                >
-                  <X size={11} />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-        <textarea
-          aria-label="描述你想绘制的内容"
-          placeholder={
-            homePage
-              ? "想探索什么？"
-              : run?.status === "waiting"
-                ? "回答问题…"
-                : selected
-                  ? "如何修改选中的内容？"
-                  : "继续探索，或修改这幅作品…"
-          }
-          value={prompt}
-          rows={homePage ? 2 : 1}
-          onChange={(e) => Q(e.target.value)}
-          onPaste={(e) => {
-            if (e.clipboardData.files.length) {
-              e.preventDefault();
-              void attempt(() => upload(e.clipboardData.files));
-            }
-          }}
-          onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              !e.shiftKey &&
-              !e.nativeEvent.isComposing
-            ) {
-              e.preventDefault();
-              void attempt(() => send());
-            }
-          }}
-        />
-      </div>
-      <div className={cx(homePage ? "composer-tools" : "drawy-input-actions")}>
-        <button
-          className={cx("composer-attach")}
-          aria-label="上传参考图"
-          onClick={() => picker.current?.click()}
-        >
-          <Paperclip size={17} />
-        </button>
-        {working ? (
-          <button
-            className={cx("stop-button")}
-            aria-label="停止生成"
-            onClick={() =>
-              void attempt(() => api("/runs/" + run.id + "/cancel", "POST"))
-            }
-          >
-            <Square size={16} />
-          </button>
-        ) : (
-          <button
-            className={cx("composer-send")}
-            aria-label="发送"
-            disabled={busy || !prompt.trim()}
-            onClick={() => void attempt(() => send())}
-          >
-            {busy ? <Spinner size={16} /> : <ArrowUp size={18} />}
-          </button>
-        )}
-      </div>
-    </div>
+  const shownWorks = works.filter((w) => w.id !== trash?.id);
+  const composer = (place: "home" | "dock") => (
+    <Composer
+      place={place}
+      value={prompt}
+      set={Q}
+      attachments={attachments}
+      detach={(id) => A((old) => old.filter((a) => a.id !== id))}
+      uploading={uploading}
+      quote={place === "dock" ? selected?.label : undefined}
+      unquote={() => S(undefined)}
+      placeholder={
+        place === "home"
+          ? "想把什么画出来？"
+          : run?.status === "waiting"
+            ? "回答问题，或补充你的想法…"
+            : selected
+              ? "要怎样修改选中的部分？"
+              : working
+                ? "正在创作…"
+                : "继续探索，或修改这幅作品"
+      }
+      style={place === "home" ? style : undefined}
+      setStyle={place === "home" ? setStyle : undefined}
+      working={working}
+      busy={busy}
+      send={() => void attempt(() => send())}
+      stop={() =>
+        void attempt(() => api("/runs/" + run!.id + "/cancel", "POST"))
+      }
+      attach={(files) => void attempt(() => upload(files))}
+    />
   );
+  const droppable = page === "home" || page === "work";
   return (
     <LocaleContext.Provider value="zh">
       <Tooltips />
       <div className={cx("app")}>
-        <input
-          ref={picker}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          onChange={(e) => {
-            if (e.target.files) void attempt(() => upload(e.target.files!));
-            e.target.value = "";
-          }}
-        />
         {user && (
-          <nav className={cx("rail")} data-open={open} aria-label="导航">
-            <div className={cx("rail-head")}>
-              <button
-                className={cx("rail-button")}
-                aria-label="展开侧栏"
-                onClick={() => O(!open)}
-              >
-                <PanelMark size={22} open={open} />
-              </button>
-              <span className={cx("rail-brand")}>
-                <Lantern size={24} />
-                <b className={cx("drawy-wordmark")}>DrawY</b>
-              </span>
-            </div>
-            <button
-              className={cx("rail-button rail-new")}
-              aria-label="新探索"
-              onClick={() => {
-                home();
-                O(false);
-              }}
-            >
-              <span className={cx("rail-plus")}>
-                <Plus size={15} />
-              </span>
-              <span className={cx("rail-label")}>新探索</span>
-            </button>
-            <section className={cx("rail-recents")} inert={!open}>
-              <h2>最近</h2>
-              {works.length > 8 && (
-                <input
-                  className={cx("rail-search")}
-                  value={query}
-                  onChange={(e) => F(e.target.value)}
-                  placeholder="搜索作品"
-                />
-              )}
-              <ul>
-                {works
-                  .filter((w) => w.title.includes(query))
-                  .map((w) => (
-                    <li
-                      className={cx("rail-work")}
-                      data-current={w.id === work?.id || undefined}
-                      key={w.id}
-                    >
-                      <button
-                        className={cx("rail-work-open")}
-                        onClick={() => void attempt(() => load(w.id))}
-                      >
-                        <span>{w.title}</span>
-                      </button>
-                      <button
-                        className={cx("rail-work-delete")}
-                        aria-label={"删除 " + w.title}
-                        onClick={() =>
-                          void attempt(async () => {
-                            await api("/works/" + w.id, "DELETE");
-                            if (work?.id === w.id) home();
-                            await refreshList();
-                          })
-                        }
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            </section>
-            <div className={cx("rail-foot")}>
-              <button
-                className={cx("rail-button")}
-                aria-label="模型设置"
-                onClick={() => D("settings")}
-              >
-                <Settings2 size={19} />
-                <span className={cx("rail-label")}>设置</span>
-              </button>
-              <button
-                className={cx("rail-button")}
-                aria-label="退出登录"
-                onClick={() =>
-                  void attempt(async () => {
-                    await api("/auth/logout", "POST");
-                    home();
-                    L([]);
-                    U(null);
-
-                    D("");
-                    O(false);
-                  })
-                }
-              >
-                <LogOut size={18} />
-                <span className={cx("rail-label")}>{user.name}</span>
-              </button>
-            </div>
-          </nav>
+          <Rail
+            user={user}
+            open={open}
+            setOpen={O}
+            page={page}
+            works={shownWorks}
+            current={work?.id}
+            go={go}
+            rename={(id, title) => void attempt(() => rename(id, title))}
+            remove={remove}
+            logout={() =>
+              void attempt(async () => {
+                await api("/auth/logout", "POST");
+                L([]);
+                U(null);
+                D("");
+                go("/");
+              })
+            }
+          />
         )}
+        {open && <div className={cx("rail-scrim")} onClick={() => O(false)} />}
         <main
           className={cx("app-main")}
-          style={!user ? { marginLeft: 0 } : undefined}
+          data-bare={!user || undefined}
+          onDragEnter={(e) => {
+            if (droppable && e.dataTransfer.types.includes("Files"))
+              setDragging(true);
+          }}
+          onDragOver={(e) => droppable && e.preventDefault()}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node))
+              setDragging(false);
+          }}
+          onDrop={(e) => {
+            if (!droppable) return;
+            e.preventDefault();
+            setDragging(false);
+            if (e.dataTransfer.files.length)
+              void attempt(() => upload(e.dataTransfer.files));
+          }}
         >
           {user === undefined ? (
-            <div className={cx("stage-status")}>
+            <div className={cx("loading")}>
               <Spinner />
             </div>
           ) : !user ? (
-            <Auth done={U} />
-          ) : !work ? (
+            <Auth
+              done={(u) => {
+                U(u);
+                setPath(location.pathname);
+              }}
+            />
+          ) : page === "traces" ? (
+            <TraceView />
+          ) : page === "settings" ? (
+            <Settings />
+          ) : page === "works" ? (
+            <Works
+              works={shownWorks}
+              go={go}
+              rename={(id, title) => void attempt(() => rename(id, title))}
+              remove={remove}
+            />
+          ) : page === "library" ? (
+            <div className={cx("page")}>
+              <header className={cx("page-head")}>
+                <h1>
+                  <Lettering name="library" height={64} />
+                </h1>
+              </header>
+              <p className={cx("page-lede")}>
+                AI 作画时取用的现成素材。挑一个用来创作，或上传你自己的图片。
+              </p>
+              <Library use={use} action="用它创作" />
+            </div>
+          ) : page === "home" ? (
             <div className={cx("home")}>
               <section className={cx("hero")}>
                 <h1 className={cx("hero-title")}>
                   <Lantern size={44} className={cx("hero-mark")} />
-                  每个想法，都值得探索
+                  <Lettering name="hero" height={80} />
                 </h1>
-                {composer(true)}
+                {composer("home")}
                 <nav className={cx("examples")}>
                   {examples.map((text, i) => {
                     const Sketch = sketches[i];
@@ -460,9 +502,17 @@ export function App() {
                       <button
                         className={cx("example")}
                         key={text}
+                        style={{ animationDelay: 240 + i * 80 + "ms" }}
                         onClick={() => void attempt(() => send(text))}
                       >
-                        <span className={cx("example-art")}>
+                        <span
+                          className={cx("example-art")}
+                          style={
+                            {
+                              "--tint": ["#f2e1df", "#dbe6e1", "#e2e1ec"][i],
+                            } as CSSProperties
+                          }
+                        >
                           <Sketch />
                         </span>
                         <span className={cx("example-text")}>{text}</span>
@@ -472,268 +522,253 @@ export function App() {
                 </nav>
               </section>
             </div>
+          ) : !work ? (
+            <div className={cx("loading")}>
+              <Spinner />
+            </div>
           ) : (
-            <div className={cx("workspace")}>
-              <div className={cx("workspace-body")}>
-                <section className={cx("exploration")}>
-                  <header className={cx("stage-bar")}>
-                    <div className={cx("stage-lead")}>
-                      <button aria-label="场景目录" onClick={() => N(!outline)}>
-                        <PanelLeft size={18} />
-                      </button>
-                      <nav className={cx("drawy-crumbs")}>
-                        {crumbs.map((p, i) => (
-                          <span key={p.id}>
-                            {i > 0 && <ChevronRight size={12} />}
-                            <button
-                              onClick={() => void attempt(() => enter(p.id))}
-                            >
-                              {p.title}
-                            </button>
-                          </span>
-                        ))}
-                      </nav>
-                    </div>
-                    <div className={cx("drawy-actions")}>
-                      <span className={cx("save-status")}>
-                        {working ? "正在绘制…" : `已保存 · ${work.revision}`}
-                      </span>
-                      <button
-                        title="撤销"
-                        disabled={working || work.revision < 2}
-                        onClick={() =>
-                          void attempt(() => restore(work.revision - 1))
-                        }
-                      >
-                        <Undo2 size={18} />
-                      </button>
-                      <button title="版本历史" onClick={() => D("history")}>
-                        <History size={18} />
-                      </button>
-                      <button title="素材" onClick={() => D("materials")}>
-                        <Palette size={18} />
-                      </button>
-                      <button title="对话" onClick={() => C(!chat)}>
-                        <MessageCircle size={18} />
-                      </button>
-                    </div>
-                  </header>
-                  {outline && (
-                    <aside className={cx("drawy-outline")}>
-                      {Object.values(work.scenes).map((p) => (
-                        <button
-                          key={p.id}
-                          onClick={() => void attempt(() => enter(p.id))}
-                        >
-                          {p.parentId ? "↳ " : ""}
-                          {p.title}
-                        </button>
-                      ))}
-                    </aside>
-                  )}
-                  {active?.modules.length ? (
-                    <SceneView
-                      key={work.id}
-                      work={work}
-                      sceneId={sceneId}
-                      disabled={
-                        !!run &&
-                        ["running", "viewing", "waiting"].includes(run.status)
-                      }
-                      open={(target: Target) =>
-                        target.kind === "scene"
-                          ? void attempt(() => enter(target.id))
-                          : setDetail(target.id)
-                      }
-                      select={(value) => {
-                        S(value || undefined);
-                      }}
-                      commit={(moves) =>
-                        void attempt(async () => {
-                          if (working) throw Error("请等待当前绘制完成");
-                          W(
-                            await api(
-                              "/works/" + work.id + "/modules",
-                              "PATCH",
-                              { sceneId, baseRevision: work.revision, moves },
-                            ),
-                          );
-                        })
-                      }
-                    />
-                  ) : (
-                    <div className={cx("stage-status exploration-main")}>
-                      <Lantern size={42} />
-                      <p>
-                        {working ? "正在把你的想法画出来…" : "从一个想法开始"}
-                      </p>
-                    </div>
-                  )}
-                  {detailId && work.details[detailId] && (
-                    <DetailView
-                      detail={work.details[detailId]}
-                      close={() => setDetail(undefined)}
-                    />
-                  )}
-                  <div
-                    className={cx("ask drawy-ask")}
-                    data-open={chat || undefined}
-                    data-state={working ? "working" : "idle"}
-                    data-shape="pill"
-                  >
-                    {chat && (
-                      <section className={cx("drawy-conversation")}>
-                        <header>
-                          <span>与 DrawY 一起探索</span>
+            <div
+              className={cx("workspace")}
+              data-journal={journal || undefined}
+            >
+              <section
+                className={cx("stage")}
+                data-working={working || undefined}
+                onPointerDown={(e) => {
+                  if (
+                    replying &&
+                    (e.target as Element).closest("[data-canvas]")
+                  )
+                    setDismissed(run!.id);
+                }}
+              >
+                <header className={cx("topbar")}>
+                  <nav className={cx("crumbs")}>
+                    {crumbs.map((p, i) => (
+                      <span key={p.id}>
+                        {i > 0 && <i>/</i>}
+                        {i === 0 && titling ? (
+                          <Rename
+                            title={work.title}
+                            done={(title) => {
+                              setTitling(false);
+                              if (title)
+                                void attempt(() => rename(work.id, title));
+                            }}
+                          />
+                        ) : (
                           <button
-                            aria-label="收起对话"
-                            onClick={() => C(false)}
+                            aria-current={p.id === sceneId || undefined}
+                            title={
+                              i === 0 && p.id === sceneId
+                                ? "点击重命名"
+                                : undefined
+                            }
+                            onClick={() =>
+                              i === 0 && p.id === sceneId
+                                ? setTitling(true)
+                                : void attempt(() => enter(p.id))
+                            }
                           >
-                            <X size={16} />
+                            {i === 0 ? work.title : p.title}
                           </button>
-                        </header>
-                        {runs.flatMap((r) =>
-                          r.messages.map((m, i) => (
-                            <p key={r.id + i} data-role={m.role}>
-                              {m.text}
-                            </p>
-                          )),
                         )}
-                        {run?.status === "waiting" && (
-                          <div className={cx("drawy-question")}>
-                            <strong>{run.question?.text}</strong>
-                            {run.question?.options.map((o) => (
+                      </span>
+                    ))}
+                    {Object.keys(work.scenes).length > 1 && (
+                      <span className={cx("scene-menu")} data-scene-menu>
+                        <button
+                          aria-label="全部场景"
+                          aria-expanded={scenes}
+                          onClick={() => M(!scenes)}
+                        >
+                          <ChevronDown size={15} />
+                        </button>
+                        {scenes && (
+                          <span className={cx("scene-list")}>
+                            {Object.values(work.scenes).map((p) => (
                               <button
-                                className={cx("secondary")}
-                                key={o}
-                                onClick={() => void attempt(() => send(o))}
+                                key={p.id}
+                                data-child={!!p.parentId || undefined}
+                                aria-current={p.id === sceneId || undefined}
+                                onClick={() => void attempt(() => enter(p.id))}
                               >
-                                {o}
+                                {p.parentId ? p.title : work.title}
                               </button>
                             ))}
-                          </div>
+                          </span>
                         )}
-                        {run?.observations.filter(
-                          (o) => o.revision === work.revision && o.overview,
-                        ).length ? (
-                          <p className={cx("drawy-observation")}>
-                            已查看当前画布 · 版本 {work.revision}
-                          </p>
-                        ) : null}
-                        {working && (
-                          <p className={cx("drawy-progress")}>
-                            <Spinner size={14} />
-                            {progress ||
-                              (run.status === "viewing"
-                                ? "正在查看画布…"
-                                : "正在绘制…")}
-                          </p>
-                        )}
-                      </section>
+                      </span>
                     )}
-                    {composer(false)}
+                  </nav>
+                  <div className={cx("actions")}>
+                    <button
+                      aria-label="撤销上一稿"
+                      data-tip="撤销上一稿"
+                      disabled={working || work.revision < 2}
+                      onClick={() =>
+                        void attempt(() => restore(work.revision - 1))
+                      }
+                    >
+                      <Undo2 size={17} />
+                    </button>
+                    <button
+                      aria-label="版本"
+                      data-tip="版本"
+                      onClick={() => D("history")}
+                    >
+                      <History size={17} />
+                    </button>
+                    <button
+                      aria-label="从素材库添加"
+                      data-tip="从素材库添加"
+                      onClick={() => D("library")}
+                    >
+                      <Shapes size={17} />
+                    </button>
+                    <button
+                      aria-label="创作过程"
+                      data-tip="创作过程"
+                      aria-pressed={journal}
+                      data-live={working || undefined}
+                      onClick={() => J(!journal)}
+                    >
+                      <PanelRight size={17} />
+                    </button>
                   </div>
+                </header>
+                <SceneView
+                  key={work.id}
+                  work={work}
+                  sceneId={sceneId}
+                  run={working || run?.status === "waiting" ? run : undefined}
+                  disabled={
+                    !!run &&
+                    ["running", "viewing", "waiting"].includes(run.status)
+                  }
+                  open={(target: Target) =>
+                    target.kind === "scene"
+                      ? void attempt(() => enter(target.id))
+                      : setDetail(target.id)
+                  }
+                  select={(value) => {
+                    S(value || undefined);
+                  }}
+                  commit={(moves) =>
+                    void attempt(async () => {
+                      if (working) throw Error("请等待当前绘制完成");
+                      W(
+                        await api("/works/" + work.id + "/modules", "PATCH", {
+                          sceneId,
+                          baseRevision: work.revision,
+                          moves,
+                        }),
+                      );
+                    })
+                  }
+                />
+                <div className={cx("dock")}>
+                  {error && (
+                    <div className={cx("toast-error")} role="alert">
+                      <span>{error}</span>
+                      <button aria-label="关闭" onClick={() => E("")}>
+                        <X size={13} />
+                      </button>
+                    </div>
+                  )}
+                  {(offline ||
+                    run?.status === "waiting" ||
+                    (!journal && (working || run?.id !== dismissed))) && (
+                    <Now
+                      run={run}
+                      work={work}
+                      offline={offline}
+                      pictures={!!active?.modules.length}
+                      answer={(o) => void attempt(() => send(o, sceneId, ""))}
+                      choose={setChoices}
+                      cancel={() =>
+                        void attempt(() =>
+                          api("/runs/" + run!.id + "/cancel", "POST"),
+                        )
+                      }
+                      reveal={() => J(true)}
+                      dismiss={() => setDismissed(run?.id || "")}
+                    />
+                  )}
+                  {composer("dock")}
+                </div>
+                {detailId && work.details[detailId] && (
+                  <DetailView
+                    detail={work.details[detailId]}
+                    close={() => setDetail(undefined)}
+                  />
+                )}
+              </section>
+              <aside className={cx("journal")} inert={!journal}>
+                <header>
+                  <h2>
+                    <Lettering name="journal" height={34} />
+                  </h2>
+                  <button aria-label="收起" onClick={() => J(false)}>
+                    <X size={16} />
+                  </button>
+                </header>
+                <section
+                  className={cx("journal-body")}
+                  ref={conversation}
+                  onWheel={(e) => {
+                    const el = e.currentTarget;
+                    following.current =
+                      e.deltaY > 0 &&
+                      el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+                  }}
+                >
+                  <Activity
+                    runs={runs}
+                    work={work}
+                    openTrace={(id) => go("/traces/" + id)}
+                  />
                 </section>
-              </div>
+              </aside>
+            </div>
+          )}
+          {error && page !== "work" && (
+            <div className={cx("toast-error")} data-floating role="alert">
+              <span>{error}</span>
+              <button aria-label="关闭" onClick={() => E("")}>
+                <X size={13} />
+              </button>
+            </div>
+          )}
+          {dragging && (
+            <div className={cx("dropzone")}>
+              <ImagePlus size={28} />
+              <p>松开即可添加参考图</p>
             </div>
           )}
         </main>
-        {error && (
-          <div className={cx("drawy-error")} role="alert">
-            {error}
-            <button onClick={() => E("")}>
-              <X size={14} />
-            </button>
-          </div>
-        )}
-        {dialog === "settings" && <SettingsDialog close={() => D("")} />}{" "}
-        {dialog === "materials" && (
-          <MaterialsDialog
-            close={() => D("")}
-            pick={(m) => {
-              Q(
-                `将${selected ? "选中的区域" : "当前场景"}使用的素材改为“${m.name}”，地址 ${m.url}${m.kind === "personal" ? `，assetId ${m.id}` : ""}`,
-              );
-              C(true);
-            }}
-          />
+        <Presence show={!!trash}>
+          <UndoToast text={`已删除「${trash?.title ?? ""}」`} onUndo={keep} />
+        </Presence>
+        {dialog === "library" && (
+          <Dialog
+            title="素材库"
+            heading={<Lettering name="library" height={44} />}
+            wide
+            onClose={() => D("")}
+          >
+            <Library use={use} action="加入对话" />
+          </Dialog>
         )}
         {dialog === "history" && work && (
           <HistoryDialog
             id={work.id}
+            current={work.revision}
             close={() => D("")}
             restore={(r) => void attempt(() => restore(r))}
           />
         )}
       </div>
     </LocaleContext.Provider>
-  );
-}
-function Auth({
-  done,
-}: {
-  done: (user: { id: string; name: string }) => void;
-}) {
-  const [signup, S] = useState(false),
-    [name, N] = useState(""),
-    [password, P] = useState(""),
-    [error, E] = useState("");
-  return (
-    <div className={cx("home")}>
-      <section className={cx("hero drawy-auth")}>
-        <h1 className={cx("hero-title")}>
-          <Lantern size={44} />
-          DrawY
-        </h1>
-        <p>每个想法，都值得探索</p>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            try {
-              done(
-                await api("/auth/" + (signup ? "register" : "login"), "POST", {
-                  name,
-                  password,
-                }),
-              );
-            } catch (e) {
-              E(String(e));
-            }
-          }}
-        >
-          <label>
-            用户名
-            <input
-              autoComplete="username"
-              value={name}
-              onChange={(e) => N(e.target.value)}
-              required
-            />
-          </label>
-          <label>
-            密码
-            <input
-              type="password"
-              autoComplete={signup ? "new-password" : "current-password"}
-              value={password}
-              onChange={(e) => P(e.target.value)}
-              required
-              minLength={6}
-            />
-          </label>
-          <button className={cx("primary full")}>
-            {signup ? "创建账号" : "登录"}
-          </button>
-          <button
-            type="button"
-            className={cx("drawy-switch")}
-            onClick={() => S(!signup)}
-          >
-            {signup ? "已有账号，登录" : "创建一个账号"}
-          </button>
-          <p className={cx("error")}>{error}</p>
-        </form>
-      </section>
-    </div>
   );
 }

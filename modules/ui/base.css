@@ -212,6 +212,11 @@ img {
   outline: none;
 }
 
+/* Fields show focus with their own border. */
+:is(input, textarea, select):focus-visible {
+  outline: none;
+}
+
 kbd {
   display: inline-flex;
   align-items: center;

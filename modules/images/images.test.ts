@@ -1,54 +1,199 @@
-import { it, expect, vi, afterEach } from "vitest";
+import { it, expect, vi, afterEach, beforeEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Storage } from "../storage/index.ts";
-import { generateImage } from "./index.ts";
-afterEach(() => vi.unstubAllGlobals());
+import { register } from "../identity/index.ts";
+import { fixture } from "../runtime/fixture.ts";
+import { develop } from "./index.ts";
+import { library as client } from "../materials/index.ts";
+import { serveLibrary, picture } from "@drawy/materials/testing";
+
+let dir: string, db: Storage, library: ReturnType<typeof serveLibrary>;
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "drawy-image-test-"));
+  db = new Storage(dir);
+  library = serveLibrary(client.base);
+});
+afterEach(() => {
+  library.close();
+  db.close();
+  rmSync(dir, { recursive: true });
+  vi.unstubAllGlobals();
+});
 for (const channel of ["api", "oauth"] as const)
-  it(`persists ${channel} image results and encodes reference edits correctly`, async () => {
-    const dir = mkdtempSync(join(tmpdir(), "drawy-image-test-"));
-    const db = new Storage(dir);
-    try {
-      const store = db.scoped("owner"),
-        settings = store.settings();
-      settings.image = {
-        channel,
-        model: "gpt-image-2",
-        credential: "test",
-        baseUrl: "https://example.invalid",
-      };
-      store.saveSettings(settings);
-      const source = store.putAsset(
-        new Uint8Array([1, 2]),
-        "reference.png",
-        "image/png",
-      );
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async () =>
-          Response.json({ data: [{ b64_json: "AQID", generation_id: "g" }] }),
-        ),
-      );
-      const [a] = await generateImage(
-        store,
-        { prompt: "green", references: [source.id] },
-        new AbortController().signal,
-      );
-      expect(store.bytes(a.id)).toEqual(Buffer.from([1, 2, 3]));
-      expect(a.source).toBe("generated");
-      expect(a.generationId).toBe("g");
-      const options = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
-      if (channel === "api") {
-        expect(options.body).toBeInstanceOf(FormData);
-        expect((options.body as FormData).getAll("image[]")).toHaveLength(1);
-      } else
-        expect(JSON.parse(options.body as string).images[0].image_url).toBe(
-          "data:image/png;base64,AQI=",
-        );
-      expect(() => db.scoped("other").asset(a.id)).toThrow();
-    } finally {
-      db.close();
-      rmSync(dir, { recursive: true });
-    }
+  it(`develops ${channel} pictures in the work's style into the library`, async () => {
+    const store = db.scoped(register(db, "author", "abcdef").id);
+    const settings = store.settings();
+    settings.image = {
+      channel,
+      model: "gpt-image-2",
+      credential: "test",
+      baseUrl: "https://example.invalid",
+    };
+    store.saveSettings(settings);
+    const png = await picture();
+    const calls: RequestInit[] = [];
+    library.route(async (_url, init) => {
+      calls.push(init!);
+      return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+    });
+    const work = fixture();
+    const [made] = await develop(store, work, [
+      {
+        name: { zh: "显微镜", en: "microscope" },
+        role: "object",
+        depicts: "a school microscope, three-quarter view",
+        references: ["microscope"],
+      },
+    ]);
+    expect(made.id).toMatch(/^g-microscope-/);
+    expect(await made.done).toEqual({ status: "ready" });
+    expect(made.settled?.status).toBe("ready");
+    const m = await library.library.ready(made.id, store.userId, 0);
+    expect(m).toMatchObject({
+      style: "textbook",
+      origin: { kind: "generated", references: ["microscope"] },
+      // Made from a public picture, so it joins the library.
+      owner: null,
+      file: { mediaType: "image/webp" },
+    });
+    const sent = calls[0];
+    const prompt =
+      channel === "api"
+        ? String((sent.body as FormData).get("prompt"))
+        : JSON.parse(sent.body as string).prompt;
+    expect(prompt.startsWith("Flat textbook line illustration")).toBe(true);
+    expect(prompt).toContain(work.brief!.direction);
+    if (channel === "api")
+      expect((sent.body as FormData).getAll("image[]")).toHaveLength(1);
+    else
+      expect(JSON.parse(sent.body as string)).toMatchObject({
+        background: "transparent",
+        images: [
+          { image_url: expect.stringMatching(/^data:image\/png;base64,/) },
+        ],
+      });
   });
+it("retries a dropped connection or a busy server before giving up", async () => {
+  const store = db.scoped(register(db, "author", "abcdef").id);
+  const settings = store.settings();
+  settings.image = {
+    ...settings.image,
+    credential: "test",
+    baseUrl: "https://example.invalid",
+  };
+  store.saveSettings(settings);
+  const png = await picture();
+  let calls = 0;
+  library.route(async () => {
+    calls++;
+    if (calls === 1) throw new TypeError("fetch failed");
+    if (calls === 2) return new Response("busy", { status: 503 });
+    return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+  });
+  vi.useFakeTimers({ toFake: ["setTimeout"] });
+  try {
+    const [made] = await develop(store, fixture(), [
+      { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
+    ]);
+    while (!made.settled) await vi.advanceTimersByTimeAsync(1000);
+    expect(await made.done).toEqual({ status: "ready" });
+    expect(calls).toBe(3);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("records a failed picture so the work and the author both learn of it", async () => {
+  const store = db.scoped(register(db, "author", "abcdef").id);
+  const settings = store.settings();
+  settings.image = {
+    ...settings.image,
+    credential: "test",
+    baseUrl: "https://example.invalid",
+  };
+  store.saveSettings(settings);
+  library.route(async () => new Response("unsafe prompt", { status: 400 }));
+  const [made] = await develop(store, fixture(), [
+    { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
+  ]);
+  expect(await made.done).toMatchObject({
+    status: "failed",
+    error: expect.stringContaining("400"),
+  });
+  await expect(library.library.ready(made.id, store.userId, 0)).rejects.toThrow(
+    "400",
+  );
+  await expect(
+    develop(store, { ...fixture(), brief: null }, [
+      { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
+    ]),
+  ).rejects.toThrow("set_brief");
+});
+
+it("makes pictures that reference another in the same request after it, privately when the reference is private", async () => {
+  const store = db.scoped(register(db, "author", "abcdef").id);
+  const settings = store.settings();
+  settings.image = {
+    ...settings.image,
+    channel: "oauth",
+    credential: "test",
+    baseUrl: "https://example.invalid",
+  };
+  store.saveSettings(settings);
+  const png = await picture();
+  const prompts: { subject: string; references: number }[] = [];
+  library.route(async (_url, init) => {
+    const body = JSON.parse(init!.body as string);
+    prompts.push({
+      subject: body.prompt.split("\n")[1],
+      references: body.images?.length ?? 0,
+    });
+    return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+  });
+  const mine = await client.ingest(
+    png,
+    "image/png",
+    {
+      role: "figure",
+      name: { zh: "我的兔子", en: "my rabbit" },
+      style: null,
+      origin: { kind: "upload" },
+    },
+    store.userId,
+  );
+  const [rabbit, scene, kept] = await develop(store, fixture(), [
+    {
+      key: "rabbit",
+      name: { zh: "兔子", en: "rabbit" },
+      role: "figure",
+      depicts: "a white rabbit",
+    },
+    {
+      name: { zh: "迷路", en: "lost" },
+      role: "scene",
+      depicts: "the rabbit lost in a wood",
+      references: ["rabbit"],
+    },
+    {
+      name: { zh: "我的兔子回家", en: "home" },
+      role: "scene",
+      depicts: "my rabbit at home",
+      references: [mine.id],
+    },
+  ]);
+  await Promise.all([rabbit.done, scene.done, kept.done]);
+  const made = await client.get([rabbit.id, scene.id, kept.id], store.userId);
+  expect(made.map((m) => [m.status, m.owner, m.origin.references])).toEqual([
+    ["ready", null, undefined],
+    ["ready", null, [rabbit.id]],
+    ["ready", store.userId, [mine.id]],
+  ]);
+  // The scene was painted from the rabbit, after the rabbit existed.
+  expect(
+    prompts.findIndex((p) => p.subject.includes("lost in a wood")),
+  ).toBeGreaterThan(
+    prompts.findIndex((p) => p.subject.includes("a white rabbit")),
+  );
+  expect(prompts.find((p) => p.subject.includes("lost"))!.references).toBe(1);
+});
