@@ -177,7 +177,8 @@ async function compact(
       signal,
       undefined,
       4096,
-      run.workId,
+      // A summary asks with other instructions; it keeps off the author's cached prefix.
+      run.workId + ":compact",
     );
     const references = [
       ...new Set(

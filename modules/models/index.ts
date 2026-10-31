@@ -24,13 +24,18 @@ export async function generate(
   signal: AbortSignal,
   onEvent: (event: Item) => void = () => {},
   budget = 32768,
-  /** Requests sharing a key are routed to the same prompt cache. */
+  /** Requests that extend one another share a key, so they reach the machine holding
+   * their cached prefix; the ChatGPT backend routes by the `session_id` header, so it
+   * carries the key there too. */
   cacheKey?: string,
 ) {
   if (!role.credential) throw Error("请先配置模型凭证");
   const r = await fetch(role.baseUrl.replace(/\/$/, "") + "/responses", {
     method: "POST",
-    headers: headers(role),
+    headers: {
+      ...headers(role),
+      ...(cacheKey && role.channel === "oauth" ? { session_id: cacheKey } : {}),
+    },
     body: JSON.stringify({
       model: role.model,
       instructions,

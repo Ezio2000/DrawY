@@ -105,3 +105,35 @@ it.each(["api", "oauth"] as const)(
     }
   },
 );
+it("keeps requests that extend one another on their cached prefix", async () => {
+  const data =
+    "data: " +
+    JSON.stringify({
+      type: "response.completed",
+      response: { output: [], usage: {} },
+    }) +
+    "\n\n";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(data)),
+  );
+  for (const channel of ["oauth", "api"] as const)
+    await generate(
+      { ...role, channel },
+      "test",
+      [],
+      [],
+      new AbortController().signal,
+      undefined,
+      undefined,
+      "work-1",
+    );
+  const [oauth, api] = vi
+    .mocked(fetch)
+    .mock.calls.map(([, init]) => init as RequestInit);
+  for (const init of [oauth, api])
+    expect(JSON.parse(init.body as string).prompt_cache_key).toBe("work-1");
+  // The ChatGPT backend routes by session_id; the API by the key alone.
+  expect((oauth.headers as Record<string, string>).session_id).toBe("work-1");
+  expect((api.headers as Record<string, string>).session_id).toBeUndefined();
+});
