@@ -235,11 +235,29 @@ export class SceneRenderer {
     if (m.status !== "ready") {
       img.dataset.developing = "";
       frame.dataset.developing = "";
+      // Pencil hatching where the picture will appear, until it develops.
+      const sketch = document.createElement("i");
+      sketch.dataset.sketch = "";
+      sketch.style.cssText = `left:${(width - m.width * k) / 2}px;top:${top}px;width:${m.width * k}px;height:${m.height * k}px`;
+      frame.append(sketch);
       const loaded = new Promise<void>((resolve) => {
         img.addEventListener("load", () => {
           delete img.dataset.developing;
           delete frame.dataset.developing;
-          resolve();
+          sketch.remove();
+          img
+            .animate(
+              [
+                {
+                  opacity: 0,
+                  filter: "blur(12px) saturate(0) brightness(1.12)",
+                },
+                { opacity: 0.85, offset: 0.4 },
+                { opacity: 1, filter: "none" },
+              ],
+              { duration: 1600, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+            )
+            .finished.then(() => resolve(), () => resolve());
         });
         img.addEventListener("error", () => {
           this.options.error("图片没有生成出来: " + id);
@@ -368,9 +386,15 @@ export class SceneRenderer {
           animate: (fn) => this.animate(fn, cleanup),
         });
         try {
+          // The work's own definition, or a library drawing used as it is.
+          const own = this.work.drawings[drawingId],
+            library = own ? undefined : this.use(drawingId, "drawing");
           const result = await execute(
-            this.work.drawings[drawingId].source,
-            apiFor(data, { width: bounds.width, height: bounds.height }),
+            own ? own.source : library!.source,
+            apiFor(own ? data : { ...library!.defaults, ...data }, {
+              width: bounds.width,
+              height: bounds.height,
+            }),
           );
           if (this.disposed || view.revision !== revision) {
             for (const fn of cleanup.splice(0)) fn();
@@ -380,7 +404,7 @@ export class SceneRenderer {
             throw Error("画法必须返回一个 DOM 或 SVG 元素");
           const style = document.createElement("style");
           style.textContent =
-            ":host{display:block;color:var(--ink);font-family:var(--font)}*{box-sizing:border-box}svg{display:block;max-width:100%;max-height:100%}button,input,select{font:inherit}[data-developing]{background:radial-gradient(closest-side,color-mix(in srgb,var(--ink,#333) 10%,transparent),transparent);animation:developing 1.6s ease-in-out infinite alternate}img[data-developing]{background:none}@keyframes developing{from{opacity:.35}to{opacity:.9}}";
+            ":host{display:block;color:var(--ink);font-family:var(--font)}*{box-sizing:border-box}svg{display:block;max-width:100%;max-height:100%}button,input,select{font:inherit}[data-sketch]{position:absolute;background:repeating-linear-gradient(-45deg,color-mix(in srgb,var(--ink,#333) 22%,transparent) 0 1px,transparent 1px 7px);-webkit-mask:radial-gradient(closest-side,#000 40%,transparent);mask:radial-gradient(closest-side,#000 40%,transparent);animation:developing 1.8s ease-in-out infinite alternate}img[data-developing]{visibility:hidden}@keyframes developing{from{opacity:.3}to{opacity:.85}}";
           const defs = [...effects].map((e) =>
             (
               this.work.materials[e] as Extract<MaterialUse, { kind: "effect" }>

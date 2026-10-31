@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 
 /** One timed piece of a run: a model turn, a tool call, a search, a generation, a capture. */
 export interface Span {
@@ -47,19 +48,23 @@ interface Scope {
 const scope = new AsyncLocalStorage<Scope>();
 const id = () => crypto.randomUUID();
 
-/** Images inside traced values become a short note; everything else is kept. */
-export function sanitize(value: unknown): unknown {
+/** A traced value with every embedded image handed to `keep`, which returns what stands
+ * in its place; everything else is kept as it is. */
+export function sanitize(
+  value: unknown,
+  keep: (dataUrl: string) => string = (v) =>
+    `[${v.slice(5, v.indexOf(";"))} ${Math.round((v.length * 3) / 4 / 1024)}KB]`,
+): unknown {
   if (typeof value === "string")
-    return value.startsWith("data:image/")
-      ? `[${value.slice(5, value.indexOf(";"))} ${Math.round((value.length * 3) / 4 / 1024)}KB]`
-      : value;
-  if (Array.isArray(value)) return value.map(sanitize);
+    return value.startsWith("data:image/") ? keep(value) : value;
+  if (Array.isArray(value)) return value.map((v) => sanitize(v, keep));
   if (value && typeof value === "object")
     return Object.fromEntries(
-      Object.entries(value).map(([k, v]) => [k, sanitize(v)]),
+      Object.entries(value).map(([k, v]) => [k, sanitize(v, keep)]),
     );
   return value;
 }
+const FILE = /^[0-9a-f]{24}\.(png|jpeg|webp|gif)$/;
 
 /** A span being recorded; attributes added before it ends are kept with it. */
 export class ActiveSpan {
@@ -68,13 +73,14 @@ export class ActiveSpan {
     readonly span: Span,
   ) {}
   set(attrs: Record<string, unknown>) {
-    Object.assign(this.span.attrs, sanitize(attrs));
+    Object.assign(this.span.attrs, this.tracer.clean(attrs));
     this.tracer.persist(this.span);
   }
 }
 const idle = new ActiveSpan(
   {
     persist() {},
+    clean: (attrs: Record<string, unknown>) => attrs,
   } as unknown as Tracer,
   {
     id: "",
@@ -92,8 +98,11 @@ const idle = new ActiveSpan(
  * nest by async context, so any module can record without being handed a trace. */
 export class Tracer {
   private db?: DatabaseSync;
+  private files = "";
   open(dir: string) {
     mkdirSync(dir, { recursive: true });
+    this.files = join(dir, "trace-files");
+    mkdirSync(this.files, { recursive: true });
     this.db = new DatabaseSync(join(dir, "trace.sqlite"));
     this.db.exec(`PRAGMA journal_mode=WAL;
  CREATE TABLE IF NOT EXISTS traces(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,data TEXT NOT NULL,updated_at INTEGER NOT NULL);
@@ -136,6 +145,28 @@ export class Tracer {
       .prepare("UPDATE traces SET data=?,updated_at=? WHERE id=?")
       .run(JSON.stringify(trace), trace.updatedAt, traceId);
   }
+  /** Attributes as stored: each image is kept once, by its content, and referred to by
+   * the address it is served at. */
+  clean(attrs: Record<string, unknown>) {
+    return sanitize(attrs, (url) => {
+      const comma = url.indexOf(","),
+        type = url.slice(11, url.indexOf(";")),
+        bytes = Buffer.from(url.slice(comma + 1), "base64"),
+        name = `${createHash("sha256").update(bytes).digest("hex").slice(0, 24)}.${type}`;
+      if (!FILE.test(name)) return `[${type} ${Math.round(bytes.length / 1024)}KB]`;
+      const path = join(this.files, name);
+      if (!existsSync(path)) writeFileSync(path, bytes);
+      return `/api/traces/files/${name}`;
+    }) as Record<string, unknown>;
+  }
+  /** An image a span refers to. */
+  file(name: string) {
+    if (!FILE.test(name)) return undefined;
+    const path = join(this.files, name);
+    return existsSync(path)
+      ? { bytes: readFileSync(path), type: "image/" + name.split(".")[1] }
+      : undefined;
+  }
   persist(span: Span) {
     this.db
       ?.prepare(
@@ -164,7 +195,7 @@ export class Tracer {
       name,
       startedAt: Date.now(),
       status: "running",
-      attrs: sanitize(attrs) as Record<string, unknown>,
+      attrs: this.clean(attrs),
     };
     const active = new ActiveSpan(this, span);
     this.persist(span);
@@ -199,7 +230,7 @@ export class Tracer {
       endedAt: now,
       status: error ? "error" : "ok",
       ...(error ? { error } : {}),
-      attrs: sanitize(attrs) as Record<string, unknown>,
+      attrs: this.clean(attrs),
     });
   }
   spans(traceId: string): Span[] {

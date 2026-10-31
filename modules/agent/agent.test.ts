@@ -105,6 +105,7 @@ it("feeds canvas images into the author conversation and requires another look a
             },
           ],
           usage: {},
+          response: {},
         };
       },
     );
@@ -240,6 +241,7 @@ it("lays out streamed modules on the write step before the write is saved", asyn
             },
           ],
           usage: {},
+          response: {},
         };
       },
     );
@@ -319,6 +321,7 @@ it("continues the exact context across turns and accepts images in answers", asy
         },
       ],
       usage: {},
+      response: {},
     }));
     const run = await agent.start(store, work.id, "root", "Match this", [
       reference.id,
@@ -338,7 +341,8 @@ it("continues the exact context across turns and accepts images in answers", asy
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
     const answered = store.context(run.id).input;
     expect(answered.slice(0, initial.length)).toEqual(initial);
-    expect(answered[initial.length].content[1].image_url).toMatch(
+    expect(answered[initial.length].content[1].text).toMatch(/^Attached picture /);
+    expect(answered[initial.length].content[2].image_url).toMatch(
       /^data:image\/webp;base64,/,
     );
     expect(store.run(run.id).steps.at(-1)).toMatchObject({
@@ -413,10 +417,12 @@ it("compacts at the budget with original references and closes interrupted tool 
               },
             ],
             usage: {},
+            response: {},
           };
         }
         expect(input[0].content[0].text).toContain("Keep five panels");
-        expect(input[0].content[1].image_url).toMatch(/^data:image\/webp/);
+        expect(input[0].content[1].text).toContain(reference.id);
+        expect(input[0].content[2].image_url).toMatch(/^data:image\/webp/);
         expect(input[1].content).toContain(work.id);
         agent.cancel(store, run.id);
         return {
@@ -427,6 +433,7 @@ it("compacts at the budget with original references and closes interrupted tool 
             call_id,
           })),
           usage: {},
+          response: {},
         };
       },
     );
@@ -461,6 +468,7 @@ function script(calls: [string, unknown][], seen: any[][] = []) {
           },
         ],
         usage: {},
+        response: {},
       };
     },
   );

@@ -95,6 +95,35 @@ export class UserStore {
       throw e;
     }
   }
+  /** Names the work, without making a new revision of its drawing. */
+  rename(workId: string, title: string) {
+    const work = { ...this.work(workId), title };
+    this.storage.db
+      .prepare("UPDATE works SET data=? WHERE user_id=? AND id=?")
+      .run(JSON.stringify(work), this.userId, workId);
+    return work;
+  }
+  /** The work as the author last saw it whole: the overview of its latest look. */
+  cover(workId: string) {
+    const rows = this.storage.db
+      .prepare(
+        "SELECT data FROM runs WHERE user_id=? AND work_id=? ORDER BY rowid DESC",
+      )
+      .all(this.userId, workId);
+    for (const r of rows) {
+      const run = JSON.parse(r.data as string) as Run;
+      const look = run.steps.findLast(
+        (s) =>
+          s.kind === "tool" &&
+          s.name === "view_canvas" &&
+          s.focus === "overview" &&
+          !!s.screenshots?.length,
+      );
+      if (look?.kind === "tool" && look.name === "view_canvas")
+        return look.screenshots![0].url;
+    }
+    return null;
+  }
   revisions(workId: string) {
     this.work(workId);
     return this.storage.db

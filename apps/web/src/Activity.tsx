@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Questions } from "./Questions.tsx";
 import { X } from "lucide-react";
 import { cx } from "./cx.ts";
@@ -82,6 +82,7 @@ export function Now({
   offline,
   pictures,
   answer,
+  cancel,
   reveal,
   dismiss,
 }: {
@@ -91,6 +92,7 @@ export function Now({
   /** Whether the pictures being weighed show here rather than on the canvas. */
   pictures: boolean;
   answer: (text: string) => void;
+  cancel: () => void;
   reveal: () => void;
   dismiss: () => void;
 }) {
@@ -103,7 +105,9 @@ export function Now({
     );
   if (!run) return null;
   if (run.status === "waiting" && run.questions)
-    return <Questions questions={run.questions} answer={answer} />;
+    return (
+      <Questions questions={run.questions} answer={answer} cancel={cancel} />
+    );
   if (!live(run)) {
     const reply = run.steps.at(-1);
     const text =
@@ -117,11 +121,20 @@ export function Now({
     if (!text) return null;
     return (
       <div className={cx("now")} data-tone={run.status}>
-        <button className={cx("now-reply")} onClick={reveal}>
+        <button
+          className={cx("now-reply")}
+          title="查看创作过程"
+          onClick={reveal}
+        >
           {text}
         </button>
-        <button className={cx("now-close")} aria-label="收起" onClick={dismiss}>
-          <X size={13} />
+        <button
+          className={cx("now-close")}
+          aria-label="收起"
+          data-tip="收起（Esc）"
+          onClick={dismiss}
+        >
+          <X size={15} />
         </button>
       </div>
     );
@@ -281,12 +294,28 @@ export function Activity({
           </article>
         );
       })}
-      {zoom && (
-        <div className={cx("lightbox")} onClick={() => Z(undefined)}>
-          <img src={zoom.url} alt={zoom.name} />
-        </div>
-      )}
+      {zoom && <Lightbox picture={zoom} close={() => Z(undefined)} />}
     </>
+  );
+}
+/** A picture enlarged over everything; a click anywhere, the button or Escape closes it. */
+function Lightbox({ picture, close }: { picture: Picture; close: () => void }) {
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      close();
+    };
+    addEventListener("keydown", key, true);
+    return () => removeEventListener("keydown", key, true);
+  }, []);
+  return (
+    <div className={cx("lightbox")} onClick={close}>
+      <button aria-label="关闭">
+        <X size={18} />
+      </button>
+      <img src={picture.url} alt={picture.name} />
+    </div>
   );
 }
 function Trace({

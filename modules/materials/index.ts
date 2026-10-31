@@ -7,6 +7,7 @@ import type {
 } from "@drawy/materials/schema";
 import {
   DomainError,
+  blankStyle,
   type Candidate,
   type MaterialUse,
   type Work,
@@ -89,7 +90,12 @@ function named(work: Work) {
     else if (v && typeof v === "object") Object.values(v).forEach(scan);
   };
   for (const scene of Object.values(work.scenes))
-    for (const x of [...scene.modules, ...scene.links]) scan(x.data);
+    for (const x of [...scene.modules, ...scene.links]) {
+      // A module or link may be drawn by a library drawing as it is; one that is in
+      // neither is reported by the work's validation.
+      if (!work.drawings[x.drawingId]) mentioned.add(x.drawingId);
+      scan(x.data);
+    }
   return { called, mentioned, quoted };
 }
 
@@ -97,7 +103,7 @@ function named(work: Work) {
 export function drawnWith(work: Work, sceneId: string, moduleId: string) {
   const m = work.scenes[sceneId]?.modules.find((x) => x.id === moduleId);
   if (!m) return [];
-  const ids = new Set<string>();
+  const ids = new Set<string>([m.drawingId]);
   for (const [, id] of (work.drawings[m.drawingId]?.source ?? "").matchAll(
     CALL,
   ))
@@ -260,7 +266,17 @@ export async function find(request: SearchRequest, user: string) {
     span.set({
       results: results.map((r) => ({
         subject: r.subject,
-        hits: r.hits.map((h) => `${h.material.id} ${h.match} ${h.score}`),
+        hits: r.hits.map((h) => ({
+          id: h.material.id,
+          name: h.material.name.zh,
+          kind: h.material.kind,
+          style: h.material.style,
+          match: h.match,
+          score: h.score,
+          ...(h.material.kind === "picture"
+            ? { url: `/materials/thumbs/${h.material.id}?size=128` }
+            : {}),
+        })),
       })),
     });
     const shown = results
@@ -295,20 +311,79 @@ export async function find(request: SearchRequest, user: string) {
 }
 /** Pictures a user attached to a message, as the author sees them. */
 export async function attached(ids: string[], user: string): Promise<Item[]> {
-  return Promise.all(
-    ids.map(async (id) => {
-      const [m] = await library.get([id], user);
+  const found = ids.length ? await library.get(ids, user) : [];
+  const parts = await Promise.all(
+    found.map(async (m): Promise<Item[]> => {
+      const note = {
+        type: "input_text",
+        text: `Attached ${m.kind} ${m.id}「${m.name.zh}」${
+          m.kind === "picture"
+            ? ": place it by this id like any library picture, or pass it to generate_images as a reference"
+            : m.kind === "style"
+              ? ": the user wants the work in this style"
+              : ": the user wants the work to use it"
+        }`,
+      };
+      const shown =
+        m.kind === "picture" ? m.id : m.kind === "style" ? m.samples[0] : null;
+      if (!shown) return [note];
       const raster =
         m.kind === "picture" && m.file.mediaType !== "image/svg+xml";
       const bytes = raster
-        ? await library.file(id, user)
-        : await library.thumb(id, user, 512);
-      return {
-        type: "input_image",
-        image_url: `data:${raster ? (m as { file: { mediaType: string } }).file.mediaType : "image/png"};base64,${Buffer.from(bytes).toString("base64")}`,
-      };
+        ? await library.file(shown, user)
+        : await library.thumb(shown, user, 512);
+      return [
+        note,
+        {
+          type: "input_image",
+          image_url: `data:${raster ? m.file.mediaType : "image/png"};base64,${Buffer.from(bytes).toString("base64")}`,
+        },
+      ];
     }),
   );
+  return parts.flat();
+}
+/** A drawing material drawn from its example data, as a work of one module. */
+export async function preview(id: string, user: string): Promise<Work> {
+  const [m] = await library.get([id], user);
+  if (m.kind !== "drawing") throw new DomainError("只有画法素材有预览");
+  const work: Work = {
+    id: "preview-" + m.id,
+    title: m.name.zh,
+    rootSceneId: "root",
+    drawings: {},
+    scenes: {
+      root: {
+        id: "root",
+        title: m.name.zh,
+        parentId: null,
+        modules: [
+          {
+            id: m.id,
+            label: m.name.zh,
+            bounds: { x: 0, y: 0, ...m.size },
+            drawingId: m.id,
+            group: null,
+            target: null,
+            anchors: {},
+            data: m.example,
+          },
+        ],
+        links: [],
+        interactionId: null,
+        checks: [],
+      },
+    },
+    interactions: {},
+    details: {},
+    brief: null,
+    materials: {},
+    style: { ...blankStyle },
+    revision: 0,
+    updatedAt: m.origin.createdAt,
+  };
+  await take(work, [], user);
+  return work;
 }
 /** Adds a user's picture to their library. */
 export function upload(

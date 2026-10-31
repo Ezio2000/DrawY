@@ -203,8 +203,13 @@ export class Library {
           );
     const pages = Math.max(1, Math.ceil(items.length / PAGE));
     const at = Math.min(Math.max(1, page), pages);
+    const shown = items.slice((at - 1) * PAGE, at * PAGE);
+    // Styles are shown with their pictures, as everywhere else.
+    const styles = shown.some((m) => m.kind === "style")
+      ? new Map(this.styles().map((s) => [s.id, s]))
+      : undefined;
     return {
-      items: items.slice((at - 1) * PAGE, at * PAGE),
+      items: shown.map((m) => styles?.get(m.id) ?? m),
       total: items.length,
       page: at,
       pages,

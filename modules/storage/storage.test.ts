@@ -245,6 +245,35 @@ describe("user owned works", () => {
         ],
       }),
     ).rejects.toThrow("no-such-thing");
+    // A module drawn by a library drawing as it is takes that drawing in; a picture is
+    // not a drawing.
+    const { work: plotted } = await writeWork(a, work.id, {
+      baseRevision: saved.revision,
+      scenes: [
+        {
+          ...content.scenes.root,
+          modules: [module, { ...module, id: "wave", drawingId: "waves", data: {} }],
+          links: [],
+          checks: [],
+          interactionId: null,
+        },
+      ],
+    });
+    expect(plotted.materials.waves).toMatchObject({ kind: "drawing" });
+    await expect(
+      writeWork(a, work.id, {
+        baseRevision: plotted.revision,
+        scenes: [
+          {
+            ...content.scenes.root,
+            modules: [{ ...module, drawingId: "apple" }],
+            links: [],
+            checks: [],
+            interactionId: null,
+          },
+        ],
+      }),
+    ).rejects.toThrow("画法 apple 不存在");
   });
   it("retains saved content and suspended conversation across reopening", () => {
     const uid = register(db, "a", "abcdef").id,

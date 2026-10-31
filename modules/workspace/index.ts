@@ -3,6 +3,7 @@ import {
   id,
   workEditSchema,
   briefSchema,
+  blankStyle,
   type Brief,
   type Work,
   type WorkEdit,
@@ -32,12 +33,7 @@ export function createWork(store: UserStore, title: string) {
       details: {},
       brief: null,
       materials: {},
-      style: {
-        ink: "#24312e",
-        accent: "#d97757",
-        muted: "#6c7972",
-        font: "system-ui, sans-serif",
-      },
+      style: { ...blankStyle },
       revision: 0,
       updatedAt: Date.now(),
     },
@@ -104,6 +100,9 @@ export async function setBrief(
   return { work: store.commit(work, work.revision), style };
 }
 export function validateWork(work: Work) {
+  // A work's own definition, or a library drawing used as it is.
+  const drawable = (id: string) =>
+    !!work.drawings[id] || work.materials[id]?.kind === "drawing";
   const root = work.scenes[work.rootSceneId];
   if (!root || root.parentId !== null)
     throw new DomainError("作品需要一个根场景");
@@ -126,7 +125,10 @@ export function validateWork(work: Work) {
     )
       throw new DomainError("场景内 ID 重复");
     for (const m of scene.modules) {
-      if (!work.drawings[m.drawingId]) throw new DomainError("模块画法不存在");
+      if (!drawable(m.drawingId))
+        throw new DomainError(
+          `模块 ${m.id} 的画法 ${m.drawingId} 不存在：在 drawings 里定义它，或用库里画法素材的 id`,
+        );
       if (
         m.target &&
         !(m.target.kind === "scene"
@@ -136,7 +138,10 @@ export function validateWork(work: Work) {
         throw new DomainError("模块交互目标不存在");
     }
     for (const l of scene.links) {
-      if (!work.drawings[l.drawingId]) throw new DomainError("连接画法不存在");
+      if (!drawable(l.drawingId))
+        throw new DomainError(
+          `连接 ${l.id} 的画法 ${l.drawingId} 不存在：在 drawings 里定义它，或用库里画法素材的 id`,
+        );
       for (const end of [l.from, l.to])
         if (!modules.get(end.moduleId)?.anchors[end.anchor])
           throw new DomainError("连接锚点不存在");
@@ -173,9 +178,11 @@ export async function moveModules(
     })
   ).work;
 }
+/** Brings back an earlier revision of the drawing; the work keeps its current name. */
 export function restore(store: UserStore, workId: string, revision: number) {
+  const current = store.work(workId);
   return store.commit(
-    store.revision(workId, revision),
-    store.work(workId).revision,
+    { ...store.revision(workId, revision), title: current.title },
+    current.revision,
   );
 }

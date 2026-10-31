@@ -111,6 +111,13 @@ export type Scene = z.infer<typeof sceneSchema>;
 export type Interaction = z.infer<typeof interactionSchema>;
 export type Detail = z.infer<typeof detailSchema>;
 export type Brief = z.infer<typeof briefSchema>;
+/** The style tokens of a work before its brief chooses a style. */
+export const blankStyle: Record<string, string> = {
+  ink: "#24312e",
+  accent: "#d97757",
+  muted: "#6c7972",
+  font: "system-ui, sans-serif",
+};
 export interface Work {
   id: string;
   title: string;

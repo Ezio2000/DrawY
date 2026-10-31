@@ -8,6 +8,7 @@ import { words } from "./words.ts";
 /** Desktop dialog, closed by its button, backdrop or Escape. */
 export function Dialog({
   title,
+  heading,
   description,
   children,
   footer,
@@ -15,6 +16,9 @@ export function Dialog({
   wide = false,
 }: {
   title: string;
+  /** Shown in place of the title text, such as a lettered title; the title still names
+   * the dialog. */
+  heading?: ReactNode;
   description?: string;
   children?: ReactNode;
   footer?: ReactNode;
@@ -65,7 +69,7 @@ export function Dialog({
       >
         <header className={cx("dialog-header")}>
           <div>
-            <h2>{title}</h2>
+            <h2>{heading ?? title}</h2>
             {description && <p>{description}</p>}
           </div>
           <button

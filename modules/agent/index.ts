@@ -200,7 +200,13 @@ async function compact(
       workMessage(run.sceneId, store.work(run.workId)),
     ];
     store.context(run.id, ctx);
-    span.set({ summary: textOf(result.items), usage: result.usage });
+    // The next turn starts from this summary alone.
+    span.set({
+      summary: textOf(result.items),
+      usage: result.usage,
+      response: result.response,
+      replaced: true,
+    });
   });
 }
 /** Everything the user has said about this work, for checking a brief's quotes. */
@@ -425,7 +431,12 @@ export class Agent {
                 catalogue(await styleList(), await kit()),
                 "User preferences: " + (settings.preferences || "none"),
               ].join("\n\n");
-              execution.set({ instructions });
+              // Where this execution starts from; each turn records what it adds.
+              execution.set({
+                instructions,
+                context: ctx.input,
+                tools: tools.map((t) => t.name),
+              });
               await this.loop(
                 store,
                 run,
@@ -517,6 +528,13 @@ export class Agent {
           input: ctx.input.slice(seen),
           inputItems: ctx.input.length,
           estimatedTokens: contextSize(ctx.input),
+          request: {
+            model: settings.author.model,
+            effort: settings.author.effort,
+            serviceTier: settings.author.fast ? "priority" : "default",
+            instructionsChars: instructions.length,
+            tools: tools.length,
+          },
         },
         async (span) => {
           const result = await generate(
@@ -588,6 +606,7 @@ export class Agent {
           span.set({
             output: result.items,
             usage: result.usage,
+            response: result.response,
             firstOutputMs: firstOutput,
           });
           return result;
@@ -628,7 +647,11 @@ export class Agent {
               abort,
               start,
             );
-            span.set({ output: r.output, images: r.images.length });
+            span.set({
+              output: r.output,
+              images: r.images.map((i) => i.image_url).filter(Boolean),
+              ...(r.error ? { error: r.error } : {}),
+            });
             if (r.error)
               tracer.note("tool error", { tool: call.name }, r.error);
             return r;

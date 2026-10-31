@@ -91,6 +91,8 @@ export interface DrawingMaterial extends Envelope {
   use: "module" | "link";
   /** A size it looks right at, in scene units. */
   size: { width: number; height: number };
+  /** Data that shows what it draws at that size, as a module. */
+  example: Record<string, unknown>;
 }
 export interface EffectMaterial extends Envelope {
   kind: "effect";

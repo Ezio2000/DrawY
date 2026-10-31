@@ -17,7 +17,12 @@ import {
   moveModules,
 } from "../../modules/workspace/index.ts";
 import { documentFor } from "../../modules/runtime/document.ts";
-import { library, upload, freshen } from "../../modules/materials/index.ts";
+import {
+  library,
+  upload,
+  freshen,
+  preview,
+} from "../../modules/materials/index.ts";
 import { MaterialsError } from "@drawy/materials/client";
 import { kindSchema } from "@drawy/materials/schema";
 import { Agent } from "../../modules/agent/index.ts";
@@ -91,6 +96,7 @@ export function createApp(storage: Storage) {
           title,
           revision,
           updatedAt,
+          cover: c.get("store").cover(id),
         })),
     ),
   );
@@ -105,6 +111,18 @@ export function createApp(storage: Storage) {
       await freshen(c.get("store").work(c.req.param("id")), c.get("user").id),
     ),
   );
+  app.patch("/api/works/:id", async (c) => {
+    const { title } = z
+      .object({ title: z.string().trim().min(1).max(80) })
+      .parse(await c.req.json());
+    const store = c.get("store");
+    const work = await freshen(
+      store.rename(c.req.param("id"), title),
+      store.userId,
+    );
+    publish(store.userId, { type: "work", work });
+    return c.json(work);
+  });
   app.delete("/api/works/:id", (c) => {
     const store = c.get("store");
     for (const r of store.runs(c.req.param("id")))
@@ -229,6 +247,9 @@ export function createApp(storage: Storage) {
       ),
     ),
   );
+  app.get("/api/materials/:id/preview", async (c) =>
+    c.json(await preview(c.req.param("id"), c.get("user").id)),
+  );
   app.post("/api/materials", async (c) => {
     const form = await c.req.formData(),
       file = form.get("file");
@@ -246,6 +267,14 @@ export function createApp(storage: Storage) {
   app.get("/api/traces", (c) =>
     c.json(tracer.list(c.get("user").id, Number(c.req.query("limit") || 60))),
   );
+  app.get("/api/traces/files/:name", (c) => {
+    const file = tracer.file(c.req.param("name"));
+    if (!file) throw new DomainError("没有这张图", 404);
+    return c.body(new Uint8Array(file.bytes), 200, {
+      "Content-Type": file.type,
+      "Cache-Control": "private, max-age=31536000, immutable",
+    });
+  });
   app.get("/api/traces/:id", (c) => {
     const trace = tracer.get(c.get("user").id, c.req.param("id"));
     if (!trace) throw new DomainError("没有这次运行的记录", 404);

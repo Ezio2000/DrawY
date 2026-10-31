@@ -105,11 +105,18 @@ export function SceneView({
     (s): s is Extract<ToolStep, { name: "write_work" }> =>
       s.kind === "tool" && s.name === "write_work",
   );
+  // The latest layout written for this scene stays pencilled in, even when its write
+  // failed, until the author's next attempt streams a new one; the run ending clears it.
   const draft: Sketch[] =
-    (write?.status !== "failed" &&
-      write?.scenes.find((s) => s.id === sceneId)?.modules) ||
-    [];
-  const done = (write?.status !== "failed" && write?.drawings) || [],
+    steps
+      .findLast(
+        (s): s is Extract<ToolStep, { name: "write_work" }> =>
+          s.kind === "tool" &&
+          s.name === "write_work" &&
+          s.scenes.some((x) => x.id === sceneId),
+      )
+      ?.scenes.find((s) => s.id === sceneId)?.modules || [];
+  const done = write?.drawings || [],
     writing = write?.status === "running" ? write.writing : undefined;
   // Each update of the run gives the pen its next pass while a drawing is being written.
   useEffect(() => canvas?.sketch(draft, { done, writing }), [canvas, run]);
@@ -201,20 +208,30 @@ export function SceneView({
       <div className={cx("camera")}>
         <button
           disabled={disabled}
-          aria-label={editing ? "阅读" : "选择与移动"}
+          aria-label={editing ? "移动模块中，点击回到浏览" : "移动模块"}
+          data-tip={editing ? "回到浏览" : "移动模块"}
           data-on={editing || undefined}
           onClick={() => setEditing(!editing)}
         >
           {editing ? <MousePointer2 size={15} /> : <Hand size={15} />}
         </button>
-        <button aria-label="缩小" onClick={() => canvas?.zoom(1 / 1.25)}>
+        <button
+          aria-label="缩小"
+          data-tip="缩小"
+          onClick={() => canvas?.zoom(1 / 1.25)}
+        >
           <Minus size={15} />
         </button>
-        <button aria-label="放大" onClick={() => canvas?.zoom(1.25)}>
+        <button
+          aria-label="放大"
+          data-tip="放大"
+          onClick={() => canvas?.zoom(1.25)}
+        >
           <Plus size={15} />
         </button>
         <button
           aria-label="适应画布"
+          data-tip="适应画布（0）"
           onClick={() => {
             cameras.current.delete(work.id + ":" + sceneId);
             canvas?.fit();
@@ -246,5 +263,10 @@ export function DetailView({
     ref.current!.append(article);
     return () => article.remove();
   }, [detail]);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose.current();
+    addEventListener("keydown", key);
+    return () => removeEventListener("keydown", key);
+  }, []);
   return <div className={cx("detail")} ref={ref} />;
 }

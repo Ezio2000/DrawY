@@ -117,10 +117,22 @@ async function paint(
   // is final.
   const send = async (background: string) => {
     for (const wait of [3000, 10000, 0]) {
+      const began = Date.now();
       const r = await attempt(background).catch((e) => {
+        tracer.note(
+          "request",
+          { background, ms: Date.now() - began },
+          e instanceof Error ? e.message : String(e),
+        );
         if (!wait) throw e;
         return undefined;
       });
+      if (r)
+        tracer.note(
+          "request",
+          { background, status: r.status, ms: Date.now() - began },
+          r.ok ? undefined : `HTTP ${r.status}`,
+        );
       if (r && (r.ok || (r.status !== 429 && r.status < 500) || !wait))
         return r;
       await r?.body?.cancel();
@@ -216,6 +228,14 @@ export async function develop(
                   library.thumb(ref, store.userId, 512),
                 ),
               );
+              if (references.length)
+                span.set({
+                  referenceImages: references.map(
+                    (b) =>
+                      "data:image/png;base64," +
+                      Buffer.from(b).toString("base64"),
+                  ),
+                });
               const bytes = await paint(
                 store,
                 prompt,

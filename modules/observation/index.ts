@@ -84,6 +84,8 @@ export async function observe(
           shots: shots.map((s, i) => ({
             view: s.label,
             url: screenshots[i].url,
+            camera: s.camera,
+            modules: s.modules,
             errors: s.errors,
           })),
         });

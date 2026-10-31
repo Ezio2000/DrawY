@@ -30,6 +30,19 @@
       "width": 200,
       "height": 60
     },
+    "example": {
+      "from": {
+        "x": 0.04,
+        "y": 0.7
+      },
+      "to": {
+        "x": 0.96,
+        "y": 0.5
+      },
+      "bend": 0.18,
+      "flow": true,
+      "label": "能量流动"
+    },
     "params": {
       "bend": {
         "type": "number",
@@ -114,6 +127,10 @@
       "width": 140,
       "height": 40
     },
+    "example": {
+      "text": "光合作用",
+      "note": "在叶绿体中进行"
+    },
     "params": {
       "text": {
         "type": "string",
@@ -179,6 +196,10 @@
       "width": 160,
       "height": 30
     },
+    "example": {
+      "text": "叶绿体",
+      "side": "right"
+    },
     "params": {
       "text": {
         "type": "string",
@@ -241,6 +262,7 @@
       "width": 160,
       "height": 22
     },
+    "example": {},
     "params": {
       "opacity": {
         "type": "number",
@@ -282,6 +304,11 @@
     "size": {
       "width": 180,
       "height": 180
+    },
+    "example": {
+      "material": "apple-textbook",
+      "shadow": true,
+      "caption": "苹果"
     },
     "params": {
       "material": {
@@ -342,6 +369,9 @@
       "width": 26,
       "height": 26
     },
+    "example": {
+      "number": "1"
+    },
     "params": {
       "number": {
         "type": "string",
@@ -388,6 +418,9 @@
     "size": {
       "width": 420,
       "height": 420
+    },
+    "example": {
+      "steps": ["蒸发", "凝结", "降水", "径流"]
     },
     "params": {
       "steps": {
@@ -460,6 +493,26 @@
       "width": 420,
       "height": 280
     },
+    "example": {
+      "x": {
+        "min": 0,
+        "max": 6.3,
+        "label": "x"
+      },
+      "y": {
+        "min": -1.2,
+        "max": 1.2
+      },
+      "series": [
+        {
+          "fn": "Math.sin(x)",
+          "label": "sin x"
+        }
+      ],
+      "marker": {
+        "x": 1.57
+      }
+    },
     "params": {
       "x": {
         "type": "object",
@@ -519,6 +572,31 @@
       "width": 760,
       "height": 200
     },
+    "example": {
+      "events": [
+        {
+          "at": 1903,
+          "label": "首次动力飞行"
+        },
+        {
+          "at": 1957,
+          "label": "第一颗人造卫星"
+        },
+        {
+          "at": 1969,
+          "label": "登上月球",
+          "accent": true
+        },
+        {
+          "at": 1990,
+          "label": "哈勃望远镜"
+        },
+        {
+          "at": 2021,
+          "label": "韦布望远镜"
+        }
+      ]
+    },
     "params": {
       "events": {
         "type": "array",
@@ -567,6 +645,9 @@
     "size": {
       "width": 120,
       "height": 200
+    },
+    "example": {
+      "label": "同一组"
     },
     "params": {
       "facing": {
@@ -624,6 +705,9 @@
     "size": {
       "width": 320,
       "height": 220
+    },
+    "example": {
+      "label": "栖息地"
     },
     "params": {
       "label": {
@@ -695,6 +779,7 @@
       "width": 400,
       "height": 60
     },
+    "example": {},
     "params": {
       "rows": {
         "type": "number",
@@ -755,6 +840,10 @@
     "size": {
       "width": 500,
       "height": 200
+    },
+    "example": {
+      "body": "earth",
+      "bodySize": 30
     },
     "params": {
       "body": {
@@ -821,6 +910,14 @@
     "size": {
       "width": 280,
       "height": 56
+    },
+    "example": {
+      "label": "本金",
+      "min": 1000,
+      "max": 100000,
+      "value": 10000,
+      "step": 1000,
+      "unit": "元"
     },
     "params": {
       "label": {
@@ -895,6 +992,10 @@
     "size": {
       "width": 360,
       "height": 48
+    },
+    "example": {
+      "options": ["春", "夏", "秋", "冬"],
+      "value": "春"
     },
     "params": {
       "options": {

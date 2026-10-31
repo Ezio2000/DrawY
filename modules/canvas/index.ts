@@ -519,6 +519,32 @@ export class Canvas {
     });
     for (const m of after.instances.values())
       if (!done.has(m.id)) this.erase(m.id, 0);
+    // A picture that was still developing in the last revision comes up like a print.
+    const was = before?.work.materials ?? {};
+    for (const m of after.instances.values()) {
+      if (done.has(m.id)) continue;
+      for (const frame of after
+        .host("module", m.id)
+        ?.shadowRoot?.querySelectorAll<HTMLElement>("[data-material]") ?? []) {
+        const id = frame.dataset.material!,
+          old = was[id],
+          now = after.work.materials[id];
+        if (
+          old?.kind === "picture" &&
+          old.status === "developing" &&
+          now?.kind === "picture" &&
+          now.status === "ready"
+        )
+          frame.querySelector("img")?.animate(
+            [
+              { opacity: 0, filter: "blur(12px) saturate(0) brightness(1.12)" },
+              { opacity: 0.85, offset: 0.4 },
+              { opacity: 1, filter: "none" },
+            ],
+            { duration: 1600, easing: easeOut },
+          );
+      }
+    }
     // Links are drawn once both of their ends are.
     for (const l of after.scene.links) {
       const host = after.host("link", l.id);

@@ -1,15 +1,19 @@
 import { useState } from "react";
+import { X } from "lucide-react";
 import { cx } from "./cx.ts";
 import type { Question } from "../../../modules/contracts/index.ts";
 
 /** The author's questions before it draws. A single question answers on one click; with
- * several, the choices are gathered and sent together, with anything the user adds. */
+ * several, the choices are gathered and sent together, with anything the user adds. The
+ * user can also leave the choices to the author, or drop the request. */
 export function Questions({
   questions,
   answer,
+  cancel,
 }: {
   questions: Question[];
   answer: (text: string) => void;
+  cancel: () => void;
 }) {
   const [chosen, setChosen] = useState<Record<string, string[]>>({});
   const [note, setNote] = useState("");
@@ -40,6 +44,12 @@ export function Questions({
     questions.every((q) => chosen[q.id]?.length) || (!quick && !!note.trim());
   return (
     <div className={cx("question")}>
+      <header>
+        <small>画之前想先确认{questions.length > 1 ? ` ${questions.length} 件事` : "一下"}</small>
+        <button aria-label="不画了" data-tip="不画了" onClick={cancel}>
+          <X size={15} />
+        </button>
+      </header>
       {questions.map((q) => (
         <section key={q.id}>
           <p>{q.text}</p>
@@ -81,6 +91,14 @@ export function Questions({
             }
           }}
         />
+        {!note.trim() && !Object.keys(chosen).length && (
+          <button
+            className={cx("quiet-button")}
+            onClick={() => answer("你来决定，直接画。")}
+          >
+            你来决定
+          </button>
+        )}
         {(!quick || note.trim()) && (
           <button
             className={cx("primary")}

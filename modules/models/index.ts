@@ -47,7 +47,8 @@ export async function generate(
   const decoder = new TextDecoder();
   let buffer = "",
     complete = false,
-    usage: Item = {};
+    usage: Item = {},
+    response: Item = {};
   for await (const bytes of r.body!) {
     buffer += decoder.decode(bytes, { stream: true });
     let i;
@@ -61,6 +62,8 @@ export async function generate(
       if (e.type === "response.completed") {
         complete = true;
         usage = e.response.usage;
+        const { id, model, status, service_tier } = e.response;
+        response = { id, model, status, service_tier };
       }
       if (e.type === "response.failed" || e.type === "error")
         throw Error(JSON.stringify(e.error || e.response?.error));
@@ -69,7 +72,7 @@ export async function generate(
     }
   }
   if (!complete) throw Error("模型连接在完成前中断");
-  return { items, usage };
+  return { items, usage, response };
 }
 export function textOf(items: Item[]) {
   return items
