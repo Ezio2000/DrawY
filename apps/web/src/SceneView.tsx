@@ -17,6 +17,8 @@ import type {
   Detail,
 } from "../../../modules/contracts/index.ts";
 import { cx } from "./cx.ts";
+import { styleList, registers } from "./Composer.tsx";
+import type { StyleMaterial } from "@drawy/materials/schema";
 type ToolStep = Extract<Step, { kind: "tool" }>;
 /** What the canvas shows of a work: its revision and which pictures have developed. */
 const drawnAs = (work: Work) =>
@@ -129,6 +131,28 @@ export function SceneView({
       (!s.sceneId || s.sceneId === sceneId),
   );
   const empty = !work.scenes[sceneId].modules.length;
+  const [styles, setStyles] = useState<StyleMaterial[]>([]);
+  useEffect(() => void styleList().then(setStyles, () => {}), []);
+  // What the author has understood, noted on the paper before it starts drawing: the
+  // subject as it is written, then the settled brief.
+  const briefing = steps.findLast(
+    (s): s is Extract<ToolStep, { name: "set_brief" }> =>
+      s.kind === "tool" && s.name === "set_brief",
+  );
+  const brief = work.brief ?? undefined;
+  const note = brief
+    ? {
+        subject: brief.subject,
+        intent: brief.intent,
+        tags: [
+          brief.audience,
+          styles.find((s) => s.id === brief.style)?.name.zh,
+          registers[brief.register],
+        ].filter(Boolean),
+      }
+    : briefing?.subject
+      ? { subject: briefing.subject, intent: "", tags: [] }
+      : undefined;
   // Before the first stroke, the references the author gathers are laid out on the paper.
   const references = steps
     .flatMap((s, i) =>
@@ -182,11 +206,24 @@ export function SceneView({
       {canvas && createPortal(<Pen size={30} />, canvas.pen)}
       {gaze && !gaze.region && <div className={cx("viewfinder")} data-screen />}
       {empty && !run && <p className={cx("blank")}>这里还空着</p>}
-      {empty && run && !!references.length && (
+      {empty && run && (!!references.length || note) && (
         <div
           className={cx("references")}
           data-leaving={!!draft.length || undefined}
         >
+          {note && (
+            <figure className={cx("brief-note")}>
+              <b>{note.subject}</b>
+              {note.intent && <p>{note.intent}</p>}
+              {!!note.tags.length && (
+                <span>
+                  {note.tags.map((t) => (
+                    <i key={t}>{t}</i>
+                  ))}
+                </span>
+              )}
+            </figure>
+          )}
           {references.map(({ key, picture, made }, i) => (
             <figure
               key={key}

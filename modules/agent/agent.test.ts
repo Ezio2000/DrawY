@@ -341,7 +341,9 @@ it("continues the exact context across turns and accepts images in answers", asy
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
     const answered = store.context(run.id).input;
     expect(answered.slice(0, initial.length)).toEqual(initial);
-    expect(answered[initial.length].content[1].text).toMatch(/^Attached picture /);
+    expect(answered[initial.length].content[1].text).toMatch(
+      /^Attached picture /,
+    );
     expect(answered[initial.length].content[2].image_url).toMatch(
       /^data:image\/webp;base64,/,
     );
@@ -732,6 +734,80 @@ it("stops the run when the canvas cannot be looked at, instead of spending turns
     expect(run.error).toContain("画布查看服务不可用");
   } finally {
     vi.mocked(observe).mockReset();
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+}, 20000);
+
+it("tries a turn again when the model's stream breaks, without the broken attempt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0);
+    const run: Run = {
+      id: "dropped",
+      workId: work.id,
+      sceneId: "root",
+      status: "running",
+      steps: [],
+      observations: [],
+      startedAt: Date.now(),
+    };
+    store.saveRun(run);
+    let calls = 0;
+    const call = (name: string, args: object) => ({
+      items: [
+        {
+          type: "function_call",
+          name,
+          arguments: JSON.stringify(args),
+          call_id: name,
+        },
+      ],
+      usage: {},
+      response: {},
+    });
+    vi.mocked(generate).mockImplementation(
+      async (_role, _instructions, _input, _tools, _signal, onEvent) => {
+        switch (calls++) {
+          case 0:
+            onEvent?.({ type: "response.reasoning_summary_part.added" });
+            onEvent?.({
+              type: "response.reasoning_summary_text.delta",
+              delta: "half a thought",
+            });
+            throw new TypeError("terminated");
+          case 1:
+            return call("read_work", {});
+          default:
+            return call("ask_user", {
+              questions: [
+                {
+                  id: "q",
+                  text: "哪一种？",
+                  options: [{ label: "甲" }, { label: "乙" }],
+                },
+              ],
+            });
+        }
+      },
+    );
+    await new Agent(() => {}).execute(
+      store,
+      run,
+      { input: [], generations: 0 },
+      "request",
+    );
+    expect(calls).toBe(3);
+    expect(run.status).toBe("waiting");
+    expect(run.steps.some((s) => s.kind === "thinking")).toBe(false);
+    expect(
+      run.steps.some((s) => s.kind === "tool" && s.name === "read_work"),
+    ).toBe(true);
+  } finally {
     db.close();
     rmSync(dir, { recursive: true });
   }

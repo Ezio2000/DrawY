@@ -4,29 +4,29 @@ import { cx } from "./cx.ts";
 import type { Question } from "../../../modules/contracts/index.ts";
 
 /** The author's questions before it draws. A single question answers on one click; with
- * several, the choices are gathered and sent together, with anything the user adds. The
- * user can also leave the choices to the author, or drop the request. */
+ * several, the choices are gathered and sent together. Anything the user wants to add is
+ * written in the composer below, which sends it with the choices made so far. The user can
+ * also leave the choices to the author, or drop the request. */
 export function Questions({
   questions,
   answer,
+  choose,
   cancel,
 }: {
   questions: Question[];
   answer: (text: string) => void;
+  /** The choices made so far, as they would be sent. */
+  choose: (text: string) => void;
   cancel: () => void;
 }) {
   const [chosen, setChosen] = useState<Record<string, string[]>>({});
-  const [note, setNote] = useState("");
   const quick = questions.length === 1 && !questions[0].multiple;
-  const send = (picked: Record<string, string[]>) =>
-    answer(
-      [
-        ...questions
-          .filter((q) => picked[q.id]?.length)
-          .map((q) => `${q.text}\n→ ${picked[q.id].join("、")}`),
-        ...(note.trim() ? [note.trim()] : []),
-      ].join("\n"),
-    );
+  const said = (picked: Record<string, string[]>) =>
+    questions
+      .filter((q) => picked[q.id]?.length)
+      .map((q) => `${q.text}\n→ ${picked[q.id].join("、")}`)
+      .join("\n");
+  const send = (picked: Record<string, string[]>) => answer(said(picked));
   const pick = (q: Question, label: string) => {
     const own = chosen[q.id] || [];
     const next = {
@@ -38,10 +38,12 @@ export function Questions({
         : [label],
     };
     if (quick) send(next);
-    else setChosen(next);
+    else {
+      setChosen(next);
+      choose(said(next));
+    }
   };
-  const ready =
-    questions.every((q) => chosen[q.id]?.length) || (!quick && !!note.trim());
+  const ready = questions.every((q) => chosen[q.id]?.length);
   return (
     <div className={cx("question")}>
       <header>
@@ -76,22 +78,8 @@ export function Questions({
         </section>
       ))}
       <footer>
-        <input
-          placeholder={quick ? "或者直接说你的想法…" : "补充说明（可选）"}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              !e.nativeEvent.isComposing &&
-              (note.trim() || ready)
-            ) {
-              e.preventDefault();
-              send(chosen);
-            }
-          }}
-        />
-        {!note.trim() && !Object.keys(chosen).length && (
+        <small>也可以在下面直接说你的想法</small>
+        {!Object.keys(chosen).length && (
           <button
             className={cx("quiet-button")}
             onClick={() => answer("你来决定，直接画。")}
@@ -99,10 +87,10 @@ export function Questions({
             你来决定
           </button>
         )}
-        {(!quick || note.trim()) && (
+        {!quick && (
           <button
             className={cx("primary")}
-            disabled={!ready && !note.trim()}
+            disabled={!ready}
             onClick={() => send(chosen)}
           >
             确定

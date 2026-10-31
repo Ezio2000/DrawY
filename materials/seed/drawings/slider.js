@@ -9,7 +9,9 @@ const digits = Number(
   d.digits ?? Math.max(0, -Math.floor(Math.log10(step || 1))),
 );
 const color = d.color || t.accent || "#d97757";
-const show = (v) => `${Number(v).toFixed(digits)}${d.unit ? " " + d.unit : ""}`;
+// Degrees, percent and primes sit against the number; other units after a space.
+const show = (v) =>
+  `${Number(v).toFixed(digits)}${d.unit ? (/^[°%′″‰]/.test(d.unit) ? "" : " ") + d.unit : ""}`;
 const root = api.html(`<style>
   .s{display:flex;flex-direction:column;justify-content:center;gap:8px;height:100%;font-size:${Number(d.size ?? 15)}px;color:${t.ink || "#222"}}
   .top{display:flex;justify-content:space-between;align-items:baseline}

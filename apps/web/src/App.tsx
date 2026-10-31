@@ -94,7 +94,9 @@ export function App() {
     [busy, B] = useState(false),
     [titling, setTitling] = useState(false),
     [dragging, setDragging] = useState(false),
-    [trash, setTrash] = useState<Summary>();
+    [trash, setTrash] = useState<Summary>(),
+    // Options picked on the author's questions, sent with whatever the user writes.
+    [choices, setChoices] = useState("");
   const page = pageOf(path);
   const conversation = useRef<HTMLElement>(null);
   const following = useRef(true);
@@ -136,8 +138,10 @@ export function App() {
     P(w.rootSceneId);
     S(undefined);
     R(r);
-    // A reply from an earlier visit stays in the journal, not under the canvas.
-    setDismissed(r.at(-1)?.id || "");
+    // A reply from an earlier visit stays in the journal, not under the canvas; one still
+    // to come shows when it arrives.
+    const last = r.at(-1);
+    setDismissed(last && !live(last) && last.status !== "waiting" ? last.id : "");
   }
   useEffect(() => {
     fetch("/api/auth/me")
@@ -262,7 +266,7 @@ export function App() {
       setUploading((n) => n - left);
     }
   }
-  async function send(text = prompt, target = sceneId) {
+  async function send(text = prompt, target = sceneId, picked = choices) {
     if (!text.trim() || working || uploading) return;
     B(true);
     try {
@@ -281,7 +285,7 @@ export function App() {
       const r =
         run?.status === "waiting"
           ? await api<Run>("/runs/" + run.id + "/answer", "POST", {
-              answer: request,
+              answer: [picked, request].filter(Boolean).join("\n"),
               materials: attachments.map((a) => a.id),
             })
           : await api<Run>("/works/" + w.id + "/runs", "POST", {
@@ -297,6 +301,7 @@ export function App() {
       Q("");
       A([]);
       setStyle(undefined);
+      setChoices("");
       await refreshList();
     } finally {
       B(false);
@@ -679,7 +684,8 @@ export function App() {
                       work={work}
                       offline={offline}
                       pictures={!!active?.modules.length}
-                      answer={(o) => void attempt(() => send(o))}
+                      answer={(o) => void attempt(() => send(o, sceneId, ""))}
+                      choose={setChoices}
                       cancel={() =>
                         void attempt(() =>
                           api("/runs/" + run!.id + "/cancel", "POST"),

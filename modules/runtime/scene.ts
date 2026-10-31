@@ -237,7 +237,9 @@ export class SceneRenderer {
       frame.dataset.developing = "";
       // Pencil hatching where the picture will appear, until it develops.
       const sketch = document.createElement("i");
-      sketch.dataset.sketch = "";
+      // A cut-out is pencilled as an oval of hatching; a whole scene as a pale wash.
+      sketch.dataset.sketch = m.opaque ? "scene" : "cutout";
+      sketch.dataset.name = m.name;
       sketch.style.cssText = `left:${(width - m.width * k) / 2}px;top:${top}px;width:${m.width * k}px;height:${m.height * k}px`;
       frame.append(sketch);
       const loaded = new Promise<void>((resolve) => {
@@ -404,7 +406,7 @@ export class SceneRenderer {
             throw Error("画法必须返回一个 DOM 或 SVG 元素");
           const style = document.createElement("style");
           style.textContent =
-            ":host{display:block;color:var(--ink);font-family:var(--font)}*{box-sizing:border-box}svg{display:block;max-width:100%;max-height:100%}button,input,select{font:inherit}[data-sketch]{position:absolute;background:repeating-linear-gradient(-45deg,color-mix(in srgb,var(--ink,#333) 22%,transparent) 0 1px,transparent 1px 7px);-webkit-mask:radial-gradient(closest-side,#000 40%,transparent);mask:radial-gradient(closest-side,#000 40%,transparent);animation:developing 1.8s ease-in-out infinite alternate}img[data-developing]{visibility:hidden}@keyframes developing{from{opacity:.3}to{opacity:.85}}";
+            ":host{display:block;color:var(--ink);font-family:var(--font)}*{box-sizing:border-box}svg{display:block;max-width:100%;max-height:100%}button,input,select{font:inherit}[data-sketch]{position:absolute;display:grid;place-items:center;animation:developing 1.8s ease-in-out infinite alternate}[data-sketch]::after{content:attr(data-name);max-width:80%;font:italic 15px/1.4 'Iowan Old Style','Songti SC',Georgia,serif;color:color-mix(in srgb,var(--ink,#333) 60%,transparent);text-align:center;background:color-mix(in srgb,var(--paper,#faf9f5) 70%,transparent);padding:2px 8px;border-radius:4px}[data-sketch=cutout]{border-radius:50%;box-shadow:inset 0 0 0 1.2px color-mix(in srgb,var(--ink,#333) 30%,transparent);background:repeating-linear-gradient(-45deg,color-mix(in srgb,var(--ink,#333) 20%,transparent) 0 1px,transparent 1px 7px)}[data-sketch=scene]{background:radial-gradient(60% 55% at 35% 40%,color-mix(in srgb,var(--accent2,#7a9bb0) 18%,transparent),transparent),radial-gradient(55% 50% at 70% 65%,color-mix(in srgb,var(--accent,#d97757) 14%,transparent),transparent);-webkit-mask:radial-gradient(closest-side,#000 70%,transparent);mask:radial-gradient(closest-side,#000 70%,transparent)}img[data-developing]{visibility:hidden}@keyframes developing{from{opacity:.3}to{opacity:.85}}";
           const defs = [...effects].map((e) =>
             (
               this.work.materials[e] as Extract<MaterialUse, { kind: "effect" }>

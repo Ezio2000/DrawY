@@ -82,6 +82,7 @@ export function Now({
   offline,
   pictures,
   answer,
+  choose,
   cancel,
   reveal,
   dismiss,
@@ -92,6 +93,7 @@ export function Now({
   /** Whether the pictures being weighed show here rather than on the canvas. */
   pictures: boolean;
   answer: (text: string) => void;
+  choose: (text: string) => void;
   cancel: () => void;
   reveal: () => void;
   dismiss: () => void;
@@ -106,7 +108,13 @@ export function Now({
   if (!run) return null;
   if (run.status === "waiting" && run.questions)
     return (
-      <Questions questions={run.questions} answer={answer} cancel={cancel} />
+      <Questions
+        key={run.steps.length}
+        questions={run.questions}
+        answer={answer}
+        choose={choose}
+        cancel={cancel}
+      />
     );
   if (!live(run)) {
     const reply = run.steps.at(-1);
@@ -184,8 +192,20 @@ export function Now({
       <span key={at} className={cx("now-line")}>
         {line}
       </span>
+      <Elapsed key={"t" + at} />
     </div>
   );
+}
+/** How long the author has been at its current step, once that is long enough to wonder. */
+function Elapsed() {
+  const [since] = useState(Date.now()),
+    [now, setNow] = useState(since);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const s = Math.round((now - since) / 1000);
+  return s >= 8 ? <small className={cx("now-time")}>{s} 秒</small> : null;
 }
 /** Every run of this work: the request, how the author went about it, and its reply. */
 export function Activity({

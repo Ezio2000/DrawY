@@ -209,6 +209,13 @@ async function compact(
     });
   });
 }
+/** A model request that failed on the way rather than on its content. */
+const transient = (e: unknown) =>
+  e instanceof TypeError ||
+  (e instanceof Error &&
+    /^模型请求 (429|5\d\d)|模型连接在完成前中断|terminated|ECONNRESET|socket/.test(
+      e.message,
+    ));
 /** Everything the user has said about this work, for checking a brief's quotes. */
 function said(store: UserStore, workId: string) {
   return [
@@ -537,72 +544,97 @@ export class Agent {
           },
         },
         async (span) => {
-          const result = await generate(
-            settings.author,
-            instructions,
-            ctx.input,
-            tools,
-            abort.signal,
-            (event) => {
-              if (firstOutput === undefined && event.type.endsWith(".delta"))
-                firstOutput = Date.now() - turnStart;
-              if (
-                run.firstOutputMs === undefined &&
-                event.type.endsWith(".delta")
-              ) {
-                run.firstOutputMs = Date.now() - start;
-                this.emit(store, run);
-              }
-              switch (event.type) {
-                case "response.reasoning_summary_part.added":
-                  thinking = { kind: "thinking", text: "" };
-                  run.steps.push(thinking);
-                  emitSoon();
-                  break;
-                case "response.reasoning_summary_text.delta":
-                  if (thinking) thinking.text += event.delta;
-                  emitSoon();
-                  break;
-                case "response.reasoning_summary_text.done":
-                  if (thinking) thinking.text = event.text;
-                  emitSoon();
-                  break;
-                case "response.output_text.delta":
-                  if (said) said.text += event.delta;
-                  emitSoon();
-                  break;
-                case "response.output_item.added": {
-                  const { type, name, call_id, id: item } = event.item;
-                  if (type === "message" && !said) {
-                    said = { kind: "message", role: "assistant", text: "" };
-                    run.steps.push(said);
-                  }
-                  if (type === "function_call" && !silent.has(name)) {
-                    const step: ToolStep = {
-                      kind: "tool",
-                      id: call_id,
-                      status: "running",
-                      ...activity(name, {}),
-                    };
-                    run.steps.push(step);
-                    drafts.set(item, { step, name, text: "" });
+          // A dropped stream, a rate limit or a server error is tried again from the
+          // same input; what the broken attempt had shown is taken back first.
+          const mark = run.steps.length;
+          let result!: Awaited<ReturnType<typeof generate>>;
+          for (const wait of [2000, 8000, 0]) {
+            try {
+              result = await generate(
+                settings.author,
+                instructions,
+                ctx.input,
+                tools,
+                abort.signal,
+                (event) => {
+                  if (
+                    firstOutput === undefined &&
+                    event.type.endsWith(".delta")
+                  )
+                    firstOutput = Date.now() - turnStart;
+                  if (
+                    run.firstOutputMs === undefined &&
+                    event.type.endsWith(".delta")
+                  ) {
+                    run.firstOutputMs = Date.now() - start;
                     this.emit(store, run);
                   }
-                  break;
-                }
-                case "response.function_call_arguments.delta": {
-                  const draft = drafts.get(event.item_id);
-                  if (draft) {
-                    draft.text += event.delta;
-                    emitSoon();
+                  switch (event.type) {
+                    case "response.reasoning_summary_part.added":
+                      thinking = { kind: "thinking", text: "" };
+                      run.steps.push(thinking);
+                      emitSoon();
+                      break;
+                    case "response.reasoning_summary_text.delta":
+                      if (thinking) thinking.text += event.delta;
+                      emitSoon();
+                      break;
+                    case "response.reasoning_summary_text.done":
+                      if (thinking) thinking.text = event.text;
+                      emitSoon();
+                      break;
+                    case "response.output_text.delta":
+                      if (said) said.text += event.delta;
+                      emitSoon();
+                      break;
+                    case "response.output_item.added": {
+                      const { type, name, call_id, id: item } = event.item;
+                      if (type === "message" && !said) {
+                        said = { kind: "message", role: "assistant", text: "" };
+                        run.steps.push(said);
+                      }
+                      if (type === "function_call" && !silent.has(name)) {
+                        const step: ToolStep = {
+                          kind: "tool",
+                          id: call_id,
+                          status: "running",
+                          ...activity(name, {}),
+                        };
+                        run.steps.push(step);
+                        drafts.set(item, { step, name, text: "" });
+                        this.emit(store, run);
+                      }
+                      break;
+                    }
+                    case "response.function_call_arguments.delta": {
+                      const draft = drafts.get(event.item_id);
+                      if (draft) {
+                        draft.text += event.delta;
+                        emitSoon();
+                      }
+                      break;
+                    }
+                    case "response.output_item.done":
+                      drafts.delete(event.item.id);
                   }
-                  break;
-                }
-                case "response.output_item.done":
-                  drafts.delete(event.item.id);
-              }
-            },
-          );
+                },
+              );
+              break;
+            } catch (e) {
+              if (abort.signal.aborted || !transient(e)) throw e;
+              if (!wait)
+                throw Error(
+                  `与模型的连接中断了（${e instanceof Error ? e.message : e}），已保存的内容仍可继续修改`,
+                );
+              tracer.note("retry", { wait }, String(e));
+              run.steps.splice(mark);
+              thinking = said = undefined;
+              firstOutput = undefined;
+              drafts.clear();
+              this.emit(store, run);
+              await new Promise((resolve) => setTimeout(resolve, wait));
+            }
+          }
           span.set({
             output: result.items,
             usage: result.usage,
