@@ -16,8 +16,10 @@ get() { echo "$stats" | python3 -c "import json,sys; print(json.load(sys.stdin)[
 norm="loudnorm=I=-14:TP=-1:LRA=11:measured_I=$(get input_i):measured_TP=$(get input_tp):measured_LRA=$(get input_lra):measured_thresh=$(get input_thresh):offset=$(get target_offset):linear=true"
 
 ffmpeg -hide_banner -loglevel error -y -framerate "$FPS" -i out/frames/%05d.jpg -i out/score.wav \
+  -vf "scale=in_color_matrix=bt601:out_color_matrix=bt709:in_range=full:out_range=tv,format=yuv420p" \
+  -colorspace bt709 -color_primaries bt709 -color_trc bt709 \
   -af "$norm,aresample=48000" \
-  -c:v libx264 -preset slow -crf 17 -pix_fmt yuv420p -profile:v high -tune animation \
+  -c:v libx264 -preset slow -crf 17 -profile:v high -tune animation \
   -c:a aac -b:a 256k -shortest -movflags +faststart \
   -metadata title="DrawY · 每个想法，都值得探索" out/drawy-60s.mp4
 echo "out/drawy-60s.mp4"

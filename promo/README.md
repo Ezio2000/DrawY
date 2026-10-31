@@ -21,6 +21,8 @@
 
 需要 Node、Python 3（numpy、scipy）、ffmpeg 和 Playwright 自带的 Chromium。
 
+一键生成：`promo/build.sh`（帧 → 配乐 → 按 -14 LUFS 线性标准化 → H.264/AAC，BT.709）。分步：
+
 ```sh
 cd promo
 npm install                         # 字体：霞鹜文楷、思源宋体/黑体、Instrument Serif、Fraunces
