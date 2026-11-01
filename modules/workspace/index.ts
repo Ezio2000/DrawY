@@ -65,7 +65,7 @@ export async function writeWork(
   if (edit.style) work.style = edit.style;
   if (!work.brief && Object.values(work.scenes).some((s) => s.modules.length))
     throw new DomainError("请先用 set_brief 确定创作简报，再绘制");
-  const added = await take(work, edit.materials || [], store.userId);
+  const added = await take(work, edit.materials || [], store.viewer);
   validateWork(work);
   const saved = store.commit(work, edit.baseRevision, cause);
   used(added, workId, store.userId);

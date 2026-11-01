@@ -1,4 +1,8 @@
 import { pageLocale } from "@drawy/ui";
+import type {
+  Account,
+  ModelChoice,
+} from "../../../modules/contracts/index.ts";
 export async function api<T = any>(
   path: string,
   method = "GET",
@@ -32,7 +36,10 @@ export interface Summary {
   /** The latest overview the author took of it. */
   cover: string | null;
 }
-export interface User {
-  id: string;
-  name: string;
+export type User = Account;
+/** The drawing models the user can pick from, and the one they use. */
+export interface Models {
+  models: ModelChoice[];
+  default: string;
+  chosen: string;
 }

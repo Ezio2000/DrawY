@@ -63,7 +63,7 @@ it("prefers the requested style and kind", () => {
   expect(top("planet", { style: "crayon" })[0].material.style).toBe("crayon");
   expect(top("arrow", { kinds: ["drawing"] })[0].material.id).toBe("arrow");
 });
-it("develops reserved pictures in the background and keeps private ones private", async () => {
+it("develops reserved pictures in the background, private to their maker until published", async () => {
   const reserved = library.reserve(
     {
       id: "g-test-cherry",
@@ -78,13 +78,13 @@ it("develops reserved pictures in the background and keeps private ones private"
     },
     "alice",
   );
-  expect(reserved).toMatchObject({ status: "developing", owner: null });
-  // Others cannot find it until it is ready; its maker can.
+  expect(reserved).toMatchObject({ status: "developing", owner: "alice" });
+  // Others cannot find it; its maker can, even while it develops.
   expect(top("咖啡樱桃")).toEqual([]);
   expect(
     library.search({ subjects: ["咖啡樱桃"] }, "alice")[0].hits,
   ).toHaveLength(1);
-  const waiting = library.file("g-test-cherry", "bob");
+  const waiting = library.file("g-test-cherry", "alice");
   const png = await sharp({
     create: {
       width: 40,
@@ -119,7 +119,37 @@ it("develops reserved pictures in the background and keeps private ones private"
     },
   });
   expect((await waiting).material.status).toBe("ready");
+  // Ready, it is still alice's alone; one who sees all finds it too.
+  expect(top("coffee cherry").map((h) => h.material.id)).not.toContain(
+    "g-test-cherry",
+  );
+  expect(() => library.get("g-test-cherry", "bob")).toThrow();
+  expect(library.get("g-test-cherry", { id: "carol", all: true }).id).toBe(
+    "g-test-cherry",
+  );
+  const shelf = (
+    viewer: Parameters<typeof library.browse>[2],
+    on: "public" | "mine" | "others",
+  ) =>
+    library.browse("", 1, viewer, ["picture"], 200, on).items.map((m) => m.id);
+  expect(shelf("alice", "mine")).toContain("g-test-cherry");
+  expect(shelf("alice", "public")).not.toContain("g-test-cherry");
+  expect(shelf({ id: "carol", all: true }, "others")).toContain(
+    "g-test-cherry",
+  );
+  expect(() => shelf("bob", "others")).toThrow();
+  // Styles show only public pictures as samples.
+  expect(library.style("colored-pencil").samples).not.toContain(
+    "g-test-cherry",
+  );
+  // Published, everyone finds it; withdrawn, it is alice's again.
+  library.publish("g-test-cherry", true);
   expect(top("coffee cherry")[0].material.id).toBe("g-test-cherry");
+  expect(shelf("alice", "public")).toContain("g-test-cherry");
+  expect(shelf("alice", "mine")).not.toContain("g-test-cherry");
+  library.publish("g-test-cherry", false);
+  expect(library.get("g-test-cherry", "alice").owner).toBe("alice");
+  expect(() => library.publish("apple", false)).toThrow();
 
   const upload = await library.ingest(
     png,

@@ -25,7 +25,8 @@ import {
   Dialog,
   type Locale,
 } from "@drawy/ui";
-import { api, type Summary, type User } from "./api.ts";
+import { api, type Models, type Summary, type User } from "./api.ts";
+import { AccountContext } from "./account.tsx";
 import { cx } from "./cx.ts";
 import { Versions } from "./Versions.tsx";
 import { Rail, Rename } from "./Rail.tsx";
@@ -43,7 +44,6 @@ import {
   type Selection,
   type Target,
   type RevisionSummary,
-  type Settings as Setup,
 } from "../../../modules/contracts/index.ts";
 import type { Canvas, Pointed } from "../../../modules/canvas/index.ts";
 import {
@@ -113,8 +113,9 @@ export function App() {
     // An earlier revision shown on the canvas in place of the current one.
     [preview, setPreview] = useState<{ revision: number; work: Work }>(),
     [history, H] = useState<RevisionSummary[]>([]),
-    // Whether the drawing model is connected; until it is, nothing can be drawn.
-    [connected, setConnected] = useState<boolean>(),
+    // The drawing models to pick from; until the chosen one is connected, nothing can
+    // be drawn.
+    [models, setModels] = useState<Models>(),
     [exporting, setExporting] = useState(false),
     [runs, R] = useState<Run[]>([]),
     [prompt, Q] = useState(""),
@@ -194,6 +195,9 @@ export function App() {
   const ids = selected.map((s) => s.moduleId);
   // Editing waits while the author works or an earlier revision is shown.
   const editless = working || run?.status === "waiting" || !!preview;
+  const manages = !!user?.permissions.includes("models.manage");
+  const connected =
+    models && !!models.models.find((m) => m.id === models.chosen)?.ready;
   useEffect(() => {
     if (!work) return H([]);
     void api<RevisionSummary[]>("/works/" + work.id + "/revisions").then(H, () => {});
@@ -202,10 +206,7 @@ export function App() {
   useEffect(() => setPreview(undefined), [work?.id, work?.revision]);
   useEffect(() => {
     if (!user || (page !== "home" && page !== "work")) return;
-    void api<Setup>("/settings").then(
-      (s) => setConnected(!!s.author.credential),
-      () => {},
-    );
+    void api<Models>("/models").then(setModels, () => {});
   }, [user?.id, page]);
   const attempt = async (fn: () => Promise<unknown>) => {
     try {
@@ -453,7 +454,7 @@ export function App() {
   async function send(text = prompt, target = sceneId, picked = choices) {
     if ((!text.trim() && !attachments.length) || working || uploading) return;
     if (!connected) {
-      go("/settings");
+      if (manages) go("/settings");
       return;
     }
     B(true);
@@ -803,13 +804,18 @@ export function App() {
         dismiss={() => setDismissed(run?.id || "")}
       />
     );
-  // Until a drawing model is connected, the composer says so and leads to Settings.
+  // Until a drawing model is connected, the composer says so: those who manage models
+  // are led to Settings, the rest are told an administrator has to.
   const unconnected = connected === false && (
     <div className={cx("now")} data-tone="failed">
-      <span className={cx("now-line")}>{t.composer.unconnected}</span>
-      <button className={cx("primary small")} onClick={() => go("/settings")}>
-        {t.composer.connect}
-      </button>
+      <span className={cx("now-line")}>
+        {manages ? t.composer.unconnected : t.composer.unconnectedMember}
+      </span>
+      {manages && (
+        <button className={cx("primary small")} onClick={() => go("/settings")}>
+          {t.composer.connect}
+        </button>
+      )}
     </div>
   );
   const note = handed && prompt && (
@@ -852,11 +858,17 @@ export function App() {
       stop={() => void attempt(stop)}
       attach={(files) => void attempt(() => upload(files))}
       pick={() => setPicking(true)}
+      models={models}
+      chooseModel={(id) => {
+        setModels((m) => m && { ...m, chosen: id });
+        void attempt(() => api("/settings", "PUT", { model: id }));
+      }}
     />
   );
   const droppable = page === "home" || page === "work";
   return (
     <LocaleContext.Provider value={locale}>
+      <AccountContext.Provider value={user ?? null}>
       <ChooseLocale.Provider value={setLocale}>
       <Tooltips />
       <div className={cx("app")}>
@@ -1284,6 +1296,7 @@ export function App() {
         </Presence>
       </div>
       </ChooseLocale.Provider>
+      </AccountContext.Provider>
     </LocaleContext.Provider>
   );
 }

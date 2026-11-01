@@ -5,6 +5,7 @@ import type {
   SearchRequest,
   SearchResult,
   StyleMaterial,
+  Viewer,
 } from "@drawy/materials/schema";
 import {
   DomainError,
@@ -147,7 +148,7 @@ export function drawnWith(work: Work, sceneId: string, moduleId: string) {
 /** Brings the work's materials in line with what it names: takes in new ones, refreshes
  * pictures that were still developing and library code, and lets go of those no longer
  * named. Returns the ids newly taken. */
-export async function take(work: Work, explicit: string[], user: string) {
+export async function take(work: Work, explicit: string[], user: Viewer) {
   const { called, mentioned, quoted } = named(work);
   // A material nothing in the work names any more leaves it, such as a picture an edit
   // replaced; one named only in code (an interaction switching pictures) stays.
@@ -269,7 +270,7 @@ export const candidate = (m: Material): Candidate => ({
       : {}),
 });
 /** Thumbnails the author can look at, each preceded by its id. */
-export async function look(ids: string[], user: string, size = 256) {
+export async function look(ids: string[], user: Viewer, size = 256) {
   const images = await Promise.all(
     ids.map(async (id) => {
       try {
@@ -342,7 +343,7 @@ export async function find(request: SearchRequest, user: string) {
   });
 }
 /** Pictures a user attached to a message, as the author sees them. */
-export async function attached(ids: string[], user: string): Promise<Item[]> {
+export async function attached(ids: string[], user: Viewer): Promise<Item[]> {
   const found = ids.length ? await library.get(ids, user) : [];
   const parts = await Promise.all(
     found.map(async (m): Promise<Item[]> => {
@@ -376,7 +377,7 @@ export async function attached(ids: string[], user: string): Promise<Item[]> {
   return parts.flat();
 }
 /** A drawing material drawn from its example data, as a work of one module. */
-export async function preview(id: string, user: string): Promise<Work> {
+export async function preview(id: string, user: Viewer): Promise<Work> {
   const [m] = await library.get([id], user);
   if (m.kind !== "drawing") throw new DomainError("只有画法素材有预览");
   const work: Work = {
@@ -444,7 +445,7 @@ export async function kit() {
 
 /** The work with pictures that were developing when it was saved brought up to date, so it
  * draws them with their measured content. */
-export async function freshen(work: Work, user: string): Promise<Work> {
+export async function freshen(work: Work, user: Viewer): Promise<Work> {
   const stale = Object.values(work.materials)
     .filter((m) => m.kind === "picture" && m.status === "developing")
     .map((m) => m.id);

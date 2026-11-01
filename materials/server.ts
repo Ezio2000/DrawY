@@ -8,10 +8,12 @@ import {
   kindSchema,
   reserveSchema,
   searchSchema,
+  shelfSchema,
 } from "./schema.ts";
 
 /** The library over HTTP. Callers name the user they act for in `x-drawy-user`; requests
- * without one see only public materials. */
+ * without one see only public materials. `x-drawy-access: all` lets the user see and use
+ * everyone's materials; the app sends it only for roles allowed to. */
 export function createServer(
   library: Library,
   streets = new Streets(library.streetsDir),
@@ -19,6 +21,12 @@ export function createServer(
   const app = new Hono();
   const user = (c: { req: { header: (k: string) => string | undefined } }) =>
     c.req.header("x-drawy-user") || undefined;
+  const viewer = (c: Parameters<typeof user>[0]) => {
+    const id = user(c);
+    return id
+      ? { id, all: c.req.header("x-drawy-access") === "all" }
+      : undefined;
+  };
   const owner = (c: Parameters<typeof user>[0]) => {
     const id = user(c);
     if (!id) throw new LibraryError("需要用户身份");
@@ -39,18 +47,19 @@ export function createServer(
   );
   app.get("/styles", (c) => c.json(library.styles()));
   app.post("/search", async (c) =>
-    c.json(library.search(searchSchema.parse(await c.req.json()), user(c))),
+    c.json(library.search(searchSchema.parse(await c.req.json()), viewer(c))),
   );
   app.get("/browse", (c) =>
     c.json(
       library.browse(
         c.req.query("q") || "",
         Number(c.req.query("page") || 1),
-        user(c),
+        viewer(c),
         kindSchema
           .array()
           .parse(c.req.query("kind")?.split(",").filter(Boolean) ?? []),
         Number(c.req.query("size")) || undefined,
+        shelfSchema.optional().parse(c.req.query("shelf") || undefined),
       ),
     ),
   );
@@ -58,11 +67,17 @@ export function createServer(
     const { ids, lenient } = z
       .object({ ids: z.array(z.string()), lenient: z.boolean().default(false) })
       .parse(await c.req.json());
-    return c.json(library.many(ids, user(c), lenient));
+    return c.json(library.many(ids, viewer(c), lenient));
   });
   app.get("/materials/:id", (c) =>
-    c.json(library.get(c.req.param("id"), user(c))),
+    c.json(library.get(c.req.param("id"), viewer(c))),
   );
+  app.post("/materials/:id/owner", async (c) => {
+    const { published } = z
+      .object({ published: z.boolean() })
+      .parse(await c.req.json());
+    return c.json(library.publish(c.req.param("id"), published));
+  });
   app.post("/materials/reserve", async (c) =>
     c.json(library.reserve(reserveSchema.parse(await c.req.json()), owner(c))),
   );
@@ -106,7 +121,7 @@ export function createServer(
     const wait = Number(c.req.query("wait") ?? 240) * 1000;
     const { material, bytes } = await library.file(
       c.req.param("id"),
-      user(c),
+      viewer(c),
       c.req.query("color"),
       wait,
     );
@@ -149,7 +164,7 @@ export function createServer(
       Math.max(32, Number(c.req.query("size") || 256)),
     );
     return c.body(
-      new Uint8Array(await library.thumb(c.req.param("id"), user(c), size)),
+      new Uint8Array(await library.thumb(c.req.param("id"), viewer(c), size)),
       200,
       {
         "Content-Type": "image/png",

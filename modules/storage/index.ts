@@ -3,8 +3,16 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   id,
-  defaultSettings,
+  ADMIN,
+  MEMBER,
+  defaultCatalog,
+  permissions,
   DomainError,
+  type Account,
+  type AccountRole,
+  type ModelCatalog,
+  type Permission,
+  type UserSettings,
   type Work,
   type Capture,
   type Settings,
@@ -26,9 +34,147 @@ export class Storage {
  CREATE TABLE IF NOT EXISTS revisions(user_id TEXT NOT NULL,work_id TEXT NOT NULL,revision INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(user_id,work_id,revision));
  CREATE TABLE IF NOT EXISTS captures(user_id TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(user_id,id));
  CREATE TABLE IF NOT EXISTS settings(user_id TEXT PRIMARY KEY,data TEXT NOT NULL);
- CREATE TABLE IF NOT EXISTS runs(user_id TEXT NOT NULL,id TEXT NOT NULL,work_id TEXT NOT NULL,data TEXT NOT NULL,context TEXT,PRIMARY KEY(user_id,id));`);
+ CREATE TABLE IF NOT EXISTS runs(user_id TEXT NOT NULL,id TEXT NOT NULL,work_id TEXT NOT NULL,data TEXT NOT NULL,context TEXT,PRIMARY KEY(user_id,id));
+ CREATE TABLE IF NOT EXISTS roles(id TEXT PRIMARY KEY,data TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS system(key TEXT PRIMARY KEY,data TEXT NOT NULL);`);
     const columns = this.db.prepare("PRAGMA table_info(revisions)").all();
     if (!columns.some((c) => c.name === "cause")) this.recordCauses();
+    this.recordRoles();
+    if (!this.db.prepare("SELECT 1 FROM system WHERE key='models'").get())
+      this.saveModels(this.firstCatalog());
+  }
+  /** Gives the app its two built-in roles and every account one: accounts made before
+   * roles existed are members, except the first, who set the app up and administers it. */
+  private recordRoles() {
+    const db = this.db;
+    const columns = db.prepare("PRAGMA table_info(users)").all();
+    if (!columns.some((c) => c.name === "role"))
+      db.exec(
+        `ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT '${MEMBER}'`,
+      );
+    const builtin: AccountRole[] = [
+      {
+        id: ADMIN,
+        name: "管理员",
+        permissions: [...permissions],
+        builtin: true,
+      },
+      { id: MEMBER, name: "普通用户", permissions: [], builtin: true },
+    ];
+    for (const r of builtin)
+      db.prepare("INSERT OR IGNORE INTO roles VALUES(?,?)").run(
+        r.id,
+        JSON.stringify(r),
+      );
+    if (!db.prepare("SELECT 1 FROM users WHERE role=?").get(ADMIN))
+      db.prepare(
+        "UPDATE users SET role=? WHERE rowid=(SELECT MIN(rowid) FROM users)",
+      ).run(ADMIN);
+  }
+  /** The models the app starts with: those the first administrator had connected for
+   * themselves, from when each account connected its own. */
+  private firstCatalog(): ModelCatalog {
+    const catalog = defaultCatalog();
+    const row = this.db
+      .prepare(
+        "SELECT settings.data FROM settings JOIN users ON users.id=settings.user_id WHERE users.role=? ORDER BY users.rowid LIMIT 1",
+      )
+      .get(ADMIN) as { data: string } | undefined;
+    const old = row && JSON.parse(row.data);
+    if (!old?.author) return catalog;
+    // Settings saved before speeds had a Fast switch instead.
+    const { fast, ...author } = old.author;
+    if (!author.speed) author.speed = fast ? "fast" : "default";
+    return {
+      models: [{ ...catalog.models[0], ...author, name: author.model }],
+      default: catalog.default,
+      image: old.image ?? catalog.image,
+    };
+  }
+  models(): ModelCatalog {
+    const row = this.db
+      .prepare("SELECT data FROM system WHERE key='models'")
+      .get() as { data: string };
+    return JSON.parse(row.data);
+  }
+  saveModels(catalog: ModelCatalog) {
+    this.db
+      .prepare(
+        "INSERT INTO system VALUES('models',?) ON CONFLICT(key) DO UPDATE SET data=excluded.data",
+      )
+      .run(JSON.stringify(catalog));
+  }
+  /** Every role, built-in first. An administrator may always do everything, including
+   * what later versions add. */
+  roles(): AccountRole[] {
+    return this.db
+      .prepare("SELECT data FROM roles ORDER BY rowid")
+      .all()
+      .map((r) => JSON.parse(r.data as string) as AccountRole)
+      .map((r) =>
+        r.id === ADMIN ? { ...r, permissions: [...permissions] } : r,
+      );
+  }
+  role(roleId: string) {
+    const r = this.roles().find((r) => r.id === roleId);
+    if (!r) throw new DomainError("角色不存在", 404);
+    return r;
+  }
+  saveRole(role: AccountRole) {
+    this.db
+      .prepare(
+        "INSERT INTO roles VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
+      )
+      .run(role.id, JSON.stringify(role));
+    return role;
+  }
+  deleteRole(roleId: string) {
+    this.db.prepare("UPDATE users SET role=? WHERE role=?").run(MEMBER, roleId);
+    this.db.prepare("DELETE FROM roles WHERE id=?").run(roleId);
+  }
+  account(userId: string): Account {
+    const u = this.db
+      .prepare("SELECT id,name,role FROM users WHERE id=?")
+      .get(userId) as { id: string; name: string; role: string } | undefined;
+    if (!u) throw new DomainError("账号不存在", 404);
+    const role = this.roles().find((r) => r.id === u.role) ?? this.role(MEMBER);
+    return {
+      id: u.id,
+      name: u.name,
+      role: role.id,
+      roleName: role.name,
+      builtinRole: role.builtin,
+      permissions: role.permissions,
+    };
+  }
+  /** An account's name, for showing whose a material is; a removed one has none. */
+  accountName(userId: string) {
+    const u = this.db
+      .prepare("SELECT name FROM users WHERE id=?")
+      .get(userId) as { name: string } | undefined;
+    return u?.name ?? null;
+  }
+  accounts(): Account[] {
+    return this.db
+      .prepare("SELECT id FROM users ORDER BY rowid")
+      .all()
+      .map((r) => this.account(r.id as string));
+  }
+  setRole(userId: string, roleId: string) {
+    this.role(roleId);
+    const was = this.account(userId);
+    if (
+      was.role === ADMIN &&
+      roleId !== ADMIN &&
+      (
+        this.db
+          .prepare("SELECT COUNT(*) AS n FROM users WHERE role=?")
+          .get(ADMIN) as { n: number }
+      ).n <= 1
+    )
+      throw new DomainError("至少要保留一位管理员", 409);
+    this.db.prepare("UPDATE users SET role=? WHERE id=?").run(roleId, userId);
+    return this.account(userId);
   }
   /** Gives revisions saved before they recorded their cause one: the first creates the
    * work, those a run's steps saved belong to its request, and the rest were edits. */
@@ -70,12 +216,11 @@ export class Storage {
     this.db.prepare("INSERT INTO sessions VALUES(?,?)").run(token, userId);
     return token;
   }
-  userFor(token: string) {
-    return this.db
-      .prepare(
-        "SELECT users.id,users.name FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.id=?",
-      )
-      .get(token) as { id: string; name: string } | undefined;
+  userFor(token: string): Account | undefined {
+    const row = this.db
+      .prepare("SELECT user_id FROM sessions WHERE id=?")
+      .get(token) as { user_id: string } | undefined;
+    return row && this.account(row.user_id);
   }
   scoped(userId: string) {
     return new UserStore(this, userId);
@@ -200,23 +345,42 @@ export class UserStore {
       throw e;
     }
   }
-  settings(): Settings {
+  /** Whether this account's role allows it. */
+  can(permission: Permission) {
+    return this.storage.account(this.userId).permissions.includes(permission);
+  }
+  /** Who the material library serves: this user, and everyone's materials if their role
+   * lets them see all. */
+  get viewer() {
+    return { id: this.userId, all: this.can("materials.all") };
+  }
+  /** The user's own preferences and model pick. Settings saved before models were managed
+   * for everyone held a whole connection; only the preferences carry over. */
+  ownSettings(): UserSettings {
     const r = this.storage.db
       .prepare("SELECT data FROM settings WHERE user_id=?")
       .get(this.userId);
-    if (!r) return defaultSettings();
-    const value = JSON.parse(r.data as string);
-    // Settings saved before speeds had a Fast switch instead.
-    const { fast, ...author } = value.author;
-    if (!author.speed) author.speed = fast ? "fast" : "default";
-    return { ...value, author };
+    const value = r ? JSON.parse(r.data as string) : {};
+    return { preferences: value.preferences ?? "", model: value.model ?? null };
   }
-  saveSettings(value: Settings) {
+  saveOwnSettings(value: UserSettings) {
     this.storage.db
       .prepare(
         "INSERT INTO settings VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data",
       )
       .run(this.userId, JSON.stringify(value));
+  }
+  /** What a run draws and paints with: the model the user picked, or the default when
+   * they have not or it was taken away, the shared image model, and their preferences. */
+  settings(): Settings {
+    const own = this.ownSettings(),
+      catalog = this.storage.models();
+    const model =
+      catalog.models.find((m) => m.id === own.model) ??
+      catalog.models.find((m) => m.id === catalog.default) ??
+      catalog.models[0];
+    const { id: _, name: __, description: ___, ...author } = model;
+    return { author, image: catalog.image, preferences: own.preferences };
   }
   capture(captureId: string) {
     return this.one<Capture>(

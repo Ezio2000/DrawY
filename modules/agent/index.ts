@@ -173,7 +173,7 @@ async function userMessage(
           ? text
           : `(Pictures only, no words. The user reads ${locale === "zh" ? "Chinese" : "English"}.)`,
       },
-      ...(await attached(materials, store.userId)),
+      ...(await attached(materials, store.viewer)),
     ],
   };
 }
@@ -326,7 +326,7 @@ async function questions(
   ];
   // A picture shows itself; a style shows a few of its samples.
   const found = new Map(
-    (ids.length ? await library.get(ids, store.userId, true) : []).map((m) => [
+    (ids.length ? await library.get(ids, store.viewer, true) : []).map((m) => [
       m.id,
       m.kind === "style"
         ? m.samples.slice(0, 3).map((s) => ({
@@ -952,7 +952,7 @@ export class Agent {
               if (r.status === "ready" && work?.materials[d.id])
                 this.publish(store.userId, {
                   type: "work",
-                  work: await freshen(work, store.userId),
+                  work: await freshen(work, store.viewer),
                 });
             });
           output = {

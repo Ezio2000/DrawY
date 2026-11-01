@@ -289,7 +289,7 @@ export async function develop(
             async (span) => {
               const references = await Promise.all(
                 [...r.references, ...styled].map((ref) =>
-                  library.thumb(ref, store.userId, 512),
+                  library.thumb(ref, store.viewer, 512),
                 ),
               );
               if (references.length)

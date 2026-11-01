@@ -41,9 +41,7 @@ describe("user owned works", () => {
       steps: [],
       observations: [],
     });
-    const settings = a.settings();
-    settings.preferences = "blue";
-    a.saveSettings(settings);
+    a.saveOwnSettings({ preferences: "blue", model: null });
     expect(b.works()).toEqual([]);
     expect(() => b.work(work.id)).toThrow();
     expect(() => b.capture(capture.id)).toThrow();
@@ -55,16 +53,48 @@ describe("user owned works", () => {
     expect(() => b.delete(work.id)).toThrow();
     expect(a.work(work.id)).toEqual(work);
   });
-  it("reads settings saved with the old Fast switch as a speed", () => {
-    const store = db.scoped(register(db, "a", "abcdef").id);
+  it("moves the first account's own connection into the shared models, keeping the Fast switch as a speed", () => {
     for (const [fast, speed] of [
       [true, "fast"],
       [false, "default"],
     ] as const) {
-      const settings = store.settings();
-      const { speed: _, ...author } = settings.author;
-      store.saveSettings({ ...settings, author: { ...author, fast } } as never);
-      expect(store.settings().author).toEqual({ ...author, speed });
+      const at = mkdtempSync(join(tmpdir(), "drawy-old-"));
+      let old = new Storage(at);
+      const first = register(old, "first", "abcdef"),
+        second = register(old, "second", "abcdef");
+      const { speed: _, ...author } = defaultSettings().author;
+      const saved = (user: string, credential: string) =>
+        old.db.prepare("INSERT OR REPLACE INTO settings VALUES(?,?)").run(
+          user,
+          JSON.stringify({
+            author: { ...author, credential, fast },
+            image: { ...defaultSettings().image, credential },
+            preferences: "mine " + credential,
+          }),
+        );
+      saved(first.id, "key-1");
+      saved(second.id, "key-2");
+      // As before roles and shared models existed.
+      old.db.exec("DELETE FROM system; UPDATE users SET role='member'");
+      old.close();
+      old = new Storage(at);
+      try {
+        expect(old.account(first.id).role).toBe("admin");
+        expect(old.account(second.id).role).toBe("member");
+        const catalog = old.models();
+        expect(catalog.models).toHaveLength(1);
+        expect(catalog.models[0]).toMatchObject({
+          credential: "key-1",
+          speed,
+        });
+        expect(catalog.image.credential).toBe("key-1");
+        const store = old.scoped(second.id);
+        expect(store.settings().author.credential).toBe("key-1");
+        expect(store.settings().preferences).toBe("mine key-2");
+      } finally {
+        old.close();
+        rmSync(at, { recursive: true });
+      }
     }
   });
   it("saves a speed the connection lacks as default", () => {
@@ -365,7 +395,9 @@ describe("user owned works", () => {
     expect(undo(store, work.id).scenes).toEqual(saved.scenes);
   });
   it("takes named materials into the work and keeps other users' pictures out", async () => {
-    const a = db.scoped(register(db, "a", "abcdef").id),
+    // The first account administers the app and may use everyone's materials.
+    const admin = db.scoped(register(db, "admin", "abcdef").id),
+      a = db.scoped(register(db, "a", "abcdef").id),
       b = db.scoped(register(db, "b", "abcdef").id),
       work = createWork(a, "test");
     const content = fixture();
@@ -424,6 +456,18 @@ describe("user owned works", () => {
         { kind: "edit" },
       ),
     ).rejects.toThrow();
+    // One whose role sees all materials may use it.
+    const theirsToo = createWork(admin, "admin's");
+    admin.commit({ ...admin.work(theirsToo.id), brief: content.brief }, 1, {
+      kind: "edit",
+    });
+    const { added: taken } = await writeWork(
+      admin,
+      theirsToo.id,
+      { baseRevision: 2, materials: [theirs.id] },
+      { kind: "edit" },
+    );
+    expect(taken).toEqual([theirs.id]);
     const { work: saved, added } = await writeWork(
       a,
       work.id,
@@ -572,5 +616,185 @@ describe("HTTP identity boundary", () => {
     await request("/api/auth/logout", a, "POST");
     expect((await request("/api/works", a)).status).toBe(401);
     expect(() => login(db, "alice", "wrong")).toThrow();
+  });
+});
+describe("roles and shared models", () => {
+  it("lets the first account administer models, materials and roles, and others only pick", async () => {
+    const { app } = createApp(db);
+    const signup = async (name: string) => {
+      const r = await app.request("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, password: "abcdef" }),
+      });
+      const account = (await r.json()) as { id: string; role: string };
+      return { ...account, cookie: r.headers.get("set-cookie")!.split(";")[0] };
+    };
+    const call = async (
+      cookie: string,
+      path: string,
+      method = "GET",
+      body?: object,
+    ) => {
+      const r = await app.request("/api" + path, {
+        method,
+        headers: { cookie, "Content-Type": "application/json" },
+        body: body && JSON.stringify(body),
+      });
+      return { status: r.status, body: await r.json() };
+    };
+    const admin = await signup("admin"),
+      member = await signup("member");
+    expect([admin.role, member.role]).toEqual(["admin", "member"]);
+    // Members see the models by name only, and cannot manage anything.
+    const seen = await call(member.cookie, "/models");
+    expect(seen.body).toEqual({
+      models: [
+        { id: "default", name: "gpt-6-astra", description: "", ready: false },
+      ],
+      default: "default",
+      chosen: "default",
+    });
+    for (const path of ["/admin/models", "/admin/accounts", "/admin/roles"])
+      expect((await call(member.cookie, path)).status).toBe(403);
+    // The administrator connects two models; members pick one, which their runs use.
+    const catalog = (await call(admin.cookie, "/admin/models")).body;
+    const fast = {
+      ...catalog.models[0],
+      id: "quick",
+      name: "Quick",
+      description: "For small changes",
+      credential: "key",
+      effort: "low",
+    };
+    expect(
+      (
+        await call(admin.cookie, "/admin/models", "PUT", {
+          ...catalog,
+          models: [...catalog.models, fast],
+          default: "missing",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call(admin.cookie, "/admin/models", "PUT", {
+          ...catalog,
+          models: [...catalog.models, fast],
+        })
+      ).status,
+    ).toBe(200);
+    await call(member.cookie, "/settings", "PUT", {
+      preferences: "",
+      model: "quick",
+    });
+    expect((await call(member.cookie, "/models")).body.chosen).toBe("quick");
+    expect(db.scoped(member.id).settings().author).toMatchObject({
+      credential: "key",
+      effort: "low",
+    });
+    expect(db.scoped(admin.id).settings().author.credential).toBe("");
+    // A role that manages models makes its accounts able to.
+    const editors = await call(admin.cookie, "/admin/roles", "POST", {
+      name: "Model editors",
+      permissions: ["models.manage"],
+    });
+    expect(
+      (
+        await call(admin.cookie, "/admin/accounts/" + member.id, "PATCH", {
+          role: editors.body.id,
+        })
+      ).body,
+    ).toMatchObject({ role: editors.body.id, permissions: ["models.manage"] });
+    expect((await call(member.cookie, "/admin/models")).status).toBe(200);
+    expect((await call(member.cookie, "/admin/roles")).status).toBe(403);
+    // Built-in roles stay; the last administrator stays one.
+    expect(
+      (
+        await call(admin.cookie, "/admin/roles/admin", "PUT", {
+          name: "x",
+          permissions: [],
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (await call(admin.cookie, "/admin/roles/member", "DELETE")).status,
+    ).toBe(409);
+    expect(
+      (
+        await call(admin.cookie, "/admin/accounts/" + admin.id, "PATCH", {
+          role: "member",
+        })
+      ).status,
+    ).toBe(409);
+    // Removing a role makes its accounts members again.
+    await call(admin.cookie, "/admin/roles/" + editors.body.id, "DELETE");
+    expect((await call(member.cookie, "/auth/me")).body).toMatchObject({
+      role: "member",
+      permissions: [],
+    });
+  });
+  it("shelves materials apart and lets those who manage them publish", async () => {
+    const { app } = createApp(db);
+    const signup = async (name: string) => {
+      const r = await app.request("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, password: "abcdef" }),
+      });
+      const account = (await r.json()) as { id: string };
+      return { ...account, cookie: r.headers.get("set-cookie")!.split(";")[0] };
+    };
+    const admin = await signup("admin"),
+      alice = await signup("alice"),
+      bob = await signup("bob");
+    const mine = await client.ingest(
+      await picture(),
+      "image/png",
+      {
+        role: "object",
+        name: { zh: "私图", en: "private" },
+        style: null,
+        origin: { kind: "upload" },
+      },
+      alice.id,
+    );
+    const shelf = async (cookie: string, on: string) => {
+      const r = await app.request(
+        `/api/materials?kind=picture&size=200&shelf=${on}`,
+        { headers: { cookie } },
+      );
+      return r.ok
+        ? ((await r.json()) as { items: { id: string; ownerName?: string }[] })
+            .items
+        : r.status;
+    };
+    const ids = (items: Awaited<ReturnType<typeof shelf>>) =>
+      typeof items === "number" ? items : items.map((m) => m.id);
+    expect(ids(await shelf(alice.cookie, "mine"))).toEqual([mine.id]);
+    expect(ids(await shelf(alice.cookie, "public"))).not.toContain(mine.id);
+    expect(ids(await shelf(bob.cookie, "mine"))).toEqual([]);
+    expect(await shelf(bob.cookie, "others")).toBe(400);
+    const others = await shelf(admin.cookie, "others");
+    expect(others).toEqual([
+      expect.objectContaining({ id: mine.id, ownerName: "alice" }),
+    ]);
+    // The picture file itself follows the same rule.
+    const file = (cookie: string) =>
+      app.request("/materials/files/" + mine.id, { headers: { cookie } });
+    expect((await file(bob.cookie)).status).toBe(404);
+    expect((await file(admin.cookie)).status).toBe(200);
+    const publish = (cookie: string, published: boolean) =>
+      app.request(`/api/materials/${mine.id}/publish`, {
+        method: "POST",
+        headers: { cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ published }),
+      });
+    expect((await publish(alice.cookie, true)).status).toBe(403);
+    expect((await publish(admin.cookie, true)).status).toBe(200);
+    expect(ids(await shelf(bob.cookie, "public"))).toContain(mine.id);
+    expect((await file(bob.cookie)).status).toBe(200);
+    expect((await publish(admin.cookie, false)).status).toBe(200);
+    expect(ids(await shelf(alice.cookie, "mine"))).toEqual([mine.id]);
   });
 });

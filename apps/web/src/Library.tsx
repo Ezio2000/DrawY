@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Search, Upload, X, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Search,
+  Upload,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Globe,
+  Lock,
+  Users,
+} from "lucide-react";
 import { Segmented, Spinner, reducedMotion, useLocale } from "@drawy/ui";
 import type {
   Material,
@@ -7,6 +16,7 @@ import type {
   StyleMaterial,
   DrawingMaterial,
   EffectMaterial,
+  Shelf,
 } from "@drawy/materials/schema";
 import { Canvas } from "../../../modules/canvas/index.ts";
 import type { Work } from "../../../modules/contracts/index.ts";
@@ -15,6 +25,12 @@ import { cx } from "./cx.ts";
 import { styleList } from "./Composer.tsx";
 import { ago } from "./time.ts";
 import { useT } from "./i18n.tsx";
+import { useCan } from "./account.tsx";
+
+/** A material as the app shows it: another user's carries their name. */
+type Shown = Material & { ownerName?: string | null };
+/** The shelf last looked at, so the library opens where the user left it. */
+let lastShelf: Shelf = "public";
 
 const kinds = ["picture", "drawing", "effect", "style"] as const;
 /** Soft grounds for the shelf, after the Anthropic palette: oat, cactus, heather, coral,
@@ -52,11 +68,20 @@ export function Library({
   kinds?: readonly Material["kind"][];
 }) {
   const t = useT(),
-    locale = useLocale();
+    locale = useLocale(),
+    can = useCan();
   const shelf = useRef<HTMLDivElement>(null);
-  const [q, Q] = useState(""),
+  // Public and private materials are kept apart: each has its own shelf, and those who
+  // see everyone's have a third for other users' private ones.
+  const shelves: Shelf[] = can("materials.all")
+    ? ["public", "mine", "others"]
+    : ["public", "mine"];
+  const [on, setOn] = useState<Shelf>(
+      shelves.includes(lastShelf) ? lastShelf : "public",
+    ),
+    [q, Q] = useState(""),
     [kind, K] = useState<Material["kind"]>(shown[0]),
-    [result, R] = useState<MaterialPage>({
+    [result, R] = useState<MaterialPage & { items: Shown[] }>({
       items: [],
       total: 0,
       page: 0,
@@ -66,7 +91,7 @@ export function Library({
     [grid, setGrid] = useState<{ columns: number; rows: number }>(),
     [loading, setLoading] = useState(true),
     [error, E] = useState(""),
-    [open, O] = useState<Material>(),
+    [open, O] = useState<Shown>(),
     [styles, setStyles] = useState<StyleMaterial[]>([]),
     [uploading, U] = useState(false),
     [stamp, setStamp] = useState(0);
@@ -98,7 +123,7 @@ export function Library({
     const t = setTimeout(
       () =>
         fetch(
-          `/api/materials?q=${encodeURIComponent(q)}&page=${page}&kind=${kind}&size=${size}`,
+          `/api/materials?q=${encodeURIComponent(q)}&page=${page}&kind=${kind}&size=${size}&shelf=${on}`,
           { signal: a.signal, headers: { "X-Drawy-Locale": locale } },
         )
           .then(async (r) => {
@@ -118,7 +143,13 @@ export function Library({
       clearTimeout(t);
       a.abort();
     };
-  }, [q, page, kind, stamp, locale, size]);
+  }, [q, page, kind, stamp, locale, size, on]);
+  const shelve = (next: Shelf) => {
+    lastShelf = next;
+    setOn(next);
+    setPage(1);
+    O(undefined);
+  };
   const styleName = (id: string | null) =>
     styles.find((s) => s.id === id)?.name[locale];
   async function upload(files: FileList) {
@@ -131,6 +162,9 @@ export function Library({
         data.append("file", file);
         last = await api<Material>("/materials", "POST", data);
       }
+      // What the user uploads is theirs: show it on their own shelf.
+      lastShelf = "mine";
+      setOn("mine");
       setPage(1);
       setStamp(stamp + 1);
       if (last) O(last);
@@ -142,6 +176,19 @@ export function Library({
   }
   return (
     <div className={cx("library")}>
+      <nav className={cx("shelf-tabs")} aria-label={t.library.shelf}>
+        {shelves.map((k) => (
+          <button
+            key={k}
+            aria-current={on === k || undefined}
+            onClick={() => shelve(k)}
+          >
+            {k === "public" ? <Globe size={15} /> : k === "mine" ? <Lock size={15} /> : <Users size={15} />}
+            {t.library.shelves[k]}
+          </button>
+        ))}
+        <small>{t.library.shelfHints[on]}</small>
+      </nav>
       <div className={cx("library-bar")}>
         {shown.length > 1 && (
           <Segmented label={t.library.kind}>
@@ -226,7 +273,9 @@ export function Library({
           </button>
         ))}
         {!loading && !result.items.length && (
-          <p className={cx("shelf-empty")}>{t.library.none(q)}</p>
+          <p className={cx("shelf-empty")}>
+            {q ? t.library.none(q) : t.library.empty[on]}
+          </p>
         )}
       </div>
       <nav className={cx("pager")} aria-live="polite">
@@ -262,6 +311,11 @@ export function Library({
           close={() => O(undefined)}
           use={() => use(open)}
           action={action}
+          published={(m) => {
+            // It moves to the other shelf: the list it was on no longer has it.
+            O(m);
+            setStamp(stamp + 1);
+          }}
         />
       )}
     </div>
@@ -367,17 +421,40 @@ function Inspector({
   close,
   use,
   action,
+  published,
 }: {
-  m: Material;
+  m: Shown;
   tint: string;
   styleName: (id: string | null) => string | undefined;
   close: () => void;
   use: () => void;
   action: string;
+  /** The material after it was published or withdrawn. */
+  published: (m: Shown) => void;
 }) {
   const t = useT(),
     locale = useLocale(),
+    can = useCan(),
     f = t.library.facts;
+  const [busy, setBusy] = useState(false),
+    [error, E] = useState("");
+  // Only what a user made can change hands; curated materials are always public.
+  const movable = can("materials.manage") && m.origin.kind !== "curated";
+  async function publish(to: boolean) {
+    setBusy(true);
+    E("");
+    try {
+      published(
+        await api<Shown>(`/materials/${m.id}/publish`, "POST", {
+          published: to,
+        }),
+      );
+    } catch (e) {
+      E(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -412,6 +489,14 @@ function Inspector({
           [f.params, Object.keys(m.params).join(t.now.list)],
         ] as [string, string][])
       : []),
+    [
+      f.owner,
+      m.owner === null
+        ? f.public
+        : m.ownerName !== undefined
+          ? f.theirs(m.ownerName ?? f.removed)
+          : f.mine,
+    ],
     [f.origin, t.library.origins[m.origin.kind]],
     [f.added, ago(m.origin.createdAt)],
     [f.used, f.usedCount(m.uses)],
@@ -421,7 +506,16 @@ function Inspector({
       <header>
         <div>
           <h2>{m.name[locale]}</h2>
-          <p>{m.name[locale === "zh" ? "en" : "zh"]}</p>
+          <p>
+            {m.name[locale === "zh" ? "en" : "zh"]}
+            <span
+              className={cx("ownership")}
+              data-public={m.owner === null || undefined}
+            >
+              {m.owner === null ? <Globe size={12} /> : <Lock size={12} />}
+              {m.owner === null ? f.public : f.private}
+            </span>
+          </p>
         </div>
         <button className={cx("close-button")} aria-label={t.close} onClick={close}>
           <X size={15} />
@@ -458,8 +552,28 @@ function Inspector({
           <p>{m.origin.prompt}</p>
         </details>
       )}
+      {error && (
+        <p className={cx("error")} role="alert">
+          {error}
+        </p>
+      )}
       <footer>
         <code>{m.id}</code>
+        {movable && (
+          <button
+            className={cx("secondary")}
+            disabled={busy}
+            onClick={() => void publish(m.owner !== null)}
+          >
+            {busy ? (
+              <Spinner size={14} />
+            ) : m.owner !== null ? (
+              t.library.publish
+            ) : (
+              t.library.withdraw
+            )}
+          </button>
+        )}
         <button
           className={cx("primary")}
           disabled={m.status !== "ready"}
