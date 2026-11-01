@@ -248,6 +248,17 @@ it("boils a city's OpenStreetMap tile down to its water, ways and names, fetched
     expect((await app.request("/geo/streets/2/4/0")).status).toBe(400);
     up = false;
     expect((await app.request("/geo/streets/14/1/1")).status).toBe(502);
+    // Another source keeps tiles of its own: a tile kept from the first is fetched again.
+    up = true;
+    const fetched = asked.length;
+    await new Streets(cache, "https://other.test/{z}/{x}/{y}.pbf").tile(
+      14,
+      13347,
+      7110,
+    );
+    expect(asked.slice(fetched)).toEqual([
+      "https://other.test/14/13347/7110.pbf",
+    ]);
   } finally {
     vi.unstubAllGlobals();
     rmSync(cache, { recursive: true });

@@ -80,14 +80,18 @@ const size = Number(d.size ?? 14);
 const sw = Math.max(1, Number(t.stroke ?? 1.6));
 
 const cache = (globalThis.__drawyGeo ??= {});
+// Kept for the page once read; a read that fails in any way (an error answer, the
+// network down, a broken body) is forgotten, so the next drawing tries again.
 const layer = (name) =>
-  (cache[name] ??= fetch(`/materials/geo/${name}`).then((r) => {
-    if (!r.ok) {
+  (cache[name] ??= fetch(`/materials/geo/${name}`)
+    .then((r) => {
+      if (!r.ok) throw Error(`地图数据 ${name} 读取失败`);
+      return r.json();
+    })
+    .catch((e) => {
       delete cache[name];
-      throw Error(`地图数据 ${name} 读取失败`);
-    }
-    return r.json();
-  }));
+      throw e;
+    }));
 // Lines are stored in steps of 1/scale of a degree (hundredths unless a layer says
 // otherwise), each point a step from the last.
 const decode = (line, scale = 100) => {

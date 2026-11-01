@@ -35,7 +35,8 @@ const held: (() => void)[] = [];
 const develop = () => held.splice(0).forEach((send) => send());
 
 let browser: Browser, page: Page, server: Server, origin: string;
-let streetsDown = false;
+/** Street tiles answered with an error, or the connection dropped as when offline. */
+let streetsDown: false | "error" | "offline" = false;
 let work = fixture();
 beforeAll(async () => {
   const bundle = await readFile("dist/runtime/runtime.js");
@@ -71,6 +72,7 @@ beforeAll(async () => {
     } else if (url.pathname.startsWith("/materials/geo/streets/")) {
       // One real tile of central Guangzhou; every other tile empty, or all unreachable.
       const [z, x, y] = url.pathname.split("/").slice(-3).map(Number);
+      if (streetsDown === "offline") return req.socket.destroy();
       if (streetsDown) {
         res.statusCode = 502;
         return res.end("{}");
@@ -1008,14 +1010,32 @@ it("draws a city's real streets under a walk through it, and says so when they c
   expect(city.text.length).toBeGreaterThan(6);
   expect(parseFloat(city.scale!)).toBeLessThanOrEqual(2);
 
-  streetsDown = true;
   try {
-    await page.reload();
-    await page.waitForFunction(() => window.drawyReady);
-    const blank = await look();
-    expect(blank.errors).toEqual([]);
-    expect(blank.tiles).toBe(0);
-    expect(blank.text).toContain("街道底图暂时读取失败");
+    for (const down of ["error", "offline"] as const) {
+      streetsDown = down;
+      await page.reload();
+      await page.waitForFunction(() => window.drawyReady);
+      const blank = await look();
+      expect(blank.errors).toEqual([]);
+      expect(blank.tiles).toBe(0);
+      expect(blank.text).toContain("街道底图暂时读取失败");
+    }
+    // Back online, the same page draws the streets the next time the map is drawn.
+    streetsDown = false;
+    await page.evaluate(() => {
+      const work = structuredClone(window.drawyData.work),
+        scene = work.scenes.root;
+      scene.modules[0].data = { ...scene.modules[0].data, size: 15 };
+      window.drawyView.update(work, scene);
+    });
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-module-id="walk"]')
+          ?.shadowRoot?.querySelectorAll('clipPath[id^="geomap-tile-"]').length,
+      null,
+      { timeout: 2500 },
+    );
   } finally {
     streetsDown = false;
   }

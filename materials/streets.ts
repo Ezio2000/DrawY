@@ -5,6 +5,7 @@
 //
 // Tiles are fetched from a TileJSON source (OpenFreeMap's by default, no key), boiled
 // down to what the drawing uses, and kept on disk, so each tile is fetched once.
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -174,15 +175,21 @@ export class StreetsError extends Error {
   }
 }
 
-/** Street tiles by z/x/y, fetched from `source` once and then read from `dir`. */
+/** Street tiles by z/x/y, fetched from `source` once and then read from `dir`, in a
+ * folder of their own for each source, so a map never mixes two providers' tiles. */
 export class Streets {
   private template?: { url: string; at: number };
   private pending = new Map<string, Promise<Buffer>>();
+  private dir: string;
   constructor(
-    private dir: string,
+    dir: string,
     private source = STREETS_SOURCE,
   ) {
-    mkdirSync(dir, { recursive: true });
+    this.dir = join(
+      dir,
+      createHash("sha1").update(source).digest("hex").slice(0, 12),
+    );
+    mkdirSync(this.dir, { recursive: true });
   }
   async tile(z: number, x: number, y: number): Promise<Buffer> {
     if (
