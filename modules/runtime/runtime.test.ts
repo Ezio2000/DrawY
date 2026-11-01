@@ -959,6 +959,9 @@ it("draws a city's real streets under a walk through it, and says so when they c
       { name: "二沙岛", lon: 113.2985, lat: 23.1122 },
     ],
     routes: [{ points: ["北京路", "海珠桥", "二沙岛"], color: "#123456" }],
+    // A name the data gives, shown in another language, and picked out by that name.
+    names: { 珠江: "Pearl River" },
+    highlights: [{ river: "Pearl River", color: "#abcdef" }],
   };
   work.scenes.root = {
     ...work.scenes.root,
@@ -985,6 +988,7 @@ it("draws a city's real streets under a walk through it, and says so when they c
         errors: window.drawyErrors,
         text: [...root.querySelectorAll("text")].map((t) => t.textContent),
         tiles: root.querySelectorAll('clipPath[id^="geomap-tile-"]').length,
+        highlight: root.querySelectorAll('path[stroke="#abcdef"]').length,
         scale: [...root.querySelectorAll("text")]
           .map((t) => t.textContent!)
           .find((t) => / km$/.test(t)),
@@ -994,10 +998,13 @@ it("draws a city's real streets under a walk through it, and says so when they c
   const city = await look();
   expect(city.errors).toEqual([]);
   expect(city.tiles).toBeGreaterThan(1);
-  // The Pearl River and the roads the tile names, and the data's credit.
+  // The Pearl River under the name given for it, the roads the tile names, and the
+  // data's credit; the river picked out by its new name.
   expect(city.text).toEqual(
-    expect.arrayContaining(["珠江", "© OpenStreetMap"]),
+    expect.arrayContaining(["Pearl River", "© OpenStreetMap"]),
   );
+  expect(city.text).not.toContain("珠江");
+  expect(city.highlight).toBe(1);
   expect(city.text.length).toBeGreaterThan(6);
   expect(parseFloat(city.scale!)).toBeLessThanOrEqual(2);
 
@@ -1039,7 +1046,11 @@ it("draws the world in a rounded projection and a country in relief, naming what
   work.scenes.root = {
     ...work.scenes.root,
     modules: [
-      map("world", 0, { borders: "countries", bounds: [-180, -60, 180, 85] }),
+      map("world", 0, {
+        borders: "countries",
+        bounds: [-180, -60, 180, 85],
+        names: { 巴西: "Brasil" },
+      }),
       map("china", 700, { borders: "subdivisions", bounds: [73, 17, 135, 54] }),
     ],
     links: [],
@@ -1075,7 +1086,7 @@ it("draws the world in a rounded projection and a country in relief, naming what
   // Each country once, and no unit too small to be outlined.
   expect(seen.world.filter((t) => t === "澳大利亚")).toHaveLength(1);
   expect(seen.world).not.toContain("黄岩岛");
-  expect(seen.world).toEqual(expect.arrayContaining(["俄罗斯", "巴西"]));
+  expect(seen.world).toEqual(expect.arrayContaining(["俄罗斯", "Brasil"]));
   // China's provinces are named, its neighbours as countries, not by their provinces.
   expect(seen.china).toEqual(expect.arrayContaining(["四川省", "蒙古"]));
   expect(seen.china).not.toContain("科布多省");

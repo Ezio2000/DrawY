@@ -68,6 +68,14 @@ const cityLand = d.land || mix(paper, ink, 0.05);
 // Rivers in the water's own colour, deeper than the sea so a thin line still shows.
 const riverInk = mix(cool || "#5d8fb8", sea, 0.3);
 const zh = d.language !== "en";
+// Names the map takes from its data (countries, divisions, rivers, roads) shown as given:
+// {name as drawn: name to show}, such as a city's local street names in the reader's
+// language. Anything not listed is drawn as the data has it.
+const renames = d.names && typeof d.names === "object" ? d.names : {};
+const rename = (n) =>
+  n && Object.hasOwn(renames, n) && String(renames[n]).trim()
+    ? String(renames[n]).trim()
+    : n;
 const size = Number(d.size ?? 14);
 const sw = Math.max(1, Number(t.stroke ?? 1.6));
 
@@ -1005,7 +1013,7 @@ const refName = (n, where, area, sz, color, spacing, weight = 400) => {
   return true;
 };
 const spaced = (n) => (/[\u3000-\u9fff]/.test(n) ? size * 0.15 : size * 0.04);
-const label = (o) => (zh ? o.zh || o.en : o.en || o.zh);
+const label = (o) => rename(zh ? o.zh || o.en : o.en || o.zh);
 // Larger areas claim their place first.
 const larger = (a, b) =>
   (b.box ? (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]) : 0) -
@@ -1138,7 +1146,7 @@ const riverLabels = [];
 for (const r of rivers) {
   const wpx = riverWidth(r.rank);
   riverOut += `<path d="${r.pts.map((p) => trace(p, false)).join("")}" fill="none" stroke="${riverInk}" stroke-width="${wpx.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
-  const name = zh ? r.zh : r.en;
+  const name = rename(zh ? r.zh : r.en);
   if (riverMode === "named" && name) riverLabels.push({ r, name });
 }
 // Rivers picked out by name (a main stream through its differently named reaches), whole
@@ -1147,16 +1155,18 @@ for (const r of rivers) {
 let highlightOut = "";
 const apart = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 for (const h of d.highlights || []) {
+  // By the name the data gives or the one the map shows instead.
   const names = [].concat(h.river ?? []).map(String);
+  const known = (n) => !!n && (names.includes(n) || names.includes(rename(n)));
   const pool = physical.rivers
-    .filter((r) => names.includes(r.zh) || names.includes(r.en))
+    .filter((r) => known(r.zh) || known(r.en))
     .flatMap((r) => r.lines.map((l) => decode(l)));
   // In a city, the streets' own waterways by the same names, which follow it closely.
   if (city)
     pool.push(
       ...tiles.flatMap((t) =>
         t.data.waterways
-          .filter((w) => names.includes(w.name))
+          .filter((w) => known(w.name))
           .flatMap((w) =>
             w.lines.map((l) =>
               tileLine(t, l).map(([lon, lat]) => [lon + t.dx, lat]),
@@ -1370,7 +1380,7 @@ if (city) {
       for (const t of tiles)
         for (const item of t.data[list]) {
           // As the place writes it, whatever the map's language.
-          const name = item.name;
+          const name = rename(item.name);
           if (!name) continue;
           const e = by.get(name) ?? { name, rank: rank(item), lines: [] };
           e.lines.push(

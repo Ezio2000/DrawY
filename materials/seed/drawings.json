@@ -3230,6 +3230,10 @@
         "default": true,
         "description": "in a regional or city view, the names of main roads where they fit"
       },
+      "names": {
+        "type": "object",
+        "description": "{name as the map draws it: name to show}; renames any name the map takes from its data (countries, divisions, rivers, and in a city the roads and waterways, which come as the place writes them), such as to put local names into the reader's language"
+      },
       "language": {
         "type": "choice",
         "options": ["zh", "en"],
