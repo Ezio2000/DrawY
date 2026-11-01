@@ -1010,6 +1010,41 @@ it("draws a city's real streets under a walk through it, and says so when they c
   expect(city.text.length).toBeGreaterThan(6);
   expect(parseFloat(city.scale!)).toBeLessThanOrEqual(2);
 
+  // A historical map leaves today's roads off but keeps OpenStreetMap's coast and water,
+  // rather than falling back to Natural Earth's coarse one.
+  const paths = () =>
+    page.evaluate(
+      () =>
+        document
+          .querySelector('[data-module-id="walk"]')!
+          .shadowRoot!.querySelectorAll('clipPath[id^="geomap-tile-"] + g path')
+          .length,
+    );
+  const withRoads = await paths();
+  await page.evaluate(() => {
+    const work = structuredClone(window.drawyData.work),
+      scene = work.scenes.root;
+    scene.modules[0].data = { ...scene.modules[0].data, roads: false };
+    window.drawyView.update(work, scene);
+  });
+  await page.waitForFunction(
+    (n) =>
+      document
+        .querySelector('[data-module-id="walk"]')!
+        .shadowRoot!.querySelectorAll('clipPath[id^="geomap-tile-"] + g path')
+        .length < n,
+    withRoads,
+    { timeout: 2500 },
+  );
+  const plain = await look();
+  expect(plain.errors).toEqual([]);
+  expect(plain.tiles).toBe(city.tiles);
+  expect(plain.text).toEqual(
+    expect.arrayContaining(["Pearl River", "© OpenStreetMap"]),
+  );
+  expect(plain.text.length).toBeLessThan(city.text.length);
+  expect(await paths()).toBeGreaterThan(0);
+
   try {
     for (const down of ["error", "offline"] as const) {
       streetsDown = down;

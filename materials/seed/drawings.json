@@ -3220,15 +3220,15 @@
         "default": true,
         "description": "shaded relief over the land, so mountains and plateaus read at a glance; fades in close views"
       },
-      "streets": {
+      "roads": {
         "type": "boolean",
         "default": true,
-        "description": "in a regional or city view, OpenStreetMap's roads, water, parks and railways as the ground; false keeps the plain coast and rivers"
+        "description": "in a regional or city view, today's roads and railways over OpenStreetMap's coast, water and woods; false leaves them off (a historical map) and keeps the fine coast"
       },
       "roadNames": {
         "type": "boolean",
         "default": true,
-        "description": "in a regional or city view, the names of main roads where they fit"
+        "description": "in a regional or city view with roads, the names of main roads where they fit"
       },
       "names": {
         "type": "object",
@@ -3244,7 +3244,7 @@
         "type": "choice",
         "options": ["frame", "fade"],
         "default": "frame",
-        "description": "a thin frame, or edges that fade into the paper"
+        "description": "a thin frame where the map is the figure's ground; or edges that fade into the paper, hiding the map's outer part, for a small map set among other pictures"
       },
       "scale": {
         "type": "boolean",

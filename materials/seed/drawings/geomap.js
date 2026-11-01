@@ -391,11 +391,12 @@ const visible = (lines) => lines.map((l) => decode(l)).flatMap(copies);
 // about zoom 7 (a view a couple of hundred kilometres across) the ground comes from
 // OpenStreetMap tiles instead (water, parks and woods, roads by class, railways, waterway
 // and road names), each a web-map tile of the view; borders stay Natural Earth's, drawn
-// from the map's one point of view. Should any not
-// load, the map falls back to Natural Earth and says the streets are missing.
+// from the map's one point of view. The roads and railways can be left off (a historical
+// map), keeping the fine coast, water and woods. Should any tile not load, the map falls
+// back to Natural Earth and says the streets are missing.
 const tiles = [];
 let streetsFailed = false;
-if (d.streets !== false && zoom >= 7) {
+if (zoom >= 7) {
   let tz = Math.min(14, Math.floor(zoom));
   const merc = (lat) =>
     (1 -
@@ -1326,6 +1327,7 @@ if (city) {
   };
   const waterWidth = { river: 2.6, canal: 1.8, stream: 1.1 };
   const casing = mix(cityLand, ink, 0.22);
+  const roadsOn = d.roads !== false;
   const path = (t, lines, close) =>
     lines.map((l) => trace({ pts: tileLine(t, l), dx: t.dx }, close)).join("");
   const stroked = (dd, color, width, extra = "") =>
@@ -1356,7 +1358,7 @@ if (city) {
     if (waterD)
       g += `<path d="${waterD}" fill="${sea}" stroke="${shore}" stroke-width="${(sw * 0.5).toFixed(2)}" stroke-linejoin="round"/>`;
     const roads = data.roads
-      .filter((r) => zoom >= roadFrom[r.class])
+      .filter((r) => roadsOn && zoom >= roadFrom[r.class])
       .sort((a, b) => roadWidth[a.class] - roadWidth[b.class])
       .map((r) => ({
         d: path(t, r.lines, false),
@@ -1366,7 +1368,7 @@ if (city) {
     for (const r of roads)
       g += stroked(r.d, r.major ? mix(casing, ink, 0.15) : casing, r.w + 1.6);
     // Railways once the view is down to a few towns.
-    const railD = zoom >= 9 ? path(t, data.rail, false) : "";
+    const railD = roadsOn && zoom >= 9 ? path(t, data.rail, false) : "";
     g += stroked(railD, mix(muted, ink, 0.25), Math.max(0.8, 1.6 * f));
     g += stroked(
       railD,
@@ -1377,7 +1379,8 @@ if (city) {
     for (const r of roads) g += stroked(r.d, paper, r.w);
     cityOut += `<clipPath id="geomap-tile-${i}"><rect x="${(ax - 0.3).toFixed(1)}" y="${(ay - 0.3).toFixed(1)}" width="${(bx - ax + 0.6).toFixed(1)}" height="${(by - ay + 0.6).toFixed(1)}"/></clipPath><g clip-path="url(#geomap-tile-${i})">${g}</g>`;
   });
-  if (riverMode === "named" || d.roadNames !== false) {
+  const roadNames = roadsOn && d.roadNames !== false;
+  if (riverMode === "named" || roadNames) {
     // Each name once, gathered across the tiles it runs through, larger ways first.
     const gather = (list, rank) => {
       const by = new Map();
@@ -1434,7 +1437,7 @@ if (city) {
           mix(riverInk, ink, 0.35),
           true,
         );
-    if (d.roadNames !== false) {
+    if (roadNames) {
       const order = ["motorway", "trunk", "primary", "secondary", "tertiary"];
       for (const e of gather("names", (r) => order.indexOf(r.class))
         .filter((e) => zoom >= roadFrom[order[e.rank]] + 1)
