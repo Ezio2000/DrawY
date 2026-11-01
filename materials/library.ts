@@ -138,6 +138,13 @@ export class Library {
       etag: `"${createHash("sha1").update(bytes).digest("base64url")}"`,
     };
   }
+  /** One tile of the shaded relief the map drawing lays over land, as WebP. */
+  relief(tile: string) {
+    const path = join(this.seed, "geo", "relief", tile + ".webp");
+    if (!/^\d+-\d+-\d+$/.test(tile) || !existsSync(path))
+      throw new LibraryError("没有这份地理数据: relief/" + tile, 404);
+    return readFileSync(path);
+  }
   /** Styles with the pictures that show them best: the style's own showcase first, then
    * the most used. */
   styles(): StyleMaterial[] {

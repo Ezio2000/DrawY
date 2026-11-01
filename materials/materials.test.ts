@@ -192,6 +192,13 @@ it("serves the geographic layers the map drawing projects, and nothing else from
     ).status,
   ).toBe(304);
   expect((await app.request("/geo/nowhere")).status).toBe(404);
+  // Shaded relief: an index of the tiles kept, each a picture.
+  const relief = (await (await app.request("/geo/relief")).json()) as {
+    levels: { tiles: string[] }[];
+  };
+  const tile = await app.request(`/geo/relief/1-${relief.levels[1].tiles[0]}`);
+  expect(tile.headers.get("content-type")).toBe("image/webp");
+  expect((await app.request("/geo/relief/1-..-0")).status).toBe(404);
   expect((await app.request("/geo/..%2Fdrawings")).status).toBe(404);
 });
 

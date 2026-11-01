@@ -126,6 +126,12 @@ export function createServer(
       "Cache-Control": "public, max-age=604800",
     });
   });
+  app.get("/geo/relief/:tile", (c) =>
+    c.body(new Uint8Array(library.relief(c.req.param("tile"))), 200, {
+      "Content-Type": "image/webp",
+      "Cache-Control": "public, max-age=86400",
+    }),
+  );
   app.get("/geo/:layer", (c) => {
     const { bytes, etag } = library.geo(c.req.param("layer"));
     const headers = {

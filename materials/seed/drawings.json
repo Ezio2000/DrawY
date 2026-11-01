@@ -3088,7 +3088,7 @@
       "atlas"
     ],
     "category": "drawing/map",
-    "about": "A true map from real geographic data, from the whole world down to a few streets: coastlines, lakes and named rivers, and in a city view (a few dozen kilometres or less) OpenStreetMap's streets, waterways, parks and railways with the names of main roads, so a walk or tour through one town lands on its real streets; optionally today's country borders (disputed lines drawn as such) and first-level divisions such as provinces and states. Places, routes and areas are given in longitude and latitude, so everything lands where it really is, across the 180th meridian too; labels keep clear of each other and of the routes. Routes take place names or [lon, lat] points, with width, colour, dashes and direction arrows; areas shade a territory; highlights pick out named rivers, whole or between two places. Change it through these parameters rather than reaching into what it draws, whose structure is not fixed. The view fits bounds [west, south, east, north] or everything placed, and the colours follow the style.",
+    "about": "A true map from real geographic data, from the whole world down to a few streets: coastlines, lakes and named rivers over shaded relief (a view most of the way round the world is in the rounded Natural Earth projection), and in a city view (a few dozen kilometres or less) OpenStreetMap's streets, waterways, parks and railways with the names of main roads, so a walk or tour through one town lands on its real streets; optionally today's country borders (disputed lines drawn as such) and first-level divisions such as provinces and states. Places, routes and areas are given in longitude and latitude, so everything lands where it really is, across the 180th meridian too; labels keep clear of each other and of the routes. Routes take place names or [lon, lat] points, with width, colour, dashes and direction arrows; areas shade a territory; highlights pick out named rivers, whole or between two places. Change it through these parameters rather than reaching into what it draws, whose structure is not fixed. The view fits bounds [west, south, east, north] or everything placed, and the colours follow the style.",
     "tags": ["map", "geography", "route", "history", "place", "journey"],
     "style": null,
     "origin": {
@@ -3214,6 +3214,11 @@
         "options": ["named", "plain", "none"],
         "default": "named",
         "description": "rivers with or without their names"
+      },
+      "relief": {
+        "type": "boolean",
+        "default": true,
+        "description": "shaded relief over the land, so mountains and plateaus read at a glance; fades in close views"
       },
       "streets": {
         "type": "boolean",

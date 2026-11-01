@@ -93,6 +93,16 @@ beforeAll(async () => {
           ),
         ),
       );
+    } else if (url.pathname.startsWith("/materials/geo/relief/")) {
+      res.setHeader("content-type", "image/webp");
+      res.end(
+        readFileSync(
+          new URL(
+            `../../materials/seed/geo/relief/${url.pathname.split("/").at(-1)}.webp`,
+            import.meta.url,
+          ),
+        ),
+      );
     } else if (url.pathname.startsWith("/materials/geo/")) {
       res.setHeader("content-type", "application/json");
       res.end(
@@ -1002,4 +1012,73 @@ it("draws a city's real streets under a walk through it, and says so when they c
   } finally {
     streetsDown = false;
   }
+});
+
+it("draws the world in a rounded projection and a country in relief, naming what the map is about", async () => {
+  const drawings = seed("drawings") as DrawingMaterial[];
+  const geomap = drawings.find((m) => m.id === "geomap")!;
+  work.materials = {
+    geomap: useOf({
+      ...geomap,
+      source: readFileSync(
+        new URL("../../materials/seed/drawings/geomap.js", import.meta.url),
+        "utf8",
+      ),
+    } as Material)!,
+  };
+  const map = (id: string, y: number, data: Record<string, unknown>) => ({
+    id,
+    label: id,
+    drawingId: "geomap",
+    data,
+    bounds: { x: 0, y, width: 960, height: 600 },
+    anchors: {},
+    group: null,
+    target: null,
+  });
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      map("world", 0, { borders: "countries", bounds: [-180, -60, 180, 85] }),
+      map("china", 700, { borders: "subdivisions", bounds: [73, 17, 135, 54] }),
+    ],
+    links: [],
+  };
+  await open();
+  const seen = await page.evaluate(() => {
+    const root = (id: string) =>
+      document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!;
+    const text = (id: string) =>
+      [...root(id).querySelectorAll("text")].map((t) => t.textContent!);
+    // The earth's rim: where it meets the top and bottom of the view, how far in.
+    const rim = root("world").querySelector<SVGPathElement>("path")!;
+    const box = rim.getBBox();
+    const top = rim
+      .getAttribute("d")!
+      .match(/[\d.]+ [\d.]+/g)!
+      .map((p) => p.split(" ").map(Number))
+      .filter(([, y]) => y < box.y + 2);
+    return {
+      errors: window.drawyErrors,
+      world: text("world"),
+      china: text("china"),
+      corner: Math.min(...top.map(([x]) => x)) - box.x,
+      relief: root("china").querySelectorAll("image").length,
+      reliefTiles: performance
+        .getEntriesByType("resource")
+        .filter((e) => /\/materials\/geo\/relief\//.test(e.name)).length,
+    };
+  });
+  expect(seen.errors).toEqual([]);
+  // Rounded at its sides: the rim is well in from the corners at the top.
+  expect(seen.corner).toBeGreaterThan(100);
+  // Each country once, and no unit too small to be outlined.
+  expect(seen.world.filter((t) => t === "澳大利亚")).toHaveLength(1);
+  expect(seen.world).not.toContain("黄岩岛");
+  expect(seen.world).toEqual(expect.arrayContaining(["俄罗斯", "巴西"]));
+  // China's provinces are named, its neighbours as countries, not by their provinces.
+  expect(seen.china).toEqual(expect.arrayContaining(["四川省", "蒙古"]));
+  expect(seen.china).not.toContain("科布多省");
+  expect(seen.relief).toBe(1);
+  expect(seen.reliefTiles).toBeGreaterThan(0);
 });
