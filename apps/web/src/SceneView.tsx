@@ -1,7 +1,7 @@
 import { detailElement } from "../../../modules/runtime/detail.ts";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { ZoomOut, ZoomIn, Scan } from "lucide-react";
+import { ZoomOut, ZoomIn, Scan, Lightbulb } from "lucide-react";
 import { reducedMotion, useLocale } from "@drawy/ui";
 import { Pen } from "@drawy/ui/brand";
 import { Canvas, type Pointed } from "../../../modules/canvas/index.ts";
@@ -164,7 +164,7 @@ export function SceneView({
   const [styles, setStyles] = useState<StyleMaterial[]>([]);
   useEffect(() => void styleList().then(setStyles, () => {}), []);
   // What the author has understood, noted on the paper before it starts drawing: the
-  // subject as it is written, then the settled brief.
+  // subject as it is written, then the settled brief with the idea the picture is built on.
   const briefing = steps.findLast(
     (s): s is Extract<ToolStep, { name: "set_brief" }> =>
       s.kind === "tool" && s.name === "set_brief",
@@ -174,6 +174,7 @@ export function SceneView({
     ? {
         subject: brief.subject,
         intent: brief.intent,
+        concept: brief.concept,
         tags: [
           brief.audience,
           styles.find((s) => s.id === brief.style)?.name[locale],
@@ -181,7 +182,7 @@ export function SceneView({
         ].filter(Boolean),
       }
     : briefing?.subject
-      ? { subject: briefing.subject, intent: "", tags: [] }
+      ? { subject: briefing.subject, intent: "", concept: "", tags: [] }
       : undefined;
   // Before the first stroke, the references the author gathers are laid out on the paper.
   const references = steps
@@ -247,6 +248,12 @@ export function SceneView({
             <figure className={cx("brief-note")}>
               <b>{note.subject}</b>
               {note.intent && <p>{note.intent}</p>}
+              {note.concept && (
+                <p data-concept>
+                  <Lightbulb size={12} />
+                  {note.concept}
+                </p>
+              )}
               {!!note.tags.length && (
                 <span>
                   {note.tags.map((t) => (

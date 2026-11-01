@@ -42,7 +42,12 @@ export function createApp(storage: Storage) {
   const agent = new Agent(publish);
   app.onError((e, c) =>
     c.json(
-      { error: localize(e.message, requestLocale((k) => c.req.header(k))) },
+      {
+        error: localize(
+          e.message,
+          requestLocale((k) => c.req.header(k)),
+        ),
+      },
       e instanceof DomainError || e instanceof MaterialsError
         ? (e.status as 400)
         : e instanceof z.ZodError
@@ -73,7 +78,12 @@ export function createApp(storage: Storage) {
     const user = userOf(getCookie(c, "drawy_session"));
     if (!user)
       return c.json(
-        { error: localize("请先登录", requestLocale((k) => c.req.header(k))) },
+        {
+          error: localize(
+            "请先登录",
+            requestLocale((k) => c.req.header(k)),
+          ),
+        },
         401,
       );
     c.set("user", user);
@@ -357,21 +367,30 @@ export function createApp(storage: Storage) {
       if (!set.size) listeners.delete(userId);
     }),
   );
-  // Pictures are served by the library, as the signed-in user when there is one.
-  app.get("/materials/:route{files|thumbs}/:id", async (c) => {
+  // Pictures and geographic data are served by the library, as the signed-in user when
+  // there is one.
+  app.get("/materials/:route{files|thumbs|geo}/:id", async (c) => {
     const user = userOf(getCookie(c, "drawy_session"));
+    const tag = c.req.header("if-none-match");
     const r = await fetch(
       library.base +
         c.req.path.slice("/materials".length) +
         new URL(c.req.url).search,
-      { headers: user ? { "x-drawy-user": user.id } : {} },
+      {
+        headers: {
+          ...(user ? { "x-drawy-user": user.id } : {}),
+          ...(tag ? { "if-none-match": tag } : {}),
+        },
+      },
     );
-    return new Response(r.body, {
+    const etag = r.headers.get("etag");
+    return new Response(r.status === 304 ? null : r.body, {
       status: r.status,
       headers: {
         "Content-Type":
           r.headers.get("content-type") || "application/octet-stream",
         "Cache-Control": r.headers.get("cache-control") || "no-store",
+        ...(etag ? { ETag: etag } : {}),
       },
     });
   });

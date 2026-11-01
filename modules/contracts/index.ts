@@ -82,11 +82,18 @@ export const interactionSchema = z.object({
 });
 export const detailSchema = z.object({ id: key, title: key, html: z.string() });
 /** What the work is meant to be, settled before drawing. Each basis quotes the user's own
- * words (a request, an answer or a standing preference) that decide that part. */
+ * words (a request, an answer or a standing preference) that decide that part; the concept
+ * is the author's own decision of how the picture carries the intent. */
 export const briefSchema = z.object({
   subject: z.string().min(1),
   intent: z.string().min(1),
   audience: z.string().min(1),
+  concept: z
+    .string()
+    .min(1)
+    .describe(
+      "The visual idea the picture is built on, chosen by the author: what the eye meets first, how the parts are arranged and what that arrangement says; not a list of parts and not the look",
+    ),
   register: z.enum(["formal", "expressive"]),
   style: key,
   direction: z
@@ -335,6 +342,10 @@ export type ToolActivity =
   | {
       name: "set_brief";
       subject: string;
+      /** The different visual ideas the author weighed, as they stream. */
+      ideas?: string[];
+      /** The one it chose and developed, once it has streamed. */
+      concept?: string;
       register?: "formal" | "expressive";
       style?: string;
       /** Materials found for the cast, by subject. */

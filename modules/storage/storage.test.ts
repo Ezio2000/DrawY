@@ -4,12 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Storage } from "./index.ts";
-import {
-  createWork,
-  writeWork,
-  restore,
-  undo,
-} from "../workspace/index.ts";
+import { createWork, writeWork, restore, undo } from "../workspace/index.ts";
 import { moveParts } from "../editing/index.ts";
 import type { Work } from "../contracts/index.ts";
 import { register, login } from "../identity/index.ts";
@@ -102,6 +97,51 @@ describe("user owned works", () => {
     expect(restore(store, work.id, 3).revision).toBe(5);
     expect(store.work(work.id).drawings.tier).toEqual(content.drawings.tier);
     expect(store.revision(work.id, 4).drawings.tier).toEqual(changed);
+  });
+  it("takes library code again on each write, so a work runs what the author's catalog describes", async () => {
+    const store = db.scoped(register(db, "a", "abcdef").id);
+    const work = createWork(store, "test");
+    store.commit({ ...store.work(work.id), brief: fixture().brief }, 1, {
+      kind: "edit",
+    });
+    const { work: first } = await writeWork(
+      store,
+      work.id,
+      {
+        baseRevision: 2,
+        drawings: [{ id: "x", name: "x", source: 'return api.draw("steps")' }],
+      },
+      { kind: "edit" },
+    );
+    const sourceOf = (w: Work) => {
+      const m = w.materials.steps;
+      if (m.kind !== "drawing") throw Error("steps is a library drawing");
+      return m;
+    };
+    const current = sourceOf(first).source;
+    // As if saved by an earlier version of the library.
+    store.commit(
+      {
+        ...first,
+        materials: {
+          ...first.materials,
+          steps: { ...sourceOf(first), source: "return api.svg('<svg/>')" },
+        },
+      },
+      3,
+      { kind: "edit" },
+    );
+    const { work: next } = await writeWork(
+      store,
+      work.id,
+      { baseRevision: 4, title: "renamed" },
+      { kind: "edit" },
+    );
+    expect(sourceOf(next).source).toBe(current);
+    // Until it is written, a work keeps the version it was saved with.
+    expect(sourceOf(store.revision(work.id, 4)).source).toBe(
+      "return api.svg('<svg/>')",
+    );
   });
   it("undoes a whole request, then a hand edit, walking back through restores", async () => {
     const store = db.scoped(register(db, "a", "abcdef").id);

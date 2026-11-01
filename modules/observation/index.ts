@@ -10,6 +10,7 @@ import type { Item } from "../models/index.ts";
 import type { Shot } from "./capture.ts";
 import { tracer } from "../trace/index.ts";
 import { drawnWith } from "../materials/index.ts";
+import { union } from "../contracts/geometry.ts";
 export const viewSchema = z.object({
   sceneId: z.string().optional(),
   region: boundsSchema.optional(),
@@ -97,33 +98,62 @@ export async function observe(
           screenshots,
           errors: [...new Set(shots.flatMap((s) => s.errors))],
         };
-        const content: Item[] = shots.flatMap((s) => [
-          {
-            type: "input_text",
-            text: JSON.stringify({
-              revision: work.revision,
-              sceneId: s.sceneId,
-              view: s.label,
-              camera: s.camera,
-              modules: s.modules.map((m) => ({
-                ...m,
-                uses: drawnWith(work, s.sceneId, m.id),
-              })),
-              errors: s.errors,
-            }),
-          },
-          {
-            type: "input_image",
-            image_url: "data:image/png;base64," + s.base64,
-            detail: "high",
-          },
-        ]);
+        const content: Item[] = [
+          // What the look is judged against, beside the pictures rather than far back in
+          // the conversation.
+          ...(work.brief
+            ? [
+                {
+                  type: "input_text",
+                  text: `Judge this look against the brief. Intent: ${work.brief.intent} Concept: ${work.brief.concept ?? "(none set)"}`,
+                },
+              ]
+            : []),
+          ...shots.flatMap((s) => [
+            {
+              type: "input_text",
+              text: JSON.stringify({
+                revision: work.revision,
+                sceneId: s.sceneId,
+                view: s.label,
+                camera: s.camera,
+                ...(s.overview ? { figure: figure(work, s) } : {}),
+                modules: s.modules.map((m) => ({
+                  ...m,
+                  uses: drawnWith(work, s.sceneId, m.id),
+                })),
+                errors: s.errors,
+              }),
+            },
+            {
+              type: "input_image",
+              image_url: "data:image/png;base64," + s.base64,
+              detail: "high",
+            },
+          ]),
+        ];
         return { observation, content };
       } finally {
         store.storage.db.prepare("DELETE FROM sessions WHERE id=?").run(token);
       }
     },
   );
+}
+/** How the scene's figure sits in the opening view: its extent in scene units and the
+ * share of the view it covers, which drops as its proportions stray from the view's. */
+function figure(work: Work, shot: Shot) {
+  const box = union(work.scenes[shot.sceneId].modules.map((m) => m.bounds));
+  const { scale } = shot.camera;
+  return {
+    width: Math.round(box.width),
+    height: Math.round(box.height),
+    viewFilled:
+      Math.round(
+        ((box.width * scale * box.height * scale) /
+          (shot.viewport.width * shot.viewport.height)) *
+          100,
+      ) / 100,
+  };
 }
 /** The scene as a PNG to download, drawn by the capture service at full resolution. */
 export async function picture(

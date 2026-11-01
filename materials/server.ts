@@ -114,6 +114,17 @@ export function createServer(library: Library) {
           : "private, max-age=3600",
     });
   });
+  app.get("/geo/:layer", (c) => {
+    const { bytes, etag } = library.geo(c.req.param("layer"));
+    const headers = {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+      ETag: etag,
+    };
+    return c.req.header("if-none-match") === etag
+      ? c.body(null, 304, headers)
+      : c.body(new Uint8Array(bytes), 200, headers);
+  });
   app.get("/thumbs/:id", async (c) => {
     const size = Math.min(
       512,

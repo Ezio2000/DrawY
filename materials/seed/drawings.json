@@ -3058,5 +3058,195 @@
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
     }
+  },
+  {
+    "id": "geomap",
+    "kind": "drawing",
+    "name": {
+      "zh": "地图",
+      "en": "Map"
+    },
+    "aliases": [
+      "地图",
+      "地理图",
+      "行军图",
+      "路线图",
+      "历史地图",
+      "形势图",
+      "航线图",
+      "分布图",
+      "map",
+      "geographic map",
+      "route map",
+      "campaign map",
+      "historical map",
+      "atlas"
+    ],
+    "category": "drawing/map",
+    "about": "A true map from real geographic data: coastlines, lakes and named rivers, optionally today's country borders (disputed lines drawn as such) and first-level divisions such as provinces and states. Places, routes and areas are given in longitude and latitude, so everything lands where it really is, across the 180th meridian too; labels keep clear of each other and of the routes. Routes take place names or [lon, lat] points, with width, colour, dashes and direction arrows; areas shade a territory; highlights pick out named rivers, whole or between two places. Change it through these parameters rather than reaching into what it draws, whose structure is not fixed. The view fits bounds [west, south, east, north] or everything placed, and the colours follow the style.",
+    "tags": ["map", "geography", "route", "history", "place", "journey"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 960,
+      "height": 600
+    },
+    "example": {
+      "bounds": [-6, 35, 16, 47],
+      "places": [
+        {
+          "name": "新迦太基",
+          "lon": -0.99,
+          "lat": 37.6,
+          "note": "前218年春出发",
+          "kind": "capital"
+        },
+        {
+          "name": "萨贡托",
+          "lon": -0.27,
+          "lat": 39.68,
+          "kind": "battle"
+        },
+        {
+          "name": "比利牛斯山",
+          "lon": 1,
+          "lat": 42.6,
+          "kind": "mountain"
+        },
+        {
+          "name": "阿尔卑斯山",
+          "lon": 7,
+          "lat": 45.3,
+          "kind": "mountain"
+        },
+        {
+          "name": "特雷比亚",
+          "lon": 9.6,
+          "lat": 45.05,
+          "note": "前218年冬",
+          "kind": "battle"
+        },
+        {
+          "name": "罗马",
+          "lon": 12.5,
+          "lat": 41.9,
+          "kind": "capital"
+        },
+        {
+          "name": "地中海",
+          "lon": 5.5,
+          "lat": 39.5,
+          "kind": "water"
+        }
+      ],
+      "routes": [
+        {
+          "points": [
+            "新迦太基",
+            [0.5, 40.8],
+            [2.6, 42.3],
+            [4.6, 43.9],
+            [6, 45],
+            [7.7, 45.1],
+            "特雷比亚"
+          ],
+          "label": "汉尼拔进军",
+          "arrow": "along"
+        }
+      ],
+      "areas": [
+        {
+          "points": [
+            [-6, 37],
+            [-1, 36.5],
+            [0.5, 38.5],
+            [0, 39.6],
+            [-3, 39.2],
+            [-6, 38.4]
+          ],
+          "label": "迦太基控制区",
+          "color": "#c8553d"
+        }
+      ]
+    },
+    "params": {
+      "places": {
+        "type": "array",
+        "description": "[{name, lon, lat, note?, kind?: town|capital|battle|mountain|pass|water|region, major?, label?: right|left|above|below|top-right|…, color?, picture?, pictureSize?}]; water and region are names without a marker"
+      },
+      "routes": {
+        "type": "array",
+        "description": "[{points: place names or [lon, lat], label?, note?, color?, width?, style?: solid|dashed|dotted, arrow?: end|along|none, labelSide?}]; draw one route per stage or force to vary colour and width"
+      },
+      "areas": {
+        "type": "array",
+        "description": "[{points: [lon, lat] or place names, color?, opacity?}], a shaded territory; name it with a region place"
+      },
+      "highlights": {
+        "type": "array",
+        "description": "[{river: a name or names as the map labels them (a main stream's reaches can have their own names), color?, width?, from?, to?: place names or [lon, lat]}]; picks out real rivers, whole or the stretch between from and to, as far as the data names them (a wide estuary may be unnamed)"
+      },
+      "bounds": {
+        "type": "array",
+        "description": "[west, south, east, north] in degrees; defaults to everything placed with room around it"
+      },
+      "borders": {
+        "type": "choice",
+        "options": ["none", "countries", "subdivisions"],
+        "default": "none",
+        "description": "today's borders: countries, or countries with their first-level divisions (provinces, states). Leave none for a historical map unless modern borders help locate it, and say so"
+      },
+      "borderColor": {
+        "type": "color",
+        "description": "colour of the border lines; defaults to a grey from the style"
+      },
+      "rivers": {
+        "type": "choice",
+        "options": ["named", "plain", "none"],
+        "default": "named",
+        "description": "rivers with or without their names"
+      },
+      "language": {
+        "type": "choice",
+        "options": ["zh", "en"],
+        "default": "zh",
+        "description": "language of the river, country and division names"
+      },
+      "edge": {
+        "type": "choice",
+        "options": ["frame", "fade"],
+        "default": "frame",
+        "description": "a thin frame, or edges that fade into the paper"
+      },
+      "scale": {
+        "type": "boolean",
+        "default": true,
+        "description": "a scale bar in kilometres"
+      },
+      "water": {
+        "type": "color",
+        "description": "sea and lake colour; defaults to a pale tint of the style's cool colour"
+      },
+      "land": {
+        "type": "color",
+        "description": "land colour; defaults to a faint tint of paper"
+      },
+      "size": {
+        "type": "number",
+        "min": 8,
+        "max": 40,
+        "step": 1,
+        "default": 14,
+        "description": "font size"
+      },
+      "effect": {
+        "type": "effect",
+        "description": "an effect id for the land's texture, such as the style's rough-edge or pencil-grain"
+      }
+    }
   }
 ]

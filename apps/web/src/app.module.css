@@ -1284,6 +1284,20 @@ h2:has(> .title) {
   color: var(--text-2);
 }
 
+.brief-note p[data-concept] {
+  -webkit-line-clamp: 5;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-strong);
+  color: var(--text);
+}
+
+.brief-note p[data-concept] svg {
+  display: inline;
+  margin-right: 5px;
+  vertical-align: -1px;
+  color: var(--ai);
+}
+
 .brief-note span {
   display: flex;
   flex-wrap: wrap;
@@ -2519,6 +2533,20 @@ button.now:hover .now-line {
   display: block;
   font-size: 12px;
   color: var(--text-3);
+}
+
+.trace-concept {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--line-strong);
+}
+
+.trace-concept p {
+  font-family: var(--font-serif);
+  font-size: 12.5px;
+  color: var(--text-2);
 }
 
 .run-trace {

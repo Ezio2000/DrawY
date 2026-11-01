@@ -433,6 +433,17 @@ function Trace({
           ))}
         </div>
       )}
+      {step.name === "set_brief" && (step.concept || step.ideas) && (
+        <div className={cx("trace-concept")}>
+          {step.concept && <p>{step.concept}</p>}
+          {step.ideas && (
+            <small>
+              {t.journal.ideas}
+              {step.ideas.join(t.journal.ideasJoin)}
+            </small>
+          )}
+        </div>
+      )}
       {(step.name === "find_materials" || step.name === "set_brief") &&
         step.found?.some((f) => !f.candidates.length) && (
           <small>

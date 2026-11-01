@@ -38,7 +38,7 @@ PlantUML 服务只在 compose 里有，默认地址是 `http://localhost:8092`�
    - `find_materials` 检索素材库。
    - `generate_images` 在后台生成图片（`modules/images`）。这些图片先在素材库里预留 ID，作者马上就能引用。每张图除了作者给的内容参考图，还会带上作品里已有的同风格图片和风格样张作为风格参考图（`styleReferences`），保持画风一致。
    - `read_work` 读取作品，`write_work` 修改作品，`view_canvas` 截图查看。
-4. `write_work` 交给 `modules/workspace` 原子提交。提交时校验 `baseRevision`，不一致时返回 409；把作品新提到的素材从素材库取进作品的 `materials` 快照，不再提到的移出去；再校验整个作品，最后由 `modules/storage` 写成一个新版本，记下 `Cause`。
+4. `write_work` 交给 `modules/workspace` 原子提交。提交时校验 `baseRevision`，不一致时返回 409；把作品新提到的素材从素材库取进作品的 `materials` 快照，不再提到的移出去，已有的库画法和质感换成库里的当前版本（作者的素材目录描述的就是当前版本）；再校验整个作品，最后由 `modules/storage` 写成一个新版本，记下 `Cause`。
 5. `view_canvas` 经 `modules/observation` 请求截图服务。截图服务用 `modules/runtime/document.ts` 生成页面，加载 `/runtime/runtime.js` 渲染场景，截下图片，连同几何信息一起作为图片消息送回同一段对话。
 6. 运行过程中的每个变化，都以 `run` 事件经 SSE（`/api/events`）推给前端。前端由 `modules/canvas` 把过程画成铅笔起稿和图片显影的动画。整个过程同时由 `modules/trace` 记入 `trace.sqlite`。
 
@@ -68,7 +68,7 @@ PlantUML 服务只在 compose 里有，默认地址是 `http://localhost:8092`�
 - `trace`：基于 AsyncLocalStorage 嵌套记录，任何模块都可以直接调用 `tracer`，不需要层层传参。
 - `ui`：共享的 React 组件和品牌素材。
 
-`materials/` 是独立的素材包和服务，有自己的 SQLite、文件和检索。素材分四种：`picture`、`drawing`、`effect`、`style`。策展素材在 `materials/seed`：画法源码在 `seed/drawings/<id>.js`，元数据和示例数据在 `drawings.json`，图片在 `seed/files`。所有素材共用一个 ID 空间，新画法的 ID 不能和图片重名（比如已有图片 `tree`，层级树画法叫 `hierarchy`）。结构图与图表画法（`node`、`hierarchy`、`layers`、`quadrant`、`compare`、`pyramid`、`venn`、`mindmap`、`steps`、`swimlanes`、`fishbone`、`sequence`、`concentric`、`gantt`、`bars`、`donut`、`gauge`、`stat`、`radar`、`checklist`、`callout`）只用风格 token 上色、可选 `effect` 参数套质感（所以数据里别用 `effect` 当别的字段名）；新加的参数名要在 `i18n.tsx` 的 `edit.params`、选项值在 `edit.options` 补上中英文；`runtime.test.ts` 会用示例数据把每个库画法都画一遍，新画法要在那里能无错画出。`apps/web` 是 React 19 前端，用 CSS Modules 写样式，图标用 lucide-react。
+`materials/` 是独立的素材包和服务，有自己的 SQLite、文件和检索。素材分四种：`picture`、`drawing`、`effect`、`style`。策展素材在 `materials/seed`：画法源码在 `seed/drawings/<id>.js`，元数据和示例数据在 `drawings.json`，图片在 `seed/files`。所有素材共用一个 ID 空间，新画法的 ID 不能和图片重名（比如已有图片 `tree`，层级树画法叫 `hierarchy`）。结构图与图表画法（`node`、`hierarchy`、`layers`、`quadrant`、`compare`、`pyramid`、`venn`、`mindmap`、`steps`、`swimlanes`、`fishbone`、`sequence`、`concentric`、`gantt`、`bars`、`donut`、`gauge`、`stat`、`radar`、`checklist`、`callout`）只用风格 token 上色、可选 `effect` 参数套质感（所以数据里别用 `effect` 当别的字段名）；新加的参数名要在 `i18n.tsx` 的 `edit.params`、选项值在 `edit.options` 补上中英文；`runtime.test.ts` 会用示例数据把每个库画法都画一遍，新画法要在那里能无错画出。地图画法 `geomap` 把经纬度投影到真实的海岸线、湖泊、河流和（可选）国界、一级行政区界上。数据在 `seed/geo`：`physical`（总览用的 1:5000 万陆地湖泊与 1:1000 万河流）、`countries`、`subdivisions`，以及近景用的 `detail-<列>-<行>`（1:1000 万陆地、湖泊和岸线，按 15° 分块、精确到千分之一度，缩放级别 ≥ 4.5 时画法只读视图覆盖的几块；块内填色在块边被切开，所以不描边，岸线单独成线）。坐标存成差分整数，单位是 1/scale 度（默认百分之一度，分块文件自带 `scale`）。由 `pnpm --dir materials geo` 从 Natural Earth 重新生成（`materials/geo.ts`，用 npx 跑 mapshaper，不是依赖）。政治图层只有一个视角（`view`，目前是 Natural Earth 的中国视角）：地图单元、每条边界在该视角下的分类（`FCLASS_<视角>`，不承认的线丢弃）、海上界线、一级行政区归属都按它来。规则对所有国家相同，画法和构建脚本里都不写任何具体国家：行政区裁到它所属单元在该视角下的领土；主权属于别国的单元整体算一个行政区；视角下不存在的单元并入包含它的单元。国名取 CLDR 简称（`Intl.DisplayNames`）。由素材服务的 `/geo/:layer` 提供、主程序经 `/materials/geo/` 转发，画法运行时按需 fetch 并缓存在页面里，所以不进作品的素材快照；`runtime.test.ts` 的测试服务器也要提供这条路由。作品快照的是画法代码，地理数据却是在线读取的：作品每次写入会把库画法刷新到当前版本（`materials` 的 `take`），但没再写入的旧作品仍跑旧代码，所以改 `seed/geo` 的文件格式或图层名时，要让旧版画法仍能读到它期待的东西，或者换一个新的图层名。作者提示词要求不按位置挑库画法输出里的元素来改（库更新后顺序会变），所以作者需要的能力要做成参数，例如按名称突出河流的 `highlights`、边界颜色 `borderColor`。画法里的通用规则：河流按 Natural Earth 的 `min_zoom` 随比例出现；区域名只在放得进区域时标出，标注点不在视图内或被占时在区域可见部分里找空位；某国的行政区名已标出就不再标国名；路线和区域按“每段走短的一侧”展开，数据线在与视图相交的每份世界副本上都画，跨 180° 经线不断开。`apps/web` 是 React 19 前端，用 CSS Modules 写样式，图标用 lucide-react。
 
 ## 改动时需要知道的约束
 
@@ -89,6 +89,7 @@ PlantUML 服务只在 compose 里有，默认地址是 `http://localhost:8092`�
 **修改作者提示词和工具说明时，遵循 `prompts.ts` 文件头引用的 Opus 5.5 与 GPT-6 Astra 官方指南。** 用英文写，平实直接，每条要求附上原因，不用大写或 MUST 之类的强调，规则要写具体，不写泛泛的告诫。作者的行为契约也写在这些提示词里：
 - 主题说不清时用 `ask_user` 一次问清；
 - 简报的依据要逐字引用用户说过的话（`setBrief` 会校验）；
+- 简报里的立意（`concept`）是作者自己定的视觉想法，不引用用户的话；`set_brief` 的参数（`tools.ts` 的 `settleSchema`）在立意前先要两三种画法（`ideas`），每种标明种类（`ideaKinds`）且种类互不相同，只记在运行步骤里不进作品。创作模型在工具循环里几乎不做隐式推理：在 high 和 xhigh 下，定立意和看图后的轮次推理 token 通常只有几十，只有 max 会真正思考（约 300～900）。所以 `agent/index.ts` 的 `deliberate` 只在这两类决策轮用 `configuration_update` 把强度升到 max，其余轮次回到设置的强度；请求级的 `reasoning.effort` 保持不变，否则缓存前缀会失效。除此之外，要它发散、评判，还得让它写成显式输出：想法写进参数，看图后的评判写成给用户的一句进度；`view_canvas` 把意图和立意放在截图旁边，全图附上 `figure.viewFilled`。看图时按“准确→立意是否读得出→工艺”的顺序评判；
 - 结束前必须看过最新版本的所有非空场景，并且截图里没有运行错误（`requireObserved`）。
 
 改提示词前先读一遍现有的 `AUTHOR`，在原有结构里修改，不要另起一套写法。

@@ -6,6 +6,7 @@ import { Storage } from "../storage/index.ts";
 import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { Agent } from "./index.ts";
+import { settleSchema } from "./tools.ts";
 import { writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { generate } from "../models/index.ts";
@@ -492,6 +493,40 @@ const outputs = (input: any[]) =>
   input
     .filter((x) => x.type === "function_call_output")
     .map((x) => x.output as string);
+it("gives the turns that decide the work the most thought and the others the configured effort", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const seen: any[][] = [];
+    script(
+      [
+        ["write_work", { baseRevision: 1, title: "edited" }],
+        ["view_canvas", {}],
+        ["write_work", { baseRevision: 2, title: "again" }],
+        ["view_canvas", {}],
+        ["finish", { message: "done" }],
+      ],
+      seen,
+    );
+    const run = await new Agent(() => {}).start(store, work.id, "root", "画");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    const effort = (input: any[]) =>
+      input.findLast((i) => i.type === "configuration_update")?.reasoning
+        .effort;
+    // The request and each look are decided on; writing carries the decision out.
+    expect(seen.map(effort)).toEqual(["max", "medium", "max", "medium", "max"]);
+    // The request keeps the configured effort, so its cached prefix holds.
+    expect(vi.mocked(generate).mock.lastCall![0].effort).toBe("medium");
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
 it("settles a brief only on the user's own words, then applies its style and shows the cast", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
@@ -506,6 +541,11 @@ it("settles a brief only on the user's own words, then applies its style and sho
       subject: "苹果（水果）的结构",
       intent: "果皮、果肉、果核与种子",
       audience: "初中生",
+      ideas: [
+        { kind: "anatomy", idea: "一只纵切开的苹果，由外向内指出各层" },
+        { kind: "change", idea: "从花到果的四个时刻，看各部分从哪里长出来" },
+      ],
+      concept: "一只纵切开的苹果占满画面，由外向内依次指出果皮、果肉、果核与种子",
       register: "formal",
       style: "textbook",
       direction: "剖面线描",
@@ -580,6 +620,17 @@ it("settles a brief only on the user's own words, then applies its style and sho
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
     const saved = store.work(work.id);
     expect(saved.brief?.style).toBe("textbook");
+    // The concept is the author's own idea and needs no quote; the ideas it was chosen
+    // from stay with the run.
+    expect(saved.brief?.concept).toBe(brief.concept);
+    expect(saved.brief).not.toHaveProperty("ideas");
+    // Two ideas of one kind are variations of each other, not alternatives.
+    expect(
+      settleSchema.safeParse({
+        ...brief,
+        ideas: [brief.ideas[0], { ...brief.ideas[1], kind: "anatomy" }],
+      }).success,
+    ).toBe(false);
     expect(saved.style.font).toContain("PingFang");
     expect(Object.keys(saved.materials)).toEqual(["apple"]);
     const [castOutput] = outputs(seen[3]).slice(-1);
@@ -590,7 +641,9 @@ it("settles a brief only on the user's own words, then applies its style and sho
     });
     // The author sees the cast as pictures, not only names.
     expect(
-      seen[3].at(-1).content.some((c: any) => c.type === "input_image"),
+      seen[3]
+        .findLast((i) => i.role === "user")
+        .content.some((c: any) => c.type === "input_image"),
     ).toBe(true);
     const step = store
       .run(run.id)
@@ -600,6 +653,8 @@ it("settles a brief only on the user's own words, then applies its style and sho
       );
     expect(step).toMatchObject({
       revision: 2,
+      ideas: brief.ideas.map((i) => i.idea),
+      concept: brief.concept,
       found: [{ subject: "苹果" }, { subject: "种子" }],
     });
   } finally {

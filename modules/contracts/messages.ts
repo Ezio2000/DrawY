@@ -66,6 +66,7 @@ const patterns: [RegExp, (...m: string[]) => string][] = [
     (d) => `The connection to the model was lost (${d}); what was saved can still be edited`,
   ],
   [/^素材不存在: (.*)$/, (id) => "Material not found: " + id],
+  [/^没有这份地理数据: (.*)$/, (layer) => "No geographic data named " + layer],
   [/^(\S+) 不是图片素材$/, (id) => `${id} is not a picture`],
   [/^未知风格 (\S+)，可用：(.*)$/, (id, all) => `Unknown style ${id}; available: ${all}`],
   [/^已达到本轮 (\d+) 次生成上限$/, (n) => `Reached this run's limit of ${n} generations`],

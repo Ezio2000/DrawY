@@ -33,6 +33,48 @@ export const askSchema = z.object({
     .min(1)
     .max(3),
 });
+/** Where a visual idea comes from. Ideas weighed for one brief come from different kinds,
+ * so they are real alternatives rather than variations of the first that came to mind. */
+export const ideaKinds = {
+  convention: "the figure people usually draw for this kind of subject",
+  anatomy: "the real thing seen whole, in section or cut away",
+  journey: "where things happen and how they travel through space",
+  change: "one place or thing changing over time",
+  scale: "a comparison at true size or proportion",
+  mechanism: "the forces or reason behind it, shown acting",
+  analogy: "a familiar situation with the same structure",
+  scene: "a moment with characters that makes it felt",
+};
+/** What set_brief takes: the brief, with the ideas weighed before its concept. They come
+ * first so that the concept is chosen from them as it is written; they stay in the run's
+ * steps, not in the work. */
+const { subject, intent, audience, ...rest } = briefSchema.shape;
+export const settleSchema = z.object({
+  subject,
+  intent,
+  audience,
+  ideas: z
+    .array(
+      z.object({
+        kind: z.enum(Object.keys(ideaKinds) as [keyof typeof ideaKinds]),
+        idea: z.string().min(1),
+      }),
+    )
+    .min(2)
+    .max(3)
+    .refine(
+      (ideas) => new Set(ideas.map((i) => i.kind)).size === ideas.length,
+      "ideas 要来自不同的种类：同一种类的想法只是彼此的变体",
+    )
+    .describe(
+      `Two or three visual ideas for the intent, each of a different kind, one sentence each, weighed before the concept is chosen. Kinds: ${Object.entries(
+        ideaKinds,
+      )
+        .map(([k, v]) => `${k} (${v})`)
+        .join(", ")}`,
+    ),
+  ...rest,
+});
 export const findSchema = z.object({
   subjects: z.array(z.string().min(1)).min(1).max(12),
   kinds: z.array(z.enum(["picture", "drawing", "effect", "style"])).optional(),
@@ -49,8 +91,8 @@ export const tools = [
   ),
   fn(
     "set_brief",
-    "Settle the work's brief before drawing, or change it when the user changes direction. Each basis quotes the user's own words. Returns the style's tokens, guide and effects, and library materials found for the cast, with thumbnails.",
-    schema(briefSchema),
+    "Settle the work's brief before drawing, or change it when the user changes direction or the concept has to change. Each basis quotes the user's own words; the ideas and the concept chosen from them are your own and quote nothing. Returns the style's tokens, guide and effects, and library materials found for the cast, with thumbnails.",
+    schema(settleSchema),
   ),
   fn(
     "find_materials",

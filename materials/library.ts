@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { Index } from "./search.ts";
 import { measure, recolor, thumbnail } from "./media.ts";
 import {
@@ -120,6 +121,19 @@ export class Library {
     return m.origin.kind === "curated"
       ? join(this.seed, "files", name)
       : join(this.dir, "files", name);
+  }
+  /** Geographic data a library drawing projects (coastlines, rivers, borders), by layer. */
+  /** Its bytes and a tag of their content, so a rebuilt layer reaches every browser at
+   * once while an unchanged one is only revalidated. */
+  geo(layer: string) {
+    const path = join(this.seed, "geo", layer + ".json");
+    if (!/^[a-z]+(-\d+)*$/.test(layer) || !existsSync(path))
+      throw new LibraryError("没有这份地理数据: " + layer, 404);
+    const bytes = readFileSync(path);
+    return {
+      bytes,
+      etag: `"${createHash("sha1").update(bytes).digest("base64url")}"`,
+    };
   }
   /** Styles with the pictures that show them best: the style's own showcase first, then
    * the most used. */

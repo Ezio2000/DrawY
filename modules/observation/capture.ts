@@ -24,6 +24,10 @@ export interface Shot {
   }[];
   sceneId: string;
   label: string;
+  /** The opening view of the whole scene, as the canvas first shows it. */
+  overview: boolean;
+  /** The screenshot's size in pixels. */
+  viewport: { width: number; height: number };
   base64: string;
   errors: string[];
 }
@@ -47,7 +51,8 @@ export async function capture(
   ]);
   const shots: Shot[] = [];
   try {
-    const width = 1440;
+    const width = 1440,
+      height = 900;
     for (const scene of request.scenes) {
       const page = await context.newPage();
       const errors: string[] = [];
@@ -55,7 +60,7 @@ export async function capture(
       page.on("requestfailed", (req) =>
         errors.push(`${req.url()}: ${req.failure()?.errorText}`),
       );
-      await page.setViewportSize({ width, height: 900 });
+      await page.setViewportSize({ width, height });
       const load = async () => {
         errors.length = 0;
         // The runtime says when it is ready; a developing picture would hold up "load".
@@ -66,7 +71,7 @@ export async function capture(
           errors.push(String(e));
         }
       };
-      const shot = async (label: string) => {
+      const shot = async (label: string, overview = false) => {
         const geometry = await page.evaluate(() => {
           const camera = window.drawyView.view;
           const { materials } = window.drawyData.work;
@@ -134,6 +139,8 @@ export async function capture(
           ...geometry,
           sceneId: await page.evaluate(() => window.drawyData.sceneId),
           label: `${width}px / ${label}`,
+          overview,
+          viewport: { width, height },
           base64: (await page.screenshot()).toString("base64"),
           errors: [
             ...new Set([
@@ -147,7 +154,7 @@ export async function capture(
         );
       };
       await load();
-      await shot("全图");
+      await shot("全图", true);
       const { bounds, scale } = await page.evaluate(() => ({
         bounds: window.drawyView.renderer.bounds,
         scale: window.drawyView.view.scale,

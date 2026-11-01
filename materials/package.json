@@ -8,7 +8,8 @@
     "./testing": "./testing.ts"
   },
   "scripts": {
-    "start": "tsx server.ts"
+    "start": "tsx server.ts",
+    "geo": "tsx geo.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.0",

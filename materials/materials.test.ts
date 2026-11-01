@@ -168,3 +168,28 @@ it("serves recoloured icons and counts uses per work", async () => {
     "lighthouse-colored-pencil",
   );
 });
+
+it("serves the geographic layers the map drawing projects, and nothing else from disk", async () => {
+  const app = createServer(library);
+  const physical = (await (await app.request("/geo/physical")).json()) as {
+    rivers: { zh?: string }[];
+  };
+  expect(physical.rivers.some((r) => r.zh === "大渡河")).toBe(true);
+  const divisions = (await (await app.request("/geo/subdivisions")).json()) as {
+    names: { zh: string }[];
+  };
+  expect(divisions.names.map((p) => p.zh)).toContain("贵州省");
+  // Revalidated by content, so a rebuilt layer is never served stale.
+  const first = await app.request("/geo/countries");
+  const etag = first.headers.get("etag")!;
+  expect(first.headers.get("cache-control")).toBe("no-cache");
+  expect(
+    (
+      await app.request("/geo/countries", {
+        headers: { "if-none-match": etag },
+      })
+    ).status,
+  ).toBe(304);
+  expect((await app.request("/geo/nowhere")).status).toBe(404);
+  expect((await app.request("/geo/..%2Fdrawings")).status).toBe(404);
+});

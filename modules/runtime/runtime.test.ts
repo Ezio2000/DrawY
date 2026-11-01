@@ -66,6 +66,16 @@ beforeAll(async () => {
       };
       if (id === "g-late") held.push(send);
       else send();
+    } else if (url.pathname.startsWith("/materials/geo/")) {
+      res.setHeader("content-type", "application/json");
+      res.end(
+        readFileSync(
+          new URL(
+            `../../materials/seed/geo/${url.pathname.split("/").at(-1)}.json`,
+            import.meta.url,
+          ),
+        ),
+      );
     } else if (url.pathname === "/api/plantuml") {
       res.setHeader("content-type", "image/svg+xml");
       res.end(
@@ -756,6 +766,7 @@ it("draws every library drawing from its example data and routes elbow arrows at
           checklist: "带好证件",
           radar: "耐力",
           concentric: "怎么做",
+          geomap: "新迦太基",
         }).map(([id, w]) => [id, words(id)!.includes(w)]),
       ),
       // It leaves and arrives level, turning twice in between.
@@ -777,7 +788,7 @@ it("draws every library drawing from its example data and routes elbow arrows at
       venn: true,
       mindmap: true,
       ...Object.fromEntries(
-        "steps swimlanes bars donut gauge stat fishbone sequence gantt callout checklist radar concentric"
+        "steps swimlanes bars donut gauge stat fishbone sequence gantt callout checklist radar concentric geomap"
           .split(" ")
           .map((id) => [id, true]),
       ),
@@ -786,4 +797,105 @@ it("draws every library drawing from its example data and routes elbow arrows at
   });
   expect(result.leaves).toBeLessThan(0.01);
   expect(result.arrives).toBeLessThan(0.01);
+});
+
+it("maps across the 180th meridian in one piece and names what the view shows", async () => {
+  const drawings = seed("drawings") as DrawingMaterial[];
+  const geomap = drawings.find((m) => m.id === "geomap")!;
+  work.materials = {
+    geomap: useOf({
+      ...geomap,
+      source: readFileSync(
+        new URL("../../materials/seed/drawings/geomap.js", import.meta.url),
+        "utf8",
+      ),
+    } as Material)!,
+  };
+  const map = (id: string, y: number, data: Record<string, unknown>) => ({
+    id,
+    label: id,
+    drawingId: "geomap",
+    data,
+    bounds: { x: 0, y, width: 960, height: 600 },
+    anchors: {},
+    group: null,
+    target: null,
+  });
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      // From Chukotka to Alaska: the view centres on the 180th meridian.
+      map("bering", 0, {
+        borders: "countries",
+        routes: [
+          {
+            points: [
+              [170, 64],
+              [-150, 64],
+            ],
+            color: "#123456",
+          },
+        ],
+      }),
+      // A close view of China's south-west: provinces are named, so China is not.
+      map("divisions", 700, {
+        borders: "subdivisions",
+        bounds: [100, 24, 108, 30],
+        // The Yangtze between Yibin and Chongqing, about two degrees of longitude.
+        highlights: [
+          {
+            river: "长江",
+            from: [104.6, 28.77],
+            to: [106.55, 29.56],
+            color: "#654321",
+          },
+        ],
+      }),
+      // A coast seen close, drawn from the finer tiles.
+      map("coast", 1400, { bounds: [-1.6, 49.1, 0.1, 49.8] }),
+    ],
+    links: [],
+  };
+  await open();
+  const seen = await page.evaluate(() => {
+    const root = (id: string) =>
+      document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!;
+    const route = root("bering").querySelector<SVGPathElement>(
+      'path[stroke="#123456"]',
+    )!;
+    const text = (id: string) =>
+      [...root(id).querySelectorAll("text")].map((t) => t.textContent);
+    return {
+      errors: window.drawyErrors,
+      routes: root("bering").querySelectorAll('path[stroke="#123456"]').length,
+      width: route.getBBox().width,
+      stretch: root("divisions")
+        .querySelector<SVGPathElement>('path[stroke="#654321"]')
+        ?.getBBox().width,
+      bering: text("bering"),
+      divisions: text("divisions"),
+      tiles: performance
+        .getEntriesByType("resource")
+        .filter((e) => /\/materials\/geo\/detail-/.test(e.name)).length,
+      shore:
+        root("coast")
+          .querySelectorAll('path[fill="none"]')[0]
+          ?.getAttribute("d")?.length ?? 0,
+    };
+  });
+  expect(seen.errors).toEqual([]);
+  // One piece, about two thirds of the view wide, not a line across the whole world.
+  expect(seen.routes).toBe(1);
+  expect(seen.width).toBeGreaterThan(400);
+  expect(seen.width).toBeLessThan(800);
+  // Both countries are named though neither's label point is in view.
+  expect(seen.bering).toEqual(expect.arrayContaining(["俄罗斯", "美国"]));
+  expect(seen.divisions).toEqual(expect.arrayContaining(["贵州省", "四川省"]));
+  expect(seen.divisions).not.toContain("中国");
+  expect(seen.tiles).toBeGreaterThan(0);
+  // About 90 px a degree once the view widens to the module: the stretch (about 175
+  // px), not the whole river.
+  expect(seen.stretch).toBeGreaterThan(140);
+  expect(seen.stretch).toBeLessThan(240);
+  expect(seen.shore).toBeGreaterThan(1000);
 });

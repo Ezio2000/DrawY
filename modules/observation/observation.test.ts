@@ -27,7 +27,7 @@ it("requires latest revision and all populated scenes; runtime errors invalidate
     requireObserved(work, [all, { ...seen, errors: ["broken interaction"] }]),
   ).toThrow("root");
 });
-it("returns actual image inputs with revision and geometry, scopes captures and closes capture session", async () => {
+it("returns actual image inputs with revision, geometry and the brief to judge against, scopes captures and closes capture session", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-observe-")),
     db = new Storage(dir);
   try {
@@ -44,6 +44,8 @@ it("returns actual image inputs with revision and geometry, scopes captures and 
             {
               sceneId: "root",
               label: "1440px",
+              overview: true,
+              viewport: { width: 1440, height: 900 },
               base64: Buffer.from("image").toString("base64"),
               errors: [],
               camera: { x: 0, y: 0, scale: 1 },
@@ -59,7 +61,15 @@ it("returns actual image inputs with revision and geometry, scopes captures and 
       { sceneId: "root" },
       new AbortController().signal,
     );
-    expect(result.content[1]).toMatchObject({
+    // The concept sits beside the pictures it is judged against.
+    expect(result.content[0].text).toContain(work.brief!.concept);
+    // The pyramid spans 640×668 at scale 1 in a 1440×900 view: a third of it.
+    expect(JSON.parse(result.content[1].text).figure).toEqual({
+      width: 640,
+      height: 668,
+      viewFilled: 0.33,
+    });
+    expect(result.content[2]).toMatchObject({
       type: "input_image",
       image_url: "data:image/png;base64,aW1hZ2U=",
       detail: "high",

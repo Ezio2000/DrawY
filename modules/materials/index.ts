@@ -145,8 +145,8 @@ export function drawnWith(work: Work, sceneId: string, moduleId: string) {
 }
 
 /** Brings the work's materials in line with what it names: takes in new ones, refreshes
- * pictures that were still developing and lets go of those no longer named. Returns the
- * ids newly taken. */
+ * pictures that were still developing and library code, and lets go of those no longer
+ * named. Returns the ids newly taken. */
 export async function take(work: Work, explicit: string[], user: string) {
   const { called, mentioned, quoted } = named(work);
   // A material nothing in the work names any more leaves it, such as a picture an edit
@@ -155,8 +155,16 @@ export async function take(work: Work, explicit: string[], user: string) {
     if (![explicit, called, mentioned, quoted].some((s) => [...s].includes(id)))
       delete work.materials[id];
   const strict = [...new Set([...explicit, ...called])];
+  // Library code (drawings and effects) is taken again each time the work is written, so
+  // it is the version the author's catalog describes; a work left alone keeps rendering
+  // with the version it was saved with.
   const refresh = Object.values(work.materials)
-    .filter((m) => m.kind === "picture" && m.status === "developing")
+    .filter(
+      (m) =>
+        (m.kind === "picture" && m.status === "developing") ||
+        m.kind === "drawing" ||
+        m.kind === "effect",
+    )
     .map((m) => m.id);
   const lenient = [...new Set([...mentioned, ...refresh])].filter(
     (id) =>

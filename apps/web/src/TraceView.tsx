@@ -384,6 +384,13 @@ function Conversation({ items }: { items: Item[] }) {
               <Text text={pretty(item.output)} />
             </li>
           );
+        if (item.type === "configuration_update")
+          return (
+            <li key={i} data-role="reasoning">
+              <b>{w().thinkingEffort}</b>
+              <Text text={item.reasoning?.effort ?? pretty(item)} />
+            </li>
+          );
         if (item.type === "reasoning")
           return (
             <li key={i} data-role="reasoning">

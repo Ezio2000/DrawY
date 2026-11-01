@@ -9,6 +9,7 @@ import {
   type Picture,
   type Question,
   type Cause,
+  type Role,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { writeWork, setBrief } from "../workspace/index.ts";
@@ -28,7 +29,13 @@ import { develop, type Development } from "../images/index.ts";
 import { observe, requireObserved, Unavailable } from "../observation/index.ts";
 import { AUTHOR, catalogue } from "./prompts.ts";
 import { generate, textOf, type Item } from "../models/index.ts";
-import { tools, askSchema, findSchema, generateSchema } from "./tools.ts";
+import {
+  tools,
+  askSchema,
+  findSchema,
+  generateSchema,
+  settleSchema,
+} from "./tools.ts";
 import { partialJson } from "./partial.ts";
 import { tracer } from "../trace/index.ts";
 import type { MessageLocale } from "../contracts/messages.ts";
@@ -45,6 +52,17 @@ function activity(name: string, args: any): ToolActivity {
       return {
         name,
         subject: args.subject ?? "",
+        ...(Array.isArray(args.ideas) &&
+        args.ideas.some((i: any) => typeof i?.idea === "string" && i.idea)
+          ? {
+              ideas: args.ideas.flatMap((i: any) =>
+                typeof i?.idea === "string" && i.idea ? [i.idea] : [],
+              ),
+            }
+          : {}),
+        ...(typeof args.concept === "string" && args.concept
+          ? { concept: args.concept }
+          : {}),
         ...(args.register ? { register: args.register } : {}),
         ...(args.style ? { style: args.style } : {}),
       };
@@ -249,6 +267,23 @@ async function compact(
       replaced: true,
     });
   });
+}
+/** The most thought goes where the work is decided: the turn that answers the user (the
+ * brief and its concept, or whether to ask) and the turn that judges a look. Without it
+ * the author acts at once there, with almost no reasoning, whatever effort is configured;
+ * the turns that carry decisions out keep the configured effort. A configuration_update
+ * item changes the effort mid-conversation and lasts until the next one, while the
+ * request's own effort stays as configured so the cached prefix holds. GPT-6 models take
+ * these items. */
+function deliberate(input: Item[], role: Role, deciding: boolean) {
+  if (!/^gpt-(?:[6-9]|\d{2,})/.test(role.model)) return role.effort;
+  const effort = deciding ? "max" : role.effort;
+  const current =
+    input.findLast((i) => i.type === "configuration_update")?.reasoning
+      ?.effort ?? role.effort;
+  if (effort !== current)
+    input.push({ type: "configuration_update", reasoning: { effort } });
+  return effort;
 }
 /** A model request that failed on the way rather than on its content. */
 const transient = (e: unknown) =>
@@ -570,6 +605,8 @@ export class Agent {
       flushing(flush);
     };
     let seen = ctx.input.length;
+    // A request or an answer is decided on first; so is every look at the canvas.
+    let deciding = true;
     while (ctx.generations++ < 24) {
       let thinking: Extract<Step, { kind: "thinking" }> | undefined;
       // Progress the author writes takes its place among the steps as it streams.
@@ -578,6 +615,8 @@ export class Agent {
       ctx.input.push(...(await this.developed(store, run)));
       await compact(store, run, ctx, abort.signal);
       if (seen > ctx.input.length) seen = 0;
+      const effort = deliberate(ctx.input, settings.author, deciding);
+      deciding = false;
       const turnStart = Date.now();
       let firstOutput: number | undefined;
       const result = await tracer.span(
@@ -589,7 +628,7 @@ export class Agent {
           estimatedTokens: contextSize(ctx.input),
           request: {
             model: settings.author.model,
-            effort: settings.author.effort,
+            effort,
             serviceTier: settings.author.fast ? "priority" : "default",
             instructionsChars: instructions.length,
             tools: tools.length,
@@ -746,6 +785,7 @@ export class Agent {
           },
         );
         if (outcome.done) return;
+        if (call.name === "view_canvas" && !outcome.error) deciding = true;
         ctx.input.push({
           type: "function_call_output",
           call_id: call.call_id,
@@ -833,10 +873,12 @@ export class Agent {
           return { done: true, output: null, images: [] };
         }
         case "set_brief": {
+          // The ideas weighed stay on the step; the work keeps the brief.
+          const { ideas: _, ...brief } = settleSchema.parse(args);
           const { work, style } = await setBrief(
             store,
             run.workId,
-            args,
+            brief,
             said(store, run.workId),
             causeOf(run),
           );
