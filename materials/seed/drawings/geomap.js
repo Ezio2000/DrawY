@@ -375,13 +375,15 @@ const [physical, countries, subdivisions] = await Promise.all([
   borders === "subdivisions" ? layer("subdivisions") : null,
 ]);
 const visible = (lines) => lines.map((l) => decode(l)).flatMap(copies);
-// A city seen close: Natural Earth has nothing finer than 1:10m, so from about zoom 9
-// the ground comes from OpenStreetMap tiles instead (water, parks and woods, roads,
-// railways, waterway and road names), each a web-map tile of the view. Should any not
+// A region or a city seen close: Natural Earth has nothing finer than 1:10m, so from
+// about zoom 7 (a view a couple of hundred kilometres across) the ground comes from
+// OpenStreetMap tiles instead (water, parks and woods, roads by class, railways, waterway
+// and road names), each a web-map tile of the view; borders stay Natural Earth's, drawn
+// from the map's one point of view. Should any not
 // load, the map falls back to Natural Earth and says the streets are missing.
 const tiles = [];
 let streetsFailed = false;
-if (d.streets !== false && zoom >= 9) {
+if (d.streets !== false && zoom >= 7) {
   let tz = Math.min(14, Math.floor(zoom));
   const merc = (lat) =>
     (1 -
@@ -401,7 +403,7 @@ if (d.streets !== false && zoom >= 9) {
       y0: Math.max(0, Math.floor(merc(clampLat(view.n)) * n)),
       y1: Math.min(n - 1, Math.floor(merc(clampLat(view.s)) * n)),
     };
-    if ((range.x1 - range.x0 + 1) * (range.y1 - range.y0 + 1) <= 36 || tz <= 9)
+    if ((range.x1 - range.x0 + 1) * (range.y1 - range.y0 + 1) <= 36 || tz <= 7)
       break;
     tz--;
   }
@@ -475,10 +477,11 @@ if (city) {
 // in a shade of ink, those turned to it in a lighter paper, flat ground and sea untouched.
 // The raster is in degrees, so each pixel of the map looks up the degree it shows, which
 // holds for either projection. It fades as the view closes in, where the raster runs out
-// of detail, and is left to the streets in a city.
+// of detail, and is gone by the time the streets of a town are drawn (zoom 10). Under the
+// OpenStreetMap ground it lies on the land, under its parks, water and roads.
 let reliefOut = "";
 const reliefStrength =
-  city || d.relief === false ? 0 : Math.max(0, Math.min(1, (9 - zoom) / 2.5));
+  d.relief === false ? 0 : Math.max(0, Math.min(1, (10 - zoom) / 3));
 if (reliefStrength > 0) {
   try {
     const index = await layer("relief");
@@ -1298,10 +1301,11 @@ if (city) {
     tertiary: 4,
     minor: 2.6,
   };
+  // Main roads from a regional view, the rest as the view closes in on a town.
   const roadFrom = {
-    motorway: 9,
-    trunk: 9,
-    primary: 10,
+    motorway: 7,
+    trunk: 7.5,
+    primary: 9,
     secondary: 11,
     tertiary: 12,
     minor: 13.5,
@@ -1347,7 +1351,8 @@ if (city) {
       }));
     for (const r of roads)
       g += stroked(r.d, r.major ? mix(casing, ink, 0.15) : casing, r.w + 1.6);
-    const railD = path(t, data.rail, false);
+    // Railways once the view is down to a few towns.
+    const railD = zoom >= 9 ? path(t, data.rail, false) : "";
     g += stroked(railD, mix(muted, ink, 0.25), Math.max(0.8, 1.6 * f));
     g += stroked(
       railD,
@@ -1548,7 +1553,7 @@ const svg =
   <defs><clipPath id="geomap-view"><rect width="${W}" height="${H}"/></clipPath></defs>
   <g clip-path="url(#geomap-view)">
     ${world ? globeOut.sea : `<rect width="${W}" height="${H}" fill="${city ? cityLand : sea}"/>`}
-    ${cityOut ? `<g${texture}>${cityOut}</g>` : ""}${
+    ${city ? reliefOut : ""}${cityOut ? `<g${texture}>${cityOut}</g>` : ""}${
       city
         ? ""
         : shorePath === undefined
@@ -1559,7 +1564,7 @@ const svg =
     <path d="${lakePath}" fill="${sea}" stroke="${sea}" stroke-width=".8"/>
     <path d="${shorePath}" fill="none" stroke="${shore}" stroke-width="${sw * 0.6}" stroke-linejoin="round"/>`
     }
-    ${reliefOut}${borderOut}${riverOut}${highlightOut}${areaOut}${routeOut}${markOut}${refOut}${labelOut}${scaleOut}${creditOut}
+    ${city ? "" : reliefOut}${borderOut}${riverOut}${highlightOut}${areaOut}${routeOut}${markOut}${refOut}${labelOut}${scaleOut}${creditOut}
     ${world ? globeOut.rim : ""}
   </g>
   ${fade || world ? "" : `<rect x=".5" y=".5" width="${W - 1}" height="${H - 1}" fill="none" stroke="${mix(ink, paper, 0.35)}" stroke-width="1"/>`}

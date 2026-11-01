@@ -43,6 +43,12 @@ const ROADS = [
 const NAMED_ROADS = ["motorway", "trunk", "primary", "secondary", "tertiary"];
 const WATERWAYS = ["river", "canal", "stream"];
 const GREEN = new Set(["wood", "forest", "grass", "park", "garden"]);
+/** Parks as a town has them; national parks and reserves cover whole ranges in a regional
+ * view, where painting them green would read as woods. */
+const PARKS = new Set(["park", "garden", "historic", "zoo"]);
+/** The format of the boiled tiles kept on disk; a change of what is kept bumps it, so
+ * tiles boiled before are fetched again. */
+const FORMAT = 3;
 
 const encode = (points: { x: number; y: number }[]): Line => {
   const out: number[] = [];
@@ -57,10 +63,18 @@ const encode = (points: { x: number; y: number }[]): Line => {
 };
 const text = (v: unknown) =>
   typeof v === "string" && v.trim() ? v.trim() : undefined;
-const nameOf = (p: VectorTileFeature["properties"]) => ({
-  zh: text(p["name:zh-Hans"]) ?? text(p["name:zh"]) ?? text(p.name),
-  en: text(p["name:en"]) ?? text(p.name_en) ?? text(p.name),
-});
+// A Chinese name only when there is one (the local name when that is Chinese): a map in
+// Chinese falls back to the English name, not to French or Thai.
+const nameOf = (p: VectorTileFeature["properties"]) => {
+  const local = text(p.name);
+  return {
+    zh:
+      text(p["name:zh-Hans"]) ??
+      text(p["name:zh"]) ??
+      (local && /[\u3400-\u9fff]/.test(local) ? local : undefined),
+    en: text(p["name:en"]) ?? text(p.name_en) ?? local,
+  };
+};
 
 /** What the drawing uses from one vector tile. */
 export function boil(
@@ -118,7 +132,9 @@ export function boil(
     each(layer, (f, lines) => {
       if (
         f.type === 3 &&
-        (layer === "park" || GREEN.has(String(f.properties.class)))
+        (layer === "park"
+          ? PARKS.has(String(f.properties.class))
+          : GREEN.has(String(f.properties.class)))
       )
         out.green.push(...lines);
     });
@@ -193,7 +209,7 @@ export class Streets {
     )
       throw new StreetsError(`没有这块街道数据: ${z}/${x}/${y}`, 400);
     const key = `${z}-${x}-${y}`;
-    const path = join(this.dir, key + ".json");
+    const path = join(this.dir, `${key}.v${FORMAT}.json`);
     if (existsSync(path)) return readFileSync(path);
     let job = this.pending.get(key);
     if (!job) {

@@ -888,9 +888,9 @@ it("maps across the 180th meridian in one piece and names what the view shows", 
           },
         ],
       }),
-      // A coast seen close, drawn from the finer tiles (closer still, a city's view, the
-      // ground comes from street tiles instead).
-      map("coast", 1400, { bounds: [-2.4, 48.9, 0.6, 50] }),
+      // A coast seen close, drawn from the finer tiles (closer still, a region's view, the
+      // ground comes from OpenStreetMap's tiles instead).
+      map("coast", 1400, { bounds: [-8, 46, 4, 52] }),
     ],
     links: [],
   };
