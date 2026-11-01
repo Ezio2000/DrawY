@@ -68,7 +68,7 @@ PlantUML 服务只在 compose 里有，默认地址是 `http://localhost:8092`�
 - `trace`：基于 AsyncLocalStorage 嵌套记录，任何模块都可以直接调用 `tracer`，不需要层层传参。
 - `ui`：共享的 React 组件和品牌素材。
 
-`materials/` 是独立的素材包和服务，有自己的 SQLite、文件和检索。素材分四种：`picture`、`drawing`、`effect`、`style`。策展素材在 `materials/seed`：画法源码在 `seed/drawings/<id>.js`，元数据和示例数据在 `drawings.json`，图片在 `seed/files`。所有素材共用一个 ID 空间，新画法的 ID 不能和图片重名（比如已有图片 `tree`，层级树画法叫 `hierarchy`）。结构图画法（`node`、`hierarchy`、`layers`、`quadrant`、`compare`、`pyramid`、`venn`、`mindmap`）只用风格 token 上色、可选 `effect` 参数套质感；`runtime.test.ts` 会用示例数据把每个库画法都画一遍，新画法要在那里能无错画出。`apps/web` 是 React 19 前端，用 CSS Modules 写样式，图标用 lucide-react。
+`materials/` 是独立的素材包和服务，有自己的 SQLite、文件和检索。素材分四种：`picture`、`drawing`、`effect`、`style`。策展素材在 `materials/seed`：画法源码在 `seed/drawings/<id>.js`，元数据和示例数据在 `drawings.json`，图片在 `seed/files`。所有素材共用一个 ID 空间，新画法的 ID 不能和图片重名（比如已有图片 `tree`，层级树画法叫 `hierarchy`）。结构图与图表画法（`node`、`hierarchy`、`layers`、`quadrant`、`compare`、`pyramid`、`venn`、`mindmap`、`steps`、`swimlanes`、`fishbone`、`sequence`、`concentric`、`gantt`、`bars`、`donut`、`gauge`、`stat`、`radar`、`checklist`、`callout`）只用风格 token 上色、可选 `effect` 参数套质感（所以数据里别用 `effect` 当别的字段名）；新加的参数名要在 `i18n.tsx` 的 `edit.params`、选项值在 `edit.options` 补上中英文；`runtime.test.ts` 会用示例数据把每个库画法都画一遍，新画法要在那里能无错画出。`apps/web` 是 React 19 前端，用 CSS Modules 写样式，图标用 lucide-react。
 
 ## 改动时需要知道的约束
 

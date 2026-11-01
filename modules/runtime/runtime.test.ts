@@ -743,6 +743,19 @@ it("draws every library drawing from its example data and routes elbow arrows at
           pyramid: "自我实现",
           venn: "好产品",
           mindmap: "估算",
+          steps: "完善资料",
+          swimlanes: "后厨",
+          bars: "蛋白质",
+          donut: "氮气",
+          gauge: "空气质量指数",
+          stat: "8848",
+          fishbone: "交付延期",
+          sequence: "返回令牌",
+          gantt: "上线",
+          callout: "为什么天空是蓝色的？",
+          checklist: "带好证件",
+          radar: "耐力",
+          concentric: "怎么做",
         }).map(([id, w]) => [id, words(id)!.includes(w)]),
       ),
       // It leaves and arrives level, turning twice in between.
@@ -763,6 +776,11 @@ it("draws every library drawing from its example data and routes elbow arrows at
       pyramid: true,
       venn: true,
       mindmap: true,
+      ...Object.fromEntries(
+        "steps swimlanes bars donut gauge stat fishbone sequence gantt callout checklist radar concentric"
+          .split(" ")
+          .map((id) => [id, true]),
+      ),
     },
     turns: 2,
   });
