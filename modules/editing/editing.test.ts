@@ -134,6 +134,38 @@ describe("hand edits", () => {
     ).toBe("发挥\n天赋");
   });
 
+  it("renames a place and every reference to it by that name, and only then", () => {
+    const work = fixture();
+    work.scenes.root.modules[0].data = {
+      places: [
+        { name: "陈家祠", lon: 113.24, lat: 23.13 },
+        { name: "沙面", lon: 113.24, lat: 23.11 },
+      ],
+      routes: [{ points: ["陈家祠", "沙面"], label: "陈家祠" }],
+      highlights: [{ river: "珠江", from: "陈家祠", to: "沙面" }],
+    };
+    const next = apply(
+      work,
+      replace(work, "root", "level-0", "text", "陈家祠", "陈氏书院"),
+    );
+    expect(module(next, "level-0").data).toEqual({
+      places: [
+        { name: "陈氏书院", lon: 113.24, lat: 23.13 },
+        { name: "沙面", lon: 113.24, lat: 23.11 },
+      ],
+      routes: [{ points: ["陈氏书院", "沙面"], label: "陈氏书院" }],
+      highlights: [{ river: "珠江", from: "陈氏书院", to: "沙面" }],
+    });
+    // Words that are no entry's name change where they were pointed at, and only there.
+    work.scenes.root.modules[0].data = { title: "基础", note: "基础" };
+    expect(
+      module(
+        apply(work, replace(work, "root", "level-0", "text", "基础", "根基")),
+        "level-0",
+      ).data,
+    ).toEqual({ title: "根基", note: "基础" });
+  });
+
   it("retypes words written once in a drawing's code, escaped for where they stand", () => {
     const work = fixture();
     const next = apply(
