@@ -227,7 +227,7 @@ it("boils a city's OpenStreetMap tile down to its water, ways and names, fetched
     // Central Guangzhou: the Pearl River as water and by name, its main roads named.
     expect(city.extent).toBe(4096);
     expect(city.water.length).toBeGreaterThan(0);
-    expect(city.waterways.map((w) => w.zh)).toContain("珠江");
+    expect(city.waterways.map((w) => w.name)).toContain("珠江");
     expect(city.roads.map((w) => w.class)).toEqual(
       expect.arrayContaining(["trunk", "primary", "secondary"]),
     );

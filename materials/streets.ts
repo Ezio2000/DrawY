@@ -26,9 +26,9 @@ export type StreetTile = {
   extent: number;
   water: Line[];
   green: Line[];
-  waterways: { class: string; zh?: string; en?: string; lines: Line[] }[];
+  waterways: { class: string; name?: string; lines: Line[] }[];
   roads: { class: string; lines: Line[] }[];
-  names: { class: string; zh?: string; en?: string; lines: Line[] }[];
+  names: { class: string; name: string; lines: Line[] }[];
   rail: Line[];
 };
 
@@ -48,7 +48,7 @@ const GREEN = new Set(["wood", "forest", "grass", "park", "garden"]);
 const PARKS = new Set(["park", "garden", "historic", "zoo"]);
 /** The format of the boiled tiles kept on disk; a change of what is kept bumps it, so
  * tiles boiled before are fetched again. */
-const FORMAT = 3;
+const FORMAT = 4;
 
 const encode = (points: { x: number; y: number }[]): Line => {
   const out: number[] = [];
@@ -63,18 +63,9 @@ const encode = (points: { x: number; y: number }[]): Line => {
 };
 const text = (v: unknown) =>
   typeof v === "string" && v.trim() ? v.trim() : undefined;
-// A Chinese name only when there is one (the local name when that is Chinese): a map in
-// Chinese falls back to the English name, not to French or Thai.
-const nameOf = (p: VectorTileFeature["properties"]) => {
-  const local = text(p.name);
-  return {
-    zh:
-      text(p["name:zh-Hans"]) ??
-      text(p["name:zh"]) ??
-      (local && /[\u3400-\u9fff]/.test(local) ? local : undefined),
-    en: text(p["name:en"]) ?? text(p.name_en) ?? local,
-  };
-};
+// Names as the place itself writes them; putting them into the reader's language is for
+// whoever makes the map, not for the data.
+const nameOf = (p: VectorTileFeature["properties"]) => text(p.name);
 
 /** What the drawing uses from one vector tile. */
 export function boil(
@@ -146,9 +137,10 @@ export function boil(
       f.properties.brunnel === "tunnel"
     )
       return;
-    group(out.waterways, (w) => `${w.class}|${w.zh}|${w.en}`, {
+    const name = nameOf(f.properties);
+    group(out.waterways, (w) => `${w.class}|${w.name}`, {
       class: cls,
-      ...nameOf(f.properties),
+      ...(name ? { name } : {}),
       lines,
     });
   });
@@ -162,19 +154,14 @@ export function boil(
   each("transportation_name", (f, lines) => {
     const cls = String(f.properties.class);
     if (f.type !== 2 || !NAMED_ROADS.includes(cls)) return;
-    const names = nameOf(f.properties);
-    if (!names.zh && !names.en) return;
-    group(out.names, (r) => `${r.class}|${r.zh}|${r.en}`, {
+    const name = nameOf(f.properties);
+    if (!name) return;
+    group(out.names, (r) => `${r.class}|${r.name}`, {
       class: cls,
-      ...names,
+      name,
       lines,
     });
   });
-  // Absent names are left out rather than written as null.
-  for (const list of [out.waterways, out.names])
-    for (const item of list)
-      for (const k of ["zh", "en"] as const)
-        if (item[k] === undefined) delete item[k];
   return out;
 }
 

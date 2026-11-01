@@ -1156,7 +1156,7 @@ for (const h of d.highlights || []) {
     pool.push(
       ...tiles.flatMap((t) =>
         t.data.waterways
-          .filter((w) => names.includes(w.zh) || names.includes(w.en))
+          .filter((w) => names.includes(w.name))
           .flatMap((w) =>
             w.lines.map((l) =>
               tileLine(t, l).map(([lon, lat]) => [lon + t.dx, lat]),
@@ -1369,7 +1369,8 @@ if (city) {
       const by = new Map();
       for (const t of tiles)
         for (const item of t.data[list]) {
-          const name = zh ? item.zh || item.en : item.en || item.zh;
+          // As the place writes it, whatever the map's language.
+          const name = item.name;
           if (!name) continue;
           const e = by.get(name) ?? { name, rank: rank(item), lines: [] };
           e.lines.push(
