@@ -2,6 +2,7 @@ import { z } from "zod";
 import { headers } from "../models/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { DomainError, type Work } from "../contracts/index.ts";
+import type { Material, StyleMaterial } from "@drawy/materials/schema";
 import { library, styleOf } from "../materials/index.ts";
 import { tracer } from "../trace/index.ts";
 
@@ -34,12 +35,47 @@ export interface Development {
   settled?: { status: "ready" | "failed"; error?: string; at: number };
 }
 
+/** Pictures sent only for their look, so a new picture matches the style's samples and
+ * the pictures the work already has, rather than the model's idea of the style's name. */
+const STYLE_REFERENCES = 2;
+
+/** The pictures a new one is painted to look like: those the work already has in its
+ * style, then the style's own samples, each of the same role first. A picture of the
+ * request's own references is not repeated. */
+export async function styleReferences(
+  work: Work,
+  style: Pick<StyleMaterial, "id" | "samples">,
+  role: string,
+  references: string[],
+  user: string,
+) {
+  const samples = await library
+    .get(style.samples, user, true)
+    .catch(() => [] as Material[]);
+  const own = Object.values(work.materials).filter(
+    (m) => m.kind === "picture" && m.style === style.id && m.status === "ready",
+  ) as { id: string; role: string }[];
+  const shown = samples.filter(
+    (m) => m.kind === "picture" && m.status === "ready",
+  ) as { id: string; role: string }[];
+  const ranked = [
+    ...own.filter((m) => m.role === role),
+    ...shown.filter((m) => m.role === role),
+    ...own,
+    ...shown,
+  ].map((m) => m.id);
+  return [...new Set(ranked)]
+    .filter((id) => !references.includes(id))
+    .slice(0, STYLE_REFERENCES);
+}
+
 /** Everything the picture model is asked: the subject in the work's style, composed to be
  * placed on the canvas. */
 function promptFor(
   r: z.infer<typeof pictureRequestSchema>,
   style: string,
   direction: string,
+  styled = 0,
 ) {
   // The role decides the background: a cut-out stands on transparency, a scene is whole.
   const framing = {
@@ -52,8 +88,21 @@ function promptFor(
       "A self-contained vignette: the scene fills the frame, but its edges dissolve softly into plain off-white paper; no border, no frame.",
     texture: "A seamless full-bleed surface with no focal subject.",
   }[r.role];
+  // The images are sent in this order: what to work from, then what to look like.
+  const given = r.references.length,
+    all = given + styled;
+  const span = (from: number, to: number) =>
+    from === to ? `Image ${from}` : `Images ${from}–${to}`;
+  const shown = [
+    given
+      ? `${span(1, given)}: what to work from; keep the subject, character and details the subject line asks to keep.`
+      : "",
+    styled
+      ? `${span(given + 1, all)}: style references only. Match their medium, line quality, stroke weight, palette, shading, texture and level of detail so the new picture sits beside them as one set; do not copy their subjects, objects or composition.`
+      : "",
+  ].filter(Boolean);
   // The medium comes first: picture models otherwise drift towards a realistic default.
-  return `${style}\nSubject: ${r.depicts}\n${framing} Nothing else in the frame. No text, letters, numbers, arrows, labels or watermark.\nLook and mood only (adds nothing to the content): ${direction}`;
+  return `${style}\nSubject: ${r.depicts}\n${framing} Nothing else in the frame. No text, letters, numbers, arrows, labels or watermark.\nLook and mood only (adds nothing to the content): ${direction}${shown.length ? "\n" + shown.join("\n") : ""}`;
 }
 
 /** Calls the picture model and returns the bytes of one picture. */
@@ -186,7 +235,19 @@ export async function develop(
         references: request.references.map((ref) => keyed.get(ref) ?? ref),
       };
       const id = ids[i];
-      const prompt = promptFor(r, style.prompt, work.brief!.direction);
+      const styled = await styleReferences(
+        work,
+        style,
+        r.role,
+        r.references,
+        store.userId,
+      );
+      const prompt = promptFor(
+        r,
+        style.prompt,
+        work.brief!.direction,
+        styled.length,
+      );
       const [width, height] = sizes[r.aspect];
       await library.reserve(
         {
@@ -205,6 +266,7 @@ export async function develop(
             prompt,
             model,
             ...(r.references.length ? { references: r.references } : {}),
+            ...(styled.length ? { styleReferences: styled } : {}),
           },
         },
         store.userId,
@@ -222,10 +284,11 @@ export async function develop(
               size: `${width}x${height}`,
               model,
               references: r.references,
+              styleReferences: styled,
             },
             async (span) => {
               const references = await Promise.all(
-                r.references.map((ref) =>
+                [...r.references, ...styled].map((ref) =>
                   library.thumb(ref, store.userId, 512),
                 ),
               );

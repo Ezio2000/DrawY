@@ -548,11 +548,22 @@ function Attributes({
                 <dd>{a.references.join(", ")}</dd>
               </>
             )}
+            {!!a.styleReferences?.length && (
+              <>
+                <dt>{w().styleReferences}</dt>
+                <dd>{a.styleReferences.join(", ")}</dd>
+              </>
+            )}
           </dl>
           <div className={cx("shots")}>
-            {(a.referenceImages || []).map((url: string, i: number) => (
-              <Shot key={i} url={url} label={w().reference(a.references?.[i] ?? "")} />
-            ))}
+            {(a.referenceImages || []).map((url: string, i: number) => {
+              const given = a.references?.length ?? 0;
+              const label =
+                i < given
+                  ? w().reference(a.references[i])
+                  : w().styleReference(a.styleReferences?.[i - given] ?? "");
+              return <Shot key={i} url={url} label={label} />;
+            })}
             {a.url && <Shot url={a.url} label={w().generated} />}
           </div>
         </Part>,

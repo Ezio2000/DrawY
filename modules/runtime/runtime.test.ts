@@ -1,14 +1,14 @@
 import { beforeAll, afterAll, beforeEach, afterEach, it, expect } from "vitest";
 import { chromium, type Browser, type Page } from "playwright";
 import { readFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { documentFor } from "./document.ts";
 import { fixture } from "./fixture.ts";
 import { capture } from "../observation/capture.ts";
 import { fit, zoom } from "../contracts/geometry.ts";
 import { useOf } from "../materials/index.ts";
-import type { Material } from "@drawy/materials/schema";
+import type { DrawingMaterial, Material } from "@drawy/materials/schema";
 
 /** Curated materials as the library serves them. */
 const seed = (name: string) =>
@@ -45,6 +45,15 @@ beforeAll(async () => {
     } else if (url.pathname.startsWith("/materials/files/")) {
       const id = url.pathname.split("/").at(-1)!;
       const send = () => {
+        // Curated icons are SVG; the rest are WebP.
+        const svg = new URL(
+          `../../materials/seed/files/${id}.svg`,
+          import.meta.url,
+        );
+        if (existsSync(svg)) {
+          res.setHeader("content-type", "image/svg+xml");
+          return res.end(readFileSync(svg));
+        }
         res.setHeader("content-type", "image/webp");
         res.end(
           readFileSync(
@@ -639,4 +648,142 @@ it("stands pictures on their box, reports where they are seen and wires library 
           .shadowRoot!.querySelector(".v")!.textContent,
     ),
   ).toBe("1.5 m");
+});
+
+it("draws every library drawing from its example data and routes elbow arrows at right angles", async () => {
+  const drawings = seed("drawings") as DrawingMaterial[];
+  const source = (id: string) =>
+    readFileSync(
+      new URL(`../../materials/seed/drawings/${id}.js`, import.meta.url),
+      "utf8",
+    );
+  work.materials = Object.fromEntries(
+    [
+      ...drawings.map((m) => ({ ...m, source: source(m.id) }) as Material),
+      ...seed("pictures"),
+      ...seed("effects"),
+    ].map((m) => [m.id, useOf(m)!]),
+  );
+  let y = 0;
+  const place = (
+    id: string,
+    drawingId: string,
+    bounds: { x: number; y: number; width: number; height: number },
+    data: Record<string, unknown>,
+    anchors = {},
+  ) => ({
+    id,
+    label: id,
+    drawingId,
+    data,
+    bounds,
+    anchors,
+    group: null,
+    target: null,
+  });
+  const modules = drawings.map((m) => {
+    const at = place(m.id, m.id, { x: 0, y, ...m.size }, m.example);
+    y += m.size.height + 40;
+    return at;
+  });
+  const sides = { left: { x: 0, y: 0.5 }, right: { x: 1, y: 0.5 } };
+  modules.push(
+    place(
+      "from",
+      "node",
+      { x: 1000, y: 0, width: 180, height: 70 },
+      { title: "下单" },
+      sides,
+    ),
+    place(
+      "to",
+      "node",
+      { x: 1300, y: 240, width: 180, height: 70 },
+      { title: "支付" },
+      sides,
+    ),
+  );
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules,
+    links: [
+      {
+        id: "route",
+        drawingId: "arrow",
+        from: { moduleId: "from", anchor: "right" },
+        to: { moduleId: "to", anchor: "left" },
+        data: { route: "elbow" },
+      },
+    ],
+    checks: [],
+    interactionId: null,
+  };
+  await open();
+  const result = await page.evaluate(() => {
+    const words = (id: string) =>
+      document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!
+        .textContent;
+    const path = document
+      .querySelector('[data-link-id="route"]')!
+      .shadowRoot!.querySelector("path")!;
+    const length = path.getTotalLength();
+    const at = (l: number) => path.getPointAtLength(l);
+    return {
+      errors: window.drawyErrors,
+      blank: [...document.querySelectorAll<HTMLElement>("[data-module-id]")]
+        .filter((h) => !h.shadowRoot!.querySelector("svg,img,div"))
+        .map((h) => h.dataset.moduleId),
+      words: Object.fromEntries(
+        Object.entries({
+          node: "订单服务",
+          hierarchy: "真菌",
+          layers: "对象存储",
+          quadrant: "立即去做",
+          compare: "纯电",
+          pyramid: "自我实现",
+          venn: "好产品",
+          mindmap: "估算",
+          steps: "完善资料",
+          swimlanes: "后厨",
+          bars: "蛋白质",
+          donut: "氮气",
+          gauge: "空气质量指数",
+          stat: "8848",
+          fishbone: "交付延期",
+          sequence: "返回令牌",
+          gantt: "上线",
+          callout: "为什么天空是蓝色的？",
+          checklist: "带好证件",
+          radar: "耐力",
+          concentric: "怎么做",
+        }).map(([id, w]) => [id, words(id)!.includes(w)]),
+      ),
+      // It leaves and arrives level, turning twice in between.
+      leaves: Math.abs(at(10).y - at(0).y),
+      arrives: Math.abs(at(length).y - at(length - 10).y),
+      turns: (path.getAttribute("d")!.match(/Q/g) || []).length,
+    };
+  });
+  expect(result).toMatchObject({
+    errors: [],
+    blank: [],
+    words: {
+      node: true,
+      hierarchy: true,
+      layers: true,
+      quadrant: true,
+      compare: true,
+      pyramid: true,
+      venn: true,
+      mindmap: true,
+      ...Object.fromEntries(
+        "steps swimlanes bars donut gauge stat fishbone sequence gantt callout checklist radar concentric"
+          .split(" ")
+          .map((id) => [id, true]),
+      ),
+    },
+    turns: 2,
+  });
+  expect(result.leaves).toBeLessThan(0.01);
+  expect(result.arrives).toBeLessThan(0.01);
 });
