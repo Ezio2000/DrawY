@@ -248,6 +248,24 @@ export interface Capture {
   name: string;
   url: string;
 }
+/** How fast the model's requests are processed, cheapest and slowest first. The API
+ * offers flex processing, the ChatGPT account ultrafast; both offer default and fast. */
+export const speeds = {
+  api: ["flex", "default", "fast"],
+  oauth: ["default", "fast", "ultrafast"],
+} as const;
+export type Speed = (typeof speeds)[keyof typeof speeds][number];
+/** The Responses API `service_tier` each speed asks for. */
+export const serviceTiers: Record<Speed, string> = {
+  flex: "flex",
+  default: "default",
+  fast: "priority",
+  ultrafast: "ultrafast",
+};
+/** The speed a channel can serve: the one asked for if the channel has it, otherwise
+ * default, which every channel has. */
+export const speedFor = (channel: Role["channel"], speed: Speed): Speed =>
+  (speeds[channel] as readonly Speed[]).includes(speed) ? speed : "default";
 export interface Role {
   channel: "api" | "oauth";
   baseUrl: string;
@@ -255,7 +273,7 @@ export interface Role {
   accountId?: string;
   model: string;
   effort: "low" | "medium" | "high" | "xhigh";
-  fast: boolean;
+  speed: Speed;
 }
 export interface Settings {
   author: Role;
@@ -275,7 +293,7 @@ export const defaultSettings = (): Settings => ({
     credential: "",
     model: "gpt-6-astra",
     effort: "medium",
-    fast: false,
+    speed: "default",
   },
   image: {
     channel: "api",
@@ -292,11 +310,15 @@ export const roleSchema = z.object({
   accountId: z.string().optional(),
   model: z.string().min(1),
   effort: z.enum(["low", "medium", "high", "xhigh"]),
-  fast: z.boolean(),
+  speed: z.enum(["flex", "default", "fast", "ultrafast"]),
 });
 export const settingsSchema = z.object({
-  author: roleSchema,
-  image: roleSchema.omit({ effort: true, fast: true }),
+  // A speed the channel lacks is saved as default, which every channel has.
+  author: roleSchema.transform((r) => ({
+    ...r,
+    speed: speedFor(r.channel, r.speed),
+  })),
+  image: roleSchema.omit({ effort: true, speed: true }),
   preferences: z.string(),
 });
 export interface Observation {

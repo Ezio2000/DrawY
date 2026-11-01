@@ -204,7 +204,12 @@ export class UserStore {
     const r = this.storage.db
       .prepare("SELECT data FROM settings WHERE user_id=?")
       .get(this.userId);
-    return r ? JSON.parse(r.data as string) : defaultSettings();
+    if (!r) return defaultSettings();
+    const value = JSON.parse(r.data as string);
+    // Settings saved before speeds had a Fast switch instead.
+    const { fast, ...author } = value.author;
+    if (!author.speed) author.speed = fast ? "fast" : "default";
+    return { ...value, author };
   }
   saveSettings(value: Settings) {
     this.storage.db

@@ -10,6 +10,8 @@ import {
   type Question,
   type Cause,
   type Role,
+  serviceTiers,
+  speedFor,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { writeWork, setBrief } from "../workspace/index.ts";
@@ -515,7 +517,7 @@ export class Agent {
             )?.text,
             model: settings.author.model,
             effort: settings.author.effort,
-            fast: settings.author.fast,
+            speed: settings.author.speed,
             imageModel: settings.image.model,
           },
           async (execution) => {
@@ -629,7 +631,10 @@ export class Agent {
           request: {
             model: settings.author.model,
             effort,
-            serviceTier: settings.author.fast ? "priority" : "default",
+            serviceTier:
+              serviceTiers[
+                speedFor(settings.author.channel, settings.author.speed)
+              ],
             instructionsChars: instructions.length,
             tools: tools.length,
           },

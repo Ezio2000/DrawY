@@ -1,7 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { UserRound, PenTool, Image as ImageIcon } from "lucide-react";
 import { Segmented, Switch, Spinner, pageLocale } from "@drawy/ui";
-import type { Settings as Value } from "../../../modules/contracts/index.ts";
+import {
+  speeds,
+  speedFor,
+  type Settings as Value,
+} from "../../../modules/contracts/index.ts";
 import { api } from "./api.ts";
 import { cx } from "./cx.ts";
 import { Title } from "./Title.tsx";
@@ -110,7 +114,14 @@ export function Settings() {
               key={c}
               aria-pressed={value[key].channel === c}
               onClick={() =>
-                role(key, { channel: c, baseUrl: channels[c].baseUrl })
+                role(key, {
+                  channel: c,
+                  baseUrl: channels[c].baseUrl,
+                  // Each connection offers its own speeds; one it lacks falls back.
+                  ...(key === "author"
+                    ? { speed: speedFor(c, value.author.speed) }
+                    : {}),
+                })
               }
             >
               {c === "api" ? "OpenAI API" : w.chatgpt}
@@ -205,11 +216,18 @@ export function Settings() {
                 ))}
               </Segmented>
             </Row>
-            <Row label={w.fast} hint={w.fastHint}>
-              <Switch
-                checked={value.author.fast}
-                onChange={(fast) => role("author", { fast })}
-              />
+            <Row label={w.speed} hint={w.speedHints[value.author.speed]}>
+              <Segmented label={w.speed}>
+                {speeds[value.author.channel].map((v) => (
+                  <button
+                    key={v}
+                    aria-pressed={value.author.speed === v}
+                    onClick={() => role("author", { speed: v })}
+                  >
+                    {w.speeds[v]}
+                  </button>
+                ))}
+              </Segmented>
             </Row>
           </section>
         )}

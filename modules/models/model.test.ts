@@ -7,7 +7,7 @@ const role: Role = {
   credential: "test",
   model: "gpt-6-astra",
   effort: "medium",
-  fast: false,
+  speed: "default",
 };
 afterEach(() => vi.unstubAllGlobals());
 it("retains completed streamed tool arguments when final output is empty", async () => {
@@ -73,9 +73,18 @@ it("does not treat a disconnected stream as completion", async () => {
   ).rejects.toThrow("中断");
 });
 
-it.each(["api", "oauth"] as const)(
-  "sends the selected processing tier for %s without changing reasoning effort",
-  async (channel) => {
+it.each([
+  ["api", "flex", "flex"],
+  ["api", "default", "default"],
+  ["api", "fast", "priority"],
+  ["api", "ultrafast", "default"],
+  ["oauth", "flex", "default"],
+  ["oauth", "default", "default"],
+  ["oauth", "fast", "priority"],
+  ["oauth", "ultrafast", "ultrafast"],
+] as const)(
+  "sends %s speed %s as service tier %s without changing reasoning effort",
+  async (channel, speed, tier) => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -90,19 +99,17 @@ it.each(["api", "oauth"] as const)(
           ),
       ),
     );
-    for (const fast of [true, false]) {
-      await generate(
-        { ...role, channel, fast },
-        "",
-        [],
-        [],
-        new AbortController().signal,
-      );
-      const options = vi.mocked(fetch).mock.calls.at(-1)![1] as RequestInit;
-      const body = JSON.parse(options.body as string);
-      expect(body.service_tier).toBe(fast ? "priority" : "default");
-      expect(body.reasoning.effort).toBe("medium");
-    }
+    await generate(
+      { ...role, channel, speed },
+      "",
+      [],
+      [],
+      new AbortController().signal,
+    );
+    const options = vi.mocked(fetch).mock.calls.at(-1)![1] as RequestInit;
+    const body = JSON.parse(options.body as string);
+    expect(body.service_tier).toBe(tier);
+    expect(body.reasoning.effort).toBe("medium");
   },
 );
 it("keeps requests that extend one another on their cached prefix", async () => {
