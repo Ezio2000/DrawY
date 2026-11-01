@@ -31,7 +31,10 @@ for (const channel of ["api", "oauth"] as const)
       credential: "test",
       baseUrl: "https://example.invalid",
     };
-    store.saveSettings(settings);
+    store.storage.saveModels({
+      ...store.storage.models(),
+      image: settings.image,
+    });
     const png = await picture();
     const calls: RequestInit[] = [];
     library.route(async (_url, init) => {
@@ -59,8 +62,8 @@ for (const channel of ["api", "oauth"] as const)
         // The style's own samples, the object first, show what the style looks like.
         styleReferences: ["apple-textbook", "lighthouse-textbook"],
       },
-      // Made from a public picture, so it joins the library.
-      owner: null,
+      // Whatever a user generates is theirs until it is published.
+      owner: store.userId,
       file: { mediaType: "image/webp" },
     });
     const sent = calls[0];
@@ -90,7 +93,10 @@ it("retries a dropped connection or a busy server before giving up", async () =>
     credential: "test",
     baseUrl: "https://example.invalid",
   };
-  store.saveSettings(settings);
+  store.storage.saveModels({
+    ...store.storage.models(),
+    image: settings.image,
+  });
   const png = await picture();
   let calls = 0;
   library.route(async () => {
@@ -119,7 +125,10 @@ it("records a failed picture so the work and the author both learn of it", async
     credential: "test",
     baseUrl: "https://example.invalid",
   };
-  store.saveSettings(settings);
+  store.storage.saveModels({
+    ...store.storage.models(),
+    image: settings.image,
+  });
   library.route(async () => new Response("unsafe prompt", { status: 400 }));
   const [made] = await develop(store, fixture(), [
     { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
@@ -138,7 +147,7 @@ it("records a failed picture so the work and the author both learn of it", async
   ).rejects.toThrow("set_brief");
 });
 
-it("makes pictures that reference another in the same request after it, privately when the reference is private", async () => {
+it("makes pictures that reference another in the same request after it, all private to their maker", async () => {
   const store = db.scoped(register(db, "author", "abcdef").id);
   const settings = store.settings();
   settings.image = {
@@ -147,7 +156,10 @@ it("makes pictures that reference another in the same request after it, privatel
     credential: "test",
     baseUrl: "https://example.invalid",
   };
-  store.saveSettings(settings);
+  store.storage.saveModels({
+    ...store.storage.models(),
+    image: settings.image,
+  });
   const png = await picture();
   const prompts: { subject: string; references: number }[] = [];
   library.route(async (_url, init) => {
@@ -192,8 +204,8 @@ it("makes pictures that reference another in the same request after it, privatel
   await Promise.all([rabbit.done, scene.done, kept.done]);
   const made = await client.get([rabbit.id, scene.id, kept.id], store.userId);
   expect(made.map((m) => [m.status, m.owner, m.origin.references])).toEqual([
-    ["ready", null, undefined],
-    ["ready", null, [rabbit.id]],
+    ["ready", store.userId, undefined],
+    ["ready", store.userId, [rabbit.id]],
     ["ready", store.userId, [mine.id]],
   ]);
   // The scene was painted from the rabbit, after the rabbit existed.
@@ -215,7 +227,10 @@ it("paints new pictures to look like the ones the work already has in its style"
     credential: "test",
     baseUrl: "https://example.invalid",
   };
-  store.saveSettings(settings);
+  store.storage.saveModels({
+    ...store.storage.models(),
+    image: settings.image,
+  });
   const png = await picture();
   const sent: { prompt: string; images: number }[] = [];
   library.route(async (url, init) => {
@@ -247,7 +262,7 @@ it("paints new pictures to look like the ones the work already has in its style"
   // The work's own whale comes first, then the style's object sample.
   expect(made.origin.styleReferences).toEqual([earlier.id, "apple-textbook"]);
   expect(made.origin.references).toBeUndefined();
-  expect(made.owner).toBeNull();
+  expect(made.owner).toBe(store.userId);
   expect(sent[1].images).toBe(2);
   expect(sent[1].prompt).toContain("Images 1–2: style references only");
   expect(sent[1].prompt).not.toContain("what to work from");

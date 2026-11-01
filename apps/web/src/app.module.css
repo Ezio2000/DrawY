@@ -274,6 +274,14 @@
   color: var(--text-3);
 }
 
+.account-menu p small {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--fill);
+  font-size: 11.5px;
+}
+
 /* ---------- Popovers: menus that open from a control ---------- */
 
 .popover {
@@ -979,6 +987,88 @@ h2:has(> .title) {
   background: var(--ai-deep);
   border-radius: 50%;
   padding: 2px;
+}
+
+/* The model picker: the model's name beside the send button, its menu of models each
+   with a line on what it is for, as in Claude. */
+.model-picker {
+  position: relative;
+}
+
+.model-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  max-width: 200px;
+  padding: 0 8px 0 10px;
+  margin-right: 6px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+
+.model-button > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.model-button:hover,
+.model-button[aria-expanded="true"] {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.models-menu {
+  top: calc(100% + 8px);
+  right: 0;
+  width: 280px;
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+}
+
+.composer[data-place="dock"] .models-menu {
+  top: auto;
+  bottom: calc(100% + 10px);
+  transform-origin: bottom right;
+}
+
+.models-menu > button {
+  min-height: 48px;
+  padding: 7px 10px;
+  white-space: normal;
+}
+
+.models-menu > button > span {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.models-menu b {
+  font-weight: 500;
+}
+
+.models-menu small {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-3);
+}
+
+.models-menu > button > svg:last-child {
+  flex: none;
+  color: var(--ai-deep);
+}
+
+.models-menu > button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.models-menu > button:disabled:hover {
+  background: none;
 }
 
 /* ---------- Workspace ---------- */
@@ -3233,6 +3323,105 @@ button.now:hover .now-line {
   border-radius: 12px;
   font-size: 14px;
   line-height: 1.6;
+}
+
+.setting select {
+  width: 100%;
+  height: 38px;
+  padding-left: 12px;
+  border-radius: 10px;
+}
+
+.danger {
+  color: var(--red-text);
+}
+
+/* The drawing models an administrator connected: one tab each, the default marked, and
+   the chosen one's settings below. */
+.model-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.model-list > button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 0.5px var(--line-strong);
+}
+
+.model-list > button:hover {
+  background: var(--fill);
+}
+
+.model-list > button[aria-selected="true"] {
+  background: var(--fill-2);
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.model-list small {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.model-list > .model-add {
+  align-items: center;
+  box-shadow: none;
+  color: var(--text-3);
+}
+
+/* A role and its permissions, one card each. */
+.role {
+  padding: 16px 18px 4px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 0.5px var(--line-strong);
+}
+
+.role > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.role > header b {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.role > header input {
+  max-width: 280px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.role > header small,
+.role-hint {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.role-hint {
+  display: block;
+  margin-top: 4px;
+}
+
+.role .setting:last-child {
+  border-bottom: 0;
 }
 
 @media (max-width: 860px) {

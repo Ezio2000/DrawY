@@ -217,7 +217,13 @@ export function Rail({
       <div className={cx("rail-foot")} ref={accountRef}>
         {account && (
           <div className={cx("popover account-menu")} role="menu">
-            <p>{user.name}</p>
+            <p>
+              {user.name}
+              <small>
+                {(user.builtinRole && t.settings.roleNames[user.role]) ||
+                  user.roleName}
+              </small>
+            </p>
             <button role="menuitem" onClick={() => (setAccount(false), nav("/settings"))}>
               <Settings2 size={15} />
               {t.rail.settings}

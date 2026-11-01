@@ -188,6 +188,17 @@ export interface SearchResult {
   subject: string;
   hits: Hit[];
 }
+/** Who a request is for: a user sees public materials and their own; one allowed to see
+ * all sees everyone's too. Without a user, only public materials. */
+export type Viewer = string | { id: string; all?: boolean } | undefined;
+export const viewerOf = (v: Viewer) =>
+  typeof v === "string"
+    ? { id: v, all: false }
+    : v && { id: v.id, all: !!v.all };
+/** Which shelf of the library to browse: public materials, the user's own, or (for one
+ * who sees all) other users' private ones. */
+export const shelfSchema = z.enum(["public", "mine", "others"]);
+export type Shelf = z.infer<typeof shelfSchema>;
 export interface MaterialPage {
   items: Material[];
   total: number;

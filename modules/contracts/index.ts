@@ -321,6 +321,98 @@ export const settingsSchema = z.object({
   image: roleSchema.omit({ effort: true, speed: true }),
   preferences: z.string(),
 });
+/** A drawing model an administrator has connected, with the parameters every request to
+ * it uses. People pick among them by name; only those who manage models see the rest. */
+export interface ModelOption extends Role {
+  id: string;
+  name: string;
+  description: string;
+}
+/** The models the whole app draws and paints with, set by those who manage models. */
+export interface ModelCatalog {
+  models: ModelOption[];
+  /** The model used by whoever has not picked one. */
+  default: string;
+  image: Settings["image"];
+}
+/** A drawing model as the model picker shows it. */
+export interface ModelChoice {
+  id: string;
+  name: string;
+  description: string;
+  /** Whether it is connected (has a credential), so it can draw. */
+  ready: boolean;
+}
+/** What each person keeps for themselves: their standing preferences and the model they
+ * picked, which falls back to the default when it is gone. */
+export interface UserSettings {
+  preferences: string;
+  model: string | null;
+}
+export const userSettingsSchema = z.object({
+  preferences: z.string(),
+  model: z.string().nullable(),
+});
+export const modelOptionSchema = roleSchema
+  .extend({
+    id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+    name: z.string().trim().min(1).max(60),
+    description: z.string().max(200),
+  })
+  .transform((r) => ({ ...r, speed: speedFor(r.channel, r.speed) }));
+export const modelCatalogSchema = z
+  .object({
+    models: z.array(modelOptionSchema).min(1),
+    default: z.string(),
+    image: settingsSchema.shape.image,
+  })
+  .refine((c) => new Set(c.models.map((m) => m.id)).size === c.models.length, {
+    message: "模型 ID 重复",
+  })
+  .refine((c) => c.models.some((m) => m.id === c.default), {
+    message: "默认模型不存在",
+  });
+export const defaultCatalog = (): ModelCatalog => {
+  const { author, image } = defaultSettings();
+  return {
+    models: [{ id: "default", name: author.model, description: "", ...author }],
+    default: "default",
+    image,
+  };
+};
+/** What a role may do beyond drawing: manage the models, see and use every material,
+ * publish and withdraw materials, and manage accounts and their roles. */
+export const permissions = [
+  "models.manage",
+  "materials.all",
+  "materials.manage",
+  "accounts.manage",
+] as const;
+export type Permission = (typeof permissions)[number];
+/** A role an account holds. Administrators may do everything and cannot be changed;
+ * members are who new accounts start as; administrators can add more. */
+export interface AccountRole {
+  id: string;
+  name: string;
+  permissions: Permission[];
+  builtin: boolean;
+}
+export const ADMIN = "admin",
+  MEMBER = "member";
+export const accountRoleSchema = z.object({
+  name: z.string().trim().min(1).max(40),
+  permissions: z.array(z.enum(permissions)),
+});
+/** The signed-in account as the app knows it. */
+export interface Account {
+  id: string;
+  name: string;
+  role: string;
+  roleName: string;
+  /** Whether the role is built in, so its name is shown in the reader's language. */
+  builtinRole: boolean;
+  permissions: Permission[];
+}
 export interface Observation {
   /** When the canvas was looked at. */
   at: number;

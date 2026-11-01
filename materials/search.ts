@@ -20,16 +20,19 @@ interface Entry {
 export interface Scope {
   /** The user searching; their private materials are included. */
   user?: string;
+  /** Everyone's private materials are included too. */
+  all?: boolean;
   style?: string;
   kinds?: MaterialKind[];
   /** Picture roles to keep; other kinds pass. */
   roles?: Role[];
 }
-/** Public and the user's own materials; a picture still developing only to its maker. */
-const visible = (m: Material, user?: string) =>
+/** Public and the user's own materials (everyone's, for one who sees all); a picture
+ * still developing only to its maker. */
+const visible = (m: Material, scope: Scope) =>
   m.status !== "failed" &&
-  (m.owner === null || m.owner === user) &&
-  (m.status === "ready" || (!!user && m.origin.user === user));
+  (m.owner === null || m.owner === scope.user || !!scope.all) &&
+  (m.status === "ready" || (!!scope.user && m.origin.user === scope.user));
 
 /** An in-memory index over every material, ranked by field-weighted term rarity. */
 export class Index {
@@ -74,7 +77,7 @@ export class Index {
   all(scope: Scope = {}) {
     return [...this.entries.values()]
       .map((e) => e.material)
-      .filter((m) => visible(m, scope.user));
+      .filter((m) => visible(m, scope));
   }
   private vocabulary(e: Entry) {
     return new Set(Object.values(e.fields).flatMap((s) => [...s]));
@@ -95,7 +98,7 @@ export class Index {
     const hits: Hit[] = [];
     for (const e of this.entries.values()) {
       const m = e.material;
-      if (!visible(m, scope.user)) continue;
+      if (!visible(m, scope)) continue;
       if (scope.kinds?.length && !scope.kinds.includes(m.kind)) continue;
       if (
         scope.roles?.length &&

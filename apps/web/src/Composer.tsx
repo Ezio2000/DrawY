@@ -9,10 +9,11 @@ import {
   ImageUp,
   Shapes,
   PencilLine,
+  ChevronDown,
 } from "lucide-react";
 import { Spinner, useLocale } from "@drawy/ui";
 import type { StyleMaterial } from "@drawy/materials/schema";
-import { api } from "./api.ts";
+import { api, type Models } from "./api.ts";
 import { cx } from "./cx.ts";
 import { useDismiss } from "./Rail.tsx";
 import { useT } from "./i18n.tsx";
@@ -57,6 +58,8 @@ export function Composer({
   attach,
   pick,
   status,
+  models,
+  chooseModel,
 }: {
   place: "home" | "dock";
   value: string;
@@ -80,6 +83,9 @@ export function Composer({
   pick: () => void;
   /** What the author is doing, its question or its reply, shown in the box. */
   status?: ReactNode;
+  /** The drawing models to pick from, and picking one. */
+  models?: Models;
+  chooseModel: (id: string) => void;
 }) {
   const t = useT();
   const picker = useRef<HTMLInputElement>(null);
@@ -177,6 +183,9 @@ export function Composer({
           />
           {setStyle && <StylePicker style={style} pick={setStyle} />}
           <span className={cx("composer-gap")} />
+          {!!models?.models.length && (
+            <ModelPicker models={models} pick={chooseModel} />
+          )}
           {working ? (
             <button
               className={cx("composer-stop")}
@@ -200,6 +209,61 @@ export function Composer({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Which drawing model draws: its name beside the send button, and a menu of the models
+ * an administrator connected, each with what it is good for. */
+function ModelPicker({
+  models,
+  pick,
+}: {
+  models: Models;
+  pick: (id: string) => void;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useDismiss(open, () => setOpen(false), ref);
+  const chosen =
+    models.models.find((m) => m.id === models.chosen) ?? models.models[0];
+  return (
+    <div className={cx("model-picker")} ref={ref}>
+      <button
+        className={cx("model-button")}
+        aria-label={t.composer.model(chosen.name)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <span>{chosen.name}</span>
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className={cx("popover models-menu")} role="menu">
+          {models.models.map((m) => (
+            <button
+              key={m.id}
+              role="menuitemradio"
+              aria-checked={m.id === chosen.id}
+              disabled={!m.ready}
+              onClick={() => {
+                pick(m.id);
+                setOpen(false);
+              }}
+            >
+              <span>
+                <b>{m.name}</b>
+                <small>
+                  {m.ready ? m.description : t.composer.modelUnconnected}
+                </small>
+              </span>
+              {m.id === chosen.id && <Check size={15} />}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

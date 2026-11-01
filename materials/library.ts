@@ -16,7 +16,10 @@ import {
   type Reserve,
   type SearchRequest,
   type SearchResult,
+  type Shelf,
   type StyleMaterial,
+  type Viewer,
+  viewerOf,
 } from "./schema.ts";
 
 export class LibraryError extends Error {
@@ -145,12 +148,14 @@ export class Library {
       throw new LibraryError("没有这份地理数据: relief/" + tile, 404);
     return readFileSync(path);
   }
-  /** Styles with the pictures that show them best: the style's own showcase first, then
-   * the most used. */
+  /** Styles with the public pictures that show them best: the style's own showcase
+   * first, then the most used. Private pictures are never shown to others. */
   styles(): StyleMaterial[] {
     const pictures = this.index
       .all()
-      .filter((m): m is PictureMaterial => m.kind === "picture");
+      .filter(
+        (m): m is PictureMaterial => m.kind === "picture" && m.owner === null,
+      );
     return this.index
       .all()
       .filter((m): m is StyleMaterial => m.kind === "style")
@@ -175,19 +180,20 @@ export class Library {
       );
     return s;
   }
-  get(id: string, user?: string): Material {
-    const m = this.index.get(id);
-    if (!m || (m.owner !== null && m.owner !== user))
+  get(id: string, user?: Viewer): Material {
+    const m = this.index.get(id),
+      v = viewerOf(user);
+    if (!m || (m.owner !== null && m.owner !== v?.id && !v?.all))
       throw new LibraryError(`素材不存在: ${id}`, 404);
     return m.kind === "style" ? this.style(m.id) : m;
   }
-  private picture(id: string, user?: string) {
+  private picture(id: string, user?: Viewer) {
     const m = this.get(id, user);
     if (m.kind !== "picture") throw new LibraryError(`${id} 不是图片素材`);
     return m;
   }
   /** Several materials at once; leniently, the ones that exist. */
-  many(ids: string[], user?: string, lenient = false) {
+  many(ids: string[], user?: Viewer, lenient = false) {
     return ids.flatMap((id) => {
       try {
         return [this.get(id, user)];
@@ -197,13 +203,20 @@ export class Library {
       }
     });
   }
-  search(input: SearchRequest, user?: string): SearchResult[] {
-    const req = searchSchema.parse(input);
+  search(input: SearchRequest, user?: Viewer): SearchResult[] {
+    const req = searchSchema.parse(input),
+      v = viewerOf(user);
     return req.subjects.map((subject) => ({
       subject,
       hits: this.index.search(
         subject,
-        { user, style: req.style, kinds: req.kinds, roles: req.roles },
+        {
+          user: v?.id,
+          all: v?.all,
+          style: req.style,
+          kinds: req.kinds,
+          roles: req.roles,
+        },
         req.limit,
       ),
     }));
@@ -211,23 +224,39 @@ export class Library {
   browse(
     query: string,
     page: number,
-    user?: string,
+    viewer?: Viewer,
     kinds?: MaterialKind[],
     /** How many to a page: as many as the shelf showing them holds. */
     size = PAGE,
+    /** One shelf only; without one, everything the viewer may see. */
+    shelf?: Shelf,
   ): MaterialPage {
     size = Math.min(Math.max(1, Math.floor(size) || PAGE), 200);
-    const items = query.trim()
-      ? this.index.search(query, { user, kinds }, 10_000).map((h) => h.material)
-      : this.index
-          .all({ user })
-          .filter((m) => !kinds?.length || kinds.includes(m.kind))
-          .sort(
-            (a, b) =>
-              Number(b.owner === user) - Number(a.owner === user) ||
-              b.origin.createdAt - a.origin.createdAt ||
-              b.uses - a.uses,
-          );
+    const v = viewerOf(viewer),
+      user = v?.id,
+      scope = { user, all: v?.all, kinds };
+    if (shelf === "others" && !v?.all)
+      throw new LibraryError("没有查看其他用户素材的权限");
+    const onShelf = (m: Material) =>
+      !shelf ||
+      (shelf === "public"
+        ? m.owner === null
+        : shelf === "mine"
+          ? m.owner !== null && m.owner === user
+          : m.owner !== null && m.owner !== user);
+    const items = (
+      query.trim()
+        ? this.index.search(query, scope, 10_000).map((h) => h.material)
+        : this.index
+            .all(scope)
+            .filter((m) => !kinds?.length || kinds.includes(m.kind))
+            .sort(
+              (a, b) =>
+                Number(b.owner === user) - Number(a.owner === user) ||
+                b.origin.createdAt - a.origin.createdAt ||
+                b.uses - a.uses,
+            )
+    ).filter(onShelf);
     const pages = Math.max(1, Math.ceil(items.length / size));
     const at = Math.min(Math.max(1, page), pages);
     const shown = items.slice((at - 1) * size, at * size);
@@ -248,16 +277,9 @@ export class Library {
     user: string,
     size: { width: number; height: number },
   ): PictureMaterial {
-    // Uploads and pictures made from a user's private pictures, or made to look like
-    // them, stay theirs; the rest join the library.
-    const owner =
-      d.origin.kind === "upload" ||
-      [
-        ...(d.origin.references ?? []),
-        ...(d.origin.styleReferences ?? []),
-      ].some((ref) => this.index.get(ref)?.owner)
-        ? user
-        : null;
+    // What a user uploads or generates is theirs alone; it becomes public only when
+    // someone who manages materials publishes it.
+    const owner = user;
     return {
       id,
       kind: "picture",
@@ -378,8 +400,17 @@ export class Library {
     for (const fn of this.waiters.get(id) ?? []) fn();
     this.waiters.delete(id);
   }
+  /** Makes a user's picture public, or gives a published one back to whoever made it.
+   * Curated materials are always public. */
+  publish(id: string, published: boolean) {
+    const m = this.index.get(id);
+    if (!m) throw new LibraryError(`素材不存在: ${id}`, 404);
+    if (m.origin.kind === "curated" || !m.origin.user)
+      throw new LibraryError("精选素材始终公开", 409);
+    return this.save({ ...m, owner: published ? null : m.origin.user });
+  }
   /** Waits for a developing picture, up to `ms`. */
-  async ready(id: string, user: string | undefined, ms: number) {
+  async ready(id: string, user: Viewer, ms: number) {
     let m = this.picture(id, user);
     if (m.status === "developing" && ms > 0) {
       await new Promise<void>((resolve) => {
@@ -401,7 +432,7 @@ export class Library {
     return m;
   }
   /** The picture itself; an SVG drawn in currentColor can be inked in `color`. */
-  async file(id: string, user?: string, color?: string, wait = 240_000) {
+  async file(id: string, user?: Viewer, color?: string, wait = 240_000) {
     const m = await this.ready(id, user, wait);
     const bytes = readFileSync(this.path(m));
     return {
@@ -409,7 +440,7 @@ export class Library {
       bytes: color && m.form.recolor ? recolor(bytes, color) : bytes,
     };
   }
-  async thumb(id: string, user: string | undefined, size: number) {
+  async thumb(id: string, user: Viewer, size: number) {
     const m = await this.ready(id, user, 240_000);
     const cached = join(this.dir, "thumbs", `${id}-${size}.png`);
     if (existsSync(cached)) return readFileSync(cached);

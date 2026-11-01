@@ -5,11 +5,20 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { Storage, type UserStore } from "../../modules/storage/index.ts";
-import { register, login } from "../../modules/identity/index.ts";
+import {
+  register,
+  login,
+  saveRole,
+  removeRole,
+} from "../../modules/identity/index.ts";
 import {
   DomainError,
-  settingsSchema,
+  modelCatalogSchema,
+  userSettingsSchema,
   workEditSchema,
+  type Account,
+  type ModelChoice,
+  type Permission,
 } from "../../modules/contracts/index.ts";
 import {
   createWork,
@@ -24,15 +33,15 @@ import {
   freshen,
   preview,
 } from "../../modules/materials/index.ts";
-import { MaterialsError } from "@drawy/materials/client";
-import { kindSchema } from "@drawy/materials/schema";
+import { MaterialsError, viewerHeaders } from "@drawy/materials/client";
+import { kindSchema, shelfSchema } from "@drawy/materials/schema";
 import { Agent } from "../../modules/agent/index.ts";
 import { tracer } from "../../modules/trace/index.ts";
 import { picture } from "../../modules/observation/index.ts";
 import encoder from "plantuml-encoder";
 import { localize, requestLocale } from "../../modules/contracts/messages.ts";
 type Env = {
-  Variables: { store: UserStore; user: { id: string; name: string } };
+  Variables: { store: UserStore; user: Account };
 };
 export function createApp(storage: Storage) {
   const app = new Hono<Env>();
@@ -91,6 +100,14 @@ export function createApp(storage: Storage) {
     await next();
   });
   app.get("/api/auth/me", (c) => c.json(c.get("user")));
+  /** Lets through only accounts whose role allows `permission`. */
+  const allowed = (
+    c: { get: (k: "user") => Account },
+    permission: Permission,
+  ) => {
+    if (!c.get("user").permissions.includes(permission))
+      throw new DomainError("没有权限", 403);
+  };
   app.post("/api/auth/logout", (c) => {
     storage.db
       .prepare("DELETE FROM sessions WHERE id=?")
@@ -98,9 +115,69 @@ export function createApp(storage: Storage) {
     deleteCookie(c, "drawy_session", { path: "/" });
     return c.json({ ok: true });
   });
-  app.get("/api/settings", (c) => c.json(c.get("store").settings()));
+  app.get("/api/settings", (c) => c.json(c.get("store").ownSettings()));
+  // Either setting alone may change: the model picker saves only the model.
   app.put("/api/settings", async (c) => {
-    c.get("store").saveSettings(settingsSchema.parse(await c.req.json()));
+    const store = c.get("store");
+    store.saveOwnSettings({
+      ...store.ownSettings(),
+      ...userSettingsSchema.partial().parse(await c.req.json()),
+    });
+    return c.json({ ok: true });
+  });
+  // The drawing models anyone may pick, by name only: connections stay with those who
+  // manage them.
+  app.get("/api/models", (c) => {
+    const catalog = storage.models(),
+      own = c.get("store").ownSettings();
+    const models: ModelChoice[] = catalog.models.map((m) => ({
+      id: m.id,
+      name: m.name,
+      description: m.description,
+      ready: !!m.credential,
+    }));
+    return c.json({
+      models,
+      default: catalog.default,
+      chosen: models.some((m) => m.id === own.model)
+        ? own.model
+        : catalog.default,
+    });
+  });
+  app.get("/api/admin/models", (c) => {
+    allowed(c, "models.manage");
+    return c.json(storage.models());
+  });
+  app.put("/api/admin/models", async (c) => {
+    allowed(c, "models.manage");
+    const catalog = modelCatalogSchema.parse(await c.req.json());
+    storage.saveModels(catalog);
+    return c.json(catalog);
+  });
+  app.get("/api/admin/accounts", (c) => {
+    allowed(c, "accounts.manage");
+    return c.json(storage.accounts());
+  });
+  app.patch("/api/admin/accounts/:id", async (c) => {
+    allowed(c, "accounts.manage");
+    const { role } = z.object({ role: z.string() }).parse(await c.req.json());
+    return c.json(storage.setRole(c.req.param("id"), role));
+  });
+  app.get("/api/admin/roles", (c) => {
+    allowed(c, "accounts.manage");
+    return c.json(storage.roles());
+  });
+  app.post("/api/admin/roles", async (c) => {
+    allowed(c, "accounts.manage");
+    return c.json(saveRole(storage, await c.req.json()));
+  });
+  app.put("/api/admin/roles/:id", async (c) => {
+    allowed(c, "accounts.manage");
+    return c.json(saveRole(storage, await c.req.json(), c.req.param("id")));
+  });
+  app.delete("/api/admin/roles/:id", (c) => {
+    allowed(c, "accounts.manage");
+    removeRole(storage, c.req.param("id"));
     return c.json({ ok: true });
   });
   app.get("/api/works", (c) =>
@@ -125,7 +202,10 @@ export function createApp(storage: Storage) {
   });
   app.get("/api/works/:id", async (c) =>
     c.json(
-      await freshen(c.get("store").work(c.req.param("id")), c.get("user").id),
+      await freshen(
+        c.get("store").work(c.req.param("id")),
+        c.get("store").viewer,
+      ),
     ),
   );
   app.patch("/api/works/:id", async (c) => {
@@ -135,7 +215,7 @@ export function createApp(storage: Storage) {
     const store = c.get("store");
     const work = await freshen(
       store.rename(c.req.param("id"), title),
-      store.userId,
+      store.viewer,
     );
     publish(store.userId, { type: "work", work });
     return c.json(work);
@@ -165,7 +245,7 @@ export function createApp(storage: Storage) {
     return c.json(
       await freshen(
         store.revision(c.req.param("id"), Number(c.req.param("revision"))),
-        store.userId,
+        store.viewer,
       ),
     );
   });
@@ -176,7 +256,7 @@ export function createApp(storage: Storage) {
     const { revision } = z
       .object({ revision: z.number().int().positive() })
       .parse(await c.req.json());
-    const work = await freshen(restore(store, workId, revision), store.userId);
+    const work = await freshen(restore(store, workId, revision), store.viewer);
     publish(store.userId, { type: "work", work });
     return c.json(work);
   });
@@ -184,7 +264,7 @@ export function createApp(storage: Storage) {
     const store = c.get("store"),
       workId = c.req.param("id");
     idle(store, workId);
-    const work = await freshen(undo(store, workId), store.userId);
+    const work = await freshen(undo(store, workId), store.viewer);
     publish(store.userId, { type: "work", work });
     return c.json(work);
   });
@@ -195,7 +275,7 @@ export function createApp(storage: Storage) {
       rev
         ? store.revision(c.req.param("id"), Number(rev))
         : store.work(c.req.param("id")),
-      store.userId,
+      store.viewer,
     );
     const sceneId = c.req.param("scene");
     if (!work.scenes[sceneId]) throw new DomainError("场景不存在", 404);
@@ -282,29 +362,46 @@ export function createApp(storage: Storage) {
       "Cache-Control": "private, max-age=86400",
     });
   });
-  app.get("/api/materials", async (c) =>
-    c.json(
-      await library.browse(
-        c.req.query("q") || "",
-        z.coerce
-          .number()
-          .int()
-          .positive()
-          .parse(c.req.query("page") || "1"),
-        c.get("user").id,
-        kindSchema
-          .array()
-          .parse(c.req.query("kind")?.split(",").filter(Boolean) ?? []),
-        Number(c.req.query("size")) || undefined,
-      ),
-    ),
-  );
-  app.get("/api/materials/:id", async (c) =>
-    c.json((await library.get([c.req.param("id")], c.get("user").id))[0]),
-  );
+  /** Other users' private materials carry their owner's name, for those who see them. */
+  const named =
+    (me: string) =>
+    <T extends { owner: string | null }>(m: T) =>
+      m.owner && m.owner !== me
+        ? { ...m, ownerName: storage.accountName(m.owner) }
+        : m;
+  app.get("/api/materials", async (c) => {
+    const page = await library.browse(
+      c.req.query("q") || "",
+      z.coerce
+        .number()
+        .int()
+        .positive()
+        .parse(c.req.query("page") || "1"),
+      c.get("store").viewer,
+      kindSchema
+        .array()
+        .parse(c.req.query("kind")?.split(",").filter(Boolean) ?? []),
+      Number(c.req.query("size")) || undefined,
+      shelfSchema.optional().parse(c.req.query("shelf") || undefined),
+    );
+    return c.json({ ...page, items: page.items.map(named(c.get("user").id)) });
+  });
+  app.get("/api/materials/:id", async (c) => {
+    const [m] = await library.get([c.req.param("id")], c.get("store").viewer);
+    return c.json(named(c.get("user").id)(m));
+  });
   app.get("/api/materials/:id/preview", async (c) =>
-    c.json(await preview(c.req.param("id"), c.get("user").id)),
+    c.json(await preview(c.req.param("id"), c.get("store").viewer)),
   );
+  // Publishing makes a user's picture public; withdrawing gives it back to its maker.
+  app.post("/api/materials/:id/publish", async (c) => {
+    allowed(c, "materials.manage");
+    const { published } = z
+      .object({ published: z.boolean() })
+      .parse(await c.req.json());
+    const m = await library.publish(c.req.param("id"), published);
+    return c.json(named(c.get("user").id)(m));
+  });
   app.post("/api/materials", async (c) => {
     const form = await c.req.formData(),
       file = form.get("file");
@@ -372,13 +469,17 @@ export function createApp(storage: Storage) {
   app.get("/materials/:route{files|thumbs|geo}/*", async (c) => {
     const user = userOf(getCookie(c, "drawy_session"));
     const tag = c.req.header("if-none-match");
+    const viewer = user && {
+      id: user.id,
+      all: user.permissions.includes("materials.all"),
+    };
     const r = await fetch(
       library.base +
         c.req.path.slice("/materials".length) +
         new URL(c.req.url).search,
       {
         headers: {
-          ...(user ? { "x-drawy-user": user.id } : {}),
+          ...viewerHeaders(viewer),
           ...(tag ? { "if-none-match": tag } : {}),
         },
       },

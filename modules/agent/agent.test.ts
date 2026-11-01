@@ -677,7 +677,7 @@ it("develops pictures while the author composes and holds finish until they were
       credential: "test",
       baseUrl: "https://example.invalid",
     };
-    store.saveSettings(settings);
+    store.storage.saveModels({ ...store.storage.models(), image: settings.image });
     let paint!: () => void;
     const painted = new Promise<void>((r) => (paint = r));
     const png = await picture();

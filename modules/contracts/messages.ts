@@ -52,6 +52,15 @@ const exact: Record<string, string> = {
   "素材生成失败": "The material failed to generate",
   "素材 ID 已存在": "That material ID already exists",
   "素材不在生成中": "The material isn't being generated",
+  没有权限: "You don't have permission to do that",
+  角色不存在: "Role not found",
+  账号不存在: "Account not found",
+  至少要保留一位管理员: "Keep at least one administrator",
+  管理员角色不能修改: "The administrator role can't be changed",
+  内置角色不能删除: "Built-in roles can't be removed",
+  角色名称已存在: "A role with that name already exists",
+  没有查看其他用户素材的权限: "You can't see other users' materials",
+  精选素材始终公开: "Curated materials are always public",
   "请先用 set_brief 确定风格，再生成图片":
     "Settle the brief and style before generating images",
 };
