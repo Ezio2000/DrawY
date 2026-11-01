@@ -1,6 +1,7 @@
 import { MaterialsClient } from "@drawy/materials/client";
 import type {
   Material,
+  Param,
   SearchRequest,
   SearchResult,
   StyleMaterial,
@@ -8,8 +9,10 @@ import type {
 import {
   DomainError,
   blankStyle,
+  paramTypes,
   type Candidate,
   type MaterialUse,
+  type ParamType,
   type Work,
 } from "../contracts/index.ts";
 import type { Item } from "../models/index.ts";
@@ -19,6 +22,12 @@ export const library = new MaterialsClient(
   process.env.DRAWY_MATERIALS_URL || "http://localhost:8090",
 );
 const round = (n: number) => Math.round(n * 1000) / 1000;
+/** A library drawing's parameter as the author reads it: its type (a choice as its
+ * options), default and description. */
+export const paramLine = (p: Param) =>
+  `${p.type === "choice" ? p.options!.join("|") : p.type}${p.default !== undefined ? " = " + JSON.stringify(p.default) : ""} (${p.description})`;
+/** Parameter types a person can change by hand; the rest are structure. */
+const editable = new Set<Param["type"]>(paramTypes);
 
 /** How a work holds a library material; styles are applied, not held. */
 export function useOf(m: Material): MaterialUse | null {
@@ -59,6 +68,24 @@ export function useOf(m: Material): MaterialUse | null {
           Object.entries(m.params)
             .filter(([, p]) => p.default !== undefined)
             .map(([k, p]) => [k, p.default]),
+        ),
+        params: Object.fromEntries(
+          Object.entries(m.params).flatMap(([k, p]) =>
+            editable.has(p.type)
+              ? [
+                  [
+                    k,
+                    {
+                      type: p.type as ParamType,
+                      ...(p.options ? { options: p.options } : {}),
+                      ...(p.min !== undefined ? { min: p.min } : {}),
+                      ...(p.max !== undefined ? { max: p.max } : {}),
+                      ...(p.step !== undefined ? { step: p.step } : {}),
+                    },
+                  ],
+                ]
+              : [],
+          ),
         ),
       };
     case "effect":
@@ -208,10 +235,7 @@ function brief(m: Material, match?: string) {
         use: m.use,
         about: m.about,
         params: Object.fromEntries(
-          Object.entries(m.params).map(([k, p]) => [
-            k,
-            `${p.type}${p.default !== undefined ? " = " + JSON.stringify(p.default) : ""}; ${p.description}`,
-          ]),
+          Object.entries(m.params).map(([k, p]) => [k, paramLine(p)]),
         ),
       };
     case "effect":
@@ -318,7 +342,7 @@ export async function attached(ids: string[], user: string): Promise<Item[]> {
         type: "input_text",
         text: `Attached ${m.kind} ${m.id}「${m.name.zh}」${
           m.kind === "picture"
-            ? ": place it by this id like any library picture, or pass it to generate_images as a reference"
+            ? ": place it by this id like any library picture, or pass it to generate_images as a reference; when the user asks to copy it, redraw it instead"
             : m.kind === "style"
               ? ": the user wants the work in this style"
               : ": the user wants the work to use it"

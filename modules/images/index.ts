@@ -41,12 +41,13 @@ function promptFor(
   style: string,
   direction: string,
 ) {
+  // The role decides the background: a cut-out stands on transparency, a scene is whole.
   const framing = {
     object:
-      "A single subject, centred, filling most of the frame with a small even margin; no ground, no frame.",
+      "A single subject, centred, filling most of the frame with a small even margin, isolated on a transparent background; no ground, no frame.",
     figure:
-      "One character, centred, filling most of the frame with a small even margin; no ground, no frame.",
-    icon: "One simple symbol, centred, filling most of the frame.",
+      "One character, centred, filling most of the frame with a small even margin, isolated on a transparent background; no ground, no frame.",
+    icon: "One simple symbol, centred, filling most of the frame, on a transparent background.",
     scene:
       "A self-contained vignette: the scene fills the frame, but its edges dissolve softly into plain off-white paper; no border, no frame.",
     texture: "A seamless full-bleed surface with no focal subject.",

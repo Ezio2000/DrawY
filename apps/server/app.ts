@@ -9,12 +9,13 @@ import { register, login } from "../../modules/identity/index.ts";
 import {
   DomainError,
   settingsSchema,
-  boundsSchema,
+  workEditSchema,
 } from "../../modules/contracts/index.ts";
 import {
   createWork,
   restore,
-  moveModules,
+  undo,
+  writeWork,
 } from "../../modules/workspace/index.ts";
 import { documentFor } from "../../modules/runtime/document.ts";
 import {
@@ -27,6 +28,7 @@ import { MaterialsError } from "@drawy/materials/client";
 import { kindSchema } from "@drawy/materials/schema";
 import { Agent } from "../../modules/agent/index.ts";
 import { tracer } from "../../modules/trace/index.ts";
+import { picture } from "../../modules/observation/index.ts";
 import encoder from "plantuml-encoder";
 import { localize, requestLocale } from "../../modules/contracts/messages.ts";
 type Env = {
@@ -139,19 +141,40 @@ export function createApp(storage: Storage) {
   app.get("/api/works/:id/revisions", (c) =>
     c.json(c.get("store").revisions(c.req.param("id"))),
   );
-  app.post("/api/works/:id/restore", async (c) => {
-    const store = c.get("store"),
-      workId = c.req.param("id");
+  /** Changing the drawing by hand waits for the author to finish or be stopped. */
+  const idle = (store: UserStore, workId: string) => {
     if (
       store
         .runs(workId)
         .some((r) => ["running", "viewing", "waiting"].includes(r.status))
     )
       throw new DomainError("请先完成或取消当前任务", 409);
+  };
+  app.get("/api/works/:id/revisions/:revision", async (c) => {
+    const store = c.get("store");
+    return c.json(
+      await freshen(
+        store.revision(c.req.param("id"), Number(c.req.param("revision"))),
+        store.userId,
+      ),
+    );
+  });
+  app.post("/api/works/:id/restore", async (c) => {
+    const store = c.get("store"),
+      workId = c.req.param("id");
+    idle(store, workId);
     const { revision } = z
       .object({ revision: z.number().int().positive() })
       .parse(await c.req.json());
-    const work = restore(store, workId, revision);
+    const work = await freshen(restore(store, workId, revision), store.userId);
+    publish(store.userId, { type: "work", work });
+    return c.json(work);
+  });
+  app.post("/api/works/:id/undo", async (c) => {
+    const store = c.get("store"),
+      workId = c.req.param("id");
+    idle(store, workId);
+    const work = await freshen(undo(store, workId), store.userId);
     publish(store.userId, { type: "work", work });
     return c.json(work);
   });
@@ -168,28 +191,31 @@ export function createApp(storage: Storage) {
     if (!work.scenes[sceneId]) throw new DomainError("场景不存在", 404);
     return c.html(documentFor(work, sceneId));
   });
-  app.patch("/api/works/:id/modules", async (c) => {
+  app.get("/api/works/:id/scenes/:scene/picture", async (c) => {
+    const store = c.get("store"),
+      work = store.work(c.req.param("id")),
+      scene = work.scenes[c.req.param("scene")];
+    if (!scene) throw new DomainError("场景不存在", 404);
+    const name =
+      (scene.parentId ? `${work.title} - ${scene.title}` : work.title).replace(
+        /[\\/:*?"<>|]+/g,
+        " ",
+      ) + ".png";
+    return c.body(await picture(store, work.id, scene.id), 200, {
+      "Content-Type": "image/png",
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+    });
+  });
+  // A hand edit on the canvas: any change to the work, committed like the author's.
+  app.post("/api/works/:id/edits", async (c) => {
     const store = c.get("store"),
       workId = c.req.param("id");
-    if (
-      store
-        .runs(workId)
-        .some((r) => ["running", "viewing", "waiting"].includes(r.status))
-    )
-      throw new DomainError("请先完成当前任务", 409);
-    const args = z
-      .object({
-        sceneId: z.string(),
-        baseRevision: z.number().int(),
-        moves: z.array(z.object({ id: z.string(), bounds: boundsSchema })),
-      })
-      .parse(await c.req.json());
-    const work = await moveModules(
+    idle(store, workId);
+    const { work } = await writeWork(
       store,
       workId,
-      args.sceneId,
-      args.baseRevision,
-      args.moves,
+      workEditSchema.parse(await c.req.json()),
+      { kind: "edit" },
     );
     publish(store.userId, { type: "work", work });
     return c.json(work);
@@ -200,10 +226,12 @@ export function createApp(storage: Storage) {
   app.post("/api/works/:id/runs", async (c) => {
     const args = z
       .object({
-        prompt: z.string().min(1),
+        prompt: z.string(),
         sceneId: z.string(),
         materials: z.array(z.string()).default([]),
       })
+      // Pictures alone are a request too: draw from them.
+      .refine((r) => r.prompt.trim() || r.materials.length)
       .parse(await c.req.json());
     return c.json(
       await agent.start(
@@ -212,18 +240,26 @@ export function createApp(storage: Storage) {
         args.sceneId,
         args.prompt,
         args.materials,
+        requestLocale((k) => c.req.header(k)),
       ),
     );
   });
   app.post("/api/runs/:id/answer", async (c) => {
     const { answer, materials } = z
       .object({
-        answer: z.string().min(1),
+        answer: z.string(),
         materials: z.array(z.string()).default([]),
       })
+      .refine((r) => r.answer.trim() || r.materials.length)
       .parse(await c.req.json());
     return c.json(
-      await agent.resume(c.get("store"), c.req.param("id"), answer, materials),
+      await agent.resume(
+        c.get("store"),
+        c.req.param("id"),
+        answer,
+        materials,
+        requestLocale((k) => c.req.header(k)),
+      ),
     );
   });
   app.post("/api/runs/:id/cancel", (c) =>
@@ -252,6 +288,9 @@ export function createApp(storage: Storage) {
         Number(c.req.query("size")) || undefined,
       ),
     ),
+  );
+  app.get("/api/materials/:id", async (c) =>
+    c.json((await library.get([c.req.param("id")], c.get("user").id))[0]),
   );
   app.get("/api/materials/:id/preview", async (c) =>
     c.json(await preview(c.req.param("id"), c.get("user").id)),

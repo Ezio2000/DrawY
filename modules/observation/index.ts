@@ -125,6 +125,41 @@ export async function observe(
     },
   );
 }
+/** The scene as a PNG to download, drawn by the capture service at full resolution. */
+export async function picture(
+  store: UserStore,
+  workId: string,
+  sceneId: string,
+) {
+  const work = store.work(workId);
+  if (!work.scenes[sceneId]?.modules.length)
+    throw new DomainError("没有可查看的场景");
+  const origin = process.env.DRAWY_INTERNAL_URL || "http://127.0.0.1:8080";
+  const token = store.storage.session(store.userId);
+  try {
+    const response = await fetch(
+      (process.env.DRAWY_CAPTURE_URL || "http://127.0.0.1:8091") + "/render",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          origin,
+          cookie: token,
+          url: `${origin}/api/works/${work.id}/scenes/${encodeURIComponent(sceneId)}?revision=${work.revision}`,
+        }),
+      },
+    ).catch((e) => {
+      throw new Unavailable("画布查看服务不可用: " + e.message);
+    });
+    if (!response.ok)
+      throw new Unavailable(
+        `画布查看服务不可用 (${response.status}): ${(await response.text()).slice(0, 300)}`,
+      );
+    return new Uint8Array(await response.arrayBuffer());
+  } finally {
+    store.storage.db.prepare("DELETE FROM sessions WHERE id=?").run(token);
+  }
+}
 export function requireObserved(work: Work, observations: Observation[]) {
   const scenes = Object.values(work.scenes).filter((s) => s.modules.length);
   if (!work.scenes[work.rootSceneId].modules.length)

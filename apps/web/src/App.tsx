@@ -4,12 +4,15 @@ import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
 import { useEffect, useRef, useState } from "react";
 import {
   Undo2,
+  Redo2,
   ChevronDown,
   X,
   History,
   MessagesSquare,
   PanelRightClose,
   ImagePlus,
+  Download,
+  PencilLine,
 } from "lucide-react";
 import { Lantern } from "@drawy/ui/brand";
 import { ModelSketch, KinshipSketch } from "@drawy/ui/sketches";
@@ -30,13 +33,38 @@ import { Auth } from "./Auth.tsx";
 import { Composer, type Attachment } from "./Composer.tsx";
 import { Library } from "./Library.tsx";
 import { Settings } from "./Settings.tsx";
-import type {
-  Work,
-  Run,
-  Selection,
-  Target,
+import {
+  stepBefore,
+  type Work,
+  type WorkEdit,
+  type Drawing,
+  paramTypes,
+  type Run,
+  type Selection,
+  type Target,
+  type RevisionSummary,
+  type Settings as Setup,
 } from "../../../modules/contracts/index.ts";
-import type { Material, StyleMaterial } from "@drawy/materials/schema";
+import type { Canvas, Pointed } from "../../../modules/canvas/index.ts";
+import {
+  add,
+  arrange,
+  drawingFor,
+  duplicate,
+  moveParts,
+  removeParts,
+  replace,
+  shadowed,
+  type Addition,
+} from "../../../modules/editing/index.ts";
+import { EditPanel, Retype } from "./Editor.tsx";
+import { listen } from "./events.ts";
+import { leaving } from "./Settings.tsx";
+import type {
+  Material,
+  PictureMaterial,
+  StyleMaterial,
+} from "@drawy/materials/schema";
 import { TraceView } from "./TraceView.tsx";
 import { Title } from "./Title.tsx";
 import { ChooseLocale, dictionaries, useLanguage } from "./i18n.tsx";
@@ -53,8 +81,14 @@ const pageOf = (path: string): Page =>
             ? "traces"
             : "home";
 const workIdOf = (path: string) => path.match(/^\/a\/([^/]+)/)?.[1];
-/** What the panel beside the canvas shows. */
-type Panel = "" | "journal" | "history";
+/** A subscene has its own address under its work's, so the browser goes back up a level. */
+const sceneOf = (path: string) => {
+  const id = path.match(/^\/a\/[^/]+\/([^/]+)/)?.[1];
+  return id && decodeURIComponent(id);
+};
+/** What the panel beside the canvas shows; while it shows the editor, the work is being
+ * edited by hand. */
+type Panel = "" | "journal" | "history" | "edit";
 /** How a library material rides along with a message. */
 const attachmentOf = (m: Material, locale: Locale): Attachment => ({
   id: m.id,
@@ -76,13 +110,22 @@ export function App() {
     [open, O] = useState(false),
     [works, L] = useState<Summary[]>([]),
     [work, W] = useState<Work>(),
-    [sceneId, P] = useState("root"),
+    // An earlier revision shown on the canvas in place of the current one.
+    [preview, setPreview] = useState<{ revision: number; work: Work }>(),
+    [history, H] = useState<RevisionSummary[]>([]),
+    // Whether the drawing model is connected; until it is, nothing can be drawn.
+    [connected, setConnected] = useState<boolean>(),
+    [exporting, setExporting] = useState(false),
     [runs, R] = useState<Run[]>([]),
     [prompt, Q] = useState(""),
     [attachments, A] = useState<Attachment[]>([]),
     [uploading, setUploading] = useState(0),
     [style, setStyle] = useState<StyleMaterial>(),
-    [selected, S] = useState<Selection>(),
+    [selected, S] = useState<Selection[]>([]),
+    // Words being changed where they are drawn.
+    [retyping, setRetyping] = useState<Extract<Pointed, { kind: "text" }>>(),
+    // A picture being chosen from the library, and what it is for.
+    [choosing, setChoosing] = useState<(m: PictureMaterial) => void>(),
     [detailId, setDetail] = useState<string>(),
     [panel, setPanel] = useState<Panel>(""),
     [picking, setPicking] = useState(false),
@@ -94,28 +137,76 @@ export function App() {
     [dragging, setDragging] = useState(false),
     [trash, setTrash] = useState<Summary>(),
     // Options picked on the author's questions, sent with whatever the user writes.
-    [choices, setChoices] = useState("");
+    [choices, setChoices] = useState(""),
+    // Why the composer holds a change written up for the author, until it is sent.
+    [handed, setHanded] = useState("");
   const page = pageOf(path);
   const journal = panel === "journal";
+  const editing = panel === "edit";
   const J = (on: boolean) => setPanel(on ? "journal" : "");
-  const toggle = (p: Panel) => setPanel(panel === p ? "" : p);
+  const toggle = (p: Panel) => {
+    setPanel(panel === p ? "" : p);
+    setPreview(undefined);
+  };
   const conversation = useRef<HTMLElement>(null);
   const following = useRef(true);
   const current = useRef(work);
   current.current = work;
+  const canvas = useRef<Canvas>(undefined);
+  const stage = useRef<HTMLElement>(null);
+  // Hand edits go one after another, each made from the work the last one left.
+  const edits = useRef<Promise<unknown>>(Promise.resolve());
+  const inflight = useRef(0);
+  // Revisions the person made themselves, shown at once rather than drawn.
+  const own = useRef(new Set<number>());
+  // Revisions undone, to bring back while the work is still where undoing left it.
+  const [redoable, setRedoable] = useState<{ at: number; revisions: number[] }>();
   const deleting = useRef<{ id: string; timer: ReturnType<typeof setTimeout> }>(
     undefined,
   );
   const run = runs.at(-1),
     working = live(run);
+  const addressed = sceneOf(path);
+  const sceneId =
+    work && addressed && work.scenes[addressed]
+      ? addressed
+      : (work?.rootSceneId ?? "root");
   const active = work?.scenes[sceneId];
+  const sceneAddress = (id: string) =>
+    "/a/" +
+    work!.id +
+    (id === work!.rootSceneId ? "" : "/" + encodeURIComponent(id));
   useEffect(() => {
-    if (work && !work.scenes[sceneId]) {
-      P(work.rootSceneId);
-      S(undefined);
-    }
+    // An address naming a scene the work no longer has falls back to its root.
+    if (work && addressed && !work.scenes[addressed])
+      history_replace(sceneAddress(work.rootSceneId));
     if (detailId && work && !work.details[detailId]) setDetail(undefined);
-  }, [work, sceneId, detailId]);
+  }, [work, addressed, detailId]);
+  useEffect(() => {
+    S([]);
+    setDetail(undefined);
+    M(false);
+    setRetyping(undefined);
+  }, [sceneId]);
+  const undoable =
+    !!work && stepBefore(history, work.revision) !== undefined;
+  const canRedo = !!work && redoable?.at === work.revision;
+  const ids = selected.map((s) => s.moduleId);
+  // Editing waits while the author works or an earlier revision is shown.
+  const editless = working || run?.status === "waiting" || !!preview;
+  useEffect(() => {
+    if (!work) return H([]);
+    void api<RevisionSummary[]>("/works/" + work.id + "/revisions").then(H, () => {});
+  }, [work?.id, work?.revision]);
+  // A preview ends when the work changes under it.
+  useEffect(() => setPreview(undefined), [work?.id, work?.revision]);
+  useEffect(() => {
+    if (!user || (page !== "home" && page !== "work")) return;
+    void api<Setup>("/settings").then(
+      (s) => setConnected(!!s.author.credential),
+      () => {},
+    );
+  }, [user?.id, page]);
   const attempt = async (fn: () => Promise<unknown>) => {
     try {
       E("");
@@ -125,9 +216,15 @@ export function App() {
     }
   };
   const go = (to: string) => {
-    if (to !== location.pathname) history.pushState(null, "", to);
+    if (to === location.pathname) return;
+    if (!leaving()) return;
+    window.history.pushState(null, "", to);
     setPath(to);
   };
+  function history_replace(to: string) {
+    window.history.replaceState(null, "", to);
+    setPath(to);
+  }
   const refreshList = () => api<Summary[]>("/works").then(L);
   async function load(id: string) {
     const [w, r] = await Promise.all([
@@ -136,8 +233,7 @@ export function App() {
     ]);
     W(w);
     setDetail(undefined);
-    P(w.rootSceneId);
-    S(undefined);
+    S([]);
     R(r);
     // A reply from an earlier visit stays in the journal, not under the canvas; one still
     // to come shows when it arrives.
@@ -150,7 +246,20 @@ export function App() {
       .catch((e) => E(e.message));
     const pop = () => setPath(location.pathname);
     addEventListener("popstate", pop);
-    return () => removeEventListener("popstate", pop);
+    // A deletion waiting to be taken back happens now if the page is closed.
+    const flush = () => {
+      const pending = deleting.current;
+      if (pending)
+        void fetch("/api/works/" + pending.id, {
+          method: "DELETE",
+          keepalive: true,
+        });
+    };
+    addEventListener("pagehide", flush);
+    return () => {
+      removeEventListener("popstate", pop);
+      removeEventListener("pagehide", flush);
+    };
   }, []);
   // The page follows the address: a work's address opens it, leaving it closes it.
   useEffect(() => {
@@ -165,17 +274,14 @@ export function App() {
       W(undefined);
       setDetail(undefined);
       R([]);
-      S(undefined);
+      S([]);
       setPanel("");
     }
   }, [path, user?.id]);
   useEffect(() => {
     if (!user) return;
     void attempt(refreshList);
-    const events = new EventSource("/api/events");
-    events.onmessage = (e) => {
-      G(false);
-      const event = JSON.parse(e.data);
+    return listen(user.id, (event) => {
       if (event.type === "connected") {
         void refreshList();
         if (current.current)
@@ -188,8 +294,8 @@ export function App() {
           });
         return;
       }
-      if (event.type === "work" && event.work.id === current.current?.id) {
-        W(event.work);
+      if (event.type === "work") {
+        if (event.work.id === current.current?.id) W(event.work);
         void refreshList();
       }
       if (event.type === "run" && event.run.workId === current.current?.id) {
@@ -201,9 +307,7 @@ export function App() {
         });
         if (!live(event.run)) void refreshList();
       }
-    };
-    events.onerror = () => G(true);
-    return () => events.close();
+    }, G);
   }, [user?.id]);
   useEffect(() => {
     const el = conversation.current;
@@ -242,6 +346,85 @@ export function App() {
   // The author's last reply under the canvas goes with Escape or a press on the drawing.
   const replying =
     !!run && !working && run.status !== "waiting" && run.id !== dismissed;
+  // Cmd/Ctrl+Z takes back the latest step and Shift+Cmd/Ctrl+Z (or Ctrl+Y) brings it back,
+  // unless a field is being typed in.
+  useEffect(() => {
+    if (!work) return;
+    const key = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (
+        !(e.metaKey || e.ctrlKey) ||
+        (k !== "z" && k !== "y") ||
+        (e.target as Element).closest("input,textarea,[contenteditable]")
+      )
+        return;
+      e.preventDefault();
+      if (working || preview) return;
+      if (k === "y" || e.shiftKey) {
+        if (canRedo) void attempt(redo);
+      } else if (undoable) void attempt(undo);
+    };
+    addEventListener("keydown", key);
+    return () => removeEventListener("keydown", key);
+  }, [work, undoable, canRedo, working, preview]);
+  // While editing: Delete takes the selection out, Cmd/Ctrl+D copies it, Cmd/Ctrl+] and
+  // [ bring it to the front or send it to the back, the arrow keys nudge it (ten times as
+  // far with Shift) and Escape lets it go.
+  // Nudges are kept together once the keys rest, where the modules then are.
+  const nudged = useRef<{ timer?: ReturnType<typeof setTimeout>; ids: Set<string> }>({
+    ids: new Set(),
+  });
+  useEffect(() => {
+    if (!editing || !work) return;
+    const key = (e: KeyboardEvent) => {
+      if (
+        (e.target as Element).closest("input,textarea,select,[contenteditable]") ||
+        e.defaultPrevented
+      )
+        return;
+      const ids = selected.map((s) => s.moduleId);
+      const step = (e.shiftKey ? 10 : 1) / (canvas.current?.scale || 1);
+      const arrow = {
+        ArrowLeft: [-step, 0],
+        ArrowRight: [step, 0],
+        ArrowUp: [0, -step],
+        ArrowDown: [0, step],
+      }[e.key];
+      if (e.key === "Escape" && ids.length) canvas.current?.select([]);
+      else if (!ids.length || editless) return;
+      else if (e.key === "Delete" || e.key === "Backspace") removeSelected();
+      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d")
+        duplicateSelected();
+      else if ((e.metaKey || e.ctrlKey) && (e.key === "]" || e.key === "["))
+        void attempt(() =>
+          change((w) => arrange(w, sceneId, ids, e.key === "]" ? "front" : "back")),
+        );
+      else if (arrow && canvas.current) {
+        for (const m of canvas.current.nudge(ids, arrow[0], arrow[1]))
+          nudged.current.ids.add(m.id);
+        clearTimeout(nudged.current.timer);
+        nudged.current.timer = setTimeout(() => {
+          const view = canvas.current;
+          const moves = [...nudged.current.ids].flatMap((id) => {
+            const m = view?.renderer.instances.get(id);
+            return m ? [{ id, bounds: { ...m.bounds } }] : [];
+          });
+          nudged.current.ids.clear();
+          if (moves.length)
+            void attempt(() => change((w) => moveParts(w, sceneId, moves)));
+        }, 450);
+      } else return;
+      e.preventDefault();
+    };
+    addEventListener("keydown", key);
+    return () => removeEventListener("keydown", key);
+  }, [editing, editless, work, selected, sceneId]);
+  useEffect(() => {
+    if (!preview) return;
+    const key = (e: KeyboardEvent) => e.key === "Escape" && setPreview(undefined);
+    addEventListener("keydown", key);
+    return () => removeEventListener("keydown", key);
+  }, [preview]);
   useEffect(() => {
     if (!replying || journal || detailId) return;
     const key = (e: KeyboardEvent) =>
@@ -268,21 +451,26 @@ export function App() {
     }
   }
   async function send(text = prompt, target = sceneId, picked = choices) {
-    if (!text.trim() || working || uploading) return;
+    if ((!text.trim() && !attachments.length) || working || uploading) return;
+    if (!connected) {
+      go("/settings");
+      return;
+    }
     B(true);
     try {
       let w = work;
       const message =
         !w && style ? `${text.trim()}\n${t.home.styleLine(style.name[locale])}` : text;
       if (!w) {
-        w = await api<Work>("/works", "POST", { title: text.trim().slice(0, 36) });
+        w = await api<Work>("/works", "POST", {
+          title: (text.trim() || attachments[0].name).slice(0, 36),
+        });
         W(w);
-        P(w.rootSceneId);
         target = w.rootSceneId;
         go("/a/" + w.id);
       }
-      const request = selected
-        ? `${message}\nSelected module: ${selected.moduleId}\n${selected.label}`
+      const request = selected.length
+        ? `${message}\n${selected.map((s) => `Selected module: ${s.moduleId}\n${s.label}`).join("\n")}`
         : message;
       const r =
         run?.status === "waiting"
@@ -304,6 +492,7 @@ export function App() {
       A([]);
       setStyle(undefined);
       setChoices("");
+      setHanded("");
       await refreshList();
     } finally {
       B(false);
@@ -313,19 +502,241 @@ export function App() {
     if (!work?.scenes[id]) {
       throw Error(t.work.noScene);
     }
-    P(id);
-    setDetail(undefined);
-    S(undefined);
-    M(false);
+    go(sceneAddress(id));
     if (!work.scenes[id].modules.length && !working)
       await send(t.work.expand(title || work.scenes[id].title), id);
   }
   async function restore(revision: number) {
-    const w = await api<Work>("/works/" + work!.id + "/restore", "POST", {
-      revision,
-    });
+    W(
+      await api<Work>("/works/" + work!.id + "/restore", "POST", {
+        revision,
+      }),
+    );
+    if (run) setDismissed(run.id);
+  }
+  /** Takes back the latest request, or hand edit, as a whole; it can be brought back
+   * until the work changes otherwise. Both show at once, like the edits they undo. */
+  async function undo() {
+    const from = work!.revision;
+    const w = await mine(() => api<Work>("/works/" + work!.id + "/undo", "POST"));
+    setRedoable((old) => ({
+      at: w.revision,
+      revisions: [...(old?.at === from ? old.revisions : []), from],
+    }));
     W(w);
-    if (!w.scenes[sceneId]) P(w.rootSceneId);
+    if (run) setDismissed(run.id);
+  }
+  async function redo() {
+    const revisions = redoable!.revisions;
+    const w = await mine(() =>
+      api<Work>("/works/" + work!.id + "/restore", "POST", {
+        revision: revisions.at(-1),
+      }),
+    );
+    setRedoable(
+      revisions.length > 1 ? { at: w.revision, revisions: revisions.slice(0, -1) } : undefined,
+    );
+    W(w);
+  }
+  /** Runs a change the person makes, marking the revision it saves as theirs. */
+  async function mine(save: () => Promise<Work>) {
+    inflight.current++;
+    try {
+      const w = await save();
+      own.current.add(w.revision);
+      current.current = w;
+      return w;
+    } finally {
+      inflight.current--;
+    }
+  }
+  /** Commits a hand edit, made from the work as the edits before it left it. */
+  function change(make: (w: Work) => WorkEdit | null) {
+    const job = edits.current.then(async () => {
+      const w = current.current;
+      if (!w) return false;
+      const edit = make(w);
+      if (!edit) return false;
+      const saved = await mine(() =>
+        api<Work>("/works/" + w.id + "/edits", "POST", edit),
+      );
+      setRedoable(undefined);
+      W(saved);
+      return true;
+    });
+    edits.current = job.catch(() => {});
+    return job;
+  }
+  function removeSelected() {
+    const gone = ids;
+    void attempt(() => change((w) => removeParts(w, sceneId, gone)));
+  }
+  function duplicateSelected() {
+    const from = ids;
+    void attempt(async () => {
+      let copies: string[] = [];
+      await change((w) => {
+        const r = duplicate(w, sceneId, from, 24 / (canvas.current?.scale || 1));
+        copies = r.ids;
+        return r.edit;
+      });
+      await canvas.current?.ready;
+      canvas.current?.select(copies);
+    });
+  }
+  /** Adds words or a picture in the middle of the view, selected, the words ready to type. */
+  function addPart(kind: "text" | "picture") {
+    const view = canvas.current;
+    if (!view) return;
+    const at = view.center(),
+      scale = view.scale;
+    const place = (what: Addition) =>
+      attempt(async () => {
+        let id = "";
+        // A work whose own drawing uses the library drawing's id gets a copy of it.
+        const copy = shadowed(work!, what.kind)
+          ? copyOf(await api<Material>("/materials/" + drawingFor(what.kind)))
+          : undefined;
+        await change((w) => {
+          const r = add(w, sceneId, at, what, copy);
+          id = r.id;
+          return r.edit;
+        });
+        // The new module is on the canvas once the quiet update has drawn it.
+        await new Promise((r) => setTimeout(r, 60));
+        canvas.current?.select([id]);
+        const view = canvas.current;
+        if (what.kind === "text" && view?.rectOf(id))
+          setRetyping({
+            kind: "text",
+            moduleId: id,
+            text: what.text,
+            place: () => ({
+              rect: view.rectOf(id) ?? new DOMRect(),
+              size: what.size * view.scale,
+            }),
+          });
+      });
+    if (kind === "text")
+      void place({
+        kind: "text",
+        text: t.edit.newText,
+        size: Math.round(Math.min(96, Math.max(14, 22 / scale))),
+      });
+    else
+      setChoosing(() => (m: PictureMaterial) => {
+        const c = m.form.content;
+        void place({
+          kind: "picture",
+          material: m.id,
+          name: m.name[locale],
+          aspect: (m.form.height * c.height) / (m.form.width * c.width),
+          width: Math.round(240 / scale),
+        });
+      });
+  }
+  /** Words or a picture pointed at on the canvas: words are changed where they are, a
+   * picture is swapped for one from the library. What the work cannot change by itself is
+   * written up for the author to do. */
+  function point(p: Pointed) {
+    if (editless) return;
+    if (!editing) setPanel("edit");
+    if (p.kind === "text") return setRetyping(p);
+    setChoosing(() => (m: PictureMaterial) =>
+      void attempt(async () => {
+        const done = await change((w) =>
+          replace(w, sceneId, p.moduleId, "picture", p.material, m.id),
+        );
+        if (!done) {
+          A((old) => (old.some((a) => a.id === m.id) ? old : [...old, attachmentOf(m, locale)]));
+          ask(t.edit.askPicture(nameOf(p.moduleId)), t.edit.handedPicture);
+        }
+      }),
+    );
+  }
+  function retyped(text: string | null) {
+    const p = retyping!;
+    setRetyping(undefined);
+    if (text === null || text === p.text) return;
+    if (!text.trim()) return removeSelected();
+    void attempt(async () => {
+      if (!(await change((w) => replace(w, sceneId, p.moduleId, "text", p.text, text))))
+        ask(t.edit.askText(nameOf(p.moduleId), p.text, text), t.edit.handedText);
+    });
+  }
+  /** A library drawing as a drawing of the work's own, its values named in the app's words. */
+  function copyOf(m: Material): Omit<Drawing, "id"> {
+    if (m.kind !== "drawing") throw Error(m.id);
+    const named = t.edit.params as Record<string, string>;
+    return {
+      name: m.name[locale],
+      params: Object.fromEntries(
+        Object.entries(m.params).flatMap(([k, { type, options, min, max, step }]) =>
+          (paramTypes as readonly string[]).includes(type)
+            ? [
+                [
+                  k,
+                  {
+                    label: named[k] ?? k,
+                    type: type as (typeof paramTypes)[number],
+                    ...(options ? { options } : {}),
+                    ...(min !== undefined ? { min, max, step } : {}),
+                  },
+                ],
+              ]
+            : [],
+        ),
+      ),
+      source: m.source,
+    };
+  }
+  const nameOf = (moduleId: string) =>
+    active?.modules.find((m) => m.id === moduleId)?.label || moduleId;
+  /** Hands a change to the author, written into the composer for the person to send, and
+   * says why. */
+  function ask(text?: string, why = "") {
+    if (text) Q(text);
+    setHanded(why);
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLTextAreaElement>("[data-dock] textarea")?.focus(),
+    );
+  }
+  async function look(revision: number) {
+    if (revision === work!.revision) return setPreview(undefined);
+    setPreview({
+      revision,
+      work: await api<Work>(`/works/${work!.id}/revisions/${revision}`),
+    });
+  }
+  /** Saves the scene as a picture, drawn whole at full resolution. */
+  async function download() {
+    setExporting(true);
+    try {
+      const r = await fetch(
+        `/api/works/${work!.id}/scenes/${encodeURIComponent(sceneId)}/picture`,
+        { headers: { "x-drawy-locale": locale } },
+      );
+      if (!r.ok) throw Error((await r.json()).error);
+      const name = decodeURIComponent(
+        r.headers.get("content-disposition")?.match(/filename\*=UTF-8''(.+)$/)?.[1] ||
+          "drawy.png",
+      );
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(await r.blob());
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } finally {
+      setExporting(false);
+    }
+  }
+  /** Stopping hands what was asked back to the composer, to change and send again. */
+  async function stop() {
+    const asked = run!.steps.findLast(
+      (s) => s.kind === "message" && s.role === "user",
+    );
+    await api("/runs/" + run!.id + "/cancel", "POST");
+    if (asked?.kind === "message" && !prompt.trim()) Q(asked.text);
   }
   async function rename(id: string, title: string) {
     L((old) => old.map((w) => (w.id === id ? { ...w, title } : w)));
@@ -392,6 +803,20 @@ export function App() {
         dismiss={() => setDismissed(run?.id || "")}
       />
     );
+  // Until a drawing model is connected, the composer says so and leads to Settings.
+  const unconnected = connected === false && (
+    <div className={cx("now")} data-tone="failed">
+      <span className={cx("now-line")}>{t.composer.unconnected}</span>
+      <button className={cx("primary small")} onClick={() => go("/settings")}>
+        {t.composer.connect}
+      </button>
+    </div>
+  );
+  const note = handed && prompt && (
+    <div className={cx("now")}>
+      <span className={cx("now-line")}>{handed}</span>
+    </div>
+  );
   const composer = (place: "home" | "dock") => (
     <Composer
       place={place}
@@ -400,28 +825,31 @@ export function App() {
       attachments={attachments}
       detach={(id) => A((old) => old.filter((a) => a.id !== id))}
       uploading={uploading}
-      quote={place === "dock" ? selected?.label : undefined}
-      unquote={() => S(undefined)}
+      quote={
+        place === "dock" && selected.length
+          ? selected.map((s) => s.label || s.moduleId).join(t.now.list)
+          : undefined
+      }
+      unquote={() => canvas.current?.select([])}
+      edit={editing || editless || !work?.brief ? undefined : () => setPanel("edit")}
       placeholder={
         place === "home"
           ? t.home.placeholder
           : run?.status === "waiting"
             ? t.composer.answering
-            : selected
+            : selected.length
               ? t.composer.selected
               : working
                 ? t.composer.working
                 : t.composer.continue
       }
-      status={place === "dock" ? status : undefined}
+      status={unconnected || (place === "dock" ? note || status : undefined)}
       style={place === "home" ? style : undefined}
       setStyle={place === "home" ? setStyle : undefined}
       working={working}
       busy={busy}
       send={() => void attempt(() => send())}
-      stop={() =>
-        void attempt(() => api("/runs/" + run!.id + "/cancel", "POST"))
-      }
+      stop={() => void attempt(stop)}
       attach={(files) => void attempt(() => upload(files))}
       pick={() => setPicking(true)}
     />
@@ -533,6 +961,7 @@ export function App() {
           ) : (
             <div className={cx("workspace")} data-panel={panel || undefined}>
               <section
+                ref={stage}
                 className={cx("stage")}
                 data-working={working || undefined}
                 onPointerDown={(e) => {
@@ -605,35 +1034,60 @@ export function App() {
                 </header>
                 <SceneView
                   key={work.id}
-                  work={work}
+                  work={
+                    preview?.work.scenes[sceneId] ? preview.work : work
+                  }
                   sceneId={sceneId}
                   run={working || run?.status === "waiting" ? run : undefined}
-                  disabled={
-                    !!run &&
-                    ["running", "viewing", "waiting"].includes(run.status)
+                  disabled={editless}
+                  editing={editing}
+                  quiet={(revision) =>
+                    inflight.current > 0 || own.current.has(revision)
                   }
+                  view={(c) => (canvas.current = c)}
                   open={(target: Target) =>
                     target.kind === "scene"
                       ? void attempt(() => enter(target.id))
                       : setDetail(target.id)
                   }
-                  select={(value) => {
-                    S(value || undefined);
-                  }}
+                  select={S}
                   commit={(moves) =>
                     void attempt(async () => {
                       if (working) throw Error(t.work.wait);
-                      W(
-                        await api("/works/" + work.id + "/modules", "PATCH", {
-                          sceneId,
-                          baseRevision: work.revision,
-                          moves,
-                        }),
-                      );
+                      await change((w) => moveParts(w, sceneId, moves));
                     })
                   }
+                  point={point}
                 />
-                <div className={cx("dock")}>
+                {retyping && stage.current && (
+                  <Retype
+                    key={retyping.moduleId + ":" + retyping.text}
+                    pointed={retyping}
+                    stage={stage.current}
+                    done={retyped}
+                  />
+                )}
+                <div className={cx("dock")} data-dock>
+                  {preview && (
+                    <div className={cx("preview-bar")} role="status">
+                      <span>{t.history.previewing(preview.revision)}</span>
+                      <button
+                        className={cx("secondary small")}
+                        onClick={() => setPreview(undefined)}
+                      >
+                        {t.history.back}
+                      </button>
+                      <button
+                        className={cx("primary small")}
+                        disabled={working}
+                        onClick={() =>
+                          void attempt(() => restore(preview.revision))
+                        }
+                      >
+                        {t.history.restoreThis}
+                      </button>
+                    </div>
+                  )}
                   {error && (
                     <div className={cx("toast-error")} role="alert">
                       <span>{error}</span>
@@ -656,10 +1110,27 @@ export function App() {
                   <button
                     aria-label={t.work.undo}
                     data-tip={t.work.undo}
-                    disabled={working || work.revision < 2}
-                    onClick={() => void attempt(() => restore(work.revision - 1))}
+                    disabled={working || !undoable}
+                    onClick={() => void attempt(undo)}
                   >
                     <Undo2 size={17} />
+                  </button>
+                  <button
+                    aria-label={t.work.redo}
+                    data-tip={t.work.redo}
+                    disabled={working || !canRedo}
+                    onClick={() => void attempt(redo)}
+                  >
+                    <Redo2 size={17} />
+                  </button>
+                  <button
+                    aria-label={t.work.edit}
+                    data-tip={work.brief ? t.work.edit : t.work.nothingToEdit}
+                    aria-pressed={editing}
+                    disabled={!work.brief}
+                    onClick={() => toggle("edit")}
+                  >
+                    <PencilLine size={17} />
                   </button>
                   <button
                     aria-label={t.work.history}
@@ -678,20 +1149,36 @@ export function App() {
                   >
                     <MessagesSquare size={17} />
                   </button>
+                  <button
+                    aria-label={t.work.download}
+                    data-tip={t.work.download}
+                    disabled={!active?.modules.length || exporting}
+                    onClick={() => void attempt(download)}
+                  >
+                    {exporting ? <Spinner size={15} /> : <Download size={17} />}
+                  </button>
                 </nav>
                 <div className={cx("side-panel")} data-kind={panel || undefined} inert={!panel}>
                   <header>
                     <h2>
-                      {panel === "history" ? (
-                        <Title name="history" size="section" />
-                      ) : (
-                        <Title name="journal" size="section" />
-                      )}
+                      <Title
+                        name={
+                          panel === "history"
+                            ? "history"
+                            : editing
+                              ? "edit"
+                              : "journal"
+                        }
+                        size="section"
+                      />
                     </h2>
                     <button
                       aria-label={t.collapse}
                       data-tip={t.collapse}
-                      onClick={() => setPanel("")}
+                      onClick={() => {
+                        setPanel("");
+                        setPreview(undefined);
+                      }}
                     >
                       <PanelRightClose size={17} />
                     </button>
@@ -707,10 +1194,35 @@ export function App() {
                         el.scrollHeight - el.scrollTop - el.clientHeight < 160;
                     }}
                   >
-                    {panel === "history" ? (
+                    {editing ? (
+                      <EditPanel
+                        work={work}
+                        sceneId={sceneId}
+                        selected={ids}
+                        canvas={canvas.current}
+                        busy={
+                          working || run?.status === "waiting"
+                            ? t.edit.busy
+                            : undefined
+                        }
+                        change={(make) => attempt(() => change(make)).then(() => true)}
+                        add={addPart}
+                        duplicate={duplicateSelected}
+                        remove={removeSelected}
+                        arrange={(to) =>
+                          void attempt(() =>
+                            change((w) => arrange(w, sceneId, ids, to)),
+                          )
+                        }
+                        pickPicture={(chosen) => setChoosing(() => chosen)}
+                        ask={() => ask()}
+                      />
+                    ) : panel === "history" ? (
                       <Versions
-                        id={work.id}
+                        history={history}
                         current={work.revision}
+                        previewing={preview?.revision}
+                        look={(r) => void attempt(() => look(r))}
                         restore={(r) => void attempt(() => restore(r))}
                       />
                     ) : (
@@ -748,6 +1260,23 @@ export function App() {
             onClose={() => setPicking(false)}
           >
             <Library use={use} action={t.work.addIt} />
+          </Dialog>
+        )}
+        {choosing && (
+          <Dialog
+            title={t.titles.choosePicture}
+            heading={<Title name="choosePicture" size="section" />}
+            wide
+            onClose={() => setChoosing(undefined)}
+          >
+            <Library
+              kinds={["picture"]}
+              action={t.edit.usePicture}
+              use={(m) => {
+                setChoosing(undefined);
+                if (m.kind === "picture") choosing(m);
+              }}
+            />
           </Dialog>
         )}
         <Presence show={!!trash}>

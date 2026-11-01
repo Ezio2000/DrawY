@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUp, Paperclip, Square, X, Palette, Check, ImageUp, Shapes } from "lucide-react";
+import {
+  ArrowUp,
+  Paperclip,
+  Square,
+  X,
+  Palette,
+  Check,
+  ImageUp,
+  Shapes,
+  PencilLine,
+} from "lucide-react";
 import { Spinner, useLocale } from "@drawy/ui";
 import type { StyleMaterial } from "@drawy/materials/schema";
 import { api } from "./api.ts";
@@ -36,6 +46,7 @@ export function Composer({
   uploading,
   quote,
   unquote,
+  edit,
   placeholder,
   style,
   setStyle,
@@ -55,6 +66,8 @@ export function Composer({
   uploading: number;
   quote?: string;
   unquote: () => void;
+  /** Changes what is quoted by hand instead. */
+  edit?: () => void;
   placeholder: string;
   style?: StyleMaterial;
   setStyle?: (style?: StyleMaterial) => void;
@@ -105,6 +118,12 @@ export function Composer({
                 <X size={12} />
               </button>
             </span>
+          )}
+          {quote && edit && (
+            <button className={cx("quote-edit")} onClick={edit}>
+              <PencilLine size={13} />
+              {t.composer.editByHand}
+            </button>
           )}
           {attachments.map((a) => (
             <span
@@ -171,7 +190,9 @@ export function Composer({
             <button
               className={cx("composer-send")}
               aria-label={t.composer.send}
-              disabled={busy || !!uploading || !value.trim()}
+              disabled={
+                busy || !!uploading || !(value.trim() || attachments.length)
+              }
               onClick={send}
             >
               {busy ? <Spinner size={15} /> : <ArrowUp size={18} />}
@@ -256,7 +277,7 @@ function StylePicker({
         ) : (
           <Palette size={17} />
         )}
-        <span>{style ? style.name[locale] : t.composer.style}</span>
+        {style && <span>{style.name[locale]}</span>}
       </button>
       {open && (
         <div className={cx("popover styles-menu")} role="menu">
@@ -277,7 +298,10 @@ function StylePicker({
               onClick={() => choose(s)}
             >
               {s.samples[0] ? (
-                <img src={`/materials/thumbs/${s.samples[0]}?size=96`} alt="" />
+                <img
+                  src={`/materials/thumbs/${s.samples[0]}?size=256`}
+                  alt=""
+                />
               ) : (
                 <span className={cx("styles-auto")} />
               )}

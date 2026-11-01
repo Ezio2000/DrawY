@@ -9,9 +9,42 @@ export const targetSchema = z.object({
   kind: z.enum(["scene", "detail"]),
   id: key,
 });
+/** The kinds of value a person can change by hand, each with its own plain control. */
+export const paramTypes = [
+  "text",
+  "number",
+  "boolean",
+  "color",
+  "picture",
+  "choice",
+] as const;
+/** How a person changes one value of a drawing's instance data without touching code. */
+export const paramSchema = z.object({
+  label: z
+    .string()
+    .min(1)
+    .describe(
+      "What a person editing the work calls it, in the user's language",
+    ),
+  type: z.enum(paramTypes),
+  options: z
+    .array(z.string().min(1))
+    .min(2)
+    .optional()
+    .describe("The values a choice offers"),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  step: z.number().positive().optional(),
+});
 export const drawingSchema = z.object({
   id: key,
   name: key,
+  params: z
+    .record(z.string(), paramSchema)
+    .optional()
+    .describe(
+      "The instance data a person may change by hand, by data key; left out when there is nothing to change",
+    ),
   source: z.string().min(1),
 });
 // Layout comes before content, in the order writes stream, so a composition can be
@@ -69,7 +102,11 @@ export const briefSchema = z.object({
   basis: z.object({
     subject: z.string().min(1),
     intent: z.string().min(1),
-    register: z.string().min(1),
+    register: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Omitted when the user's words leave the register to you"),
   }),
 });
 /** A material as a work uses it: what the runtime needs, copied when the work took it, so
@@ -99,11 +136,15 @@ export type MaterialUse =
       name: string;
       source: string;
       defaults: Record<string, unknown>;
+      /** The parameters a person can change by hand; the app names them itself. */
+      params: Record<string, Omit<Param, "label">>;
     }
   | { id: string; kind: "effect"; name: string; defs: string };
 export type Point = z.infer<typeof pointSchema>;
 export type Bounds = z.infer<typeof boundsSchema>;
 export type Target = z.infer<typeof targetSchema>;
+export type Param = z.infer<typeof paramSchema>;
+export type ParamType = Param["type"];
 export type Drawing = z.infer<typeof drawingSchema>;
 export type Instance = z.infer<typeof instanceSchema>;
 export type Link = z.infer<typeof linkSchema>;
@@ -131,6 +172,42 @@ export interface Work {
   style: Record<string, string>;
   revision: number;
   updatedAt: number;
+}
+/** What made a revision: the work's creation, one request to the author (every revision
+ * it saves while answering), a hand edit on the canvas, or bringing back an earlier one. */
+export type Cause =
+  | { kind: "create" }
+  | { kind: "run"; runId: string; prompt: string }
+  | { kind: "edit" }
+  | { kind: "restore"; revision: number };
+export interface RevisionSummary {
+  revision: number;
+  updatedAt: number;
+  cause: Cause;
+}
+/** The revision a step of the work started from: the one before the first revision of the
+ * step that made `revision`. A step is one request to the author with every revision it
+ * saved, or one hand edit; a restored revision stands for the one it brought back. */
+export function stepBefore(
+  history: RevisionSummary[],
+  revision: number,
+): number | undefined {
+  const of = new Map(history.map((r) => [r.revision, r.cause]));
+  const seen = new Set<number>();
+  let at = revision;
+  while (of.get(at)?.kind === "restore" && !seen.has(at)) {
+    seen.add(at);
+    at = (of.get(at) as Extract<Cause, { kind: "restore" }>).revision;
+  }
+  const cause = of.get(at);
+  if (!cause || cause.kind === "create") return undefined;
+  if (cause.kind === "run")
+    while (
+      of.get(at - 1)?.kind === "run" &&
+      (of.get(at - 1) as Extract<Cause, { kind: "run" }>).runId === cause.runId
+    )
+      at--;
+  return at > 1 ? at - 1 : undefined;
 }
 export const workEditSchema = z.object({
   baseRevision: z.number().int(),
@@ -288,8 +365,8 @@ export type ToolActivity =
       sceneId?: string;
       focus: "overview" | "region" | "annotate" | "actions";
       region?: Bounds;
-      /** Pictures still developing that the look waits for. */
-      waiting?: number;
+      /** The names of pictures still developing that the look waits for. */
+      waiting?: string[];
       screenshots?: Picture[];
       errors?: string[];
     };
@@ -300,6 +377,8 @@ export type Step =
       text: string;
       /** Pictures attached to the message, as material ids. */
       materials?: string[];
+      /** The author's questions, waiting for the user's answer. */
+      asked?: boolean;
     }
   | { kind: "thinking"; text: string }
   | ({

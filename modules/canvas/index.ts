@@ -10,16 +10,30 @@ import type {
   Target,
   Work,
 } from "../contracts/index.ts";
+/** Words or a picture a person pointed at in a module, to change them. */
+export type Pointed =
+  | {
+      kind: "text";
+      moduleId: string;
+      text: string;
+      /** Where the words are on screen now, and their size there; the view may have
+       * moved since they were pointed at. */
+      place: () => { rect: DOMRect; size: number };
+    }
+  | { kind: "picture"; moduleId: string; material: string };
 export interface CanvasOptions {
   camera?: Camera;
-  editing?: boolean;
+  /** Whether modules can be moved and resized: a selected module follows a drag. */
+  movable?: boolean;
   /** Unfold drawings as they appear and glide the camera between compositions. */
   motion?: boolean;
   /** Screen space kept clear above and below the automatic view, for controls laid over
-   * the canvas. */
-  insets?: { top: number; bottom: number };
+   * the canvas; asked each time the view is fitted, as the controls change size. */
+  insets?: () => { top: number; bottom: number };
   open: (target: Target) => void;
-  select: (selection: Selection | null) => void;
+  select: (selection: Selection[]) => void;
+  /** A double click on words or a picture in a module. */
+  point?: (pointed: Pointed) => void;
   cameraChanged?: (camera: Camera) => void;
   commit?: (moves: { id: string; bounds: Bounds }[]) => void;
   /** A scene has been drawn and is now on screen. */
@@ -63,9 +77,14 @@ export class Canvas {
   private steering = 0;
   private steered = 0;
   private gliding = 0;
-  private editing: boolean;
-  private selected: string | null = null;
-  private outline = document.createElement("div");
+  private movable: boolean;
+  /** Editing: a press selects instead of opening or operating what is drawn, any module
+   * can be dragged at once, and Shift adds to the selection. */
+  private editing = false;
+  private selection: string[] = [];
+  private outlines: HTMLDivElement[] = [];
+  private hovered: string | null = null;
+  private hover = document.createElement("div");
   private resize = document.createElement("button");
   private observer: ResizeObserver;
   private abort = new AbortController();
@@ -84,7 +103,7 @@ export class Canvas {
     scene: Scene,
     readonly options: CanvasOptions,
   ) {
-    this.editing = !!options.editing;
+    this.movable = !!options.movable;
     this.automatic = !options.camera;
     this.camera = options.camera || this.camera;
     this.element.dataset.canvas = "";
@@ -102,24 +121,49 @@ export class Canvas {
       "position:absolute;left:0;top:0;z-index:4;pointer-events:none";
     this.pen.dataset.state = "away";
     this.element.append(this.pen);
-    this.outline.style.cssText =
-      "position:absolute;border:1px solid #d97757;border-radius:6px;box-shadow:0 0 0 4px rgba(217,119,87,.12);pointer-events:none;display:none;z-index:3;box-sizing:border-box";
+    this.hover.style.cssText =
+      "position:absolute;border:1px dashed rgba(193,95,60,.55);border-radius:6px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
+    this.element.append(this.hover);
     this.resize.style.cssText =
       "position:absolute;right:-6px;bottom:-6px;width:11px;height:11px;border-radius:50%;background:#fff;border:1.5px solid #d97757;pointer-events:auto;cursor:nwse-resize;padding:0";
     this.resize.setAttribute(
       "aria-label",
       /^en/i.test(document.documentElement.lang) ? "Resize module" : "调整模块大小",
     );
-    this.outline.append(this.resize);
-    this.element.append(this.outline);
     const signal = this.abort.signal;
+    // While editing, the canvas takes every press and click before the drawings do, so
+    // their own buttons and links stay still and a press selects what it lands on.
+    for (const type of ["pointerdown", "click", "dblclick", "input", "change"])
+      this.element.addEventListener(
+        type,
+        (e) => {
+          if (!this.editing) return;
+          e.stopPropagation();
+          if (type === "pointerdown") this.down(e as PointerEvent);
+          if (type === "dblclick") this.dblclick(e as MouseEvent);
+        },
+        { capture: true, signal },
+      );
+    // A press on the canvas itself reaches both listeners; editing has taken it already.
+    this.element.addEventListener(
+      "dblclick",
+      (e) => !this.editing && !this.interactive(e) && this.dblclick(e),
+      { signal },
+    );
+    this.element.addEventListener(
+      "pointerleave",
+      () => this.hoverOver(null),
+      { signal },
+    );
     this.element.addEventListener("wheel", (e) => this.wheel(e), {
       passive: false,
       signal,
     });
-    this.element.addEventListener("pointerdown", (e) => this.down(e), {
-      signal,
-    });
+    this.element.addEventListener(
+      "pointerdown",
+      (e) => !this.editing && this.down(e),
+      { signal },
+    );
     this.element.addEventListener("pointermove", (e) => this.move(e), {
       signal,
     });
@@ -142,7 +186,10 @@ export class Canvas {
           this.fit();
           e.preventDefault();
         }
-        if (e.key === "Escape") this.select(null);
+        if (e.key === "Escape" && this.selection.length) {
+          this.select([]);
+          e.stopPropagation();
+        }
       },
       { signal },
     );
@@ -168,8 +215,9 @@ export class Canvas {
     });
   }
   /** Draws another revision of the scene off screen, then swaps it in: new modules unfold,
-   * redrawn ones settle, moved ones glide and removed ones fade. */
-  update(work: Work, scene: Scene) {
+   * redrawn ones settle, moved ones glide and removed ones fade. A quiet update, for a
+   * change the person made by hand, swaps it in as it is. */
+  update(work: Work, scene: Scene, quiet = false) {
     this.pending?.dispose();
     const next = this.renderFor(work, scene);
     this.pending = next;
@@ -181,11 +229,12 @@ export class Canvas {
       const before = this.renderer;
       this.renderer = next;
       next.element.style.visibility = "";
-      if (this.selected && !next.instances.has(this.selected))
-        this.select(null);
-      if (this.automatic) this.fit(true);
+      // The selection stays on what is still there, as it is now.
+      if (this.selection.length) this.select(this.selection);
+      if (this.automatic && !quiet) this.fit(true);
       else this.paint();
-      this.unfold(before, next);
+      if (quiet) before.dispose();
+      else this.unfold(before, next);
       this.options.shown?.(scene);
     };
     void next.mount().then(swap, (e) => {
@@ -396,7 +445,7 @@ export class Canvas {
     this.present = present;
     if (present && this.pen.dataset.state === "away") {
       // It waits in the middle of a blank page, or just off the corner of a drawing.
-      const { top, bottom } = this.options.insets || { top: 0, bottom: 80 },
+      const { top, bottom } = this.options.insets?.() || { top: 0, bottom: 80 },
         w = this.element.clientWidth,
         h = this.element.clientHeight - bottom,
         { x, y, scale } = this.camera,
@@ -580,16 +629,37 @@ export class Canvas {
       backgroundPosition: `${x}px ${y}px`,
     });
     this.element.style.setProperty("--zoom", String(scale));
-    const m = this.selected && this.renderer.instances.get(this.selected);
-    this.outline.style.display = m ? "block" : "none";
-    this.resize.style.display = this.editing ? "block" : "none";
-    if (m)
-      Object.assign(this.outline.style, {
-        left: x + m.bounds.x * scale + "px",
-        top: y + m.bounds.y * scale + "px",
-        width: m.bounds.width * scale + "px",
-        height: m.bounds.height * scale + "px",
+    const box = (el: HTMLElement, b: Bounds) =>
+      Object.assign(el.style, {
+        display: "block",
+        left: x + b.x * scale + "px",
+        top: y + b.y * scale + "px",
+        width: b.width * scale + "px",
+        height: b.height * scale + "px",
       });
+    const chosen = this.selection.flatMap((id) => {
+      const m = this.renderer.instances.get(id);
+      return m ? [m] : [];
+    });
+    while (this.outlines.length < chosen.length) {
+      const outline = document.createElement("div");
+      outline.style.cssText =
+        "position:absolute;border:1px solid #d97757;border-radius:6px;box-shadow:0 0 0 4px rgba(217,119,87,.12);pointer-events:none;display:none;z-index:3;box-sizing:border-box";
+      this.element.append(outline);
+      this.outlines.push(outline);
+    }
+    this.outlines.forEach((outline, i) =>
+      chosen[i] ? box(outline, chosen[i].bounds) : (outline.style.display = "none"),
+    );
+    // Only a single module is resized, by the handle at its corner.
+    if (chosen.length === 1 && this.movable) this.outlines[0].append(this.resize);
+    else this.resize.remove();
+    const over =
+      this.editing && this.hovered && !this.selection.includes(this.hovered)
+        ? this.renderer.instances.get(this.hovered)
+        : undefined;
+    if (over) box(this.hover, over.bounds);
+    else this.hover.style.display = "none";
   }
   private changed() {
     cancelAnimationFrame(this.gliding);
@@ -611,7 +681,7 @@ export class Canvas {
   }
   fit(glide = true) {
     this.automatic = true;
-    const { top, bottom } = this.options.insets || { top: 0, bottom: 80 },
+    const { top, bottom } = this.options.insets?.() || { top: 0, bottom: 80 },
       height = this.element.clientHeight - top - bottom;
     const target = fit(
       union([
@@ -660,17 +730,173 @@ export class Canvas {
     );
     this.changed();
   }
-  setEditing(value: boolean) {
-    this.editing = value;
+  setMovable(value: boolean) {
+    this.movable = value;
     this.paint();
   }
-  select(id: string | null) {
-    this.selected = id;
-    const m = id && this.renderer.instances.get(id);
+  setEditing(value: boolean) {
+    this.editing = value;
+    this.element.toggleAttribute("data-editing", value);
+    if (!value) this.hovered = null;
+    this.paint();
+  }
+  get selected() {
+    return [...this.selection];
+  }
+  select(ids: string[]) {
+    this.selection = ids.filter((id) => this.renderer.instances.has(id));
     this.options.select(
-      m ? { moduleId: m.id, label: m.label, data: m.data } : null,
+      this.selection.map((id) => {
+        const m = this.renderer.instances.get(id)!;
+        return { moduleId: m.id, label: m.label, data: m.data };
+      }),
     );
     this.paint();
+  }
+  /** The middle of the view, in scene units, clear of the controls laid over it. */
+  center() {
+    const { top, bottom } = this.options.insets?.() || { top: 0, bottom: 80 };
+    const { x, y, scale } = this.camera;
+    return {
+      x: (this.element.clientWidth / 2 - x) / scale,
+      y: (top + (this.element.clientHeight - top - bottom) / 2 - y) / scale,
+    };
+  }
+  /** How many screen pixels a scene unit takes now. */
+  get scale() {
+    return this.camera.scale;
+  }
+  /** Where a module is on screen. */
+  rectOf(id: string) {
+    const m = this.renderer.instances.get(id);
+    if (!m) return undefined;
+    const r = this.element.getBoundingClientRect(),
+      { x, y, scale } = this.camera;
+    return new DOMRect(
+      r.left + x + m.bounds.x * scale,
+      r.top + y + m.bounds.y * scale,
+      m.bounds.width * scale,
+      m.bounds.height * scale,
+    );
+  }
+  /** Shows a module with other data while a change to it is being made. */
+  preview(id: string, data: Record<string, unknown>) {
+    void this.renderer.redraw(id, data);
+  }
+  /** Moves modules by a distance in scene units, until the move is committed. */
+  nudge(ids: string[], dx: number, dy: number) {
+    const moves = ids.flatMap((id) => {
+      const m = this.renderer.instances.get(id);
+      return m
+        ? [{ id, bounds: { ...m.bounds, x: m.bounds.x + dx, y: m.bounds.y + dy } }]
+        : [];
+    });
+    void this.renderer.move(moves);
+    this.paint();
+    return moves;
+  }
+  /** The module drawn at a point: the topmost whose drawing paints there, or failing
+   * that the smallest whose box holds the point, so a large module laid over others does
+   * not hide them where it draws nothing. */
+  private moduleAt(x: number, y: number) {
+    const hosts = document
+      .elementsFromPoint(x, y)
+      .filter(
+        (n): n is HTMLElement =>
+          n instanceof HTMLElement &&
+          !!n.dataset.moduleId &&
+          this.renderer.element.contains(n),
+      );
+    const of = (host: HTMLElement) =>
+      this.renderer.instances.get(host.dataset.moduleId!);
+    for (const host of hosts) {
+      const root = host.shadowRoot!,
+        drawn = root.lastElementChild;
+      const el = root.elementsFromPoint(x, y).find((n) => root.contains(n));
+      if (!el) continue;
+      if (el !== drawn) return of(host);
+      // The drawing's own frame paints only where it has a background.
+      const look = getComputedStyle(el);
+      if (
+        el instanceof HTMLElement &&
+        (look.backgroundColor !== "rgba(0, 0, 0, 0)" ||
+          look.backgroundImage !== "none")
+      )
+        return of(host);
+    }
+    const area = (b: Bounds) => b.width * b.height;
+    return hosts
+      .flatMap((h) => of(h) ?? [])
+      .sort((a, b) => area(a.bounds) - area(b.bounds))[0];
+  }
+  private hoverOver(id: string | null) {
+    if (this.hovered === id) return;
+    this.hovered = id;
+    this.paint();
+  }
+  /** The words or picture under a double click, and the module they belong to. The press
+   * before it held the pointer, so the click lands on the canvas; what is under it is
+   * found by where it is. */
+  private dblclick(e: MouseEvent) {
+    const moduleId = this.moduleAt(e.clientX, e.clientY)?.id;
+    const root = moduleId && this.renderer.host("module", moduleId)?.shadowRoot;
+    const inner =
+      root &&
+      root.elementsFromPoint(e.clientX, e.clientY).find((n) => root.contains(n));
+    if (!moduleId || !inner || !this.options.point) return;
+    const pictures = Object.values(this.renderer.work.materials).filter(
+      (m) => m.kind === "picture",
+    );
+    const frame = inner.closest<HTMLElement>("[data-material]");
+    const href =
+      inner instanceof SVGImageElement
+        ? inner.href.baseVal
+        : inner instanceof HTMLImageElement
+          ? inner.src
+          : "";
+    const named =
+      frame?.dataset.material ??
+      (href &&
+        pictures.find((p) => new URL(href, location.href).pathname === p.url)
+          ?.id);
+    if (named) {
+      e.preventDefault();
+      return this.options.point({ kind: "picture", moduleId, material: named });
+    }
+    // An SVG line of text, or the nearest element holding words of its own.
+    const own = (el: Element) =>
+      [...el.childNodes]
+        .filter((n) => n.nodeType === Node.TEXT_NODE)
+        .map((n) => n.textContent)
+        .join("")
+        .trim();
+    let el: Element | null = inner.closest("tspan,text");
+    if (!el) {
+      el = inner;
+      while (el && !own(el)) el = el.parentElement;
+    }
+    const text = el && (el.closest("text,tspan") ? el.textContent!.trim() : own(el));
+    if (!el || !text) return;
+    e.preventDefault();
+    getSelection()?.removeAllRanges();
+    const words = el;
+    this.options.point({
+      kind: "text",
+      moduleId,
+      text,
+      place: () => {
+        const rect = words.getBoundingClientRect();
+        return {
+          rect,
+          // An HTML element's type is scaled by how much larger it shows than it lays out.
+          size:
+            words instanceof HTMLElement
+              ? parseFloat(getComputedStyle(words).fontSize) *
+                (rect.width / (words.offsetWidth || rect.width))
+              : rect.height * 0.8,
+        };
+      },
+    });
   }
   private interactive(e: Event) {
     return e
@@ -683,7 +909,7 @@ export class Canvas {
       );
   }
   private wheel(e: WheelEvent) {
-    if (this.interactive(e)) return;
+    if (!this.editing && this.interactive(e)) return;
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
       const rect = this.element.getBoundingClientRect();
@@ -699,25 +925,50 @@ export class Canvas {
     this.changed();
   }
   private down(e: PointerEvent) {
-    if ((e.button !== 0 && e.button !== 1) || this.interactive(e)) return;
-    const node = e
-      .composedPath()
-      .find((n) => n instanceof HTMLElement && n.dataset.moduleId) as
-      HTMLElement | undefined;
+    if (
+      (e.button !== 0 && e.button !== 1) ||
+      (!this.editing && this.interactive(e))
+    )
+      return;
+    // While editing, a press on the canvas leaves any field in the panel, which keeps it.
+    if (this.editing) this.element.focus({ preventScroll: true });
     const resizing = e.target === this.resize;
-    const m = this.renderer.instances.get(
-      resizing ? this.selected! : node?.dataset.moduleId || "",
-    );
-    if (m) this.select(m.id);
-    else this.select(null);
+    const m = resizing
+      ? this.renderer.instances.get(this.selection[0])
+      : this.moduleAt(e.clientX, e.clientY);
+    // Pressing a module selects it; dragging one already selected moves it, and dragging
+    // anything else moves the view. While editing, any module pressed can be dragged at
+    // once, and Shift adds a module to the selection or takes it out.
+    const was = this.selection.includes(m?.id ?? "");
+    if (this.editing && e.shiftKey && m && !resizing)
+      this.select(
+        was
+          ? this.selection.filter((id) => id !== m.id)
+          : [...this.selection, m.id],
+      );
+    else if (m && !was) this.select([m.id]);
+    else if (!m && !(this.editing && e.shiftKey)) this.select([]);
+    const held =
+      !!m && this.selection.includes(m.id) && (resizing || was || this.editing);
+    const dragged =
+      resizing || !m
+        ? m
+          ? [m]
+          : []
+        : this.selection.map((id) => this.renderer.instances.get(id)!);
     const moves =
-      this.editing && m
-        ? (m.group && !e.altKey && !resizing
-            ? [...this.renderer.instances.values()].filter(
-                (v) => v.group === m.group,
-              )
-            : [m]
-          ).map((v) => ({ id: v.id, bounds: { ...v.bounds } }))
+      this.movable && held
+        ? [
+            ...new Set(
+              dragged.flatMap((d) =>
+                d.group && !e.altKey && !resizing
+                  ? [...this.renderer.instances.values()].filter(
+                      (v) => v.group === d.group,
+                    )
+                  : [d],
+              ),
+            ),
+          ].map((v) => ({ id: v.id, bounds: { ...v.bounds } }))
         : [];
     this.gesture = {
       x: e.clientX,
@@ -732,7 +983,11 @@ export class Canvas {
   }
   private move(e: PointerEvent) {
     const g = this.gesture;
-    if (!g) return;
+    if (!g) {
+      if (this.editing)
+        this.hoverOver(this.moduleAt(e.clientX, e.clientY)?.id ?? null);
+      return;
+    }
     const dx = e.clientX - g.x,
       dy = e.clientY - g.y;
     if (Math.hypot(dx, dy) > 3) g.moved = true;
@@ -774,8 +1029,8 @@ export class Canvas {
         })),
       );
     }
-    if (!g.moved && !this.editing && this.selected) {
-      const target = this.renderer.instances.get(this.selected)!.target;
+    if (!g.moved && !this.editing && this.selection.length === 1) {
+      const target = this.renderer.instances.get(this.selection[0])!.target;
       if (target) this.options.open(target);
     }
   }

@@ -1,10 +1,10 @@
 import { detailElement } from "../../../modules/runtime/detail.ts";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { ZoomOut, ZoomIn, Scan, MousePointer2, Hand } from "lucide-react";
+import { ZoomOut, ZoomIn, Scan } from "lucide-react";
 import { reducedMotion, useLocale } from "@drawy/ui";
 import { Pen } from "@drawy/ui/brand";
-import { Canvas } from "../../../modules/canvas/index.ts";
+import { Canvas, type Pointed } from "../../../modules/canvas/index.ts";
 import type { Camera } from "../../../modules/contracts/geometry.ts";
 import type {
   Work,
@@ -40,16 +40,27 @@ export function SceneView({
   open,
   select,
   commit,
+  point,
   disabled,
+  editing,
+  quiet,
+  view,
 }: {
   work: Work;
   sceneId: string;
   /** The run drawing or asking right now, whose layout and gaze show on the canvas. */
   run?: Run;
   disabled: boolean;
+  /** Whether the person is editing the work by hand. */
+  editing: boolean;
+  /** Whether a revision is the person's own change, shown at once rather than drawn. */
+  quiet: (revision: number) => boolean;
   open: (target: Target) => void;
-  select: (value: Selection | null) => void;
+  select: (value: Selection[]) => void;
   commit: (moves: { id: string; bounds: Bounds }[]) => void;
+  point: (pointed: Pointed) => void;
+  /** Receives the canvas the scene is drawn on, for the editor to work with. */
+  view: (canvas: Canvas | undefined) => void;
 }) {
   const t = useT(),
     locale = useLocale();
@@ -57,41 +68,52 @@ export function SceneView({
     cameras = useRef(new Map<string, Camera>()),
     drawn = useRef(work),
     [canvas, setCanvas] = useState<Canvas>(),
-    [editing, setEditing] = useState(false),
     [error, setError] = useState("");
-  const callbacks = useRef({ open, select, commit });
-  const picked = useRef<{ key: string; moduleId: string } | null>(null);
-  callbacks.current = { open, select, commit };
+  const callbacks = useRef({ open, select, commit, point, view, quiet });
+  const picked = useRef<{ key: string; ids: string[] } | null>(null);
+  callbacks.current = { open, select, commit, point, view, quiet };
   useEffect(() => {
     setError("");
     const key = work.id + ":" + sceneId;
     drawn.current = work;
     const view = new Canvas(host.current!, work, work.scenes[sceneId], {
       camera: cameras.current.get(key),
-      editing: editing && !disabled,
+      movable: !disabled,
       motion: !reducedMotion(),
-      insets: { top: 56, bottom: 96 },
+      // The view keeps clear of the title above and of the composer laid over its foot.
+      insets: () => {
+        const stage = host.current!.getBoundingClientRect(),
+          dock = host
+            .current!.parentElement?.querySelector("[data-dock]")
+            ?.getBoundingClientRect();
+        return {
+          top: 56,
+          bottom: Math.max(96, dock ? stage.bottom - dock.top + 12 : 0),
+        };
+      },
       open: (t) => callbacks.current.open(t),
       select: (s) => {
-        picked.current = s ? { key, moduleId: s.moduleId } : null;
+        picked.current = { key, ids: s.map((x) => x.moduleId) };
         callbacks.current.select(s);
       },
       commit: (m) => callbacks.current.commit(m),
+      point: (p) => callbacks.current.point(p),
       cameraChanged: (c) => cameras.current.set(key, c),
       error: setError,
     });
     view.pen.className = cx("pen");
     setCanvas(view);
+    callbacks.current.view(view);
     let mounted = true;
     void view.ready
       .then(() => {
         if (!mounted) return;
-        const id = picked.current?.key === key ? picked.current.moduleId : null;
-        view.select(id && view.renderer.instances.has(id) ? id : null);
+        view.select(picked.current?.key === key ? picked.current.ids : []);
       })
       .catch((e) => setError(String(e)));
     return () => {
       mounted = false;
+      callbacks.current.view(undefined);
       view.dispose();
     };
   }, [work.id, sceneId]);
@@ -99,8 +121,13 @@ export function SceneView({
     if (!canvas || drawnAs(drawn.current) === drawnAs(work)) return;
     drawn.current = work;
     setError("");
-    canvas.update(work, work.scenes[sceneId]);
+    canvas.update(
+      work,
+      work.scenes[sceneId],
+      callbacks.current.quiet(work.revision),
+    );
   }, [canvas, work]);
+  useEffect(() => canvas?.setMovable(!disabled), [canvas, disabled]);
   useEffect(
     () => canvas?.setEditing(editing && !disabled),
     [canvas, editing, disabled],
@@ -186,8 +213,8 @@ export function SceneView({
       <div
         ref={host}
         className={cx("canvas")}
-        data-editing={editing || undefined}
         data-drafting={!!run || undefined}
+        data-editing={(editing && !disabled) || undefined}
       />
       {canvas &&
         createPortal(
@@ -208,7 +235,9 @@ export function SceneView({
         )}
       {canvas && createPortal(<Pen size={30} />, canvas.pen)}
       {gaze && !gaze.region && <div className={cx("viewfinder")} data-screen />}
-      {empty && !run && <p className={cx("blank")}>{t.work.blank}</p>}
+      {empty && !run && (
+        <p className={cx("blank")}>{editing ? t.edit.blank : t.work.blank}</p>
+      )}
       {empty && run && (!!references.length || note) && (
         <div
           className={cx("references")}
@@ -246,15 +275,6 @@ export function SceneView({
         </div>
       )}
       <div className={cx("camera")}>
-        <button
-          disabled={disabled}
-          aria-label={editing ? t.work.moving : t.work.move}
-          data-tip={editing ? t.work.moving : t.work.move}
-          data-on={editing || undefined}
-          onClick={() => setEditing(!editing)}
-        >
-          {editing ? <MousePointer2 size={15} /> : <Hand size={15} />}
-        </button>
         <button
           aria-label={t.work.zoomOut}
           data-tip={t.work.zoomOut}

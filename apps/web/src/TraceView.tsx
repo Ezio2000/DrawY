@@ -4,7 +4,7 @@ import { api } from "./api.ts";
 import { cx } from "./cx.ts";
 import { ago } from "./time.ts";
 import { Title } from "./Title.tsx";
-import { pageLocale } from "@drawy/ui";
+import { pageLocale, Spinner } from "@drawy/ui";
 import { dictionaries } from "./i18n.tsx";
 import type { Span, TraceSummary } from "../../../modules/trace/index.ts";
 
@@ -35,7 +35,8 @@ function Status({ value }: { value: string }) {
 /** Every run of the user's works, and for one run each model turn, tool call, search,
  * generation and capture in time order, with what went in and came out. */
 export function TraceView() {
-  const [list, setList] = useState<TraceSummary[]>([]);
+  // Undefined until the first list arrives, so an empty list is never shown while loading.
+  const [list, setList] = useState<TraceSummary[]>();
   const [selected, setSelected] = useState<string | undefined>(
     location.pathname.match(/^\/traces\/([^/]+)/)?.[1],
   );
@@ -82,7 +83,7 @@ export function TraceView() {
           </button>
         </header>
         <ol>
-          {list.map((t) => (
+          {list?.map((t) => (
             <li key={t.id}>
               <button
                 aria-current={t.id === selected || undefined}
@@ -102,7 +103,8 @@ export function TraceView() {
             </li>
           ))}
         </ol>
-        {!list.length && !error && (
+        {!list && !error && <Spinner />}
+        {list && !list.length && !error && (
           <p className={cx("traces-empty")}>{w().empty}</p>
         )}
       </aside>

@@ -35,7 +35,7 @@ it("returns actual image inputs with revision and geometry, scopes captures and 
       store = db.scoped(user.id),
       work = fixture();
     work.revision = 0;
-    store.commit(work, 0);
+    store.commit(work, 0, { kind: "edit" });
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>

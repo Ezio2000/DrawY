@@ -166,7 +166,9 @@ it("moves groups, resizes an isolated module and recomputes connected anchors", 
   });
   await open();
   await page.evaluate(() => {
-    window.drawyView.setEditing(true);
+    window.drawyView.setMovable(true);
+    // A module follows a drag once it is selected.
+    window.drawyView.select(["level-0"]);
     window.drawyView.options.commit = (moves) => {
       document.body.dataset.moves = JSON.stringify(moves);
     };
@@ -205,6 +207,148 @@ it("moves groups, resizes an isolated module and recomputes connected anchors", 
   expect(
     await page.locator('[data-link-id="connection"] path').getAttribute("d"),
   ).not.toBe(before);
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+});
+it("selects what is pressed while editing, instead of opening or operating it, and points at words and pictures", async () => {
+  work.materials.apple = useOf(
+    seed("pictures").find((m) => m.id === "apple")!,
+  )!;
+  work.drawings.fruit = {
+    id: "fruit",
+    name: "果",
+    source: 'return api.material("apple")',
+  };
+  work.scenes.root.modules.push({
+    id: "fruit",
+    drawingId: "fruit",
+    label: "苹果",
+    data: {},
+    bounds: { x: 700, y: 120, width: 160, height: 160 },
+    anchors: {},
+    group: null,
+    target: null,
+  });
+  await open();
+  await page.evaluate(() => {
+    const view = window.drawyView,
+      body = document.body.dataset;
+    view.setMovable(true);
+    view.setEditing(true);
+    view.options.select = (s) =>
+      (body.selected = s.map((x) => x.moduleId).join());
+    view.options.open = (t) => (body.opened = t.id);
+    view.options.point = (p) => (body.pointed = JSON.stringify(p));
+  });
+  const data = (key: string) =>
+    page.evaluate((k) => document.body.dataset[k], key);
+  // A level opens its explanation when explored; while editing, a press only selects it,
+  // and Shift adds another.
+  await page.locator('[data-module-id="level-0"]').click();
+  expect(await data("selected")).toBe("level-0");
+  await page
+    .locator('[data-module-id="level-1"]')
+    .click({ modifiers: ["Shift"] });
+  expect(await data("selected")).toBe("level-0,level-1");
+  expect(await data("opened")).toBeUndefined();
+  // The drawing's own button is pressed without acting.
+  await page.getByRole("button", { name: "强调基础" }).click();
+  expect(await data("selected")).toBe("control");
+  await page.waitForTimeout(150);
+  await expect
+    .poll(() =>
+      page.locator('[data-module-id="level-4"] text').nth(1).textContent(),
+    )
+    .toBe("食物与休息");
+  // Any module can be dragged at once.
+  await page.evaluate(() => {
+    window.drawyView.options.commit = (moves) =>
+      (document.body.dataset.moves = JSON.stringify(moves.map((m) => m.id)));
+  });
+  const box = (await page.locator('[data-module-id="heading"]').boundingBox())!;
+  await page.mouse.move(box.x + 30, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 80, box.y + box.height / 2 + 10, { steps: 4 });
+  await page.mouse.up();
+  expect(await data("moves")).toBe('["heading"]');
+  // A double click says which words or which picture it landed on.
+  await page
+    .locator('[data-module-id="level-3"] text', { hasText: "安全需求" })
+    .dblclick();
+  expect(JSON.parse((await data("pointed"))!)).toEqual({
+    kind: "text",
+    moduleId: "level-3",
+    text: "安全需求",
+  });
+  await page.getByRole("button", { name: "进入子场景" }).dblclick();
+  expect(JSON.parse((await data("pointed"))!)).toMatchObject({
+    moduleId: "control",
+    text: "进入子场景",
+  });
+  await page.locator('[data-module-id="fruit"] img').dblclick();
+  expect(JSON.parse((await data("pointed"))!)).toEqual({
+    kind: "picture",
+    moduleId: "fruit",
+    material: "apple",
+  });
+  // A large module laid over others takes only the presses that land on what it draws.
+  await page.evaluate(() => {
+    const w = window.drawyView.renderer.work,
+      scene = window.drawyView.renderer.scene;
+    w.drawings.veil = {
+      id: "veil",
+      name: "罩",
+      source:
+        'return api.svg(`<svg viewBox="0 0 ${api.width} ${api.height}"><circle cx="20" cy="20" r="16" fill="#d97757"/></svg>`)',
+    };
+    window.drawyView.update(w, {
+      ...scene,
+      modules: [
+        ...scene.modules,
+        {
+          id: "veil",
+          drawingId: "veil",
+          label: "罩",
+          data: {},
+          bounds: { x: 0, y: 0, width: 900, height: 600 },
+          anchors: {},
+          group: null,
+          target: null,
+        },
+      ],
+    });
+  });
+  await page.waitForFunction(() =>
+    window.drawyView.renderer.instances.has("veil"),
+  );
+  await page.waitForTimeout(100);
+  const level = (await page
+    .locator('[data-module-id="level-2"] text')
+    .first()
+    .boundingBox())!;
+  await page.mouse.click(level.x + level.width / 2, level.y + level.height / 2);
+  expect(await data("selected")).toBe("level-2");
+  const veil = (await page
+    .locator('[data-module-id="veil"] circle')
+    .boundingBox())!;
+  await page.mouse.click(veil.x + veil.width / 2, veil.y + veil.height / 2);
+  expect(await data("selected")).toBe("veil");
+  // Leaving editing, the drawing works again.
+  await page.evaluate(() => window.drawyView.setEditing(false));
+  await page.getByRole("button", { name: "强调基础" }).click();
+  await expect
+    .poll(() =>
+      page.locator('[data-module-id="level-4"] text').nth(1).textContent(),
+    )
+    .toBe("已突出基础需要");
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+});
+it("passes over modules an interaction names once they are taken out of the scene", async () => {
+  work.scenes.root.modules = work.scenes.root.modules.filter(
+    (m) => m.id !== "level-4",
+  );
+  await open();
+  await page.getByRole("button", { name: "强调基础" }).click();
+  await page.waitForTimeout(150);
   expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
 });
 it("disposes drawing and scene resources when leaving the canvas", async () => {

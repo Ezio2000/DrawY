@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { X, Check, Sparkles, PenLine } from "lucide-react";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
@@ -26,6 +26,7 @@ export function Questions({
     // Each question's answer in the user's own words.
     [own, setOwn] = useState<Record<string, string>>({});
   const quick = questions.length === 1 && !questions[0].multiple;
+  const sections = useRef<(HTMLElement | null)[]>([]);
   const answers = (
     q: Question,
     picked: Record<string, string[]>,
@@ -61,6 +62,16 @@ export function Questions({
       setChosen(next);
       setOwn(words);
       choose(said(next, words));
+      // A single choice made, the next open question comes into view.
+      const following = questions.findIndex(
+        (other, i) =>
+          i > questions.indexOf(q) && !answers(other, next, words).length,
+      );
+      if (!q.multiple && following >= 0)
+        sections.current[following]?.scrollIntoView({
+          block: "nearest",
+          behavior: "smooth",
+        });
     }
   };
   const write = (q: Question, text: string) => {
@@ -86,8 +97,8 @@ export function Questions({
       >
         <X size={15} />
       </button>
-      {questions.map((q) => (
-        <section key={q.id}>
+      {questions.map((q, n) => (
+        <section key={q.id} ref={(el) => void (sections.current[n] = el)}>
           <p>{q.text}</p>
           <ol>
             {q.options.map((o, i) => {
@@ -100,7 +111,7 @@ export function Questions({
                     {o.detail && <small>{o.detail}</small>}
                     {!!o.pictures?.length && (
                       <span className={cx("question-pictures")}>
-                        {o.pictures.slice(0, 3).map((p) => (
+                        {o.pictures.slice(0, 2).map((p) => (
                           <img key={p.url} src={p.url} alt={p.name} />
                         ))}
                       </span>

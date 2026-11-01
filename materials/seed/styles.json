@@ -31,7 +31,7 @@
       "createdAt": 1793404800000
     },
     "register": "any",
-    "prompt": "Coloured-pencil drawing on white paper: every area built from visible pencil strokes and paper grain, soft hatched shading, warm natural colours, a thin dark grey outline; hand-drawn, not painted, not photorealistic. The subject isolated on a transparent background with no ground shadow, no text.",
+    "prompt": "Coloured-pencil drawing on white paper: every area built from visible pencil strokes and paper grain, soft hatched shading, warm natural colours, a thin dark grey outline; hand-drawn, not painted, not photorealistic. No ground shadow, no text.",
     "tokens": {
       "ink": "#3b3632",
       "muted": "#8a817a",
@@ -47,6 +47,7 @@
       "rough-edge"
     ],
     "samples": [
+      "lighthouse-colored-pencil",
       "apple",
       "microscope",
       "butterfly",
@@ -85,7 +86,7 @@
       "createdAt": 1793404800000
     },
     "register": "any",
-    "prompt": "Graphite and ink line drawing, mostly greyscale with small vermilion-red accents, delicate lively strokes and light grey shading, a bust portrait on a transparent background, no text.",
+    "prompt": "Graphite and ink line drawing, mostly greyscale with small vermilion-red accents, delicate lively strokes and light grey shading, a bust portrait, no text.",
     "tokens": {
       "ink": "#2b2b2b",
       "muted": "#8c8c8c",
@@ -154,6 +155,7 @@
       "pencil-grain"
     ],
     "samples": [
+      "lighthouse-crayon",
       "apple-crayon",
       "earth",
       "sun",
@@ -194,7 +196,7 @@
       "createdAt": 1793404800000
     },
     "register": "formal",
-    "prompt": "Flat textbook line illustration, like a figure in a modern school science book: crisp dark outlines of one even weight, flat solid colour fills in a muted palette, at most one flat shadow tone, no gradients, no texture, no photorealism; clean and diagrammatic. Isolated on a transparent background, no text or labels.",
+    "prompt": "Flat textbook line illustration, like a figure in a modern school science book: crisp dark outlines of one even weight, flat solid colour fills in a muted palette, at most one flat shadow tone, no gradients, no texture, no photorealism; clean and diagrammatic. No text or labels.",
     "tokens": {
       "ink": "#1f2a30",
       "muted": "#6b7780",
@@ -209,6 +211,7 @@
       "hatch"
     ],
     "samples": [
+      "lighthouse-textbook",
       "apple-textbook"
     ]
   },
@@ -243,7 +246,7 @@
       "createdAt": 1793404800000
     },
     "register": "formal",
-    "prompt": "Detailed realistic digital painting with accurate materials, natural lighting and true proportions, encyclopedia plate quality, isolated on a transparent background, no text.",
+    "prompt": "Detailed realistic digital painting with accurate materials, natural lighting and true proportions, encyclopedia plate quality, no text.",
     "tokens": {
       "ink": "#262626",
       "muted": "#7d7d7d",
@@ -258,6 +261,7 @@
       "soft-shadow"
     ],
     "samples": [
+      "lighthouse-realistic",
       "apple-realistic"
     ]
   },
@@ -295,7 +299,7 @@
       "createdAt": 1793404800000
     },
     "register": "formal",
-    "prompt": "Flat vector infographic illustration: simple geometric shapes, solid flat colour fills, no outlines or one uniform outline, no texture, no gradients, a limited harmonious palette. Isolated on a transparent background, no text.",
+    "prompt": "Flat vector infographic illustration: simple geometric shapes, solid flat colour fills, no outlines or one uniform outline, no texture, no gradients, a limited harmonious palette. No text.",
     "tokens": {
       "ink": "#22303c",
       "muted": "#7b8a97",
@@ -308,6 +312,7 @@
     "guide": "Geometric shapes with solid fills and no outlines (or one uniform 2-unit outline), corners consistently rounded, one accent colour for emphasis; numbers and labels in the sans font with clear weight contrast (semibold names, regular values).",
     "effects": [],
     "samples": [
+      "lighthouse-flat",
       "apple-flat"
     ]
   },
@@ -345,7 +350,7 @@
       "createdAt": 1793404800000
     },
     "register": "expressive",
-    "prompt": "Loose hand-painted watercolour on paper: wet-on-wet washes and blooms, colour bleeding softly past the edges, white paper showing through, a few loose pencil lines; painterly and airy, not photorealistic, not digital. Isolated on a transparent background, no text.",
+    "prompt": "Loose hand-painted watercolour on paper: wet-on-wet washes and blooms, colour bleeding softly past the edges, white paper showing through, a few loose pencil lines; painterly and airy, not photorealistic, not digital. No text.",
     "tokens": {
       "ink": "#3d3a4b",
       "muted": "#8f8aa0",
@@ -361,6 +366,7 @@
       "pencil-grain"
     ],
     "samples": [
+      "lighthouse-watercolor",
       "apple-watercolor"
     ]
   },
@@ -413,6 +419,7 @@
       "watercolor-edge"
     ],
     "samples": [
+      "lighthouse-ink-wash",
       "apple-ink-wash"
     ]
   },
@@ -448,7 +455,7 @@
       "createdAt": 1793404800000
     },
     "register": "formal",
-    "prompt": "Minimal monoline icon, uniform round-capped strokes, no fill, transparent background, no text.",
+    "prompt": "Minimal monoline icon, uniform round-capped strokes, no fill, no text.",
     "tokens": {
       "ink": "#2b2f33",
       "muted": "#7a8086",
@@ -495,7 +502,7 @@
       "createdAt": 1793404800000
     },
     "register": "any",
-    "prompt": "Simple rounded duotone icon: dark grey outline, flat terracotta and soft blue-grey fills, cream highlights, transparent background, no text.",
+    "prompt": "Simple rounded duotone icon: dark grey outline, flat terracotta and soft blue-grey fills, cream highlights, no text.",
     "tokens": {
       "ink": "#555555",
       "muted": "#8eaebd",

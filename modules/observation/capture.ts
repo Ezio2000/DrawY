@@ -206,3 +206,40 @@ export async function capture(
     await context.close();
   }
 }
+/** The whole scene as a picture to keep: framed to its drawing, at twice the screen's
+ * pixel density, with the longest side at most 4800 pixels. */
+export async function render(
+  browser: Browser,
+  request: { url: string; cookie: string; origin: string },
+): Promise<Buffer> {
+  const context = await browser.newContext({ deviceScaleFactor: 2 });
+  await context.addInitScript({ content: "globalThis.__name = (f) => f;" });
+  await context.addCookies([
+    { name: "drawy_session", value: request.cookie, url: request.origin },
+  ]);
+  try {
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(request.url, { waitUntil: "domcontentloaded" });
+    await ready(page);
+    const bounds = await page.evaluate(() => window.drawyView.renderer.bounds);
+    const scale = Math.min(1.5, 2400 / Math.max(bounds.width, bounds.height));
+    // The view keeps a margin of paper around the drawing, as the canvas does.
+    await page.setViewportSize({
+      width: Math.round((bounds.width * scale) / 0.9),
+      height: Math.round((bounds.height * scale) / 0.92),
+    });
+    await page.evaluate(
+      ({ bounds, scale }) => window.drawyView.focus(bounds, scale),
+      { bounds, scale },
+    );
+    // The paper's dot grid is for working on the canvas, not part of the picture.
+    await page.evaluate(() => {
+      window.drawyView.element.style.backgroundImage = "none";
+    });
+    await ready(page);
+    return await page.screenshot({ type: "png" });
+  } finally {
+    await context.close();
+  }
+}

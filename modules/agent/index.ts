@@ -8,9 +8,11 @@ import {
   type Work,
   type Picture,
   type Question,
+  type Cause,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { writeWork, setBrief } from "../workspace/index.ts";
+import { changesBetween } from "../editing/index.ts";
 import {
   attached,
   candidate,
@@ -29,6 +31,7 @@ import { generate, textOf, type Item } from "../models/index.ts";
 import { tools, askSchema, findSchema, generateSchema } from "./tools.ts";
 import { partialJson } from "./partial.ts";
 import { tracer } from "../trace/index.ts";
+import type { MessageLocale } from "../contracts/messages.ts";
 type ToolStep = Extract<Step, { kind: "tool" }>;
 const pictures = (shots: { name: string; url: string }[]) =>
   shots.map(({ name, url }) => ({ name, url }));
@@ -138,19 +141,55 @@ async function userMessage(
   store: UserStore,
   text: string,
   materials: string[],
+  locale: MessageLocale = "zh",
 ): Promise<Item> {
   return {
     role: "user",
     content: [
-      { type: "input_text", text },
+      {
+        type: "input_text",
+        // Pictures sent without words give no language to answer in; the page's does.
+        text: text.trim()
+          ? text
+          : `(Pictures only, no words. The user reads ${locale === "zh" ? "Chinese" : "English"}.)`,
+      },
       ...(await attached(materials, store.userId)),
     ],
   };
 }
-const workMessage = (sceneId: string, work: Work): Item => ({
+const workMessage = (sceneId: string, work: Work, changes = ""): Item => ({
   role: "user",
-  content: `Current scene: ${sceneId}\nCurrent work: ${JSON.stringify(forAuthor(work))}`,
+  content: `${changes}Current scene: ${sceneId}\nCurrent work: ${JSON.stringify(forAuthor(work))}`,
 });
+/** What the user changed in the work themselves (by hand, by undoing or by bringing back
+ * an earlier version) since the author last saved it, so its next turn builds on that. */
+function ownChanges(store: UserStore, work: Work) {
+  const history = store.revisions(work.id);
+  const last = history.find((r) => r.cause.kind === "run");
+  if (!last || last.revision === work.revision) return "";
+  const { scenes, style } = changesBetween(
+    store.revision(work.id, last.revision),
+    work,
+  );
+  const list = (label: string, ids: string[]) =>
+    ids.length ? [`${label} ${ids.join(", ")}`] : [];
+  const lines = [
+    ...scenes.map(
+      (s) =>
+        `- scene ${s.id}: ${[
+          ...list("changed", s.changed),
+          ...list("moved or resized", s.moved),
+          ...list("added", s.added),
+          ...list("removed", s.removed),
+          ...(s.restacked ? ["stacking order changed"] : []),
+        ].join("; ")}`,
+    ),
+    ...(style ? ["- the work's style tokens"] : []),
+  ];
+  return lines.length
+    ? `Since your last turn the user changed the work themselves (revision ${last.revision} to ${work.revision}). The current work below includes these changes; keep them unless the user asks otherwise:\n${lines.join("\n")}\n`
+    : "";
+}
 
 // Estimate conservatively without counting base64 bytes as text tokens.
 function contextSize(input: Item[]): number {
@@ -231,6 +270,12 @@ function said(store: UserStore, workId: string) {
       ),
   ];
 }
+/** Every revision a run saves belongs to the request that started it. */
+const causeOf = (run: Run): Cause => ({
+  kind: "run",
+  runId: run.id,
+  prompt: (run.steps[0] as Extract<Step, { kind: "message" }>).text,
+});
 /** Option pictures for a question: pictures as themselves, styles by their samples. */
 async function questions(
   store: UserStore,
@@ -250,7 +295,7 @@ async function questions(
         ? m.samples.slice(0, 3).map((s) => ({
             id: s,
             name: m.name.zh,
-            url: `/materials/files/${s}`,
+            url: `/materials/thumbs/${s}?size=256`,
           }))
         : m.kind === "picture"
           ? [{ id: m.id, name: m.name.zh, url: m.file.url }]
@@ -288,6 +333,7 @@ export class Agent {
     sceneId: string,
     prompt: string,
     materials: string[] = [],
+    locale: MessageLocale = "zh",
   ) {
     const work = store.work(workId);
     if (
@@ -297,7 +343,7 @@ export class Agent {
     )
       throw new DomainError("请先完成或取消当前任务", 409);
     if (!work.scenes[sceneId]) throw new DomainError("场景不存在", 404);
-    const message = await userMessage(store, prompt, materials);
+    const message = await userMessage(store, prompt, materials, locale);
     const run: Run = {
       id: id(),
       workId,
@@ -312,7 +358,10 @@ export class Agent {
       input: previous ? store.context(previous.id).input : [],
       generations: 0,
     };
-    ctx.input.push(message, workMessage(sceneId, work));
+    ctx.input.push(
+      message,
+      workMessage(sceneId, work, ownChanges(store, work)),
+    );
     this.emit(store, run);
     store.context(run.id, ctx);
     tracer.begin({
@@ -332,11 +381,12 @@ export class Agent {
     runId: string,
     answer: string,
     materials: string[] = [],
+    locale: MessageLocale = "zh",
   ) {
     const run = store.run(runId);
     if (run.status !== "waiting") throw new DomainError("当前任务没有等待回答");
     const ctx = store.context(runId) as Context;
-    ctx.input.push(await userMessage(store, answer, materials));
+    ctx.input.push(await userMessage(store, answer, materials, locale));
     run.steps.push({ kind: "message", role: "user", text: answer, materials });
     run.questions = undefined;
     run.status = "running";
@@ -760,6 +810,19 @@ export class Agent {
         case "ask_user": {
           run.questions = await questions(store, args);
           run.status = "waiting";
+          run.steps.push({
+            kind: "message",
+            role: "assistant",
+            asked: true,
+            text: run.questions
+              .map(
+                (q) =>
+                  q.text +
+                  "\n" +
+                  q.options.map((o, i) => `${i + 1}. ${o.label}`).join("\n"),
+              )
+              .join("\n\n"),
+          });
           ctx.input.push({
             type: "function_call_output",
             call_id: call.call_id,
@@ -775,6 +838,7 @@ export class Agent {
             run.workId,
             args,
             said(store, run.workId),
+            causeOf(run),
           );
           this.publish(store.userId, { type: "work", work });
           const effects = await library.get(style.effects, store.userId, true);
@@ -855,7 +919,12 @@ export class Agent {
           break;
         }
         case "write_work": {
-          const { work, added } = await writeWork(store, run.workId, args);
+          const { work, added } = await writeWork(
+            store,
+            run.workId,
+            args,
+            causeOf(run),
+          );
           run.firstSceneMs ??= Date.now() - start;
           this.publish(store.userId, { type: "work", work });
           output = {
@@ -870,7 +939,8 @@ export class Agent {
             (d) => !d.settled,
           );
           run.status = "viewing";
-          if (pending.length) Object.assign(step!, { waiting: pending.length });
+          if (pending.length)
+            Object.assign(step!, { waiting: pending.map((d) => d.name) });
           this.emit(store, run);
           try {
             await Promise.race([

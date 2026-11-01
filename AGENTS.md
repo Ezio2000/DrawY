@@ -31,7 +31,7 @@ PlantUML 服务只在 compose 里有，默认地址是 `http://localhost:8092`�
 ## 一次运行如何流动
 
 1. 用户在某个场景发出请求。`apps/server/app.ts` 收到 `POST /api/works/:id/runs`，调用 `modules/agent` 的 `Agent.start`。
-2. 同一作品的对话上下文会延续：新一次运行沿用上一次运行保存的 `input`，再追加用户消息和作品当前的状态。
+2. 同一作品的对话上下文会延续：新一次运行沿用上一次运行保存的 `input`，再追加用户消息和作品当前的状态。用户在两次运行之间自己改过作品（手动编辑、撤销或恢复）时，状态前面会列出作者上次保存之后哪些模块被改、移动、添加或删除（`editing.changesBetween`），提示词要求作者保留这些修改。
 3. 作者按 `modules/agent/tools.ts` 里定义的工具工作：
    - `ask_user` 暂停运行，状态变为 `waiting`，用户回答后由 `resume` 继续。
    - `set_brief` 定下简报。
@@ -42,19 +42,28 @@ PlantUML 服务只在 compose 里有，默认地址是 `http://localhost:8092`�
 5. `view_canvas` 经 `modules/observation` 请求截图服务。截图服务用 `modules/runtime/document.ts` 生成页面，加载 `/runtime/runtime.js` 渲染场景，截下图片，连同几何信息一起作为图片消息送回同一段对话。
 6. 运行过程中的每个变化，都以 `run` 事件经 SSE（`/api/events`）推给前端。前端由 `modules/canvas` 把过程画成铅笔起稿和图片显影的动画。整个过程同时由 `modules/trace` 记入 `trace.sqlite`。
 
+## 手动编辑如何流动
+
+用户在绘图页点铅笔（或双击画上的文字）进入编辑模式，右侧面板换成 `apps/web/src/Editor.tsx`。编辑模式下 `Canvas.setEditing(true)`：画布在捕获阶段接住点击，画法里的按钮和模块的跳转目标都不响应；单击选中，Shift 多选，任何模块按下即可拖动；双击按坐标找到模块影子 DOM 里的文字或图片，交给 `options.point`。
+
+每个操作都是 `modules/editing` 里的纯函数，从当前作品算出一份 `WorkEdit`：`setData`、`setStyle`、`moveParts`、`removeParts`（连带删掉相关连线和检查）、`duplicate`（复制品自成一组，并复制它们之间的连线）、`arrange`、`add`、`replace`。`replace` 先在模块数据里找要改的字或图片 ID；找不到时，如果它在画法代码里只出现一次，就按所在位置转义后替换，画法被别的模块共用时先为这个模块复制一份，替换后代码必须还能解析；都不行就返回 `null`，前端把修改要求写进输入框交给作者。`fieldsOf` 决定面板显示哪些控件：先是画法 `params` 声明的（作品画法自带名字，库画法的名字来自 `i18n.tsx` 的 `edit.params`），再是数据里其余的文字、颜色、数字和开关；小写的英文单词当作代码里的状态，不显示。
+
+前端的 `change()` 把这些修改排成队，依次从上一次结果出发，经 `POST /api/works/:id/edits` 交给 `writeWork`，原因记为 `{ kind: "edit" }`，作者运行期间返回 409。用户自己造成的版本（手动编辑、撤销、重做）在画布上安静替换，不播放起稿动画。重做只在撤销后作品没有别的变动时可用，记录在前端。
+
 ## 模块职责
 
 `modules/` 下各模块之间用相对路径（`../x/index.ts`）互相引用。
 
 - `contracts`：作品协议（`Work`、`Scene`、`Instance`、`Link`、`Drawing`、`Brief`、`WorkEdit`）、运行记录（`Run`、`Step`、`ToolActivity`）和设置。前后端、运行时和作者工具共用这一份 schema，它是协议的唯一来源。
-- `workspace`：`createWork`、`writeWork`、`setBrief`、`moveModules`、`restore`、`undo`，以及 `validateWork`。
+- `workspace`：`createWork`、`writeWork`、`setBrief`、`restore`、`undo`，以及 `validateWork`。
+- `editing`：把手动操作变成 `WorkEdit` 的纯函数、面板控件的推断（`fieldsOf`），以及两个版本之间的差别（`changesBetween`）。前后端都用，不依赖存储和素材库。
 - `runtime`：画法执行环境。画法接收 `api`（`svg/html/mermaid/plantuml/material/materials/draw/effect/emit`），交互脚本使用 `on/set/move/openScene/openDetail/animate/cleanup`。打包入口是 `browser.ts`，`scene.ts` 负责场景，`fixture.ts` 供测试使用。
 - `agent`：运行循环与重试（`index.ts`）、工具 schema（`tools.ts`）、系统提示词与素材目录（`prompts.ts`），以及解析流式到达的工具参数（`partial.ts`）。
 - `models`：用 OpenAI Responses 格式调用创作模型和生图模型，支持 API Key 和 ChatGPT OAuth 两种方式，并负责缓存键。
 - `observation`：截图服务的客户端。`capture.ts` 在截图容器里运行，运行时测试也直接调用它。
 - `images`：按作品风格生成图片，并把结果回报给作者。
 - `materials`：主程序访问素材服务的一层，只经 `@drawy/materials/client` 访问，不直接读素材库的数据库。
-- `canvas`：前端画布，负责视角、选择、移动、缩放和起稿动画（`ink.ts`）。
+- `canvas`：前端画布，负责视角、选择（含多选）、移动、缩放、编辑模式和起稿动画（`ink.ts`）。
 - `storage`、`identity`：按用户隔离的 `data/drawy.sqlite`，以及账号。
 - `trace`：基于 AsyncLocalStorage 嵌套记录，任何模块都可以直接调用 `tracer`，不需要层层传参。
 - `ui`：共享的 React 组件和品牌素材。
@@ -69,10 +78,11 @@ PlantUML 服务只在 compose 里有，默认地址是 `http://localhost:8092`�
 - `agent/tools.ts` 的工具 schema；
 - `agent/prompts.ts` 里对作者的说明；
 - `partial.ts` 的流式解析；
+- `editing` 的手动编辑和编辑面板；
 - 前端的调用方；
 - 相关测试。
 
-这样做的原因是，作者只能通过 schema 和提示词知道协议长什么样，任何一处没跟上，模型就会写出无效的作品。`instanceSchema` 里布局字段排在内容字段前面，这是有意的：工具参数按字段顺序流式到达，画布可以先画出构图，再等画法代码。调整字段顺序时要保持这个效果。
+这样做的原因是，作者只能通过 schema 和提示词知道协议长什么样，任何一处没跟上，模型就会写出无效的作品。画法参数的类型（`contracts` 的 `paramTypes`）也是素材库 `Param` 的可编辑类型，两边一起改。`instanceSchema` 里布局字段排在内容字段前面，这是有意的：工具参数按字段顺序流式到达，画布可以先画出构图，再等画法代码。调整字段顺序时要保持这个效果。
 
 **提示词前缀要保持逐字节稳定。** 同一用户的请求共用一个缓存键。系统提示词里的素材目录只写随代码变化的内容，并按 id 排序，不放图片数量、使用次数这类随数据变化的内容。这样新作品的第一轮和作品续画都能命中缓存。
 

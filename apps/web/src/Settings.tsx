@@ -1,11 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { UserRound, PenTool, Image as ImageIcon } from "lucide-react";
-import { Segmented, Switch, Spinner } from "@drawy/ui";
+import { Segmented, Switch, Spinner, pageLocale } from "@drawy/ui";
 import type { Settings as Value } from "../../../modules/contracts/index.ts";
 import { api } from "./api.ts";
 import { cx } from "./cx.ts";
 import { Title } from "./Title.tsx";
-import { useT } from "./i18n.tsx";
+import { useT, dictionaries } from "./i18n.tsx";
 
 const channels = {
   api: { baseUrl: "https://api.openai.com/v1" },
@@ -13,6 +13,12 @@ const channels = {
 } as const;
 const efforts = ["low", "medium", "high", "xhigh"] as const;
 const account = ["channel", "baseUrl", "credential", "accountId"] as const;
+/** Settings changed and not yet saved, which leaving the page would lose. */
+let unsaved = false;
+/** Whether the page may be left: always, unless settings are unsaved and the user would
+ * rather stay. */
+export const leaving = () =>
+  !unsaved || confirm(dictionaries[pageLocale()].settings.leave);
 
 /** One setting: what it is and why it matters on the left, its control on the right. */
 function Row({
@@ -48,16 +54,29 @@ export function Settings() {
     [value, set] = useState<Value>(),
     [error, E] = useState(""),
     [busy, B] = useState(false),
-    [done, D] = useState(false);
+    [done, D] = useState(false),
+    // The image model uses its own account rather than the drawing model's.
+    [separate, setSeparate] = useState(false);
   useEffect(() => {
     api<Value>("/settings").then(
       (v) => {
         setSaved(v);
         set(v);
+        setSeparate(account.some((k) => v.image[k] !== v.author[k]));
       },
       (e) => E(e.message),
     );
   }, []);
+  const dirty = !!value && JSON.stringify(value) !== JSON.stringify(saved);
+  useEffect(() => {
+    unsaved = dirty;
+    const stay = (e: BeforeUnloadEvent) => dirty && e.preventDefault();
+    addEventListener("beforeunload", stay);
+    return () => {
+      unsaved = false;
+      removeEventListener("beforeunload", stay);
+    };
+  }, [dirty]);
   if (!value)
     return (
       <div className={cx("page")}>
@@ -69,8 +88,7 @@ export function Settings() {
         {error ? <p className={cx("error")}>{error}</p> : <Spinner />}
       </div>
     );
-  const dirty = JSON.stringify(value) !== JSON.stringify(saved);
-  const shared = account.every((k) => value.image[k] === value.author[k]);
+  const shared = !separate;
   const role = <K extends "author" | "image">(
     key: K,
     patch: Partial<Value[K]>,
@@ -200,16 +218,18 @@ export function Settings() {
             <Row label={w.shared}>
               <Switch
                 checked={shared}
-                onChange={(on) =>
-                  role(
-                    "image",
-                    on
-                      ? Object.fromEntries(
-                          account.map((k) => [k, value.author[k]]),
-                        )
-                      : {},
-                  )
-                }
+                onChange={(on) => {
+                  setSeparate(!on);
+                  // Sharing again takes the drawing model's account back; going separate
+                  // starts from it, to be changed below.
+                  if (on)
+                    role(
+                      "image",
+                      Object.fromEntries(
+                        account.map((k) => [k, value.author[k]]),
+                      ),
+                    );
+                }}
               />
             </Row>
             {!shared && connection("image")}
@@ -233,6 +253,9 @@ export function Settings() {
                 className={cx("secondary small")}
                 onClick={() => {
                   set(saved);
+                  setSeparate(
+                    account.some((k) => saved!.image[k] !== saved!.author[k]),
+                  );
                   E("");
                 }}
               >

@@ -15,6 +15,10 @@ import type {
 type ToolStep = Extract<Step, { kind: "tool" }>;
 export const live = (run?: Run) =>
   !!run && ["running", "viewing"].includes(run.status);
+/** Whether a text is written in the page's language: the model summarises its thoughts in
+ * a language of its own, which is not shown to a reader of another. */
+const readable = (text: string, locale: string) =>
+  /[\u3400-\u9fff]/.test(text) === (locale === "zh");
 /** A thought's headline and the reasoning under it. */
 function thought(text: string) {
   const closed = text.match(/^\*\*(.+?)\*\*\s*([\s\S]*)$/);
@@ -48,8 +52,22 @@ function doing(step: ToolStep, t: Words) {
       return step.revision ? w.writingRevision(step.revision) : w.writing;
     case "view_canvas":
       return step.waiting
-        ? w.waitingImages(step.waiting)
+        ? w.waitingImages(step.waiting.join(w.list))
         : [w.viewing, w.focus[step.focus]].filter(Boolean).join(" · ");
+  }
+}
+/** Between tools, what the author is about, told by where it has got to. */
+function between(steps: Step[], t: Words) {
+  const last = steps.findLast((s): s is ToolStep => s.kind === "tool");
+  if (!last) return t.now.understanding;
+  if (last.status === "failed") return t.now.recovering;
+  switch (last.name) {
+    case "view_canvas":
+      return t.now.revising;
+    case "write_work":
+      return t.now.checking;
+    default:
+      return t.now.composing;
   }
 }
 /** The pictures a step brings: the best candidates per subject, or what it generated. */
@@ -139,7 +157,16 @@ export function Now({
     );
   }
   const used = new Set(Object.keys(work.materials));
-  const board = pictures ? run.steps.flatMap(picturesOf).slice(-5) : [];
+  // What is going into the picture: pictures generated for it and those it has taken in.
+  const board = pictures
+    ? run.steps
+        .flatMap(picturesOf)
+        // A picture still developing shows as the shimmer after them.
+        .filter((p) => p.status !== "developing" && p.status !== "failed")
+        .filter((p) => !p.id || used.has(p.id) || p.status === "ready")
+        .filter((p, i, all) => all.findIndex((q) => q.url === p.url) === i)
+        .slice(-4)
+    : [];
   // A tool still at work outranks the thoughts and notes that stream alongside it.
   const busy = run.steps.findLast(
       (s): s is ToolStep => s.kind === "tool" && s.status === "running",
@@ -148,29 +175,27 @@ export function Now({
     painting =
       pictures &&
       run.steps.some(
-      (s) =>
-        s.kind === "tool" &&
-        s.name === "generate_images" &&
-        s.images.some((i) => i.status === "developing"),
-    );
-  const line =
-    run.status === "viewing"
-      ? t.now.viewing
-      : busy
-        ? doing(busy, t)
-        : tail?.kind === "thinking"
-          ? thought(tail.text)[0] || t.now.thinking
-          : tail?.kind === "message" && tail.role === "assistant"
-            ? tail.text
-            : t.now.thinking;
-  const at = run.status === "viewing" ? -1 : run.steps.indexOf((busy ?? tail)!);
+        (s) =>
+          s.kind === "tool" &&
+          s.name === "generate_images" &&
+          s.images.some((i) => i.status === "developing"),
+      );
+  const headline = tail?.kind === "thinking" ? thought(tail.text)[0] : "";
+  const line = busy
+    ? doing(busy, t)
+    : headline && readable(headline, locale)
+      ? headline
+      : tail?.kind === "message" && tail.role === "assistant"
+        ? tail.text
+        : between(run.steps, t);
+  const at = run.steps.indexOf((busy ?? tail)!);
   return (
     <button className={cx("now")} data-tone="live" data-tip={t.now.open} onClick={reveal}>
       <i className={cx("now-dot")} />
       <span key={at} className={cx("now-line")}>
         {line}
       </span>
-      <Elapsed key={"t" + at} />
+      <Elapsed key={at + line} />
       {(!!board.length || painting) && (
         <span className={cx("board")}>
           {board.map((p, i) => (
@@ -241,9 +266,28 @@ export function Activity({
           if (s.kind === "message" && s.role === "user") {
             flush();
             items.push(
-              <p key={i} className={cx("prompt")}>
+              <div key={i} className={cx("prompt")}>
+                {!!s.materials?.length && (
+                  <span className={cx("prompt-pictures")}>
+                    {s.materials.map((id) => (
+                      <img
+                        key={id}
+                        src={`/materials/thumbs/${id}?size=96`}
+                        alt=""
+                      />
+                    ))}
+                  </span>
+                )}
+                {s.text && <p>{s.text}</p>}
+              </div>,
+            );
+          } else if (s.kind === "message" && s.asked) {
+            // What the author asked stays in the conversation, before the answer.
+            flush();
+            items.push(
+              <div key={i} className={cx("reply")}>
                 {s.text}
-              </p>,
+              </div>,
             );
           } else if (unfolded)
             trace.push(
@@ -344,7 +388,8 @@ function Trace({
   used: Set<string>;
   zoom: (p: Picture) => void;
 }) {
-  const t = useT();
+  const t = useT(),
+    locale = useLocale();
   if (step.kind === "message")
     return <li className={cx("trace-note")}>{step.text}</li>;
   if (step.kind === "thinking") {
@@ -352,7 +397,9 @@ function Trace({
     return (
       <li data-status={live ? "running" : "done"}>
         <details>
-          <summary>{title || t.now.thinking}</summary>
+          <summary>
+            {title && readable(title, locale) ? title : t.now.thinking}
+          </summary>
           {body && <p>{body}</p>}
         </details>
       </li>

@@ -46,13 +46,17 @@
     "params": {
       "bend": {
         "type": "number",
+        "min": -1,
+        "max": 1,
+        "step": 0.05,
         "default": 0,
         "description": "curvature as a fraction of length; positive bends left of the direction of travel"
       },
       "head": {
-        "type": "string",
+        "type": "choice",
+        "options": ["filled", "open", "none"],
         "default": "filled",
-        "description": "filled | open | none"
+        "description": "the arrowhead"
       },
       "both": {
         "type": "boolean",
@@ -71,17 +75,21 @@
       },
       "speed": {
         "type": "number",
+        "min": 0.2,
+        "max": 6,
+        "step": 0.1,
         "default": 1.2,
         "description": "seconds per flow cycle"
       },
       "label": {
-        "type": "string",
+        "type": "text",
         "description": "a few words beside the middle"
       },
       "labelSide": {
-        "type": "string",
+        "type": "choice",
+        "options": ["above", "below"],
         "default": "above",
-        "description": "above | below"
+        "description": "which side of the line the label sits"
       },
       "color": {
         "type": "color",
@@ -89,10 +97,16 @@
       },
       "width": {
         "type": "number",
+        "min": 0.5,
+        "max": 12,
+        "step": 0.5,
         "description": "line width; defaults to the stroke token"
       },
       "gap": {
         "type": "number",
+        "min": 0,
+        "max": 40,
+        "step": 1,
         "default": 6,
         "description": "space left before the anchors"
       },
@@ -133,27 +147,34 @@
     },
     "params": {
       "text": {
-        "type": "string",
+        "type": "text",
         "description": "the label"
       },
       "note": {
-        "type": "string",
+        "type": "text",
         "description": "a smaller second line"
       },
       "size": {
         "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
         "default": 16,
         "description": "font size"
       },
       "weight": {
         "type": "number",
+        "min": 100,
+        "max": 900,
+        "step": 100,
         "default": 500,
         "description": "font weight"
       },
       "align": {
-        "type": "string",
+        "type": "choice",
+        "options": ["start", "center", "end"],
         "default": "center",
-        "description": "start | center | end"
+        "description": "how lines of text align"
       },
       "color": {
         "type": "color",
@@ -202,13 +223,14 @@
     },
     "params": {
       "text": {
-        "type": "string",
+        "type": "text",
         "description": "the part's name"
       },
       "side": {
-        "type": "string",
+        "type": "choice",
+        "options": ["right", "left", "above", "below"],
         "default": "right",
-        "description": "where the text sits: right | left | above | below"
+        "description": "where the text sits"
       },
       "target": {
         "type": "object",
@@ -216,6 +238,9 @@
       },
       "size": {
         "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
         "default": 15,
         "description": "font size"
       },
@@ -266,6 +291,9 @@
     "params": {
       "opacity": {
         "type": "number",
+        "min": 0,
+        "max": 1,
+        "step": 0.01,
         "default": 0.22,
         "description": "darkness at the centre"
       },
@@ -312,15 +340,18 @@
     },
     "params": {
       "material": {
-        "type": "string",
+        "type": "picture",
         "description": "the picture material's id"
       },
       "caption": {
-        "type": "string",
+        "type": "text",
         "description": "a name under the picture"
       },
       "captionSize": {
         "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
         "default": 15,
         "description": "font size"
       },
@@ -330,9 +361,10 @@
         "description": "a soft ground shadow"
       },
       "fit": {
-        "type": "string",
+        "type": "choice",
+        "options": ["contain", "cover"],
         "default": "contain",
-        "description": "contain | cover"
+        "description": "contain shows the whole picture; cover fills the box"
       },
       "color": {
         "type": "color",
@@ -374,7 +406,7 @@
     },
     "params": {
       "number": {
-        "type": "string",
+        "type": "text",
         "default": "1",
         "description": "what the badge shows"
       },
@@ -429,6 +461,9 @@
       },
       "start": {
         "type": "number",
+        "min": -180,
+        "max": 180,
+        "step": 5,
         "default": -90,
         "description": "angle of the first stage in degrees (-90 is the top)"
       },
@@ -438,12 +473,16 @@
         "description": "direction of travel"
       },
       "labels": {
-        "type": "string",
+        "type": "choice",
+        "options": ["outside", "inside"],
         "default": "outside",
-        "description": "outside | inside"
+        "description": "where the stage labels sit"
       },
       "gap": {
         "type": "number",
+        "min": 0,
+        "max": 40,
+        "step": 1,
         "default": 16,
         "description": "degrees left free around each stage"
       },
@@ -453,10 +492,16 @@
       },
       "width": {
         "type": "number",
+        "min": 0.5,
+        "max": 12,
+        "step": 0.5,
         "description": "line width"
       },
       "size": {
         "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
         "default": 15,
         "description": "label font size"
       }
@@ -533,6 +578,9 @@
       },
       "size": {
         "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
         "default": 13,
         "description": "font size"
       },
@@ -612,6 +660,9 @@
       },
       "size": {
         "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
         "default": 14,
         "description": "font size"
       }
@@ -651,16 +702,20 @@
     },
     "params": {
       "facing": {
-        "type": "string",
+        "type": "choice",
+        "options": ["right", "left", "up", "down"],
         "default": "right",
-        "description": "right | left | up | down"
+        "description": "which way the brace points"
       },
       "label": {
-        "type": "string",
+        "type": "text",
         "description": "the group's name"
       },
       "depth": {
         "type": "number",
+        "min": 4,
+        "max": 60,
+        "step": 1,
         "default": 14,
         "description": "how far the brace reaches"
       },
@@ -670,6 +725,9 @@
       },
       "size": {
         "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
         "default": 15,
         "description": "font size"
       }
@@ -711,13 +769,14 @@
     },
     "params": {
       "label": {
-        "type": "string",
+        "type": "text",
         "description": "the zone's name"
       },
       "labelAt": {
-        "type": "string",
+        "type": "choice",
+        "options": ["center", "top"],
         "default": "center",
-        "description": "center | top"
+        "description": "where the label sits"
       },
       "color": {
         "type": "color",
@@ -725,11 +784,17 @@
       },
       "opacity": {
         "type": "number",
+        "min": 0,
+        "max": 1,
+        "step": 0.01,
         "default": 0.18,
         "description": "fill opacity"
       },
       "wobble": {
         "type": "number",
+        "min": 0,
+        "max": 0.2,
+        "step": 0.01,
         "default": 0.08,
         "description": "irregularity 0..0.2"
       },
@@ -739,7 +804,7 @@
         "description": "dashed outline"
       },
       "effect": {
-        "type": "string",
+        "type": "effect",
         "description": "an effect id for texture, e.g. watercolor-edge"
       },
       "seed": {
@@ -783,15 +848,24 @@
     "params": {
       "rows": {
         "type": "number",
+        "min": 1,
+        "max": 12,
+        "step": 1,
         "default": 3,
         "description": "number of wave lines"
       },
       "amplitude": {
         "type": "number",
+        "min": 1,
+        "max": 60,
+        "step": 1,
         "description": "wave height"
       },
       "wavelength": {
         "type": "number",
+        "min": 16,
+        "max": 240,
+        "step": 1,
         "default": 64,
         "description": "wave length"
       },
@@ -802,6 +876,9 @@
       },
       "period": {
         "type": "number",
+        "min": 0,
+        "max": 60,
+        "step": 1,
         "default": 6,
         "description": "seconds per roll"
       },
@@ -847,21 +924,30 @@
     },
     "params": {
       "body": {
-        "type": "string",
+        "type": "picture",
         "description": "picture material id travelling on the orbit"
       },
       "bodySize": {
         "type": "number",
+        "min": 8,
+        "max": 200,
+        "step": 1,
         "default": 28,
         "description": "body width"
       },
       "period": {
         "type": "number",
+        "min": 0,
+        "max": 60,
+        "step": 1,
         "default": 12,
         "description": "seconds per revolution; 0 keeps it still"
       },
       "phase": {
         "type": "number",
+        "min": 0,
+        "max": 1,
+        "step": 0.01,
         "default": 0,
         "description": "starting position 0..1 (0 is the right end)"
       },
@@ -921,7 +1007,7 @@
     },
     "params": {
       "label": {
-        "type": "string",
+        "type": "text",
         "description": "what it sets"
       },
       "min": {
@@ -943,11 +1029,14 @@
         "description": "starting value"
       },
       "unit": {
-        "type": "string",
+        "type": "text",
         "description": "unit shown after the value"
       },
       "digits": {
         "type": "number",
+        "min": 0,
+        "max": 6,
+        "step": 1,
         "description": "decimals shown"
       },
       "color": {
@@ -956,6 +1045,9 @@
       },
       "size": {
         "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
         "default": 15,
         "description": "font size"
       }
@@ -1003,7 +1095,7 @@
         "description": "the option labels"
       },
       "value": {
-        "type": "string",
+        "type": "text",
         "description": "the option chosen at first"
       },
       "color": {
@@ -1012,6 +1104,9 @@
       },
       "size": {
         "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
         "default": 15,
         "description": "font size"
       }

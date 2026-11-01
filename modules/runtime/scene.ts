@@ -142,11 +142,15 @@ export class SceneRenderer {
           set.add(fn);
           this.listeners.set(key, set);
         },
-        set: (id: string, data: Record<string, unknown>) => this.set(id, data),
+        // A module the person has since taken out of the scene is passed over.
+        set: (id: string, data: Record<string, unknown>) =>
+          this.instances.has(id) ? this.set(id, data) : Promise.resolve(),
         move: (id: string, x: number, y: number) =>
-          this.move([
-            { id, bounds: { ...this.instances.get(id)!.bounds, x, y } },
-          ]),
+          this.instances.has(id)
+            ? this.move([
+                { id, bounds: { ...this.instances.get(id)!.bounds, x, y } },
+              ])
+            : Promise.resolve(),
         openScene: (id: string) => this.options.open({ kind: "scene", id }),
         openDetail: (id: string) => this.options.open({ kind: "detail", id }),
         cleanup: (fn: () => void) => this.interactionCleanup.push(fn),
@@ -494,6 +498,13 @@ export class SceneRenderer {
   set(id: string, data: Record<string, unknown>) {
     const m = this.instances.get(id)!;
     m.data = { ...m.data, ...data };
+    return this.drawModule(m);
+  }
+  /** Draws a module again with other data in place of its own, as an edit is being made. */
+  redraw(id: string, data: Record<string, unknown>) {
+    const m = this.instances.get(id);
+    if (!m) return Promise.resolve();
+    m.data = data;
     return this.drawModule(m);
   }
   dispose() {

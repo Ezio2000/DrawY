@@ -43,16 +43,19 @@ const GAP = 10;
 export function Library({
   use,
   action,
+  kinds: shown = kinds,
 }: {
-  /** Puts a material to use: attached to the next message. */
+  /** Puts a material to use: attached to the next message, or placed in the work. */
   use: (m: Material) => void;
   action: string;
+  /** The kinds of material offered; the first is shown first. */
+  kinds?: readonly Material["kind"][];
 }) {
   const t = useT(),
     locale = useLocale();
   const shelf = useRef<HTMLDivElement>(null);
   const [q, Q] = useState(""),
-    [kind, K] = useState<Material["kind"]>("picture"),
+    [kind, K] = useState<Material["kind"]>(shown[0]),
     [result, R] = useState<MaterialPage>({
       items: [],
       total: 0,
@@ -140,21 +143,23 @@ export function Library({
   return (
     <div className={cx("library")}>
       <div className={cx("library-bar")}>
-        <Segmented label={t.library.kind}>
-          {kinds.map((k) => (
-            <button
-              key={k}
-              aria-pressed={kind === k}
-              onClick={() => {
-                K(k);
-                setPage(1);
-                O(undefined);
-              }}
-            >
-              {t.library.kinds[k]}
-            </button>
-          ))}
-        </Segmented>
+        {shown.length > 1 && (
+          <Segmented label={t.library.kind}>
+            {shown.map((k) => (
+              <button
+                key={k}
+                aria-pressed={kind === k}
+                onClick={() => {
+                  K(k);
+                  setPage(1);
+                  O(undefined);
+                }}
+              >
+                {t.library.kinds[k]}
+              </button>
+            ))}
+          </Segmented>
+        )}
         <label className={cx("page-search")}>
           <Search size={16} />
           <input
@@ -312,7 +317,7 @@ function DrawingLook({ m }: { m: DrawingMaterial }) {
       if (gone || !host.current) return;
       view = new Canvas(host.current, work, work.scenes.root, {
         motion: !reducedMotion(),
-        insets: { top: 14, bottom: 14 },
+        insets: () => ({ top: 14, bottom: 14 }),
         open: () => {},
         select: () => {},
         error: () => {},

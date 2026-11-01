@@ -10,7 +10,8 @@ import { writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { generate } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
-import type { Run } from "../contracts/index.ts";
+import type { Run, Work } from "../contracts/index.ts";
+import { removeParts, setData } from "../editing/index.ts";
 import { library as client } from "../materials/index.ts";
 import { serveLibrary, picture } from "@drawy/materials/testing";
 let library: ReturnType<typeof serveLibrary>;
@@ -46,7 +47,7 @@ it("feeds canvas images into the author conversation and requires another look a
       work = fixture();
     work.revision = 0;
     work.scenes.child.modules = [];
-    store.commit(work, 0);
+    store.commit(work, 0, { kind: "edit" });
     const run: Run = {
       id: "run",
       workId: work.id,
@@ -162,7 +163,7 @@ it("lays out streamed modules on the write step before the write is saved", asyn
       work = fixture();
     work.revision = 0;
     work.scenes.child.modules = [];
-    store.commit(work, 0);
+    store.commit(work, 0, { kind: "edit" });
     const run: Run = {
       id: "run",
       workId: work.id,
@@ -287,7 +288,7 @@ it("continues the exact context across turns and accepts images in answers", asy
     const store = db.scoped(register(db, "author", "abcdef").id),
       work = fixture();
     work.revision = 0;
-    store.commit(work, 0);
+    store.commit(work, 0, { kind: "edit" });
     const reference = await client.ingest(
       await picture(),
       "image/png",
@@ -331,9 +332,12 @@ it("continues the exact context across turns and accepts images in answers", asy
       label: "Crayon",
       // A style option shows the style's own samples.
       pictures: [
-        { id: "apple-crayon", url: "/materials/files/apple-crayon" },
+        {
+          id: "lighthouse-crayon",
+          url: "/materials/thumbs/lighthouse-crayon?size=256",
+        },
+        { id: "apple-crayon" },
         { id: "earth" },
-        { id: "sun" },
       ],
     });
     const initial = store.context(run.id).input;
@@ -347,12 +351,21 @@ it("continues the exact context across turns and accepts images in answers", asy
     expect(answered[initial.length].content[2].image_url).toMatch(
       /^data:image\/webp;base64,/,
     );
+    expect(
+      store
+        .run(run.id)
+        .steps.findLast((s) => s.kind === "message" && s.role === "user"),
+    ).toMatchObject({ materials: [reference.id] });
+    // The question asked is kept in the conversation, before its answer.
     expect(store.run(run.id).steps.at(-1)).toMatchObject({
-      materials: [reference.id],
+      role: "assistant",
+      asked: true,
     });
     agent.cancel(store, run.id);
     const current = store.work(work.id);
-    store.commit({ ...current, title: "Manually edited" }, current.revision);
+    store.commit({ ...current, title: "Manually edited" }, current.revision, {
+      kind: "edit",
+    });
     const next = await agent.start(store, work.id, "root", "Continue");
     await vi.waitFor(() => expect(store.run(next.id).status).toBe("waiting"));
     const continued = store.context(next.id).input;
@@ -372,7 +385,7 @@ it("compacts at the budget with original references and closes interrupted tool 
     const store = db.scoped(register(db, "author", "abcdef").id),
       work = fixture();
     work.revision = 0;
-    store.commit(work, 0);
+    store.commit(work, 0, { kind: "edit" });
     const reference = await client.ingest(
       await picture(),
       "image/png",
@@ -488,7 +501,7 @@ it("settles a brief only on the user's own words, then applies its style and sho
     work.revision = 0;
     work.brief = null;
     for (const s of Object.values(work.scenes)) s.modules = [];
-    store.commit(work, 0);
+    store.commit(work, 0, { kind: "edit" });
     const brief = {
       subject: "苹果（水果）的结构",
       intent: "果皮、果肉、果核与种子",
@@ -602,7 +615,7 @@ it("develops pictures while the author composes and holds finish until they were
       work = fixture();
     work.revision = 0;
     work.scenes.child.modules = [];
-    store.commit(work, 0);
+    store.commit(work, 0, { kind: "edit" });
     const settings = store.settings();
     settings.image = {
       ...settings.image,
@@ -661,12 +674,17 @@ it("develops pictures while the author composes and holds finish until they were
     id = JSON.parse(outputs(seen[1])[0]).developing[0].id;
     expect(id).toMatch(/^g-whale-/);
     // The picture is usable at once, before it exists.
-    const { work: written } = await writeWork(store, work.id, {
-      baseRevision: 1,
-      drawings: [
-        { id: "whale", name: "鲸", source: `return api.material("${id}")` },
-      ],
-    });
+    const { work: written } = await writeWork(
+      store,
+      work.id,
+      {
+        baseRevision: 1,
+        drawings: [
+          { id: "whale", name: "鲸", source: `return api.material("${id}")` },
+        ],
+      },
+      { kind: "edit" },
+    );
     expect(written.materials[id]).toMatchObject({ status: "developing" });
     await vi.waitFor(() => expect(seen.length).toBe(3));
     expect(outputs(seen[2]).at(-1)).toContain("图片仍在生成");
@@ -699,7 +717,7 @@ it("stops the run when the canvas cannot be looked at, instead of spending turns
     const store = db.scoped(register(db, "author", "abcdef").id),
       work = fixture();
     work.revision = 0;
-    store.commit(work, 0);
+    store.commit(work, 0, { kind: "edit" });
     const run: Run = {
       id: "down",
       workId: work.id,
@@ -746,7 +764,7 @@ it("tries a turn again when the model's stream breaks, without the broken attemp
     const store = db.scoped(register(db, "author", "abcdef").id),
       work = fixture();
     work.revision = 0;
-    store.commit(work, 0);
+    store.commit(work, 0, { kind: "edit" });
     const run: Run = {
       id: "dropped",
       workId: work.id,
@@ -851,4 +869,75 @@ it("keeps the library catalogue the same as the library grows, so the cached pre
     samples: ["b", "c"],
   } as never;
   expect(catalogue([grown], [...kit].reverse())).toBe(catalogue([style], kit));
+});
+it("tells the author what the user changed themselves since its last turn", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    await writeWork(
+      store,
+      work.id,
+      { baseRevision: 1, title: "drawn" },
+      { kind: "run", runId: "earlier", prompt: "draw" },
+    );
+    for (const edit of [
+      (w: Work) => setData(w, "root", "level-0", { color: "#000000" }),
+      (w: Work) => removeParts(w, "root", ["control"]),
+    ])
+      await writeWork(store, work.id, edit(store.work(work.id)), {
+        kind: "edit",
+      });
+    vi.mocked(generate).mockImplementation(async () => ({
+      items: [
+        {
+          type: "function_call",
+          name: "ask_user",
+          call_id: crypto.randomUUID(),
+          arguments: JSON.stringify({
+            questions: [
+              {
+                id: "q",
+                text: "Which?",
+                options: [{ label: "A" }, { label: "B" }],
+              },
+            ],
+          }),
+        },
+      ],
+      usage: {},
+      response: {},
+    }));
+    const agent = new Agent(() => {});
+    const run = await agent.start(store, work.id, "root", "Continue");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
+    const told = store.context(run.id).input[1].content as string;
+    expect(told).toMatch(
+      /^Since your last turn the user changed the work themselves \(revision 2 to 4\)\.[^\n]*\n- scene root: changed level-0; removed control\nCurrent scene: root\n/,
+    );
+    // With nothing changed since, the work is given as it is.
+    const work2 = store.work(work.id);
+    agent.cancel(store, run.id);
+    await writeWork(
+      store,
+      work.id,
+      { baseRevision: work2.revision, title: "again" },
+      { kind: "run", runId: run.id, prompt: "Continue" },
+    );
+    const next = await agent.start(store, work.id, "root", "More");
+    await vi.waitFor(() => expect(store.run(next.id).status).toBe("waiting"));
+    const latest = store
+      .context(next.id)
+      .input.findLast(
+        (i: any) =>
+          typeof i.content === "string" && i.content.includes("Current work:"),
+      );
+    expect(latest.content).toMatch(/^Current scene: root\n/);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
 });

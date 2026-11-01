@@ -76,9 +76,26 @@ export interface PictureMaterial extends Envelope {
   };
   file: { url: string; mediaType: string; bytes: number };
 }
-/** A parameter of drawing code. */
+/** A parameter of drawing code. The first six types are values a person can change by hand
+ * in the app (a choice among its options, a picture by its material id); arrays, objects
+ * and effect ids are structure the author sets. */
 export interface Param {
-  type: "string" | "number" | "boolean" | "color" | "array" | "object";
+  type:
+    | "text"
+    | "number"
+    | "boolean"
+    | "color"
+    | "picture"
+    | "choice"
+    | "array"
+    | "object"
+    | "effect";
+  /** The values a choice offers. */
+  options?: string[];
+  /** The useful range of a number, for a slider. */
+  min?: number;
+  max?: number;
+  step?: number;
   default?: unknown;
   description: string;
 }

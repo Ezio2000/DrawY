@@ -302,7 +302,9 @@ export class Library {
   ) {
     const d = describeSchema.parse(input);
     if (d.style) this.style(d.style);
-    const measured = await measure(bytes, mediaType);
+    const measured = await measure(bytes, mediaType).catch(() => {
+      throw new LibraryError("无法读取这张图片，请换一张");
+    });
     const slug =
       d.name.en
         .toLowerCase()

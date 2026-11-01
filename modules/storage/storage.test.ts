@@ -7,9 +7,11 @@ import { Storage } from "./index.ts";
 import {
   createWork,
   writeWork,
-  moveModules,
   restore,
+  undo,
 } from "../workspace/index.ts";
+import { moveParts } from "../editing/index.ts";
+import type { Work } from "../contracts/index.ts";
 import { register, login } from "../identity/index.ts";
 import { createApp } from "../../apps/server/app.ts";
 import { serveLibrary, picture } from "@drawy/materials/testing";
@@ -58,105 +60,230 @@ describe("user owned works", () => {
     const store = db.scoped(register(db, "a", "abcdef").id);
     const work = createWork(store, "test");
     const content = fixture();
-    store.commit({ ...store.work(work.id), brief: content.brief }, 1);
-    const { work: saved } = await writeWork(store, work.id, {
-      baseRevision: 2,
-      drawings: Object.values(content.drawings),
-      scenes: Object.values(content.scenes),
-      details: Object.values(content.details),
-      interactions: Object.values(content.interactions),
+    store.commit({ ...store.work(work.id), brief: content.brief }, 1, {
+      kind: "edit",
     });
+    const { work: saved } = await writeWork(
+      store,
+      work.id,
+      {
+        baseRevision: 2,
+        drawings: Object.values(content.drawings),
+        scenes: Object.values(content.scenes),
+        details: Object.values(content.details),
+        interactions: Object.values(content.interactions),
+      },
+      { kind: "edit" },
+    );
     expect(saved.revision).toBe(3);
     const changed = {
       ...saved.drawings.tier,
       source: "return api.svg('<svg/>');",
     };
-    const { work: edited } = await writeWork(store, work.id, {
-      baseRevision: 3,
-      drawings: [changed],
-    });
+    const { work: edited } = await writeWork(
+      store,
+      work.id,
+      {
+        baseRevision: 3,
+        drawings: [changed],
+      },
+      { kind: "edit" },
+    );
     expect(edited.scenes).toEqual(saved.scenes);
     expect(edited.drawings.tier).toEqual(changed);
     await expect(
-      writeWork(store, work.id, { baseRevision: 3, title: "stale" }),
+      writeWork(
+        store,
+        work.id,
+        { baseRevision: 3, title: "stale" },
+        { kind: "edit" },
+      ),
     ).rejects.toThrow("版本");
     expect(restore(store, work.id, 3).revision).toBe(5);
     expect(store.work(work.id).drawings.tier).toEqual(content.drawings.tier);
     expect(store.revision(work.id, 4).drawings.tier).toEqual(changed);
   });
+  it("undoes a whole request, then a hand edit, walking back through restores", async () => {
+    const store = db.scoped(register(db, "a", "abcdef").id);
+    const work = createWork(store, "test"),
+      content = fixture();
+    const run = (id: string) => ({
+      kind: "run" as const,
+      runId: id,
+      prompt: id,
+    });
+    store.commit(
+      { ...store.work(work.id), brief: content.brief },
+      1,
+      run("r1"),
+    );
+    await writeWork(
+      store,
+      work.id,
+      {
+        baseRevision: 2,
+        drawings: Object.values(content.drawings),
+        scenes: Object.values(content.scenes),
+        details: Object.values(content.details),
+        interactions: Object.values(content.interactions),
+      },
+      run("r1"),
+    );
+    // A second request saves two drafts; undo takes back both.
+    await writeWork(store, work.id, { baseRevision: 3, title: "a" }, run("r2"));
+    await writeWork(store, work.id, { baseRevision: 4, title: "b" }, run("r2"));
+    expect(undo(store, work.id)).toMatchObject({ revision: 6, title: "b" });
+    expect(store.work(work.id).drawings).toEqual(
+      store.revision(work.id, 3).drawings,
+    );
+    expect(store.revisions(work.id)[0].cause).toEqual({
+      kind: "restore",
+      revision: 3,
+    });
+    // Undoing again goes on from the restored revision, back past the first request.
+    expect(undo(store, work.id).revision).toBe(7);
+    expect(store.work(work.id).scenes).toEqual(
+      store.revision(work.id, 1).scenes,
+    );
+    expect(() => undo(store, work.id)).toThrow("撤销");
+  });
   it("validates composition references together and permits atomic deletion", async () => {
     const store = db.scoped(register(db, "a", "abcdef").id);
     const work = createWork(store, "test"),
       content = fixture();
-    store.commit({ ...store.work(work.id), brief: content.brief }, 1);
-    await writeWork(store, work.id, {
-      baseRevision: 2,
-      drawings: Object.values(content.drawings),
-      scenes: Object.values(content.scenes),
-      details: Object.values(content.details),
-      interactions: Object.values(content.interactions),
+    store.commit({ ...store.work(work.id), brief: content.brief }, 1, {
+      kind: "edit",
     });
+    await writeWork(
+      store,
+      work.id,
+      {
+        baseRevision: 2,
+        drawings: Object.values(content.drawings),
+        scenes: Object.values(content.scenes),
+        details: Object.values(content.details),
+        interactions: Object.values(content.interactions),
+      },
+      { kind: "edit" },
+    );
     await expect(
-      writeWork(store, work.id, {
-        baseRevision: 3,
-        remove: { drawings: ["tier"] },
-      }),
+      writeWork(
+        store,
+        work.id,
+        {
+          baseRevision: 3,
+          remove: { drawings: ["tier"] },
+        },
+        { kind: "edit" },
+      ),
     ).rejects.toThrow("画法");
     await expect(
-      writeWork(store, work.id, {
-        baseRevision: 3,
-        scenes: [{ ...content.scenes.child, parentId: "child" }],
-      }),
+      writeWork(
+        store,
+        work.id,
+        {
+          baseRevision: 3,
+          scenes: [{ ...content.scenes.child, parentId: "child" }],
+        },
+        { kind: "edit" },
+      ),
     ).rejects.toThrow("循环");
     await expect(
-      writeWork(store, work.id, {
-        baseRevision: 3,
-        scenes: [{ ...content.scenes.child, parentId: "missing" }],
-      }),
+      writeWork(
+        store,
+        work.id,
+        {
+          baseRevision: 3,
+          scenes: [{ ...content.scenes.child, parentId: "missing" }],
+        },
+        { kind: "edit" },
+      ),
     ).rejects.toThrow("父场景");
     await expect(
-      writeWork(store, work.id, {
-        baseRevision: 3,
-        scenes: [
-          {
-            ...content.scenes.root,
-            links: [
-              {
-                id: "link",
-                drawingId: "connector",
-                from: { moduleId: "level-0", anchor: "missing" },
-                to: { moduleId: "level-1", anchor: "left" },
-                data: {},
-              },
-            ],
-          },
-        ],
-      }),
+      writeWork(
+        store,
+        work.id,
+        {
+          baseRevision: 3,
+          scenes: [
+            {
+              ...content.scenes.root,
+              links: [
+                {
+                  id: "link",
+                  drawingId: "connector",
+                  from: { moduleId: "level-0", anchor: "missing" },
+                  to: { moduleId: "level-1", anchor: "left" },
+                  data: {},
+                },
+              ],
+            },
+          ],
+        },
+        { kind: "edit" },
+      ),
     ).rejects.toThrow("锚点");
-    const { work: cleared } = await writeWork(store, work.id, {
-      baseRevision: 3,
-      scenes: [{ ...content.scenes.root, modules: [], checks: [] }],
-      remove: { drawings: ["tier"] },
-    });
+    const { work: cleared } = await writeWork(
+      store,
+      work.id,
+      {
+        baseRevision: 3,
+        scenes: [{ ...content.scenes.root, modules: [], checks: [] }],
+        remove: { drawings: ["tier"] },
+      },
+      { kind: "edit" },
+    );
     expect(cleared.revision).toBe(4);
     expect(cleared.drawings.tier).toBeUndefined();
   });
-  it("moves modules without changing drawing definitions, data or the saved camera", async () => {
-    const store = db.scoped(register(db, "a", "abcdef").id),
+  it("commits a hand edit from the canvas as a revision of its own, changing only what it names", async () => {
+    const { app } = createApp(db);
+    const signup = async (name: string) => {
+      const r = await app.request("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, password: "abcdef" }),
+      });
+      return {
+        cookie: r.headers.get("set-cookie")!.split(";")[0],
+        id: ((await r.json()) as { id: string }).id,
+      };
+    };
+    const alice = await signup("alice"),
+      bob = await signup("bob");
+    const store = db.scoped(alice.id),
       work = createWork(store, "test"),
       content = fixture();
-    store.commit({ ...store.work(work.id), brief: content.brief }, 1);
-    const { work: saved } = await writeWork(store, work.id, {
-      baseRevision: 2,
-      drawings: Object.values(content.drawings),
-      scenes: Object.values(content.scenes),
-      details: Object.values(content.details),
-      interactions: Object.values(content.interactions),
+    store.commit({ ...store.work(work.id), brief: content.brief }, 1, {
+      kind: "edit",
     });
+    const { work: saved } = await writeWork(
+      store,
+      work.id,
+      {
+        baseRevision: 2,
+        drawings: Object.values(content.drawings),
+        scenes: Object.values(content.scenes),
+        details: Object.values(content.details),
+        interactions: Object.values(content.interactions),
+      },
+      { kind: "run", runId: "r", prompt: "draw" },
+    );
     const m = saved.scenes.root.modules[0];
-    const moved = await moveModules(store, work.id, "root", 3, [
+    const send = (cookie: string, body: object) =>
+      app.request(`/api/works/${work.id}/edits`, {
+        method: "POST",
+        headers: { cookie, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const edit = moveParts(saved, "root", [
       { id: m.id, bounds: { ...m.bounds, x: 901 } },
     ]);
+    expect((await send(bob.cookie, edit)).status).toBe(404);
+    const r = await send(alice.cookie, edit);
+    expect(r.status).toBe(200);
+    const moved = (await r.json()) as Work;
+    expect(moved.revision).toBe(4);
     expect(moved.drawings).toEqual(saved.drawings);
     expect(moved.scenes.root.modules[0]).toEqual({
       ...m,
@@ -165,7 +292,14 @@ describe("user owned works", () => {
     expect(moved.scenes.root.modules.slice(1)).toEqual(
       saved.scenes.root.modules.slice(1),
     );
-    expect(moved).not.toHaveProperty("camera");
+    expect(store.revisions(work.id)[0]).toMatchObject({
+      revision: 4,
+      cause: { kind: "edit" },
+    });
+    // An edit made from a revision that is no longer the latest is refused.
+    expect((await send(alice.cookie, edit)).status).toBe(409);
+    // A hand edit is a step of its own: undoing it leaves the author's drawing.
+    expect(undo(store, work.id).scenes).toEqual(saved.scenes);
   });
   it("takes named materials into the work and keeps other users' pictures out", async () => {
     const a = db.scoped(register(db, "a", "abcdef").id),
@@ -188,21 +322,26 @@ describe("user owned works", () => {
       target: null,
     };
     await expect(
-      writeWork(a, work.id, {
-        baseRevision: 1,
-        drawings: [fruit],
-        scenes: [
-          {
-            ...content.scenes.root,
-            modules: [module],
-            links: [],
-            checks: [],
-            interactionId: null,
-          },
-        ],
-      }),
+      writeWork(
+        a,
+        work.id,
+        {
+          baseRevision: 1,
+          drawings: [fruit],
+          scenes: [
+            {
+              ...content.scenes.root,
+              modules: [module],
+              links: [],
+              checks: [],
+              interactionId: null,
+            },
+          ],
+        },
+        { kind: "edit" },
+      ),
     ).rejects.toThrow("set_brief");
-    a.commit({ ...a.work(work.id), brief: content.brief }, 1);
+    a.commit({ ...a.work(work.id), brief: content.brief }, 1, { kind: "edit" });
     const theirs = await client.ingest(
       await picture(),
       "image/png",
@@ -215,21 +354,31 @@ describe("user owned works", () => {
       b.userId,
     );
     await expect(
-      writeWork(a, work.id, { baseRevision: 2, materials: [theirs.id] }),
+      writeWork(
+        a,
+        work.id,
+        { baseRevision: 2, materials: [theirs.id] },
+        { kind: "edit" },
+      ),
     ).rejects.toThrow();
-    const { work: saved, added } = await writeWork(a, work.id, {
-      baseRevision: 2,
-      drawings: [fruit],
-      scenes: [
-        {
-          ...content.scenes.root,
-          modules: [module],
-          links: [],
-          checks: [],
-          interactionId: null,
-        },
-      ],
-    });
+    const { work: saved, added } = await writeWork(
+      a,
+      work.id,
+      {
+        baseRevision: 2,
+        drawings: [fruit],
+        scenes: [
+          {
+            ...content.scenes.root,
+            modules: [module],
+            links: [],
+            checks: [],
+            interactionId: null,
+          },
+        ],
+      },
+      { kind: "edit" },
+    );
     // Called literally in code, or held as an id in module data.
     expect(added.sort()).toEqual(["apple", "earth"]);
     expect(saved.materials.apple).toMatchObject({
@@ -238,41 +387,59 @@ describe("user owned works", () => {
       anchors: { stem: expect.any(Object) },
     });
     await expect(
-      writeWork(a, work.id, {
-        baseRevision: saved.revision,
-        drawings: [
-          { ...fruit, source: 'return api.material("no-such-thing")' },
-        ],
-      }),
+      writeWork(
+        a,
+        work.id,
+        {
+          baseRevision: saved.revision,
+          drawings: [
+            { ...fruit, source: 'return api.material("no-such-thing")' },
+          ],
+        },
+        { kind: "edit" },
+      ),
     ).rejects.toThrow("no-such-thing");
     // A module drawn by a library drawing as it is takes that drawing in; a picture is
     // not a drawing.
-    const { work: plotted } = await writeWork(a, work.id, {
-      baseRevision: saved.revision,
-      scenes: [
-        {
-          ...content.scenes.root,
-          modules: [module, { ...module, id: "wave", drawingId: "waves", data: {} }],
-          links: [],
-          checks: [],
-          interactionId: null,
-        },
-      ],
-    });
-    expect(plotted.materials.waves).toMatchObject({ kind: "drawing" });
-    await expect(
-      writeWork(a, work.id, {
-        baseRevision: plotted.revision,
+    const { work: plotted } = await writeWork(
+      a,
+      work.id,
+      {
+        baseRevision: saved.revision,
         scenes: [
           {
             ...content.scenes.root,
-            modules: [{ ...module, drawingId: "apple" }],
+            modules: [
+              module,
+              { ...module, id: "wave", drawingId: "waves", data: {} },
+            ],
             links: [],
             checks: [],
             interactionId: null,
           },
         ],
-      }),
+      },
+      { kind: "edit" },
+    );
+    expect(plotted.materials.waves).toMatchObject({ kind: "drawing" });
+    await expect(
+      writeWork(
+        a,
+        work.id,
+        {
+          baseRevision: plotted.revision,
+          scenes: [
+            {
+              ...content.scenes.root,
+              modules: [{ ...module, drawingId: "apple" }],
+              links: [],
+              checks: [],
+              interactionId: null,
+            },
+          ],
+        },
+        { kind: "edit" },
+      ),
     ).rejects.toThrow("画法 apple 不存在");
   });
   it("retains saved content and suspended conversation across reopening", () => {

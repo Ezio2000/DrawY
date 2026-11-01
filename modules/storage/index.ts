@@ -9,6 +9,8 @@ import {
   type Capture,
   type Settings,
   type Run,
+  type Cause,
+  type RevisionSummary,
 } from "../contracts/index.ts";
 export class Storage {
   db: DatabaseSync;
@@ -25,6 +27,43 @@ export class Storage {
  CREATE TABLE IF NOT EXISTS captures(user_id TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(user_id,id));
  CREATE TABLE IF NOT EXISTS settings(user_id TEXT PRIMARY KEY,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS runs(user_id TEXT NOT NULL,id TEXT NOT NULL,work_id TEXT NOT NULL,data TEXT NOT NULL,context TEXT,PRIMARY KEY(user_id,id));`);
+    const columns = this.db.prepare("PRAGMA table_info(revisions)").all();
+    if (!columns.some((c) => c.name === "cause")) this.recordCauses();
+  }
+  /** Gives revisions saved before they recorded their cause one: the first creates the
+   * work, those a run's steps saved belong to its request, and the rest were edits. */
+  private recordCauses() {
+    const db = this.db;
+    db.exec("BEGIN");
+    try {
+      db.exec(`ALTER TABLE revisions ADD COLUMN cause TEXT NOT NULL DEFAULT '{"kind":"edit"}';
+ UPDATE revisions SET cause='{"kind":"create"}' WHERE revision=1;`);
+      const update = db.prepare(
+        "UPDATE revisions SET cause=? WHERE user_id=? AND work_id=? AND revision=?",
+      );
+      for (const row of db
+        .prepare("SELECT user_id,data FROM runs ORDER BY rowid")
+        .all()) {
+        const run = JSON.parse(row.data as string) as Run;
+        const first = run.steps[0];
+        const cause = JSON.stringify({
+          kind: "run",
+          runId: run.id,
+          prompt: first?.kind === "message" ? first.text : "",
+        });
+        for (const step of run.steps)
+          if (
+            step.kind === "tool" &&
+            (step.name === "write_work" || step.name === "set_brief") &&
+            step.revision
+          )
+            update.run(cause, row.user_id as string, run.workId, step.revision);
+      }
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
   }
   session(userId: string) {
     const token = id();
@@ -68,7 +107,7 @@ export class UserStore {
       workId,
     );
   }
-  commit(work: Work, base: number) {
+  commit(work: Work, base: number, cause: Cause) {
     const db = this.storage.db;
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -82,12 +121,9 @@ export class UserStore {
       db.prepare(
         "INSERT INTO works VALUES(?,?,?) ON CONFLICT(user_id,id) DO UPDATE SET data=excluded.data",
       ).run(this.userId, work.id, json);
-      db.prepare("INSERT INTO revisions VALUES(?,?,?,?)").run(
-        this.userId,
-        work.id,
-        work.revision,
-        json,
-      );
+      db.prepare(
+        "INSERT INTO revisions(user_id,work_id,revision,data,cause) VALUES(?,?,?,?,?)",
+      ).run(this.userId, work.id, work.revision, json, JSON.stringify(cause));
       db.exec("COMMIT");
       return work;
     } catch (e) {
@@ -124,16 +160,17 @@ export class UserStore {
     }
     return null;
   }
-  revisions(workId: string) {
+  revisions(workId: string): RevisionSummary[] {
     this.work(workId);
     return this.storage.db
       .prepare(
-        "SELECT revision,data FROM revisions WHERE user_id=? AND work_id=? ORDER BY revision DESC",
+        "SELECT revision,data,cause FROM revisions WHERE user_id=? AND work_id=? ORDER BY revision DESC",
       )
       .all(this.userId, workId)
       .map((r) => ({
         revision: r.revision as number,
         updatedAt: JSON.parse(r.data as string).updatedAt,
+        cause: JSON.parse(r.cause as string),
       }));
   }
   revision(workId: string, revision: number) {

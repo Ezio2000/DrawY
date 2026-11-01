@@ -165,6 +165,6 @@ it("serves recoloured icons and counts uses per work", async () => {
     count: expect.any(Number),
   });
   expect(styles.find((s) => s.id === "colored-pencil")!.samples[0]).toBe(
-    "apple",
+    "lighthouse-colored-pencil",
   );
 });
