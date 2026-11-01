@@ -63,6 +63,8 @@ const cool = [accent2, accent].find((c) => {
 const sea = d.water || mix(paper, cool || "#6f9fbf", 0.2);
 const shore = mix(sea, ink, 0.28);
 const land = d.land || mix(paper, ink, 0.025);
+// A city's ground a shade deeper, so the paper-white streets stand out on it.
+const cityLand = d.land || mix(paper, ink, 0.05);
 const riverInk = mix(sea, ink, 0.18);
 const zh = d.language !== "en";
 const size = Number(d.size ?? 14);
@@ -127,8 +129,11 @@ if (![west, south, east, north].every(Number.isFinite)) {
     const spread = (v) => Math.max(...v) - Math.min(...v);
     const xs = spread(east360) < spread(raw) ? east360 : raw,
       ys = all.map((p) => p[1]);
-    const spanX = Math.max(2, Math.max(...xs) - Math.min(...xs)),
-      spanY = Math.max(2, Math.max(...ys) - Math.min(...ys));
+    // At least a city's breadth around places close together (a walk in one town), and
+    // a region's around a single place, which says nothing of how far to look.
+    const least = all.length > 1 ? 0.02 : 2;
+    const spanX = Math.max(least, Math.max(...xs) - Math.min(...xs)),
+      spanY = Math.max(least, Math.max(...ys) - Math.min(...ys));
     west = Math.min(...xs) - spanX * 0.15;
     east = Math.max(...xs) + spanX * 0.15;
     south = Math.min(...ys) - spanY * 0.15;
@@ -213,12 +218,79 @@ const [physical, countries, subdivisions] = await Promise.all([
   borders === "subdivisions" ? layer("subdivisions") : null,
 ]);
 const visible = (lines) => lines.map((l) => decode(l)).flatMap(copies);
+// A city seen close: Natural Earth has nothing finer than 1:10m, so from about zoom 9
+// the ground comes from OpenStreetMap tiles instead (water, parks and woods, roads,
+// railways, waterway and road names), each a web-map tile of the view. Should any not
+// load, the map falls back to Natural Earth and says the streets are missing.
+const tiles = [];
+let streetsFailed = false;
+if (d.streets !== false && zoom >= 9) {
+  let tz = Math.min(14, Math.floor(zoom));
+  const merc = (lat) =>
+    (1 -
+      Math.log(
+        Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180),
+      ) /
+        Math.PI) /
+    2;
+  const clampLat = (lat) => Math.max(-85, Math.min(85, lat));
+  let range;
+  for (;;) {
+    const n = 2 ** tz;
+    range = {
+      n,
+      x0: Math.floor(((view.w + 180) / 360) * n),
+      x1: Math.floor(((view.e + 180) / 360) * n),
+      y0: Math.max(0, Math.floor(merc(clampLat(view.n)) * n)),
+      y1: Math.min(n - 1, Math.floor(merc(clampLat(view.s)) * n)),
+    };
+    if ((range.x1 - range.x0 + 1) * (range.y1 - range.y0 + 1) <= 36 || tz <= 9)
+      break;
+    tz--;
+  }
+  const want = [];
+  for (let x = range.x0; x <= range.x1; x++)
+    for (let y = range.y0; y <= range.y1; y++) {
+      const col = ((x % range.n) + range.n) % range.n;
+      want.push({ x, col, y, dx: 360 * Math.floor(x / range.n) });
+    }
+  const got = await Promise.allSettled(
+    want.map((t) => layer(`streets/${tz}/${t.col}/${t.y}`)),
+  );
+  if (got.every((g) => g.status === "fulfilled"))
+    got.forEach((g, i) =>
+      tiles.push({ ...want[i], tz, n: range.n, data: g.value }),
+    );
+  else streetsFailed = true;
+}
+const city = tiles.length > 0;
+// A tile's lines in degrees: tile units across, the Mercator rows down (shifted by the
+// tile's dx onto the copy of the world in view by whoever draws them).
+const tileLine = (t, line) => {
+  const e = t.data.extent,
+    pts = [];
+  let u = 0,
+    v = 0;
+  for (let i = 0; i < line.length; i += 2) {
+    u += line[i];
+    v += line[i + 1];
+    const lon = ((t.col + u / e) / t.n) * 360 - 180;
+    const lat =
+      (Math.atan(Math.sinh(Math.PI * (1 - (2 * (t.y + v / e)) / t.n))) * 180) /
+      Math.PI;
+    pts.push([lon, lat]);
+  }
+  return pts;
+};
 // Close views read finer land, lakes and shores, only the tiles they cover; wider views
 // the overview layer. A tile's fills are cut at its edges, so they get no outline of
 // their own and the shores are drawn as the lines they are.
 const paths = (list, close) => list.map((p) => trace(p, close)).join("");
 let landPath, lakePath, shorePath;
-if (zoom >= 4.5 && physical.detail) {
+if (city) {
+  // The tiles bring their own water; Natural Earth's coarser shore would only blur it.
+  landPath = lakePath = "";
+} else if (zoom >= 4.5 && physical.detail) {
   const { tile, tiles } = physical.detail;
   const have = new Set(tiles),
     across = 360 / tile;
@@ -251,7 +323,7 @@ const riverMode =
 // A river appears from the zoom Natural Earth gives it, a step early since a figure is
 // looked at closer than a web map.
 const rivers =
-  riverMode === "none"
+  riverMode === "none" || city
     ? []
     : physical.rivers
         .filter((r) => r.zoom <= zoom + 1)
@@ -464,6 +536,29 @@ if (d.scale !== false) {
     h: size * 1.3 + sw * 3,
   });
   scaleOut = `<g fill="${ink}" font-size="${(size * 0.78).toFixed(1)}"><rect x="${x}" y="${y}" width="${(len / 2).toFixed(1)}" height="${(sw * 2.2).toFixed(1)}" fill="${ink}"/><rect x="${(x + len / 2).toFixed(1)}" y="${y}" width="${(len / 2).toFixed(1)}" height="${(sw * 2.2).toFixed(1)}" fill="${paper}" stroke="${ink}" stroke-width="${sw * 0.5}"/><text x="${x}" y="${y - size * 0.35}" ${halo}>0</text><text x="${(x + len).toFixed(1)}" y="${y - size * 0.35}" text-anchor="middle" ${halo}>${km.toLocaleString()} km</text></g>`;
+}
+
+// OpenStreetMap's data asks to be credited where it is shown; a city whose streets did
+// not load says so, so the blank is not taken for the place.
+let creditOut = "";
+const credit = city
+  ? "© OpenStreetMap"
+  : streetsFailed
+    ? zh
+      ? "街道底图暂时读取失败"
+      : "Street map unavailable"
+    : "";
+if (credit) {
+  // The credit small in the corner; a failure where it is read, clear of a faded edge.
+  const sz = size * (city ? 0.62 : 0.85),
+    w = measure(credit, sz);
+  // A faded edge hides the outer 6% of the map.
+  const inset = d.edge === "fade" ? 0.07 : 0;
+  const x = city ? W * (1 - inset) - size * 0.6 : W / 2,
+    y = city ? H * (1 - inset) - size * 0.5 : H * inset + size * 2.4;
+  const left = city ? x - w : x - w / 2;
+  taken.push({ x: left - 2, y: y - sz - 2, w: w + 4, h: sz + 4 });
+  creditOut = `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${city ? "end" : "middle"}" font-size="${sz.toFixed(1)}" fill="${city ? muted : mix(muted, ink, 0.5)}" ${halo}>${esc(credit)}</text>`;
 }
 
 // Places: a marker by kind, then the name (and a note under it) beside it.
@@ -728,6 +823,19 @@ for (const h of d.highlights || []) {
   const pool = physical.rivers
     .filter((r) => names.includes(r.zh) || names.includes(r.en))
     .flatMap((r) => r.lines.map((l) => decode(l)));
+  // In a city, the streets' own waterways by the same names, which follow it closely.
+  if (city)
+    pool.push(
+      ...tiles.flatMap((t) =>
+        t.data.waterways
+          .filter((w) => names.includes(w.zh) || names.includes(w.en))
+          .flatMap((w) =>
+            w.lines.map((l) =>
+              tileLine(t, l).map(([lon, lat]) => [lon + t.dx, lat]),
+            ),
+          ),
+      ),
+    );
   // Reaches joined where they meet, so a stretch can run on across them.
   const chains = [];
   while (pool.length) {
@@ -778,38 +886,218 @@ for (const h of d.highlights || []) {
     .join("");
   highlightOut += `<path d="${path}" fill="none" stroke="${h.color || mix(cool || "#3d7fb0", ink, 0.15)}" stroke-width="${Number(h.width ?? sw * 2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
 }
-for (const { r, name } of riverLabels
-  .sort((a, b) => a.r.rank - b.r.rank)
-  .slice(0, 24)) {
-  // On the longest stretch in view, along the river's direction there.
-  const longest = r.pts
-    .map(({ pts, dx }) =>
-      pts
-        .map(([lon, lat]) => px([lon + dx, lat]))
-        .filter(([x, y]) => x > 0 && y > 0 && x < W && y < H),
-    )
+// A name along its line: on the longest stretch in view, turned to the line's direction
+// there, and only where it has room and is clear of everything else.
+// Water is named beside its line, a road on it.
+const along = (name, stretches, sz, color, italic, on = false) => {
+  const longest = stretches
+    .map((p) => p.filter(([x, y]) => x > 0 && y > 0 && x < W && y < H))
     .sort((a, b) => b.length - a.length)[0];
-  if (!longest || longest.length < 3) continue;
+  if (!longest || longest.length < 3) return false;
   let len = 0;
   for (let i = 1; i < longest.length; i++)
     len += Math.hypot(
       longest[i][0] - longest[i - 1][0],
       longest[i][1] - longest[i - 1][1],
     );
-  const sz = size * 0.82;
   const w = measure(name, sz);
-  if (len < w * 2.2) continue;
-  const mid = longest[Math.floor(longest.length / 2)],
-    a = longest[Math.max(0, Math.floor(longest.length / 2) - 2)],
-    b =
-      longest[Math.min(longest.length - 1, Math.floor(longest.length / 2) + 2)];
+  if (len < w * 2.2) return false;
+  // The middle point by length, not by count: city data bunches points at the bends.
+  let run = 0,
+    m = 0;
+  while (m < longest.length - 1 && run < len / 2) {
+    run += Math.hypot(
+      longest[m + 1][0] - longest[m][0],
+      longest[m + 1][1] - longest[m][1],
+    );
+    m++;
+  }
+  const mid = longest[m];
+  // The direction over about the name's length, so a kink right at the middle does not
+  // turn it.
+  const reach = (step) => {
+    let i = m,
+      d = 0;
+    while (i + step >= 0 && i + step < longest.length && d < w / 2) {
+      d += Math.hypot(
+        longest[i + step][0] - longest[i][0],
+        longest[i + step][1] - longest[i][1],
+      );
+      i += step;
+    }
+    return longest[i];
+  };
+  const a = reach(-1),
+    b = reach(1);
   let ang = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
   if (ang > 90) ang -= 180;
   if (ang < -90) ang += 180;
-  const box = { x: mid[0] - w / 2, y: mid[1] - sz, w, h: sz * 1.1 };
-  if (hits(box) > 0) continue;
+  const box = {
+    x: mid[0] - w / 2,
+    y: mid[1] - (on ? sz * 0.55 : sz),
+    w,
+    h: sz * 1.1,
+  };
+  if (hits(box) > 0) return false;
   taken.push(box);
-  refOut += `<text transform="translate(${mid[0].toFixed(1)} ${mid[1].toFixed(1)}) rotate(${ang.toFixed(1)})" y="${(-sz * 0.35).toFixed(1)}" text-anchor="middle" font-size="${sz.toFixed(1)}" font-style="italic" fill="${mix(sea, ink, 0.5)}" ${halo}>${esc(name)}</text>`;
+  refOut += `<text transform="translate(${mid[0].toFixed(1)} ${mid[1].toFixed(1)}) rotate(${ang.toFixed(1)})" y="${(on ? sz * 0.35 : -sz * 0.35).toFixed(1)}" text-anchor="middle" font-size="${sz.toFixed(1)}"${italic ? ` font-style="italic"` : ""} fill="${color}" ${halo}>${esc(name)}</text>`;
+  return true;
+};
+for (const { r, name } of riverLabels
+  .sort((a, b) => a.r.rank - b.r.rank)
+  .slice(0, 24))
+  along(
+    name,
+    r.pts.map(({ pts, dx }) => pts.map(([lon, lat]) => px([lon + dx, lat]))),
+    size * 0.82,
+    mix(sea, ink, 0.5),
+    true,
+  );
+// The city's own ground, each tile kept to its square so the parts of its shapes cut at
+// the edge never show: parks and woods, waterways under the water they run in, roads
+// cased and filled by class (fewer and narrower further out), railways; then the names
+// of waterways and main roads where they fit.
+let cityOut = "";
+if (city) {
+  const tint = [accent2, accent].find((c) => {
+    const h = hue(c);
+    return h >= 70 && h <= 170;
+  });
+  const green = mix(cityLand, tint || "#7da26a", 0.2);
+  const f = 2 ** ((zoom - 14) * 0.7);
+  const roadWidth = {
+    motorway: 7,
+    trunk: 6.5,
+    primary: 6,
+    secondary: 5,
+    tertiary: 4,
+    minor: 2.6,
+  };
+  const roadFrom = {
+    motorway: 9,
+    trunk: 9,
+    primary: 10,
+    secondary: 11,
+    tertiary: 12,
+    minor: 13.5,
+  };
+  const waterWidth = { river: 2.6, canal: 1.8, stream: 1.1 };
+  const casing = mix(cityLand, ink, 0.22);
+  const path = (t, lines, close) =>
+    lines.map((l) => trace({ pts: tileLine(t, l), dx: t.dx }, close)).join("");
+  const stroked = (dd, color, width, extra = "") =>
+    dd
+      ? `<path d="${dd}" fill="none" stroke="${color}" stroke-width="${width.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"${extra}/>`
+      : "";
+  tiles.forEach((t, i) => {
+    const corner = (u) => {
+      const [lon, lat] = tileLine(t, [u, u])[0];
+      return px([lon + t.dx, lat]);
+    };
+    const [ax, ay] = corner(0),
+      [bx, by] = corner(t.data.extent);
+    if (bx < 0 || by < 0 || ax > W || ay > H) return;
+    const data = t.data;
+    let g = "";
+    const greenD = path(t, data.green, true);
+    if (greenD) g += `<path d="${greenD}" fill="${green}"/>`;
+    for (const w of data.waterways) {
+      if (w.class === "stream" && zoom < 13) continue;
+      g += stroked(
+        path(t, w.lines, false),
+        mix(sea, ink, 0.12),
+        Math.max(0.7, waterWidth[w.class] * f),
+      );
+    }
+    const waterD = path(t, data.water, true);
+    if (waterD)
+      g += `<path d="${waterD}" fill="${sea}" stroke="${shore}" stroke-width="${(sw * 0.5).toFixed(2)}" stroke-linejoin="round"/>`;
+    const roads = data.roads
+      .filter((r) => zoom >= roadFrom[r.class])
+      .sort((a, b) => roadWidth[a.class] - roadWidth[b.class])
+      .map((r) => ({
+        d: path(t, r.lines, false),
+        w: Math.max(0.8, roadWidth[r.class] * f),
+        major: r.class === "motorway" || r.class === "trunk",
+      }));
+    for (const r of roads)
+      g += stroked(r.d, r.major ? mix(casing, ink, 0.15) : casing, r.w + 1.6);
+    const railD = path(t, data.rail, false);
+    g += stroked(railD, mix(muted, ink, 0.25), Math.max(0.8, 1.6 * f));
+    g += stroked(
+      railD,
+      paper,
+      Math.max(0.4, 0.8 * f),
+      ` stroke-dasharray="${(5 * Math.max(0.6, f)).toFixed(1)} ${(5 * Math.max(0.6, f)).toFixed(1)}" stroke-linecap="butt"`,
+    );
+    for (const r of roads) g += stroked(r.d, paper, r.w);
+    cityOut += `<clipPath id="geomap-tile-${i}"><rect x="${(ax - 0.3).toFixed(1)}" y="${(ay - 0.3).toFixed(1)}" width="${(bx - ax + 0.6).toFixed(1)}" height="${(by - ay + 0.6).toFixed(1)}"/></clipPath><g clip-path="url(#geomap-tile-${i})">${g}</g>`;
+  });
+  if (riverMode === "named" || d.roadNames !== false) {
+    // Each name once, gathered across the tiles it runs through, larger ways first.
+    const gather = (list, rank) => {
+      const by = new Map();
+      for (const t of tiles)
+        for (const item of t.data[list]) {
+          const name = zh ? item.zh || item.en : item.en || item.zh;
+          if (!name) continue;
+          const e = by.get(name) ?? { name, rank: rank(item), lines: [] };
+          e.lines.push(
+            ...item.lines.map((l) =>
+              tileLine(t, l).map(([lon, lat]) => px([lon + t.dx, lat])),
+            ),
+          );
+          by.set(name, e);
+        }
+      return [...by.values()].sort((a, b) => a.rank - b.rank);
+    };
+    // Stretches cut at tile edges are joined where they meet again.
+    const join = (lines) => {
+      const pool = lines.filter((l) => l.length > 1).map((l) => l.slice());
+      const out = [];
+      const near = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1.5;
+      while (pool.length) {
+        let c = pool.shift(),
+          grown = true;
+        while (grown) {
+          grown = false;
+          for (let i = 0; i < pool.length; i++) {
+            const p = pool[i];
+            if (near(c[c.length - 1], p[0])) c = c.concat(p.slice(1));
+            else if (near(c[c.length - 1], p[p.length - 1]))
+              c = c.concat(p.slice(0, -1).reverse());
+            else if (near(c[0], p[p.length - 1])) c = p.slice(0, -1).concat(c);
+            else if (near(c[0], p[0])) c = p.slice(1).reverse().concat(c);
+            else continue;
+            pool.splice(i, 1);
+            grown = true;
+            break;
+          }
+        }
+        out.push(c);
+      }
+      return out;
+    };
+    if (riverMode === "named")
+      for (const e of gather("waterways", (w) =>
+        w.class === "river" ? 0 : w.class === "canal" ? 1 : 2,
+      ).slice(0, 16))
+        along(e.name, join(e.lines), size * 0.8, mix(sea, ink, 0.5), true);
+    if (d.roadNames !== false) {
+      const order = ["motorway", "trunk", "primary", "secondary", "tertiary"];
+      for (const e of gather("names", (r) => order.indexOf(r.class))
+        .filter((e) => zoom >= roadFrom[order[e.rank]] + 1)
+        .slice(0, 30))
+        along(
+          e.name,
+          join(e.lines),
+          size * 0.72,
+          mix(muted, ink, 0.45),
+          false,
+          true,
+        );
+    }
+  }
 }
 
 // Borders as the data's point of view classes them: settled, disputed or provisional
@@ -850,17 +1138,19 @@ const svg =
   api.svg(`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="${esc(font)}" style="display:block">
   <defs><clipPath id="geomap-view"><rect width="${W}" height="${H}"/></clipPath></defs>
   <g clip-path="url(#geomap-view)">
-    <rect width="${W}" height="${H}" fill="${sea}"/>
-    ${
-      shorePath === undefined
-        ? `<path d="${landPath}" fill="${land}" fill-rule="evenodd" stroke="${shore}" stroke-width="${sw * 0.6}" stroke-linejoin="round"${texture}/>
+    <rect width="${W}" height="${H}" fill="${city ? cityLand : sea}"/>
+    ${cityOut ? `<g${texture}>${cityOut}</g>` : ""}${
+      city
+        ? ""
+        : shorePath === undefined
+          ? `<path d="${landPath}" fill="${land}" fill-rule="evenodd" stroke="${shore}" stroke-width="${sw * 0.6}" stroke-linejoin="round"${texture}/>
     <path d="${lakePath}" fill="${sea}" stroke="${shore}" stroke-width="${sw * 0.4}"/>`
-        : // Tile seams closed in the fills' own colours, under the real shore line.
-          `<path d="${landPath}" fill="${land}" fill-rule="evenodd" stroke="${land}" stroke-width=".8"${texture}/>
+          : // Tile seams closed in the fills' own colours, under the real shore line.
+            `<path d="${landPath}" fill="${land}" fill-rule="evenodd" stroke="${land}" stroke-width=".8"${texture}/>
     <path d="${lakePath}" fill="${sea}" stroke="${sea}" stroke-width=".8"/>
     <path d="${shorePath}" fill="none" stroke="${shore}" stroke-width="${sw * 0.6}" stroke-linejoin="round"/>`
     }
-    ${borderOut}${riverOut}${highlightOut}${areaOut}${routeOut}${markOut}${refOut}${labelOut}${scaleOut}
+    ${borderOut}${riverOut}${highlightOut}${areaOut}${routeOut}${markOut}${refOut}${labelOut}${scaleOut}${creditOut}
   </g>
   ${fade ? "" : `<rect x=".5" y=".5" width="${W - 1}" height="${H - 1}" fill="none" stroke="${mix(ink, paper, 0.35)}" stroke-width="1"/>`}
 </svg>`);

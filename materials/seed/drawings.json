@@ -3074,16 +3074,21 @@
       "历史地图",
       "形势图",
       "航线图",
+      "城市地图",
+      "街道图",
+      "导览图",
       "分布图",
       "map",
       "geographic map",
       "route map",
+      "city map",
+      "street map",
       "campaign map",
       "historical map",
       "atlas"
     ],
     "category": "drawing/map",
-    "about": "A true map from real geographic data: coastlines, lakes and named rivers, optionally today's country borders (disputed lines drawn as such) and first-level divisions such as provinces and states. Places, routes and areas are given in longitude and latitude, so everything lands where it really is, across the 180th meridian too; labels keep clear of each other and of the routes. Routes take place names or [lon, lat] points, with width, colour, dashes and direction arrows; areas shade a territory; highlights pick out named rivers, whole or between two places. Change it through these parameters rather than reaching into what it draws, whose structure is not fixed. The view fits bounds [west, south, east, north] or everything placed, and the colours follow the style.",
+    "about": "A true map from real geographic data, from the whole world down to a few streets: coastlines, lakes and named rivers, and in a city view (a few dozen kilometres or less) OpenStreetMap's streets, waterways, parks and railways with the names of main roads, so a walk or tour through one town lands on its real streets; optionally today's country borders (disputed lines drawn as such) and first-level divisions such as provinces and states. Places, routes and areas are given in longitude and latitude, so everything lands where it really is, across the 180th meridian too; labels keep clear of each other and of the routes. Routes take place names or [lon, lat] points, with width, colour, dashes and direction arrows; areas shade a territory; highlights pick out named rivers, whole or between two places. Change it through these parameters rather than reaching into what it draws, whose structure is not fixed. The view fits bounds [west, south, east, north] or everything placed, and the colours follow the style.",
     "tags": ["map", "geography", "route", "history", "place", "journey"],
     "style": null,
     "origin": {
@@ -3209,6 +3214,16 @@
         "options": ["named", "plain", "none"],
         "default": "named",
         "description": "rivers with or without their names"
+      },
+      "streets": {
+        "type": "boolean",
+        "default": true,
+        "description": "in a city view, OpenStreetMap's streets, waterways, parks and railways as the ground; false keeps the plain coast and rivers"
+      },
+      "roadNames": {
+        "type": "boolean",
+        "default": true,
+        "description": "in a city view, the names of main roads where they fit"
       },
       "language": {
         "type": "choice",

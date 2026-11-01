@@ -45,12 +45,15 @@ const read = <T>(path: string): T => JSON.parse(readFileSync(path, "utf8"));
  * kept in `dir`. */
 export class Library {
   readonly index = new Index();
+  /** Where street tiles fetched from OpenStreetMap are kept. */
+  readonly streetsDir: string;
   private db: DatabaseSync;
   private waiters = new Map<string, Set<() => void>>();
   constructor(
     private dir: string,
     private seed: string,
   ) {
+    this.streetsDir = join(dir, "streets");
     mkdirSync(join(dir, "files"), { recursive: true });
     mkdirSync(join(dir, "thumbs"), { recursive: true });
     this.db = new DatabaseSync(join(dir, "materials.sqlite"));

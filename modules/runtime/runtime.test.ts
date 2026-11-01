@@ -9,6 +9,7 @@ import { capture } from "../observation/capture.ts";
 import { fit, zoom } from "../contracts/geometry.ts";
 import { useOf } from "../materials/index.ts";
 import type { DrawingMaterial, Material } from "@drawy/materials/schema";
+import { boil } from "../../materials/streets.ts";
 
 /** Curated materials as the library serves them. */
 const seed = (name: string) =>
@@ -34,6 +35,7 @@ const held: (() => void)[] = [];
 const develop = () => held.splice(0).forEach((send) => send());
 
 let browser: Browser, page: Page, server: Server, origin: string;
+let streetsDown = false;
 let work = fixture();
 beforeAll(async () => {
   const bundle = await readFile("dist/runtime/runtime.js");
@@ -66,6 +68,31 @@ beforeAll(async () => {
       };
       if (id === "g-late") held.push(send);
       else send();
+    } else if (url.pathname.startsWith("/materials/geo/streets/")) {
+      // One real tile of central Guangzhou; every other tile empty, or all unreachable.
+      const [z, x, y] = url.pathname.split("/").slice(-3).map(Number);
+      if (streetsDown) {
+        res.statusCode = 502;
+        return res.end("{}");
+      }
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify(
+          boil(
+            z === 14 && x === 13347 && y === 7110
+              ? readFileSync(
+                  new URL(
+                    "../../materials/fixtures/streets-14-13347-7110.pbf",
+                    import.meta.url,
+                  ),
+                )
+              : new Uint8Array(),
+            z,
+            x,
+            y,
+          ),
+        ),
+      );
     } else if (url.pathname.startsWith("/materials/geo/")) {
       res.setHeader("content-type", "application/json");
       res.end(
@@ -851,8 +878,9 @@ it("maps across the 180th meridian in one piece and names what the view shows", 
           },
         ],
       }),
-      // A coast seen close, drawn from the finer tiles.
-      map("coast", 1400, { bounds: [-1.6, 49.1, 0.1, 49.8] }),
+      // A coast seen close, drawn from the finer tiles (closer still, a city's view, the
+      // ground comes from street tiles instead).
+      map("coast", 1400, { bounds: [-2.4, 48.9, 0.6, 50] }),
     ],
     links: [],
   };
@@ -898,4 +926,80 @@ it("maps across the 180th meridian in one piece and names what the view shows", 
   expect(seen.stretch).toBeGreaterThan(140);
   expect(seen.stretch).toBeLessThan(240);
   expect(seen.shore).toBeGreaterThan(1000);
+});
+
+it("draws a city's real streets under a walk through it, and says so when they cannot load", async () => {
+  const drawings = seed("drawings") as DrawingMaterial[];
+  const geomap = drawings.find((m) => m.id === "geomap")!;
+  work.materials = {
+    geomap: useOf({
+      ...geomap,
+      source: readFileSync(
+        new URL("../../materials/seed/drawings/geomap.js", import.meta.url),
+        "utf8",
+      ),
+    } as Material)!,
+  };
+  // A walk of a few kilometres with no bounds given: the view fits the stops, not a
+  // region around them.
+  const walk = {
+    places: [
+      { name: "北京路", lon: 113.2695, lat: 23.1232 },
+      { name: "海珠桥", lon: 113.2727, lat: 23.1145 },
+      { name: "二沙岛", lon: 113.2985, lat: 23.1122 },
+    ],
+    routes: [{ points: ["北京路", "海珠桥", "二沙岛"], color: "#123456" }],
+  };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      {
+        id: "walk",
+        label: "walk",
+        drawingId: "geomap",
+        data: walk,
+        bounds: { x: 0, y: 0, width: 960, height: 600 },
+        anchors: {},
+        group: null,
+        target: null,
+      },
+    ],
+    links: [],
+  };
+  const look = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(
+        '[data-module-id="walk"]',
+      )!.shadowRoot!;
+      return {
+        errors: window.drawyErrors,
+        text: [...root.querySelectorAll("text")].map((t) => t.textContent),
+        tiles: root.querySelectorAll('clipPath[id^="geomap-tile-"]').length,
+        scale: [...root.querySelectorAll("text")]
+          .map((t) => t.textContent!)
+          .find((t) => / km$/.test(t)),
+      };
+    });
+  await open();
+  const city = await look();
+  expect(city.errors).toEqual([]);
+  expect(city.tiles).toBeGreaterThan(1);
+  // The Pearl River and the roads the tile names, and the data's credit.
+  expect(city.text).toEqual(
+    expect.arrayContaining(["珠江", "© OpenStreetMap"]),
+  );
+  expect(city.text.length).toBeGreaterThan(6);
+  expect(parseFloat(city.scale!)).toBeLessThanOrEqual(2);
+
+  streetsDown = true;
+  try {
+    await page.reload();
+    await page.waitForFunction(() => window.drawyReady);
+    const blank = await look();
+    expect(blank.errors).toEqual([]);
+    expect(blank.tiles).toBe(0);
+    expect(blank.text).toContain("街道底图暂时读取失败");
+  } finally {
+    streetsDown = false;
+  }
 });

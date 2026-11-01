@@ -1,10 +1,11 @@
-import { it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { it, expect, beforeAll, afterAll, vi } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import { Library } from "./library.ts";
 import { createServer } from "./server.ts";
+import { Streets, type StreetTile } from "./streets.ts";
 
 let dir: string, library: Library;
 beforeAll(() => {
@@ -192,4 +193,56 @@ it("serves the geographic layers the map drawing projects, and nothing else from
   ).toBe(304);
   expect((await app.request("/geo/nowhere")).status).toBe(404);
   expect((await app.request("/geo/..%2Fdrawings")).status).toBe(404);
+});
+
+it("boils a city's OpenStreetMap tile down to its water, ways and names, fetched once", async () => {
+  const tile = readFileSync(
+    new URL("./fixtures/streets-14-13347-7110.pbf", import.meta.url),
+  );
+  const cache = mkdtempSync(join(tmpdir(), "drawy-streets-"));
+  const asked: string[] = [];
+  let up = true;
+  vi.stubGlobal("fetch", async (url: string) => {
+    asked.push(String(url));
+    if (!up) throw Error("offline");
+    return String(url).endsWith("/14/13347/7110.pbf")
+      ? new Response(tile)
+      : new Response(null, { status: 204 });
+  });
+  try {
+    const app = createServer(
+      library,
+      new Streets(cache, "https://tiles.test/{z}/{x}/{y}.pbf"),
+    );
+    const r = await app.request("/geo/streets/14/13347/7110");
+    expect(r.status).toBe(200);
+    const city = (await r.json()) as StreetTile;
+    // Central Guangzhou: the Pearl River as water and by name, its main roads named.
+    expect(city.extent).toBe(4096);
+    expect(city.water.length).toBeGreaterThan(0);
+    expect(city.waterways.map((w) => w.zh)).toContain("珠江");
+    expect(city.roads.map((w) => w.class)).toEqual(
+      expect.arrayContaining(["trunk", "primary", "secondary"]),
+    );
+    expect(city.names.length).toBeGreaterThan(5);
+    // Kept on disk: asked again, even with the source gone, it is not fetched again.
+    up = false;
+    expect((await app.request("/geo/streets/14/13347/7110")).status).toBe(200);
+    expect(asked).toHaveLength(1);
+    // Open sea has no tile, which is an empty one, not an error.
+    up = true;
+    const sea = (await (
+      await app.request("/geo/streets/14/0/0")
+    ).json()) as StreetTile;
+    expect(sea.water).toEqual([]);
+    // Nothing beyond the schema's finest zoom or outside the world, and a source that
+    // cannot be reached is reported as such.
+    expect((await app.request("/geo/streets/15/0/0")).status).toBe(400);
+    expect((await app.request("/geo/streets/2/4/0")).status).toBe(400);
+    up = false;
+    expect((await app.request("/geo/streets/14/1/1")).status).toBe(502);
+  } finally {
+    vi.unstubAllGlobals();
+    rmSync(cache, { recursive: true });
+  }
 });

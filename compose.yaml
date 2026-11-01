@@ -4,6 +4,13 @@ services:
       context: .
       target: materials
     restart: unless-stopped
+    # Street tiles for city maps are fetched from OpenStreetMap through the same proxy.
+    environment:
+      NODE_USE_ENV_PROXY: "1"
+      HTTP_PROXY: ${DRAWY_OUTBOUND_PROXY:-}
+      HTTPS_PROXY: ${DRAWY_OUTBOUND_PROXY:-}
+      NO_PROXY: localhost,127.0.0.1
+      DRAWY_TILES_URL: ${DRAWY_TILES_URL:-}
     volumes:
       - ./data/materials:/data
     healthcheck:
