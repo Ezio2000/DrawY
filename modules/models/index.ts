@@ -1,4 +1,4 @@
-import type { Role } from "../contracts/index.ts";
+import { serviceTiers, speedFor, type Role } from "../contracts/index.ts";
 export type Item = Record<string, any>;
 export function headers(role: {
   credential: string;
@@ -44,7 +44,7 @@ export async function generate(
       stream: true,
       store: false,
       reasoning: { effort: role.effort, summary: "auto" },
-      service_tier: role.fast ? "priority" : "default",
+      service_tier: serviceTiers[speedFor(role.channel, role.speed)],
       ...(cacheKey ? { prompt_cache_key: cacheKey } : {}),
       ...(role.channel === "api" ? { max_output_tokens: budget } : {}),
     }),

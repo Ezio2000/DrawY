@@ -12,7 +12,7 @@ AI 创作可以探索和修改的图。界面按 Claude 官网与桌面端的气
 docker compose up -d --build
 ```
 
-访问 http://localhost:8088。注册账号后在设置中配置创作和生图模型；支持 OpenAI API Key 与 ChatGPT OAuth。创作模型有 Fast 与思考强度设置，生图模型单独选择。数据位于 `./data`；`DRAWY_PORT` 设置端口；可在本地 `.env` 中设置 `DRAWY_OUTBOUND_PROXY` 和 `DRAWY_NODE_OPTIONS`。
+访问 http://localhost:8088。注册账号后在设置中配置创作和生图模型；支持 OpenAI API Key 与 ChatGPT OAuth。创作模型可选速度（API Key 有 Flex、Default、Fast，ChatGPT OAuth 有 Default、Fast、Ultrafast）与思考强度，生图模型单独选择。数据位于 `./data`；`DRAWY_PORT` 设置端口；可在本地 `.env` 中设置 `DRAWY_OUTBOUND_PROXY` 和 `DRAWY_NODE_OPTIONS`。
 
 ```sh
 pnpm install

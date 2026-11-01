@@ -6,7 +6,11 @@ import { join } from "node:path";
 import { Storage } from "./index.ts";
 import { createWork, writeWork, restore, undo } from "../workspace/index.ts";
 import { moveParts } from "../editing/index.ts";
-import type { Work } from "../contracts/index.ts";
+import {
+  defaultSettings,
+  settingsSchema,
+  type Work,
+} from "../contracts/index.ts";
 import { register, login } from "../identity/index.ts";
 import { createApp } from "../../apps/server/app.ts";
 import { serveLibrary, picture } from "@drawy/materials/testing";
@@ -50,6 +54,25 @@ describe("user owned works", () => {
     expect(b.settings().preferences).toBe("");
     expect(() => b.delete(work.id)).toThrow();
     expect(a.work(work.id)).toEqual(work);
+  });
+  it("reads settings saved with the old Fast switch as a speed", () => {
+    const store = db.scoped(register(db, "a", "abcdef").id);
+    for (const [fast, speed] of [
+      [true, "fast"],
+      [false, "default"],
+    ] as const) {
+      const settings = store.settings();
+      const { speed: _, ...author } = settings.author;
+      store.saveSettings({ ...settings, author: { ...author, fast } } as never);
+      expect(store.settings().author).toEqual({ ...author, speed });
+    }
+  });
+  it("saves a speed the connection lacks as default", () => {
+    const settings = settingsSchema.parse({
+      ...defaultSettings(),
+      author: { ...defaultSettings().author, channel: "oauth", speed: "flex" },
+    });
+    expect(settings.author.speed).toBe("default");
   });
   it("updates shared drawing source and restores the complete composition atomically", async () => {
     const store = db.scoped(register(db, "a", "abcdef").id);
