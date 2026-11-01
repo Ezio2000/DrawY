@@ -1294,14 +1294,20 @@ h2:has(> .title) {
 
 /* ---------- The author on the canvas ---------- */
 
-/* The references it gathers, pinned loosely to the blank page; a picture it asks for develops
-   in its own card. They leave as the first lines are pencilled in. */
+/* The brief note with the references it gathers pinned loosely beneath, centred on the blank
+   page as one group so a long brief stays in view; a picture it asks for develops in its own
+   card. They leave as the first lines are pencilled in. */
 
 .references {
   position: absolute;
   z-index: 3;
-  top: calc(50% - 40px);
+  top: 50%;
   left: 50%;
+  translate: -50% -50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
   pointer-events: none;
   transition:
     opacity 0.7s var(--ease),
@@ -1313,8 +1319,15 @@ h2:has(> .title) {
   transform: translateY(24px) scale(0.96);
 }
 
+.pinned {
+  position: relative;
+  height: 190px;
+}
+
 .references figure {
   position: absolute;
+  top: 50%;
+  left: 0;
   margin: 0;
   padding: 8px;
   border-radius: 6px;
@@ -1328,9 +1341,8 @@ h2:has(> .title) {
 }
 
 .references .brief-note {
-  position: absolute;
-  left: 0;
-  bottom: 96px;
+  position: relative;
+  top: auto;
   width: 300px;
   display: grid;
   gap: 8px;
@@ -1340,7 +1352,7 @@ h2:has(> .title) {
   box-shadow:
     0 1px 2px rgba(60, 45, 20, 0.08),
     0 14px 30px rgba(60, 45, 20, 0.1);
-  transform: translateX(-50%) rotate(-1.5deg);
+  transform: rotate(-1.5deg);
   animation: note-in 0.8s var(--spring) both;
 }
 
@@ -4688,7 +4700,7 @@ button.now:hover .now-line {
 @keyframes note-in {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(-16px) rotate(-6deg);
+    transform: translateY(-16px) rotate(-6deg);
   }
 }
 

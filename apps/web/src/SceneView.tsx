@@ -263,22 +263,30 @@ export function SceneView({
               )}
             </figure>
           )}
-          {references.map(({ key, picture, made }, i) => (
-            <figure
-              key={key}
-              data-made={made || undefined}
-              style={
-                {
-                  "--x": (i - (references.length - 1) / 2) * 150 + "px",
-                  "--y": (i % 2 ? 22 : -16) + "px",
-                  "--r": [-4, 3, -2, 5, -3, 2, -5][i] + "deg",
-                  "--i": i,
-                } as CSSProperties
-              }
-            >
-              {picture ? <img src={picture.url} alt={picture.name} /> : <i />}
-            </figure>
-          ))}
+          {!!references.length && (
+            <div className={cx("pinned")}>
+              {references.map(({ key, picture, made }, i) => (
+                <figure
+                  key={key}
+                  data-made={made || undefined}
+                  style={
+                    {
+                      "--x": (i - (references.length - 1) / 2) * 150 + "px",
+                      "--y": (i % 2 ? 22 : -16) + "px",
+                      "--r": [-4, 3, -2, 5, -3, 2, -5][i] + "deg",
+                      "--i": i,
+                    } as CSSProperties
+                  }
+                >
+                  {picture ? (
+                    <img src={picture.url} alt={picture.name} />
+                  ) : (
+                    <i />
+                  )}
+                </figure>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <div className={cx("camera")}>
