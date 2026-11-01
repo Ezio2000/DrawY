@@ -18,7 +18,7 @@
       "flow"
     ],
     "category": "drawing/connector",
-    "about": "An arrow whose head is sized to its line: straight or curved (bend), dashed, open or filled head, double-ended, an optional label beside the middle, and flow (animated dashes moving along it) for movement of blood, water, data or energy. As a link it runs between the anchors; in a module between data.from and data.to.",
+    "about": "An arrow whose head is sized to its line: straight or curved (bend), or routed at right angles for flowcharts and architecture (route elbow or corner, with rounded turns); dashed, open or filled head, double-ended, an optional label beside the middle, and flow (animated dashes moving along it) for movement of blood, water, data or energy. As a link it runs between the anchors; in a module between data.from and data.to.",
     "tags": ["arrow", "link", "flow", "connector", "direction"],
     "style": null,
     "origin": {
@@ -50,7 +50,27 @@
         "max": 1,
         "step": 0.05,
         "default": 0,
-        "description": "curvature as a fraction of length; positive bends left of the direction of travel"
+        "description": "curvature as a fraction of length, positive bending left of the direction of travel; for elbow, how far along the cross segment moves (-0.5 to 0.5)"
+      },
+      "route": {
+        "type": "choice",
+        "options": ["curve", "elbow", "corner"],
+        "default": "curve",
+        "description": "curve follows bend; elbow runs at right angles, leaving and arriving along the sides of the modules its anchors sit on; corner turns exactly once"
+      },
+      "first": {
+        "type": "choice",
+        "options": ["auto", "horizontal", "vertical"],
+        "default": "auto",
+        "description": "for elbow and corner, the axis it leaves along; auto follows the side its anchor sits on, else the longer axis"
+      },
+      "radius": {
+        "type": "number",
+        "min": 0,
+        "max": 40,
+        "step": 1,
+        "default": 10,
+        "description": "rounding of elbow and corner turns"
       },
       "head": {
         "type": "choice",
@@ -1109,6 +1129,751 @@
         "step": 1,
         "default": 15,
         "description": "font size"
+      }
+    }
+  },
+  {
+    "id": "node",
+    "kind": "drawing",
+    "name": {
+      "zh": "结构节点",
+      "en": "Node"
+    },
+    "aliases": [
+      "节点",
+      "方框",
+      "流程框",
+      "模块框",
+      "架构块",
+      "判断框",
+      "数据库",
+      "node",
+      "box",
+      "block",
+      "flowchart node",
+      "process box",
+      "decision",
+      "database"
+    ],
+    "category": "drawing/structure",
+    "about": "A block of a flowchart, architecture or concept map: a box, pill, circle, decision diamond, database cylinder or document holding a title, an optional note and an optional icon, coloured by the style. One per module, joined by arrow links (route elbow for flowcharts) so blocks move on their own and connections follow; the words wrap inside the shape.",
+    "tags": ["structure", "flowchart", "architecture", "box", "node"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 200,
+      "height": 84
+    },
+    "example": {
+      "title": "订单服务",
+      "note": "接收并校验订单",
+      "tone": "accent",
+      "icon": "icon-server"
+    },
+    "params": {
+      "title": {
+        "type": "text",
+        "description": "the block's name"
+      },
+      "note": {
+        "type": "text",
+        "description": "a short second line, muted"
+      },
+      "shape": {
+        "type": "choice",
+        "options": ["box", "pill", "circle", "diamond", "cylinder", "document"],
+        "default": "box",
+        "description": "box for a step or component, pill for start/end, diamond for a decision, cylinder for a store"
+      },
+      "tone": {
+        "type": "choice",
+        "options": ["plain", "accent", "accent2", "muted", "ink"],
+        "default": "plain",
+        "description": "which style colour it takes"
+      },
+      "fillStyle": {
+        "type": "choice",
+        "options": ["soft", "solid", "none"],
+        "description": "soft tint, solid colour or paper; plain defaults to none, other tones to soft"
+      },
+      "icon": {
+        "type": "picture",
+        "description": "an icon or small picture beside or above the words"
+      },
+      "color": {
+        "type": "color",
+        "description": "overrides the tone's colour"
+      },
+      "dashed": {
+        "type": "boolean",
+        "default": false,
+        "description": "a dashed outline, for something optional or external"
+      },
+      "lift": {
+        "type": "boolean",
+        "default": false,
+        "description": "a soft shadow that lifts the block off the paper"
+      },
+      "align": {
+        "type": "choice",
+        "options": ["center", "left"],
+        "default": "center",
+        "description": "how the words line up"
+      },
+      "size": {
+        "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
+        "default": 15,
+        "description": "font size"
+      },
+      "effect": {
+        "type": "effect",
+        "description": "an effect id applied to the shape, such as rough-edge"
+      }
+    }
+  },
+  {
+    "id": "hierarchy",
+    "kind": "drawing",
+    "name": {
+      "zh": "层级树",
+      "en": "Tree"
+    },
+    "aliases": [
+      "树状图",
+      "层级",
+      "组织架构",
+      "组织结构图",
+      "分类",
+      "分解",
+      "结构图",
+      "tree",
+      "hierarchy",
+      "org chart",
+      "taxonomy",
+      "breakdown"
+    ],
+    "category": "drawing/structure",
+    "about": "A hierarchy as a tidy tree: an organisation, taxonomy, or a goal or system broken into parts. The root is filled, its children tinted, deeper levels outlined, joined by rounded right-angle lines; any node can carry a note or be accented. Grows down or right and spreads to fill the module.",
+    "tags": [
+      "structure",
+      "hierarchy",
+      "tree",
+      "organisation",
+      "classification"
+    ],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 720,
+      "height": 320
+    },
+    "example": {
+      "root": {
+        "label": "生物",
+        "children": [
+          {
+            "label": "动物",
+            "children": [
+              {
+                "label": "脊椎动物"
+              },
+              {
+                "label": "无脊椎动物"
+              }
+            ]
+          },
+          {
+            "label": "植物",
+            "children": [
+              {
+                "label": "种子植物"
+              },
+              {
+                "label": "孢子植物"
+              }
+            ]
+          },
+          {
+            "label": "微生物",
+            "note": "肉眼不可见",
+            "children": [
+              {
+                "label": "细菌"
+              },
+              {
+                "label": "真菌",
+                "accent": true
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "params": {
+      "root": {
+        "type": "object",
+        "description": "{label, note?, accent?, children?: [nodes like this]}"
+      },
+      "direction": {
+        "type": "choice",
+        "options": ["down", "right"],
+        "default": "down",
+        "description": "which way the tree grows"
+      },
+      "color": {
+        "type": "color",
+        "description": "the root's colour; defaults to accent"
+      },
+      "lineColor": {
+        "type": "color",
+        "description": "the connecting lines; defaults to muted"
+      },
+      "size": {
+        "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
+        "default": 14,
+        "description": "font size"
+      },
+      "effect": {
+        "type": "effect",
+        "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
+      }
+    }
+  },
+  {
+    "id": "layers",
+    "kind": "drawing",
+    "name": {
+      "zh": "分层结构",
+      "en": "Layers"
+    },
+    "aliases": [
+      "分层",
+      "层级结构",
+      "架构图",
+      "系统架构",
+      "技术栈",
+      "协议栈",
+      "分层架构",
+      "layers",
+      "layered architecture",
+      "stack",
+      "tech stack",
+      "protocol stack",
+      "tiers"
+    ],
+    "category": "drawing/structure",
+    "about": "Stacked layers from top to bottom: a software architecture, protocol stack or the tiers of an organisation. Each band names its layer on the left with an optional note and lays its parts out as chips across the rest; a band without parts centres its name; a layer can be accented.",
+    "tags": ["structure", "architecture", "layers", "stack", "system"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 720,
+      "height": 300
+    },
+    "example": {
+      "layers": [
+        {
+          "label": "应用层",
+          "note": "面向用户",
+          "items": ["网页", "小程序", "App"]
+        },
+        {
+          "label": "服务层",
+          "items": ["订单", "支付", "库存", "通知"],
+          "accent": true
+        },
+        {
+          "label": "数据层",
+          "items": ["MySQL", "Redis", "对象存储"]
+        },
+        {
+          "label": "基础设施",
+          "note": "云主机与网络"
+        }
+      ]
+    },
+    "params": {
+      "layers": {
+        "type": "array",
+        "description": "top first: [{label, note?, items?: [names of its parts], accent?}]"
+      },
+      "color": {
+        "type": "color",
+        "description": "the bands' tint; defaults to accent2"
+      },
+      "labelWidth": {
+        "type": "number",
+        "min": 0,
+        "max": 400,
+        "step": 10,
+        "description": "width of the name column; 0 or unset fits the names"
+      },
+      "size": {
+        "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
+        "default": 14,
+        "description": "font size"
+      },
+      "effect": {
+        "type": "effect",
+        "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
+      }
+    }
+  },
+  {
+    "id": "quadrant",
+    "kind": "drawing",
+    "name": {
+      "zh": "四象限",
+      "en": "Quadrant"
+    },
+    "aliases": [
+      "四象限图",
+      "矩阵",
+      "二维矩阵",
+      "优先级矩阵",
+      "波士顿矩阵",
+      "象限",
+      "quadrant",
+      "2x2 matrix",
+      "priority matrix",
+      "eisenhower matrix",
+      "matrix"
+    ],
+    "category": "drawing/structure",
+    "about": "A two-by-two matrix: two axes from low to high split the plane into four named quadrants (urgent and important, cost and value, risk and impact), items as labelled dots at their positions, one quadrant optionally highlighted.",
+    "tags": ["structure", "matrix", "quadrant", "comparison", "priority"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 520,
+      "height": 420
+    },
+    "example": {
+      "x": {
+        "label": "紧急程度",
+        "low": "不紧急",
+        "high": "紧急"
+      },
+      "y": {
+        "label": "重要程度",
+        "low": "不重要",
+        "high": "重要"
+      },
+      "quadrants": ["计划去做", "立即去做", "尽量不做", "委托他人"],
+      "highlight": "top-right",
+      "items": [
+        {
+          "x": 0.82,
+          "y": 0.86,
+          "label": "线上故障",
+          "accent": true
+        },
+        {
+          "x": 0.25,
+          "y": 0.7,
+          "label": "学习新技能"
+        },
+        {
+          "x": 0.7,
+          "y": 0.25,
+          "label": "临时会议"
+        }
+      ]
+    },
+    "params": {
+      "x": {
+        "type": "object",
+        "description": "the horizontal axis: {label?, low?, high?}"
+      },
+      "y": {
+        "type": "object",
+        "description": "the vertical axis: {label?, low?, high?}"
+      },
+      "quadrants": {
+        "type": "array",
+        "description": "names in reading order: top-left, top-right, bottom-left, bottom-right"
+      },
+      "highlight": {
+        "type": "choice",
+        "options": [
+          "none",
+          "top-left",
+          "top-right",
+          "bottom-left",
+          "bottom-right"
+        ],
+        "default": "none",
+        "description": "the quadrant that matters most"
+      },
+      "items": {
+        "type": "array",
+        "description": "[{x: 0..1, y: 0..1, label, accent?}] placed from low to high"
+      },
+      "size": {
+        "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
+        "default": 14,
+        "description": "font size"
+      },
+      "effect": {
+        "type": "effect",
+        "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
+      }
+    }
+  },
+  {
+    "id": "compare",
+    "kind": "drawing",
+    "name": {
+      "zh": "对比表",
+      "en": "Comparison table"
+    },
+    "aliases": [
+      "对比",
+      "比较",
+      "对比表格",
+      "表格",
+      "优缺点",
+      "方案对比",
+      "compare",
+      "comparison",
+      "table",
+      "pros and cons",
+      "feature matrix"
+    ],
+    "category": "drawing/structure",
+    "about": "A comparison table: options as columns, criteria as rows; true and false show as a tick and a dash, other values as words; one column can be highlighted as the recommended or subject option. Rules between rows only, no grid, so it reads as a figure.",
+    "tags": ["structure", "table", "comparison", "options", "criteria"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 600,
+      "height": 260
+    },
+    "example": {
+      "columns": ["燃油车", "混动", "纯电"],
+      "highlight": 2,
+      "rows": [
+        {
+          "label": "续航",
+          "values": ["700 km", "1000 km", "550 km"]
+        },
+        {
+          "label": "补能速度",
+          "values": ["5 分钟", "5 分钟", "30 分钟"]
+        },
+        {
+          "label": "零排放",
+          "values": [false, false, true]
+        },
+        {
+          "label": "每公里成本",
+          "values": ["0.6 元", "0.35 元", "0.1 元"]
+        }
+      ]
+    },
+    "params": {
+      "columns": {
+        "type": "array",
+        "description": "the options compared, as column headings"
+      },
+      "rows": {
+        "type": "array",
+        "description": "[{label, values: [one per column: text, number, true or false]}]"
+      },
+      "highlight": {
+        "type": "number",
+        "min": -1,
+        "max": 8,
+        "step": 1,
+        "default": -1,
+        "description": "index of the highlighted column, -1 for none"
+      },
+      "corner": {
+        "type": "text",
+        "description": "an optional heading above the criteria"
+      },
+      "size": {
+        "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
+        "default": 14,
+        "description": "font size"
+      }
+    }
+  },
+  {
+    "id": "pyramid",
+    "kind": "drawing",
+    "name": {
+      "zh": "金字塔与漏斗",
+      "en": "Pyramid"
+    },
+    "aliases": [
+      "金字塔",
+      "漏斗",
+      "层次",
+      "需求层次",
+      "转化漏斗",
+      "食物链",
+      "pyramid",
+      "funnel",
+      "hierarchy of needs",
+      "conversion funnel",
+      "levels"
+    ],
+    "category": "drawing/structure",
+    "about": "Levels stacked as a pyramid (a hierarchy of needs, a food chain, a share that narrows upwards) or a funnel (stages that narrow downwards, such as conversion). Bands shade from accent to accent2, solid or soft; notes stand to the right on dotted leaders.",
+    "tags": ["structure", "pyramid", "funnel", "levels", "hierarchy"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 560,
+      "height": 340
+    },
+    "example": {
+      "levels": [
+        {
+          "label": "自我实现"
+        },
+        {
+          "label": "尊重",
+          "note": "成就、认可"
+        },
+        {
+          "label": "归属与爱",
+          "note": "友谊、家庭"
+        },
+        {
+          "label": "安全",
+          "note": "健康、稳定"
+        },
+        {
+          "label": "生理",
+          "note": "食物、睡眠"
+        }
+      ]
+    },
+    "params": {
+      "levels": {
+        "type": "array",
+        "description": "top first: [{label, note?}] or names"
+      },
+      "shape": {
+        "type": "choice",
+        "options": ["pyramid", "funnel"],
+        "default": "pyramid",
+        "description": "narrow at the top, or narrowing downwards"
+      },
+      "fillStyle": {
+        "type": "choice",
+        "options": ["solid", "soft"],
+        "default": "solid",
+        "description": "solid bands with paper words, or tinted ones"
+      },
+      "color": {
+        "type": "color",
+        "description": "the top band; defaults to accent"
+      },
+      "color2": {
+        "type": "color",
+        "description": "the bottom band; defaults to accent2"
+      },
+      "size": {
+        "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
+        "default": 15,
+        "description": "font size"
+      },
+      "effect": {
+        "type": "effect",
+        "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
+      }
+    }
+  },
+  {
+    "id": "venn",
+    "kind": "drawing",
+    "name": {
+      "zh": "韦恩图",
+      "en": "Venn diagram"
+    },
+    "aliases": [
+      "韦恩图",
+      "集合",
+      "交集",
+      "重叠",
+      "共同点",
+      "venn",
+      "venn diagram",
+      "sets",
+      "overlap",
+      "intersection"
+    ],
+    "category": "drawing/structure",
+    "about": "Two or three overlapping sets: each circle tinted in its own colour so the overlaps deepen, each name in the part that belongs to that set alone, with an optional note, and an optional name for the shared middle.",
+    "tags": ["structure", "sets", "overlap", "comparison", "venn"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 480,
+      "height": 320
+    },
+    "example": {
+      "sets": [
+        {
+          "label": "设计",
+          "note": "好看"
+        },
+        {
+          "label": "工程",
+          "note": "可行"
+        }
+      ],
+      "overlap": "好产品"
+    },
+    "params": {
+      "sets": {
+        "type": "array",
+        "description": "two or three: [{label, note?, color?}] or names"
+      },
+      "overlap": {
+        "type": "text",
+        "description": "the name of the shared middle"
+      },
+      "size": {
+        "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
+        "default": 15,
+        "description": "font size"
+      },
+      "effect": {
+        "type": "effect",
+        "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
+      }
+    }
+  },
+  {
+    "id": "mindmap",
+    "kind": "drawing",
+    "name": {
+      "zh": "思维导图",
+      "en": "Mind map"
+    },
+    "aliases": [
+      "脑图",
+      "思维导图",
+      "头脑风暴",
+      "大纲",
+      "知识图谱",
+      "mind map",
+      "mindmap",
+      "brainstorm",
+      "outline",
+      "topic map"
+    ],
+    "category": "drawing/structure",
+    "about": "A mind map: a central idea with branches to either side, each branch in its own colour, its points written on the ends of curved lines. For brainstorms, the facets of a topic and outlines.",
+    "tags": ["structure", "mind map", "brainstorm", "branches", "outline"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1793404800000
+    },
+    "use": "module",
+    "size": {
+      "width": 760,
+      "height": 380
+    },
+    "example": {
+      "center": "学好物理",
+      "branches": [
+        {
+          "label": "概念",
+          "children": ["力与运动", "能量守恒"]
+        },
+        {
+          "label": "方法",
+          "children": ["画受力图", "控制变量", "估算"]
+        },
+        {
+          "label": "实验",
+          "children": ["测量误差", "记录数据"]
+        },
+        {
+          "label": "应用",
+          "children": ["生活现象", "工程问题"]
+        }
+      ]
+    },
+    "params": {
+      "center": {
+        "type": "text",
+        "description": "the central idea"
+      },
+      "branches": {
+        "type": "array",
+        "description": "[{label, children?: [points], color?}]; the first half go right, the rest left"
+      },
+      "color": {
+        "type": "color",
+        "description": "the centre's fill; defaults to ink"
+      },
+      "size": {
+        "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
+        "default": 14,
+        "description": "font size"
+      },
+      "effect": {
+        "type": "effect",
+        "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
     }
   }

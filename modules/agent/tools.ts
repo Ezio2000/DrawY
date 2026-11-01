@@ -59,7 +59,7 @@ export const tools = [
   ),
   fn(
     "generate_images",
-    "Have pictures made in the brief's style, in the background. Ask for every missing picture in one call. A picture can reference another in the same call by its key (the same character in several scenes): it is made from that picture once it exists. Returns material ids at once: use them in drawings immediately; view_canvas waits until they have developed, and you will be shown each one as it arrives.",
+    "Have pictures made in the brief's style, in the background. Ask for every missing picture in one call. Each is painted beside the work's own pictures in that style and the style's samples, shown to the picture model as style references, so a new picture matches the ones already placed; use references only for what a picture must be made from. A picture can reference another in the same call by its key (the same character in several scenes): it is made from that picture once it exists. Returns material ids at once: use them in drawings immediately; view_canvas waits until they have developed, and you will be shown each one as it arrives.",
     schema(generateSchema),
   ),
   fn(

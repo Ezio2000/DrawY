@@ -6,7 +6,7 @@ import { Storage } from "../storage/index.ts";
 import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { develop } from "./index.ts";
-import { library as client } from "../materials/index.ts";
+import { library as client, useOf } from "../materials/index.ts";
 import { serveLibrary, picture } from "@drawy/materials/testing";
 
 let dir: string, db: Storage, library: ReturnType<typeof serveLibrary>;
@@ -53,7 +53,12 @@ for (const channel of ["api", "oauth"] as const)
     const m = await library.library.ready(made.id, store.userId, 0);
     expect(m).toMatchObject({
       style: "textbook",
-      origin: { kind: "generated", references: ["microscope"] },
+      origin: {
+        kind: "generated",
+        references: ["microscope"],
+        // The style's own samples, the object first, show what the style looks like.
+        styleReferences: ["apple-textbook", "lighthouse-textbook"],
+      },
       // Made from a public picture, so it joins the library.
       owner: null,
       file: { mediaType: "image/webp" },
@@ -65,14 +70,16 @@ for (const channel of ["api", "oauth"] as const)
         : JSON.parse(sent.body as string).prompt;
     expect(prompt.startsWith("Flat textbook line illustration")).toBe(true);
     expect(prompt).toContain(work.brief!.direction);
+    expect(prompt).toContain("Image 1: what to work from");
+    expect(prompt).toContain("Images 2–3: style references only");
     if (channel === "api")
-      expect((sent.body as FormData).getAll("image[]")).toHaveLength(1);
+      expect((sent.body as FormData).getAll("image[]")).toHaveLength(3);
     else
       expect(JSON.parse(sent.body as string)).toMatchObject({
         background: "transparent",
-        images: [
-          { image_url: expect.stringMatching(/^data:image\/png;base64,/) },
-        ],
+        images: Array.from({ length: 3 }, () => ({
+          image_url: expect.stringMatching(/^data:image\/png;base64,/),
+        })),
       });
   });
 it("retries a dropped connection or a busy server before giving up", async () => {
@@ -195,5 +202,53 @@ it("makes pictures that reference another in the same request after it, privatel
   ).toBeGreaterThan(
     prompts.findIndex((p) => p.subject.includes("a white rabbit")),
   );
-  expect(prompts.find((p) => p.subject.includes("lost"))!.references).toBe(1);
+  // The rabbit it is made from, then two of the style's samples for the look.
+  expect(prompts.find((p) => p.subject.includes("lost"))!.references).toBe(3);
+});
+
+it("paints new pictures to look like the ones the work already has in its style", async () => {
+  const store = db.scoped(register(db, "author", "abcdef").id);
+  const settings = store.settings();
+  settings.image = {
+    ...settings.image,
+    channel: "oauth",
+    credential: "test",
+    baseUrl: "https://example.invalid",
+  };
+  store.saveSettings(settings);
+  const png = await picture();
+  const sent: { prompt: string; images: number }[] = [];
+  library.route(async (url, init) => {
+    const body = JSON.parse(init!.body as string);
+    sent.push({ prompt: body.prompt, images: body.images?.length ?? 0 });
+    expect(String(url)).toMatch(/\/images\/edits$/);
+    return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+  });
+  const [earlier] = await develop(store, fixture(), [
+    { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
+  ]);
+  await earlier.done;
+  const [m] = await client.get([earlier.id], store.userId);
+  expect(m.origin.styleReferences).toEqual([
+    "apple-textbook",
+    "lighthouse-textbook",
+  ]);
+  const work = fixture();
+  work.materials[earlier.id] = useOf(m)!;
+  const [later] = await develop(store, work, [
+    {
+      name: { zh: "海豚", en: "dolphin" },
+      role: "object",
+      depicts: "a dolphin",
+    },
+  ]);
+  await later.done;
+  const [made] = await client.get([later.id], store.userId);
+  // The work's own whale comes first, then the style's object sample.
+  expect(made.origin.styleReferences).toEqual([earlier.id, "apple-textbook"]);
+  expect(made.origin.references).toBeUndefined();
+  expect(made.owner).toBeNull();
+  expect(sent[1].images).toBe(2);
+  expect(sent[1].prompt).toContain("Images 1–2: style references only");
+  expect(sent[1].prompt).not.toContain("what to work from");
 });

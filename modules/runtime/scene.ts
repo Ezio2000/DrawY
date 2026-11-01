@@ -9,6 +9,20 @@ import type {
 } from "../contracts/index.ts";
 import { union } from "../contracts/geometry.ts";
 
+type Side = "left" | "right" | "top" | "bottom";
+/** The edge of a module a normalized anchor sits on, if it sits on one. */
+function sideOf(a: Point): Side | null {
+  const edges: [Side, number][] = [
+    ["left", a.x],
+    ["right", 1 - a.x],
+    ["top", a.y],
+    ["bottom", 1 - a.y],
+  ];
+  const [side, distance] = edges.reduce((best, e) =>
+    e[1] < best[1] ? e : best,
+  );
+  return distance <= 0.05 ? side : null;
+}
 export interface SceneOptions {
   open: (target: Target) => void;
   error: (message: string) => void;
@@ -20,6 +34,9 @@ export interface DrawingAPI {
   theme: Record<string, string>;
   from?: Point;
   to?: Point;
+  /** The edge of its module each end's anchor sits on; null for an anchor inside. */
+  fromSide?: Side | null;
+  toSide?: Side | null;
   svg: (source: string) => SVGElement;
   html: (source: string) => HTMLElement;
   mermaid: (source: string) => Promise<Element>;
@@ -263,7 +280,10 @@ export class SceneRenderer {
               ],
               { duration: 1600, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
             )
-            .finished.then(() => resolve(), () => resolve());
+            .finished.then(
+              () => resolve(),
+              () => resolve(),
+            );
         });
         img.addEventListener("error", () => {
           this.options.error("图片没有生成出来: " + id);
@@ -331,7 +351,12 @@ export class SceneRenderer {
     bounds: Bounds,
     data: Record<string, unknown>,
     kind: "module" | "link",
-    ends?: { from: Point; to: Point },
+    ends?: {
+      from: Point;
+      to: Point;
+      fromSide: Side | null;
+      toSide: Side | null;
+    },
   ) {
     return this.track(
       (async () => {
@@ -456,6 +481,7 @@ export class SceneRenderer {
     return {
       x: m.bounds.x + a.x * m.bounds.width,
       y: m.bounds.y + a.y * m.bounds.height,
+      side: sideOf(a),
     };
   }
   private drawLinks() {
@@ -474,6 +500,8 @@ export class SceneRenderer {
         return this.draw(l.id, l.drawingId, bounds, l.data, "link", {
           from: { x: from.x - x, y: from.y - y },
           to: { x: to.x - x, y: to.y - y },
+          fromSide: from.side,
+          toSide: to.side,
         });
       }),
     );

@@ -224,11 +224,14 @@ export class Library {
     user: string,
     size: { width: number; height: number },
   ): PictureMaterial {
-    // Uploads and pictures made from a user's private pictures stay theirs; the rest join
-    // the library.
+    // Uploads and pictures made from a user's private pictures, or made to look like
+    // them, stay theirs; the rest join the library.
     const owner =
       d.origin.kind === "upload" ||
-      d.origin.references?.some((ref) => this.index.get(ref)?.owner)
+      [
+        ...(d.origin.references ?? []),
+        ...(d.origin.styleReferences ?? []),
+      ].some((ref) => this.index.get(ref)?.owner)
         ? user
         : null;
     return {

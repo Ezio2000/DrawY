@@ -20,6 +20,8 @@ export const originSchema = z.object({
   model: z.string().optional(),
   /** Materials a generated picture was derived from. */
   references: z.array(z.string()).optional(),
+  /** Pictures a generated picture was made to look like, for their style only. */
+  styleReferences: z.array(z.string()).optional(),
   /** Who made or uploaded it. */
   user: z.string().optional(),
   createdAt: z.number(),
