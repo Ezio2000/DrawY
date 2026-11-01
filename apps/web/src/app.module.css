@@ -2889,6 +2889,81 @@ button.now:hover .now-line {
   overflow: hidden;
 }
 
+/* Whose materials: public, mine, other users'. Tabs with an underline, as Claude's
+   pages separate their lists, and one line on who can see what is shown. */
+.shelf-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.shelf-tabs > button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.shelf-tabs > button:hover {
+  color: var(--text);
+}
+
+.shelf-tabs > button[aria-current] {
+  color: var(--text);
+}
+
+.shelf-tabs > button::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ink);
+  transform: scaleX(0);
+  transition: transform 0.35s var(--ease-out);
+}
+
+.shelf-tabs > button[aria-current]::after {
+  transform: scaleX(1);
+}
+
+.shelf-tabs > small {
+  margin-left: auto;
+  padding-left: 16px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.ownership {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  vertical-align: 1px;
+  font-size: 11.5px;
+  font-weight: 500;
+  background: var(--fill);
+  color: var(--text-2);
+}
+
+.ownership[data-public] {
+  background: var(--blue-soft);
+  color: var(--ai-deep);
+}
+
 .library-bar {
   display: flex;
   align-items: center;
@@ -3308,7 +3383,8 @@ button.now:hover .now-line {
   min-width: 0;
 }
 
-.setting input:not([type]) {
+.setting input:not([type]),
+.setting input[type="password"] {
   width: 100%;
   height: 38px;
   padding: 0 12px;
@@ -3336,92 +3412,350 @@ button.now:hover .now-line {
   color: var(--red-text);
 }
 
-/* The drawing models an administrator connected: one tab each, the default marked, and
-   the chosen one's settings below. */
-.model-list {
+/* Each section opens with its title and one line on what it is for, as Claude's
+   settings do; its one action sits on the right. */
+.section-head {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--separator);
-}
-
-.model-list > button {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 8px;
-  font-size: 13.5px;
-  color: var(--text-2);
-  box-shadow: inset 0 0 0 0.5px var(--line-strong);
-}
-
-.model-list > button:hover {
-  background: var(--fill);
-}
-
-.model-list > button[aria-selected="true"] {
-  background: var(--fill-2);
-  color: var(--text);
-  font-weight: 500;
-  box-shadow: none;
-}
-
-.model-list small {
-  font-size: 11.5px;
-  font-weight: 400;
-  color: var(--text-3);
-}
-
-.model-list > .model-add {
-  align-items: center;
-  box-shadow: none;
-  color: var(--text-3);
-}
-
-/* A role and its permissions, one card each. */
-.role {
-  padding: 16px 18px 4px;
-  margin-bottom: 16px;
-  border-radius: 14px;
-  box-shadow: inset 0 0 0 0.5px var(--line-strong);
-}
-
-.role > header {
-  display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
+  gap: 24px;
+  margin-bottom: 22px;
 }
 
-.role > header b {
-  font-size: 15px;
-  font-weight: 600;
+.section-head h2 {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text);
 }
 
-.role > header input {
-  max-width: 280px;
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 8px;
-  font-weight: 600;
+.section-head p {
+  max-width: 520px;
+  margin-top: 6px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-2);
 }
 
-.role > header small,
-.role-hint {
+.section-head > button {
+  flex: none;
+}
+
+/* Settings that belong together: a small label, then one quiet card of rows. */
+.group + .group {
+  margin-top: 22px;
+}
+
+.group > h3 {
+  margin: 0 0 8px 2px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.group-card {
+  padding: 0 20px;
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: var(--shadow-1);
+}
+
+.group-card .setting {
+  padding: 14px 0;
+}
+
+.group-card .setting:first-child {
+  padding-top: 14px;
+}
+
+.group-card .setting[data-wide] {
+  padding: 18px 0 20px;
+}
+
+/* A list of things (models, roles): each a row that opens beneath itself. */
+.entries {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: var(--shadow-1);
+  transition: box-shadow 0.25s var(--ease);
+}
+
+.entry[data-open] {
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    0 6px 24px rgba(60, 45, 20, 0.07);
+}
+
+.entry-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px 14px 14px;
+  border-radius: 14px;
+  text-align: left;
+}
+
+.entry-row:hover {
+  background: var(--surface);
+}
+
+.entry[data-open] .entry-row {
+  border-radius: 14px 14px 0 0;
+}
+
+.entry-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--bg-2);
+  color: var(--text-2);
+}
+
+.entry[data-open] .entry-icon {
+  background: var(--blue-soft);
+  color: var(--ai-deep);
+}
+
+.entry-text {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.entry-text > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.entry-text b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.entry-text small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.entry-aside {
+  flex: none;
   font-size: 12.5px;
   color: var(--text-3);
 }
 
-.role-hint {
-  display: block;
-  margin-top: 4px;
+.entry-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 
-.role .setting:last-child {
-  border-bottom: 0;
+.entry-chevron {
+  flex: none;
+  color: var(--text-3);
+  transition: transform 0.3s var(--ease-out);
+}
+
+.entry[data-open] .entry-chevron {
+  transform: rotate(180deg);
+}
+
+.entry-body {
+  padding: 18px 18px 16px;
+  border-top: 1px solid var(--separator);
+  background: var(--surface);
+  border-radius: 0 0 14px 14px;
+  animation: line-in 0.3s var(--ease-out) both;
+}
+
+.entry-body .group-card {
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.entry-note {
+  margin: 0 2px 18px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.entry-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.entry-foot small {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.granted {
+  color: var(--ai-deep);
+}
+
+.badge {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  background: var(--fill);
+  color: var(--text-2);
+}
+
+.badge[data-tone="accent"] {
+  background: var(--blue-soft);
+  color: var(--ai-deep);
+}
+
+.badge[data-tone="muted"] {
+  background: var(--fill);
+  color: var(--text-3);
+}
+
+/* Accounts: one card with a search, then a row per person, as Claude's members list. */
+.members {
+  padding: 0;
+}
+
+.members-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.members-bar small {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.members-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  max-width: 300px;
+  height: 34px;
+  padding: 0 11px;
+  border-radius: 9px;
+  background: var(--field);
+  color: var(--text-3);
+}
+
+.members-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.members-search input:focus {
+  background: none;
+  box-shadow: none;
+}
+
+.members-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 20px 6px 58px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.members-head span:last-child {
+  width: 168px;
+}
+
+.members ul {
+  margin: 0;
+  padding: 0 0 6px;
+  list-style: none;
+}
+
+.members li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+}
+
+.members li + li {
+  border-top: 1px solid var(--separator);
+}
+
+.members .avatar {
+  width: 30px;
+  height: 30px;
+  background: var(--bg-2);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.member-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.member-name b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.members select {
+  width: 168px;
+  height: 34px;
+  padding-left: 11px;
+  border-radius: 9px;
+  font-size: 13.5px;
+}
+
+.members-none {
+  justify-content: center;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+/* Everyone's own settings, then a gap before what a role lets one run. */
+.settings-nav button[data-break] {
+  margin-top: 14px;
 }
 
 @media (max-width: 860px) {

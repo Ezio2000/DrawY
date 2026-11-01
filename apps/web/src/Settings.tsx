@@ -7,6 +7,9 @@ import {
   ShieldCheck,
   Plus,
   Trash2,
+  ChevronDown,
+  Search,
+  Check,
 } from "lucide-react";
 import { Segmented, Switch, Spinner, pageLocale } from "@drawy/ui";
 import {
@@ -62,6 +65,89 @@ function Row({
   );
 }
 
+/** A section's title and what it is for, with its one action on the right. */
+function Head({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint: string;
+  children?: ReactNode;
+}) {
+  return (
+    <header className={cx("section-head")}>
+      <div>
+        <h2>{title}</h2>
+        <p>{hint}</p>
+      </div>
+      {children}
+    </header>
+  );
+}
+
+/** Settings that belong together, under a small label, on one card. */
+function Group({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <div className={cx("group")}>
+      {title && <h3>{title}</h3>}
+      <div className={cx("group-card")}>{children}</div>
+    </div>
+  );
+}
+
+/** One thing in a list (a model, a role): its summary as a row, its settings opened
+ * beneath it. */
+function Entry({
+  icon,
+  title,
+  detail,
+  badges,
+  aside,
+  open,
+  toggle,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  detail: string;
+  badges?: ReactNode;
+  aside?: ReactNode;
+  open: boolean;
+  toggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <li className={cx("entry")} data-open={open || undefined}>
+      <button className={cx("entry-row")} aria-expanded={open} onClick={toggle}>
+        <span className={cx("entry-icon")}>{icon}</span>
+        <span className={cx("entry-text")}>
+          <span>
+            <b>{title}</b>
+            {badges}
+          </span>
+          <small>{detail}</small>
+        </span>
+        {aside && <span className={cx("entry-aside")}>{aside}</span>}
+        <ChevronDown size={16} className={cx("entry-chevron")} />
+      </button>
+      {open && <div className={cx("entry-body")}>{children}</div>}
+    </li>
+  );
+}
+
+const Badge = ({
+  children,
+  tone,
+}: {
+  children: ReactNode;
+  tone?: "accent" | "muted";
+}) => (
+  <span className={cx("badge")} data-tone={tone}>
+    {children}
+  </span>
+);
+
 /** The image model shares the default drawing model's account when every part of the
  * connection is the same. */
 const sharing = (c: ModelCatalog) => {
@@ -90,7 +176,7 @@ export function Settings() {
     [done, D] = useState(false),
     // The image model uses its own account rather than the default drawing model's.
     [separate, setSeparate] = useState(false),
-    // The drawing model being edited.
+    // The drawing model opened for editing.
     [editing, setEditing] = useState<string>();
   useEffect(() => {
     void Promise.all([
@@ -101,10 +187,7 @@ export function Settings() {
         const v = { own, catalog };
         setSaved(v);
         set(v);
-        if (catalog) {
-          setSeparate(!sharing(catalog));
-          setEditing(catalog.default);
-        }
+        if (catalog) setSeparate(!sharing(catalog));
       },
       (e) => E(e.message),
     );
@@ -191,8 +274,11 @@ export function Settings() {
       <Row label={of.channel === "api" ? "API Key" : "OAuth Token"}>
         <input
           className={cx("mono")}
+          type="password"
+          autoComplete="off"
           value={of.credential}
           spellCheck={false}
+          placeholder={w.credentialEmpty}
           onChange={(e) => patch({ credential: e.target.value })}
         />
       </Row>
@@ -217,7 +303,6 @@ export function Settings() {
       ["roles", ShieldCheck, accounts],
     ] as const
   ).filter(([, , shown]) => shown);
-  const current = catalog?.models.find((m) => m.id === editing);
   return (
     <div className={cx("page settings")}>
       <header className={cx("page-head")}>
@@ -227,10 +312,12 @@ export function Settings() {
       </header>
       <div className={cx("settings-layout")}>
         <nav className={cx("settings-nav")}>
-          {tabs.map(([k, Icon]) => (
+          {tabs.map(([k, Icon], i) => (
             <button
               key={k}
               aria-current={tab === k || undefined}
+              // Everyone's own settings first, then what their role lets them run.
+              data-break={i === 1 || undefined}
               onClick={() => setTab(k)}
             >
               <Icon size={16} />
@@ -240,41 +327,29 @@ export function Settings() {
         </nav>
         {tab === "preferences" && (
           <section>
-            <Row label={w.longTerm} hint={w.longTermHint} wide>
-              <textarea
-                value={value.own.preferences}
-                placeholder={w.longTermExample}
-                onChange={(e) => {
-                  D(false);
-                  set({
-                    ...value,
-                    own: { ...value.own, preferences: e.target.value },
-                  });
-                }}
-              />
-            </Row>
+            <Head title={t.titles.preferences} hint={w.preferencesHint} />
+            <Group>
+              <Row label={w.longTerm} hint={w.longTermHint} wide>
+                <textarea
+                  value={value.own.preferences}
+                  placeholder={w.longTermExample}
+                  onChange={(e) => {
+                    D(false);
+                    set({
+                      ...value,
+                      own: { ...value.own, preferences: e.target.value },
+                    });
+                  }}
+                />
+              </Row>
+            </Group>
           </section>
         )}
         {tab === "author" && catalog && (
           <section>
-            <div
-              className={cx("model-list")}
-              role="tablist"
-              aria-label={w.models}
-            >
-              {catalog.models.map((m) => (
-                <button
-                  key={m.id}
-                  role="tab"
-                  aria-selected={m.id === editing}
-                  onClick={() => setEditing(m.id)}
-                >
-                  <span>{m.name}</span>
-                  {m.id === catalog.default && <small>{w.isDefault}</small>}
-                </button>
-              ))}
+            <Head title={t.titles.author} hint={w.modelsHint}>
               <button
-                className={cx("model-add")}
+                className={cx("secondary small")}
                 onClick={() => {
                   const base =
                     catalog.models.find((m) => m.id === catalog.default) ??
@@ -295,136 +370,170 @@ export function Settings() {
                 <Plus size={15} />
                 {w.addModel}
               </button>
-            </div>
-            {current && (
-              <>
-                <Row label={w.modelName} hint={w.modelNameHint}>
-                  <input
-                    value={current.name}
-                    onChange={(e) =>
-                      model(current.id, { name: e.target.value })
-                    }
-                  />
-                </Row>
-                <Row label={w.description} hint={w.descriptionHint}>
-                  <input
-                    value={current.description}
-                    placeholder={w.descriptionExample}
-                    onChange={(e) =>
-                      model(current.id, { description: e.target.value })
-                    }
-                  />
-                </Row>
-                <Row label={w.isDefault} hint={w.isDefaultHint}>
-                  <Switch
-                    checked={current.id === catalog.default}
-                    disabled={current.id === catalog.default}
-                    onChange={() => {
-                      const next = { ...catalog, default: current.id };
-                      // The image model keeps sharing whichever model is the default.
-                      if (shared)
-                        next.image = {
-                          ...next.image,
-                          ...Object.fromEntries(
-                            account.map((k) => [k, current[k]]),
-                          ),
-                        };
-                      change(next);
-                    }}
-                  />
-                </Row>
-                {connection(
-                  current,
-                  (p) => model(current.id, p),
-                  true,
-                  current.speed,
-                )}
-                <Row label={w.model}>
-                  <input
-                    className={cx("mono")}
-                    value={current.model}
-                    onChange={(e) =>
-                      model(current.id, { model: e.target.value })
-                    }
-                  />
-                </Row>
-                <Row label={w.effort}>
-                  <Segmented label={w.effort}>
-                    {efforts.map((v) => (
-                      <button
-                        key={v}
-                        aria-pressed={current.effort === v}
-                        onClick={() => model(current.id, { effort: v })}
-                      >
-                        {w.efforts[v]}
-                      </button>
-                    ))}
-                  </Segmented>
-                </Row>
-                <Row label={w.speed} hint={w.speedHints[current.speed]}>
-                  <Segmented label={w.speed}>
-                    {speeds[current.channel].map((v) => (
-                      <button
-                        key={v}
-                        aria-pressed={current.speed === v}
-                        onClick={() => model(current.id, { speed: v })}
-                      >
-                        {w.speeds[v]}
-                      </button>
-                    ))}
-                  </Segmented>
-                </Row>
-                <Row label={w.removeModel}>
-                  <button
-                    className={cx("secondary small danger")}
-                    disabled={
-                      catalog.models.length < 2 ||
-                      current.id === catalog.default
-                    }
-                    onClick={() => {
-                      change({
-                        ...catalog,
-                        models: catalog.models.filter(
-                          (m) => m.id !== current.id,
-                        ),
-                      });
-                      setEditing(catalog.default);
-                    }}
-                  >
-                    <Trash2 size={14} />
-                    {t.rail.remove}
-                  </button>
-                </Row>
-              </>
-            )}
+            </Head>
+            <ul className={cx("entries")}>
+              {catalog.models.map((m) => (
+                <Entry
+                  key={m.id}
+                  icon={<PenTool size={16} />}
+                  title={m.name}
+                  detail={m.description || m.model}
+                  badges={
+                    <>
+                      {m.id === catalog.default && (
+                        <Badge tone="accent">{w.isDefault}</Badge>
+                      )}
+                      {!m.credential && (
+                        <Badge tone="muted">
+                          {t.composer.modelUnconnected}
+                        </Badge>
+                      )}
+                    </>
+                  }
+                  aside={
+                    <code className={cx("entry-code")}>
+                      {m.model} · {w.efforts[m.effort]}
+                    </code>
+                  }
+                  open={editing === m.id}
+                  toggle={() => setEditing(editing === m.id ? undefined : m.id)}
+                >
+                  <Group title={w.basics}>
+                    <Row label={w.modelName} hint={w.modelNameHint}>
+                      <input
+                        value={m.name}
+                        onChange={(e) => model(m.id, { name: e.target.value })}
+                      />
+                    </Row>
+                    <Row label={w.description} hint={w.descriptionHint}>
+                      <input
+                        value={m.description}
+                        placeholder={w.descriptionExample}
+                        onChange={(e) =>
+                          model(m.id, { description: e.target.value })
+                        }
+                      />
+                    </Row>
+                    <Row label={w.isDefault} hint={w.isDefaultHint}>
+                      <Switch
+                        checked={m.id === catalog.default}
+                        disabled={m.id === catalog.default}
+                        onChange={() => {
+                          const next = { ...catalog, default: m.id };
+                          // The image model keeps sharing whichever model is the default.
+                          if (shared)
+                            next.image = {
+                              ...next.image,
+                              ...Object.fromEntries(
+                                account.map((k) => [k, m[k]]),
+                              ),
+                            };
+                          change(next);
+                        }}
+                      />
+                    </Row>
+                  </Group>
+                  <Group title={w.connection}>
+                    {connection(m, (p) => model(m.id, p), true, m.speed)}
+                  </Group>
+                  <Group title={w.parameters}>
+                    <Row label={w.model}>
+                      <input
+                        className={cx("mono")}
+                        value={m.model}
+                        onChange={(e) => model(m.id, { model: e.target.value })}
+                      />
+                    </Row>
+                    <Row label={w.effort}>
+                      <Segmented label={w.effort}>
+                        {efforts.map((v) => (
+                          <button
+                            key={v}
+                            aria-pressed={m.effort === v}
+                            onClick={() => model(m.id, { effort: v })}
+                          >
+                            {w.efforts[v]}
+                          </button>
+                        ))}
+                      </Segmented>
+                    </Row>
+                    <Row label={w.speed} hint={w.speedHints[m.speed]}>
+                      <Segmented label={w.speed}>
+                        {speeds[m.channel].map((v) => (
+                          <button
+                            key={v}
+                            aria-pressed={m.speed === v}
+                            onClick={() => model(m.id, { speed: v })}
+                          >
+                            {w.speeds[v]}
+                          </button>
+                        ))}
+                      </Segmented>
+                    </Row>
+                  </Group>
+                  <footer className={cx("entry-foot")}>
+                    <small>
+                      {m.id === catalog.default
+                        ? w.defaultKept
+                        : catalog.models.length < 2
+                          ? w.lastKept
+                          : ""}
+                    </small>
+                    <button
+                      className={cx("secondary small danger")}
+                      disabled={
+                        catalog.models.length < 2 || m.id === catalog.default
+                      }
+                      onClick={() => {
+                        change({
+                          ...catalog,
+                          models: catalog.models.filter((x) => x.id !== m.id),
+                        });
+                        setEditing(undefined);
+                      }}
+                    >
+                      <Trash2 size={14} />
+                      {w.removeModel}
+                    </button>
+                  </footer>
+                </Entry>
+              ))}
+            </ul>
           </section>
         )}
         {tab === "image" && catalog && (
           <section>
-            <Row label={w.shared}>
-              <Switch
-                checked={shared}
-                onChange={(on) => {
-                  setSeparate(!on);
-                  // Sharing again takes the default model's account back; going
-                  // separate starts from it, to be changed below.
-                  if (on) {
-                    const base =
-                      catalog.models.find((m) => m.id === catalog.default) ??
-                      catalog.models[0];
-                    image(Object.fromEntries(account.map((k) => [k, base[k]])));
-                  }
-                }}
-              />
-            </Row>
-            {!shared && connection(catalog.image, image, false)}
-            <Row label={w.model}>
-              <input
-                className={cx("mono")}
-                value={catalog.image.model}
-                onChange={(e) => image({ model: e.target.value })}
-              />
-            </Row>
+            <Head title={t.titles.image} hint={w.imageHint} />
+            <Group title={w.connection}>
+              <Row label={w.shared} hint={w.sharedHint}>
+                <Switch
+                  checked={shared}
+                  onChange={(on) => {
+                    setSeparate(!on);
+                    // Sharing again takes the default model's account back; going
+                    // separate starts from it, to be changed below.
+                    if (on) {
+                      const base =
+                        catalog.models.find((m) => m.id === catalog.default) ??
+                        catalog.models[0];
+                      image(
+                        Object.fromEntries(account.map((k) => [k, base[k]])),
+                      );
+                    }
+                  }}
+                />
+              </Row>
+              {!shared && connection(catalog.image, image, false)}
+            </Group>
+            <Group title={w.parameters}>
+              <Row label={w.model}>
+                <input
+                  className={cx("mono")}
+                  value={catalog.image.model}
+                  onChange={(e) => image({ model: e.target.value })}
+                />
+              </Row>
+            </Group>
           </section>
         )}
         {tab === "accounts" && <Accounts />}
@@ -441,10 +550,7 @@ export function Settings() {
                 className={cx("secondary small")}
                 onClick={() => {
                   set(saved);
-                  if (saved?.catalog) {
-                    setSeparate(!sharing(saved.catalog));
-                    setEditing(saved.catalog.default);
-                  }
+                  if (saved?.catalog) setSeparate(!sharing(saved.catalog));
                   E("");
                 }}
               >
@@ -500,13 +606,20 @@ export function useRoleName() {
     (r.builtin && t.settings.roleNames[r.id]) || r.name;
 }
 
-/** Every account and the role it holds; a change takes effect at once. */
+/** A person's mark: the first letter of their name. */
+const Avatar = ({ name }: { name: string }) => (
+  <span className={cx("avatar")}>{[...name][0]?.toUpperCase()}</span>
+);
+
+/** Every account and the role it holds, as a list to search; a change takes effect at
+ * once. */
 function Accounts() {
   const w = useT().settings,
     roleName = useRoleName();
   const me = useContext(AccountContext)?.id;
   const [list, setList] = useState<Account[]>(),
     [roles, setRoles] = useState<AccountRole[]>([]),
+    [q, Q] = useState(""),
     [error, E] = useState("");
   useEffect(() => {
     void Promise.all([
@@ -520,67 +633,111 @@ function Accounts() {
       (e) => E(e.message),
     );
   }, []);
-  if (!list)
-    return (
-      <section>
-        {error ? <p className={cx("error")}>{error}</p> : <Spinner />}
-      </section>
-    );
+  const shown = (list ?? []).filter((a) =>
+    a.name.toLowerCase().includes(q.trim().toLowerCase()),
+  );
   return (
     <section>
+      <Head title={useT().titles.accounts} hint={w.accountsHint} />
       {error && (
         <p className={cx("error")} role="alert">
           {error}
         </p>
       )}
-      {list.map((a) => (
-        <Row key={a.id} label={a.name + (a.id === me ? w.you : "")}>
-          <select
-            aria-label={w.accountRole}
-            value={a.role}
-            onChange={async (e) => {
-              E("");
-              try {
-                const changed = await api<Account>(
-                  "/admin/accounts/" + a.id,
-                  "PATCH",
-                  { role: e.target.value },
-                );
-                setList((old) =>
-                  old!.map((x) => (x.id === a.id ? changed : x)),
-                );
-                // Taking away one's own right to manage accounts takes this page away.
-                if (
-                  a.id === me &&
-                  !changed.permissions.includes("accounts.manage")
-                )
-                  location.reload();
-              } catch (err) {
-                E(err instanceof Error ? err.message : String(err));
-              }
-            }}
-          >
-            {roles.map((r) => (
-              <option key={r.id} value={r.id}>
-                {roleName(r)}
-              </option>
+      {!list ? (
+        !error && <Spinner />
+      ) : (
+        <div className={cx("group-card members")}>
+          <div className={cx("members-bar")}>
+            <label className={cx("members-search")}>
+              <Search size={15} />
+              <input
+                placeholder={w.searchAccounts}
+                value={q}
+                onChange={(e) => Q(e.target.value)}
+              />
+            </label>
+            <small>{w.accountsCount(list.length)}</small>
+          </div>
+          <div className={cx("members-head")} aria-hidden>
+            <span>{w.accountName}</span>
+            <span>{w.accountRole}</span>
+          </div>
+          <ul>
+            {shown.map((a) => (
+              <li key={a.id}>
+                <Avatar name={a.name} />
+                <span className={cx("member-name")}>
+                  <b>{a.name}</b>
+                  {a.id === me && <Badge tone="muted">{w.you}</Badge>}
+                </span>
+                <select
+                  aria-label={w.accountRole + " · " + a.name}
+                  value={a.role}
+                  onChange={async (e) => {
+                    E("");
+                    try {
+                      const changed = await api<Account>(
+                        "/admin/accounts/" + a.id,
+                        "PATCH",
+                        { role: e.target.value },
+                      );
+                      setList((old) =>
+                        old!.map((x) => (x.id === a.id ? changed : x)),
+                      );
+                      // Taking away one's own right to manage accounts takes this page
+                      // away.
+                      if (
+                        a.id === me &&
+                        !changed.permissions.includes("accounts.manage")
+                      )
+                        location.reload();
+                    } catch (err) {
+                      E(err instanceof Error ? err.message : String(err));
+                    }
+                  }}
+                >
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {roleName(r)}
+                    </option>
+                  ))}
+                </select>
+              </li>
             ))}
-          </select>
-        </Row>
-      ))}
+            {!shown.length && (
+              <li className={cx("members-none")}>{w.noAccounts}</li>
+            )}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }
 
-/** The roles and what each may do. Administrators may do everything; members' and added
- * roles' permissions are switched on and off here, and take effect at once. */
+/** The roles and what each may do, one row each, opened to change. Administrators may do
+ * everything; members' and added roles' permissions take effect at once. */
 function Roles() {
-  const w = useT().settings,
+  const t = useT(),
+    w = t.settings,
     roleName = useRoleName();
   const [roles, setRoles] = useState<AccountRole[]>(),
+    [counts, setCounts] = useState<Record<string, number>>({}),
+    [open, setOpen] = useState<string>(),
     [error, E] = useState("");
   useEffect(() => {
-    void api<AccountRole[]>("/admin/roles").then(setRoles, (e) => E(e.message));
+    void Promise.all([
+      api<AccountRole[]>("/admin/roles"),
+      api<Account[]>("/admin/accounts"),
+    ]).then(
+      ([r, a]) => {
+        setRoles(r);
+        const n: Record<string, number> = {};
+        for (const x of a) n[x.role] = (n[x.role] ?? 0) + 1;
+        setCounts(n);
+      },
+      (e) => E(e.message),
+    );
   }, []);
   const attempt = async (fn: () => Promise<void>) => {
     E("");
@@ -599,96 +756,125 @@ function Roles() {
       });
       setRoles((old) => old!.map((x) => (x.id === r.id ? changed : x)));
     });
-  if (!roles)
-    return (
-      <section>
-        {error ? <p className={cx("error")}>{error}</p> : <Spinner />}
-      </section>
-    );
+  const summary = (r: AccountRole) =>
+    r.permissions.length === permissions.length
+      ? w.allPermissions
+      : r.permissions.length
+        ? r.permissions.map((p) => w.permissionsShort[p]).join(t.now.list)
+        : w.noPermissions;
   return (
     <section>
+      <Head title={t.titles.roles} hint={w.rolesHint}>
+        {roles && (
+          <button
+            className={cx("secondary small")}
+            onClick={() =>
+              void attempt(async () => {
+                const taken = new Set(roles.map((r) => r.name));
+                let n = 1;
+                while (taken.has(w.newRole(n))) n++;
+                const made = await api<AccountRole>("/admin/roles", "POST", {
+                  name: w.newRole(n),
+                  permissions: [],
+                });
+                setRoles((old) => [...old!, made]);
+                setOpen(made.id);
+              })
+            }
+          >
+            <Plus size={15} />
+            {w.addRole}
+          </button>
+        )}
+      </Head>
       {error && (
         <p className={cx("error")} role="alert">
           {error}
         </p>
       )}
-      {roles.map((r) => (
-        <div className={cx("role")} key={r.id}>
-          <header>
-            {r.builtin ? (
-              <b>{roleName(r)}</b>
-            ) : (
-              <input
-                aria-label={w.roleName}
-                defaultValue={r.name}
-                onBlur={(e) => {
-                  const name = e.target.value.trim();
-                  if (name && name !== r.name) void save(r, { name });
-                  else e.target.value = r.name;
-                }}
-              />
-            )}
-            {r.builtin ? (
-              <small>{w.builtinRole}</small>
-            ) : (
-              <button
-                className={cx("secondary small danger")}
-                onClick={() => {
-                  if (!confirm(w.removeRoleConfirm(r.name))) return;
-                  void attempt(async () => {
-                    await api("/admin/roles/" + r.id, "DELETE");
-                    setRoles((old) => old!.filter((x) => x.id !== r.id));
-                  });
-                }}
-              >
-                <Trash2 size={14} />
-                {w.removeRole}
-              </button>
-            )}
-          </header>
-          {r.id === "admin" && (
-            <small className={cx("role-hint")}>{w.adminHint}</small>
-          )}
-          {r.id === "member" && (
-            <small className={cx("role-hint")}>{w.memberHint}</small>
-          )}
-          {permissions.map((p) => (
-            <Row key={p} label={w.permissions[p]} hint={w.permissionHints[p]}>
-              <Switch
-                checked={r.permissions.includes(p)}
-                disabled={r.id === "admin"}
-                onChange={(on) =>
-                  void save(r, {
-                    permissions: on
-                      ? [...r.permissions, p]
-                      : r.permissions.filter((x) => x !== p),
-                  })
-                }
-              />
-            </Row>
+      {!roles ? (
+        !error && <Spinner />
+      ) : (
+        <ul className={cx("entries")}>
+          {roles.map((r) => (
+            <Entry
+              key={r.id}
+              icon={<ShieldCheck size={16} />}
+              title={roleName(r)}
+              detail={summary(r)}
+              badges={r.builtin && <Badge tone="muted">{w.builtinRole}</Badge>}
+              aside={w.membersCount(counts[r.id] ?? 0)}
+              open={open === r.id}
+              toggle={() => setOpen(open === r.id ? undefined : r.id)}
+            >
+              {r.id === "admin" ? (
+                <p className={cx("entry-note")}>{w.adminHint}</p>
+              ) : r.id === "member" ? (
+                <p className={cx("entry-note")}>{w.memberHint}</p>
+              ) : (
+                <Group>
+                  <Row label={w.roleName}>
+                    <input
+                      defaultValue={r.name}
+                      onBlur={(e) => {
+                        const name = e.target.value.trim();
+                        if (name && name !== r.name) void save(r, { name });
+                        else e.target.value = r.name;
+                      }}
+                    />
+                  </Row>
+                </Group>
+              )}
+              <Group title={w.permissionsTitle}>
+                {permissions.map((p) => (
+                  <Row
+                    key={p}
+                    label={w.permissions[p]}
+                    hint={w.permissionHints[p]}
+                  >
+                    {r.id === "admin" ? (
+                      <Check size={17} className={cx("granted")} />
+                    ) : (
+                      <Switch
+                        checked={r.permissions.includes(p)}
+                        onChange={(on) =>
+                          void save(r, {
+                            permissions: on
+                              ? [...r.permissions, p]
+                              : r.permissions.filter((x) => x !== p),
+                          })
+                        }
+                      />
+                    )}
+                  </Row>
+                ))}
+              </Group>
+              {!r.builtin && (
+                <footer className={cx("entry-foot")}>
+                  <small>{w.removeRoleHint}</small>
+                  <button
+                    className={cx("secondary small danger")}
+                    onClick={() => {
+                      if (!confirm(w.removeRoleConfirm(r.name))) return;
+                      void attempt(async () => {
+                        await api("/admin/roles/" + r.id, "DELETE");
+                        setRoles((old) => old!.filter((x) => x.id !== r.id));
+                        setCounts((old) => ({
+                          ...old,
+                          member: (old.member ?? 0) + (old[r.id] ?? 0),
+                        }));
+                      });
+                    }}
+                  >
+                    <Trash2 size={14} />
+                    {w.removeRole}
+                  </button>
+                </footer>
+              )}
+            </Entry>
           ))}
-        </div>
-      ))}
-      <div>
-        <button
-          className={cx("secondary small")}
-          onClick={() =>
-            void attempt(async () => {
-              const taken = new Set(roles.map((r) => r.name));
-              let n = 1;
-              while (taken.has(w.newRole(n))) n++;
-              const made = await api<AccountRole>("/admin/roles", "POST", {
-                name: w.newRole(n),
-                permissions: [],
-              });
-              setRoles((old) => [...old!, made]);
-            })
-          }
-        >
-          <Plus size={14} />
-          {w.addRole}
-        </button>
-      </div>
+        </ul>
+      )}
     </section>
   );
 }

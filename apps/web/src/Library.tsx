@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Globe,
   Lock,
+  Users,
 } from "lucide-react";
 import { Segmented, Spinner, reducedMotion, useLocale } from "@drawy/ui";
 import type {
@@ -175,15 +176,20 @@ export function Library({
   }
   return (
     <div className={cx("library")}>
+      <nav className={cx("shelf-tabs")} aria-label={t.library.shelf}>
+        {shelves.map((k) => (
+          <button
+            key={k}
+            aria-current={on === k || undefined}
+            onClick={() => shelve(k)}
+          >
+            {k === "public" ? <Globe size={15} /> : k === "mine" ? <Lock size={15} /> : <Users size={15} />}
+            {t.library.shelves[k]}
+          </button>
+        ))}
+        <small>{t.library.shelfHints[on]}</small>
+      </nav>
       <div className={cx("library-bar")}>
-        <Segmented label={t.library.shelf}>
-          {shelves.map((k) => (
-            <button key={k} aria-pressed={on === k} onClick={() => shelve(k)}>
-              {k === "public" ? <Globe size={14} /> : <Lock size={14} />}
-              {t.library.shelves[k]}
-            </button>
-          ))}
-        </Segmented>
         {shown.length > 1 && (
           <Segmented label={t.library.kind}>
             {shown.map((k) => (
@@ -500,7 +506,16 @@ function Inspector({
       <header>
         <div>
           <h2>{m.name[locale]}</h2>
-          <p>{m.name[locale === "zh" ? "en" : "zh"]}</p>
+          <p>
+            {m.name[locale === "zh" ? "en" : "zh"]}
+            <span
+              className={cx("ownership")}
+              data-public={m.owner === null || undefined}
+            >
+              {m.owner === null ? <Globe size={12} /> : <Lock size={12} />}
+              {m.owner === null ? f.public : f.private}
+            </span>
+          </p>
         </div>
         <button className={cx("close-button")} aria-label={t.close} onClick={close}>
           <X size={15} />
