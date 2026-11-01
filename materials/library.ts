@@ -45,12 +45,15 @@ const read = <T>(path: string): T => JSON.parse(readFileSync(path, "utf8"));
  * kept in `dir`. */
 export class Library {
   readonly index = new Index();
+  /** Where street tiles fetched from OpenStreetMap are kept. */
+  readonly streetsDir: string;
   private db: DatabaseSync;
   private waiters = new Map<string, Set<() => void>>();
   constructor(
     private dir: string,
     private seed: string,
   ) {
+    this.streetsDir = join(dir, "streets");
     mkdirSync(join(dir, "files"), { recursive: true });
     mkdirSync(join(dir, "thumbs"), { recursive: true });
     this.db = new DatabaseSync(join(dir, "materials.sqlite"));
@@ -134,6 +137,13 @@ export class Library {
       bytes,
       etag: `"${createHash("sha1").update(bytes).digest("base64url")}"`,
     };
+  }
+  /** One tile of the shaded relief the map drawing lays over land, as WebP. */
+  relief(tile: string) {
+    const path = join(this.seed, "geo", "relief", tile + ".webp");
+    if (!/^\d+-\d+-\d+$/.test(tile) || !existsSync(path))
+      throw new LibraryError("没有这份地理数据: relief/" + tile, 404);
+    return readFileSync(path);
   }
   /** Styles with the pictures that show them best: the style's own showcase first, then
    * the most used. */

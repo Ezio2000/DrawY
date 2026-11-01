@@ -63,20 +63,35 @@ const cool = [accent2, accent].find((c) => {
 const sea = d.water || mix(paper, cool || "#6f9fbf", 0.2);
 const shore = mix(sea, ink, 0.28);
 const land = d.land || mix(paper, ink, 0.025);
-const riverInk = mix(sea, ink, 0.18);
+// A city's ground a shade deeper, so the paper-white streets stand out on it.
+const cityLand = d.land || mix(paper, ink, 0.05);
+// Rivers in the water's own colour, deeper than the sea so a thin line still shows.
+const riverInk = mix(cool || "#5d8fb8", sea, 0.3);
 const zh = d.language !== "en";
+// Names the map takes from its data (countries, divisions, rivers, roads) shown as given:
+// {name as drawn: name to show}, such as a city's local street names in the reader's
+// language. Anything not listed is drawn as the data has it.
+const renames = d.names && typeof d.names === "object" ? d.names : {};
+const rename = (n) =>
+  n && Object.hasOwn(renames, n) && String(renames[n]).trim()
+    ? String(renames[n]).trim()
+    : n;
 const size = Number(d.size ?? 14);
 const sw = Math.max(1, Number(t.stroke ?? 1.6));
 
 const cache = (globalThis.__drawyGeo ??= {});
+// Kept for the page once read; a read that fails in any way (an error answer, the
+// network down, a broken body) is forgotten, so the next drawing tries again.
 const layer = (name) =>
-  (cache[name] ??= fetch(`/materials/geo/${name}`).then((r) => {
-    if (!r.ok) {
+  (cache[name] ??= fetch(`/materials/geo/${name}`)
+    .then((r) => {
+      if (!r.ok) throw Error(`地图数据 ${name} 读取失败`);
+      return r.json();
+    })
+    .catch((e) => {
       delete cache[name];
-      throw Error(`地图数据 ${name} 读取失败`);
-    }
-    return r.json();
-  }));
+      throw e;
+    }));
 // Lines are stored in steps of 1/scale of a degree (hundredths unless a layer says
 // otherwise), each point a step from the last.
 const decode = (line, scale = 100) => {
@@ -127,21 +142,82 @@ if (![west, south, east, north].every(Number.isFinite)) {
     const spread = (v) => Math.max(...v) - Math.min(...v);
     const xs = spread(east360) < spread(raw) ? east360 : raw,
       ys = all.map((p) => p[1]);
-    const spanX = Math.max(2, Math.max(...xs) - Math.min(...xs)),
-      spanY = Math.max(2, Math.max(...ys) - Math.min(...ys));
+    // At least a city's breadth around places close together (a walk in one town), and
+    // a region's around a single place, which says nothing of how far to look.
+    const least = all.length > 1 ? 0.02 : 2;
+    const spanX = Math.max(least, Math.max(...xs) - Math.min(...xs)),
+      spanY = Math.max(least, Math.max(...ys) - Math.min(...ys));
     west = Math.min(...xs) - spanX * 0.15;
     east = Math.max(...xs) + spanX * 0.15;
     south = Math.min(...ys) - spanY * 0.15;
     north = Math.max(...ys) + spanY * 0.15;
   } else [west, south, east, north] = [-180, -58, 180, 82];
 } else if (east < west) east += 360;
-// Equirectangular, with longitudes shortened by the cosine of the middle latitude so a
-// regional map keeps its true proportions; the view widens to the module's shape.
-const k = Math.cos((((south + north) / 2) * Math.PI) / 180);
-let x0 = west * k,
-  x1 = east * k,
-  y0 = -north,
-  y1 = -south;
+// Two projections. A view of a region or a country is equirectangular, with longitudes
+// shortened by the cosine of the middle latitude so it keeps its true proportions. A view
+// most of the way round the world (150° of longitude or more) is in the Natural Earth
+// projection, centred on the view's middle meridian: rounded at its sides so continents
+// far from the equator keep their shapes and the poles do not stretch into wide bands.
+const world = east - west >= 150;
+const lon0 = world ? (west + east) / 2 : 0;
+const k = world ? 1 : Math.cos((((south + north) / 2) * Math.PI) / 180);
+const R = 180 / Math.PI;
+const neX = (f2) =>
+  0.8707 -
+  0.131979 * f2 +
+  f2 * f2 * (-0.013791 + f2 ** 3 * (0.003971 - 0.001529 * f2));
+const neY = (f) => {
+  const f2 = f * f;
+  return (
+    f *
+    (1.007226 +
+      f2 *
+        (0.015085 + f2 * f2 * (-0.044475 + 0.028874 * f2 - 0.005916 * f2 * f2)))
+  );
+};
+// To plane units (about degrees at the centre, y down), and back again (null off the earth).
+const forward = world
+  ? (lon, lat) => {
+      const f = Math.max(-90, Math.min(90, lat)) / R;
+      return [((lon - lon0) / R) * neX(f * f) * R, -neY(f) * R];
+    }
+  : (lon, lat) => [lon * k, -lat];
+const inverse = world
+  ? (u, v) => {
+      const y = -v / R;
+      if (Math.abs(y) > neY(Math.PI / 2) + 1e-9) return null;
+      let f = y;
+      for (let i = 0; i < 8; i++) {
+        const f2 = f * f;
+        const dy =
+          1.007226 +
+          f2 *
+            (3 * 0.015085 +
+              f2 *
+                f2 *
+                (-7 * 0.044475 + 9 * 0.028874 * f2 - 11 * 0.005916 * f2 * f2));
+        f -= (neY(f) - y) / dy;
+      }
+      const lon = lon0 + (u / R / neX(f * f)) * R;
+      return Math.abs(lon - lon0) > 180 ? null : [lon, f * R];
+    }
+  : (u, v) => [u / k, -v];
+// The plane extent of the bounds, then widened to the module's shape.
+let x0 = Infinity,
+  x1 = -Infinity,
+  y0 = Infinity,
+  y1 = -Infinity;
+for (let i = 0; i <= 24; i++)
+  for (let j = 0; j <= 24; j++) {
+    const [u, v] = forward(
+      west + ((east - west) * i) / 24,
+      south + ((north - south) * j) / 24,
+    );
+    x0 = Math.min(x0, u);
+    x1 = Math.max(x1, u);
+    y0 = Math.min(y0, v);
+    y1 = Math.max(y1, v);
+  }
 const want = W / H;
 if ((x1 - x0) / (y1 - y0) < want) {
   const grow = ((y1 - y0) * want - (x1 - x0)) / 2;
@@ -153,18 +229,39 @@ if ((x1 - x0) / (y1 - y0) < want) {
   y1 += grow;
 }
 const s = W / (x1 - x0);
-const px = ([lon, lat]) => [(lon * k - x0) * s, (-lat - y0) * s];
+const px = ([lon, lat]) => {
+  const [u, v] = forward(lon, lat);
+  return [(u - x0) * s, (v - y0) * s];
+};
+const unproject = (x, y) => inverse(x / s + x0, y / s + y0);
 const project = (p) => px(near(p));
-const view = { w: x0 / k, e: x1 / k, n: -y0, s: -y1 };
-// How detailed the view is, as a web map's zoom level (256 px for 360° at zoom 0), the
-// scale Natural Earth gives for when each feature should appear.
-const zoom = Math.log2((s * k * 360) / 256);
+// What the view covers in degrees (a world view all the way round its middle meridian).
+const view = world
+  ? {
+      w: lon0 - 180,
+      e: lon0 + 180,
+      n: inverse(0, y0)?.[1] ?? 90,
+      s: inverse(0, y1)?.[1] ?? -90,
+    }
+  : { w: x0 / k, e: x1 / k, n: -y0, s: -y1 };
 // Places come to the side of the 180th meridian nearest the view's centre.
-const centre = (view.w + view.e) / 2;
+const centre = world ? lon0 : (view.w + view.e) / 2;
 const near = ([lon, lat]) => [
   lon + 360 * Math.round((centre - lon) / 360),
   lat,
 ];
+// How detailed the view is, as a web map's zoom level (256 px for 360° at zoom 0), the
+// scale Natural Earth gives for when each feature should appear.
+const latMid = -(y0 + y1) / 2;
+const zoom = Math.log2(
+  (Math.hypot(
+    ...[0, 1].map(
+      (i) => px([centre + 0.5, latMid])[i] - px([centre - 0.5, latMid])[i],
+    ),
+  ) *
+    360) /
+    256,
+);
 const extent = (pts) => {
   let a = Infinity,
     b = -Infinity,
@@ -189,19 +286,96 @@ const copies = (pts) => {
     .filter((dx) => !(b + dx < view.w - mx || a + dx > view.e + mx))
     .map((dx) => ({ pts, dx }));
 };
-// Projected points, dropping those too close to the last to show.
-const trace = ({ pts, dx }, close) => {
-  let out = "",
-    lx = NaN,
-    ly = NaN;
-  for (let i = 0; i < pts.length; i++) {
-    const [x, y] = px([pts[i][0] + dx, pts[i][1]]);
-    if (i && i < pts.length - 1 && Math.hypot(x - lx, y - ly) < 0.7) continue;
-    out += (i ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1);
-    lx = x;
-    ly = y;
+// On a world view each copy is cut at the meridians bounding it, and long edges are
+// divided so they bend with the projection (an edge along a cut follows the earth's rim).
+const band = [lon0 - 180, lon0 + 180];
+const cross = (p, q, x) => {
+  const t = (x - p[0]) / (q[0] - p[0]);
+  return [x, p[1] + (q[1] - p[1]) * t];
+};
+const clipRing = (ring) => {
+  let out = ring;
+  for (const [edge, keep] of [
+    [band[0], (p) => p[0] >= band[0]],
+    [band[1], (p) => p[0] <= band[1]],
+  ]) {
+    const inp = out;
+    out = [];
+    for (let i = 0; i < inp.length; i++) {
+      const p = inp[i],
+        q = inp[(i + 1) % inp.length];
+      if (keep(p)) out.push(p);
+      if (keep(p) !== keep(q)) out.push(cross(p, q, edge));
+    }
+    if (!out.length) break;
   }
-  return out + (close ? "Z" : "");
+  return out.length > 2 ? [out] : [];
+};
+const clipLine = (line) => {
+  const out = [];
+  let cur = [];
+  const inside = (p) => p[0] >= band[0] && p[0] <= band[1];
+  for (let i = 0; i < line.length; i++) {
+    const p = line[i];
+    if (i) {
+      const q = line[i - 1];
+      if (inside(q) !== inside(p)) {
+        const edge = (inside(q) ? p : q)[0] < band[0] ? band[0] : band[1];
+        const c = cross(q, p, edge);
+        cur.push(c);
+        if (!inside(p)) {
+          out.push(cur);
+          cur = [];
+        } else cur = [c];
+      }
+    }
+    if (inside(p)) cur.push(p);
+  }
+  if (cur.length > 1) out.push(cur);
+  return out.filter((l) => l.length > 1);
+};
+const densify = (pts, close) => {
+  const out = [];
+  const n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const p = pts[i];
+    out.push(p);
+    if (!close && i === n - 1) break;
+    const q = pts[(i + 1) % n];
+    const steps = Math.floor(
+      Math.max(Math.abs(q[0] - p[0]), Math.abs(q[1] - p[1])) / 1.5,
+    );
+    for (let j = 1; j <= steps; j++) {
+      const t = j / (steps + 1);
+      out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]);
+    }
+  }
+  return out;
+};
+// A copy of a line or ring as the screen points to draw, in one or more pieces.
+const pieces = ({ pts, dx }, close) => {
+  const moved = dx ? pts.map(([lon, lat]) => [lon + dx, lat]) : pts;
+  const parts = world
+    ? (close ? clipRing(moved) : clipLine(moved)).map((p) => densify(p, close))
+    : [moved];
+  return parts.map((p) => p.map(px));
+};
+// Projected points, dropping those too close to the last to show.
+const trace = (copy, close) => {
+  let out = "";
+  for (const p of pieces(copy, close)) {
+    let lx = NaN,
+      ly = NaN;
+    for (let i = 0; i < p.length; i++) {
+      const [x, y] = p[i];
+      if (i && i < p.length - 1 && Math.hypot(x - lx, y - ly) < 0.7) continue;
+      out += (i ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1);
+      lx = x;
+      ly = y;
+    }
+    if (close) out += "Z";
+  }
+  return out;
 };
 
 const borders = ["countries", "subdivisions"].includes(d.borders)
@@ -213,12 +387,81 @@ const [physical, countries, subdivisions] = await Promise.all([
   borders === "subdivisions" ? layer("subdivisions") : null,
 ]);
 const visible = (lines) => lines.map((l) => decode(l)).flatMap(copies);
+// A region or a city seen close: Natural Earth has nothing finer than 1:10m, so from
+// about zoom 7 (a view a couple of hundred kilometres across) the ground comes from
+// OpenStreetMap tiles instead (water, parks and woods, roads by class, railways, waterway
+// and road names), each a web-map tile of the view; borders stay Natural Earth's, drawn
+// from the map's one point of view. Should any not
+// load, the map falls back to Natural Earth and says the streets are missing.
+const tiles = [];
+let streetsFailed = false;
+if (d.streets !== false && zoom >= 7) {
+  let tz = Math.min(14, Math.floor(zoom));
+  const merc = (lat) =>
+    (1 -
+      Math.log(
+        Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180),
+      ) /
+        Math.PI) /
+    2;
+  const clampLat = (lat) => Math.max(-85, Math.min(85, lat));
+  let range;
+  for (;;) {
+    const n = 2 ** tz;
+    range = {
+      n,
+      x0: Math.floor(((view.w + 180) / 360) * n),
+      x1: Math.floor(((view.e + 180) / 360) * n),
+      y0: Math.max(0, Math.floor(merc(clampLat(view.n)) * n)),
+      y1: Math.min(n - 1, Math.floor(merc(clampLat(view.s)) * n)),
+    };
+    if ((range.x1 - range.x0 + 1) * (range.y1 - range.y0 + 1) <= 36 || tz <= 7)
+      break;
+    tz--;
+  }
+  const want = [];
+  for (let x = range.x0; x <= range.x1; x++)
+    for (let y = range.y0; y <= range.y1; y++) {
+      const col = ((x % range.n) + range.n) % range.n;
+      want.push({ x, col, y, dx: 360 * Math.floor(x / range.n) });
+    }
+  const got = await Promise.allSettled(
+    want.map((t) => layer(`streets/${tz}/${t.col}/${t.y}`)),
+  );
+  if (got.every((g) => g.status === "fulfilled"))
+    got.forEach((g, i) =>
+      tiles.push({ ...want[i], tz, n: range.n, data: g.value }),
+    );
+  else streetsFailed = true;
+}
+const city = tiles.length > 0;
+// A tile's lines in degrees: tile units across, the Mercator rows down (shifted by the
+// tile's dx onto the copy of the world in view by whoever draws them).
+const tileLine = (t, line) => {
+  const e = t.data.extent,
+    pts = [];
+  let u = 0,
+    v = 0;
+  for (let i = 0; i < line.length; i += 2) {
+    u += line[i];
+    v += line[i + 1];
+    const lon = ((t.col + u / e) / t.n) * 360 - 180;
+    const lat =
+      (Math.atan(Math.sinh(Math.PI * (1 - (2 * (t.y + v / e)) / t.n))) * 180) /
+      Math.PI;
+    pts.push([lon, lat]);
+  }
+  return pts;
+};
 // Close views read finer land, lakes and shores, only the tiles they cover; wider views
 // the overview layer. A tile's fills are cut at its edges, so they get no outline of
 // their own and the shores are drawn as the lines they are.
 const paths = (list, close) => list.map((p) => trace(p, close)).join("");
 let landPath, lakePath, shorePath;
-if (zoom >= 4.5 && physical.detail) {
+if (city) {
+  // The tiles bring their own water; Natural Earth's coarser shore would only blur it.
+  landPath = lakePath = "";
+} else if (zoom >= 4.5 && physical.detail) {
   const { tile, tiles } = physical.detail;
   const have = new Set(tiles),
     across = 360 / tile;
@@ -242,6 +485,122 @@ if (zoom >= 4.5 && physical.detail) {
   landPath = paths(visible(physical.land), true);
   lakePath = paths(visible(physical.lakes), true);
 }
+// Shaded relief over the land, from Natural Earth's rasters: slopes turned from the light
+// in a shade of ink, those turned to it in a lighter paper, flat ground and sea untouched.
+// The raster is in degrees, so each pixel of the map looks up the degree it shows, which
+// holds for either projection. It fades as the view closes in, where the raster runs out
+// of detail, and is gone by the time the streets of a town are drawn (zoom 10). Under the
+// OpenStreetMap ground it lies on the land, under its parks, water and roads.
+let reliefOut = "";
+const reliefStrength =
+  d.relief === false ? 0 : Math.max(0, Math.min(1, (10 - zoom) / 3));
+if (reliefStrength > 0) {
+  try {
+    const index = await layer("relief");
+    // Pixels a degree the view shows, and the coarsest level that has as many.
+    const need = s * (world ? 0.9 : 1);
+    const span = (view.e - view.w) * (view.n - view.s);
+    // A source canvas of at most about 24 million pixels.
+    const fits = (l) => span * l.ppd * l.ppd < 2.4e7;
+    let level = index.levels.findIndex((l) => l.ppd >= need * 0.75 && fits(l));
+    if (level < 0)
+      level = index.levels.reduce((best, l, i) => (fits(l) ? i : best), 0);
+    const { ppd, tile, tiles: have } = index.levels[level];
+    const known = new Set(have);
+    // The source: the tiles over the view, painted onto one grey canvas in degrees.
+    const west0 = Math.floor(view.w / tile) * tile,
+      east0 = Math.ceil(view.e / tile) * tile;
+    const north0 = Math.min(90, Math.ceil(view.n / tile) * tile),
+      south0 = Math.max(-90, Math.floor(view.s / tile) * tile);
+    const sw0 = Math.round((east0 - west0) * ppd),
+      sh0 = Math.round((north0 - south0) * ppd);
+    const source = document.createElement("canvas");
+    source.width = sw0;
+    source.height = sh0;
+    const sctx = source.getContext("2d", { willReadFrequently: true });
+    sctx.fillStyle = `rgb(${index.flat},${index.flat},${index.flat})`;
+    sctx.fillRect(0, 0, sw0, sh0);
+    const jobs = [];
+    for (let x = west0; x < east0; x += tile)
+      for (let y = south0; y < north0; y += tile) {
+        const across = 360 / tile;
+        const col = ((((x + 180) / tile) % across) + across) % across;
+        const key = `${col}-${(90 - y - tile) / tile}`;
+        if (!known.has(key)) continue;
+        jobs.push(
+          (cache["relief/" + level + "-" + key] ??= fetch(
+            `/materials/geo/relief/${level}-${key}`,
+          )
+            .then((r) => {
+              if (!r.ok)
+                throw Error(`地图数据 relief/${level}-${key} 读取失败`);
+              return r.blob();
+            })
+            .then((b) => createImageBitmap(b))
+            .catch((e) => {
+              delete cache["relief/" + level + "-" + key];
+              throw e;
+            })).then((img) =>
+            sctx.drawImage(
+              img,
+              (x - west0) * ppd,
+              (north0 - y - tile) * ppd,
+              tile * ppd,
+              tile * ppd,
+            ),
+          ),
+        );
+      }
+    await Promise.all(jobs);
+    const grey = sctx.getImageData(0, 0, sw0, sh0).data;
+    // The map's pixels, fewer of them on a large module; the image is scaled back up.
+    const q = Math.min(1, Math.sqrt(9e5 / (W * H)));
+    const ow = Math.max(1, Math.round(W * q)),
+      oh = Math.max(1, Math.round(H * q));
+    const outCanvas = document.createElement("canvas");
+    outCanvas.width = ow;
+    outCanvas.height = oh;
+    const octx = outCanvas.getContext("2d");
+    const img = octx.createImageData(ow, oh);
+    const dark = hex(mix(ink, sea, 0.35)) || [60, 70, 80],
+      light = hex(mix(paper, "#ffffff", 0.7)) || [255, 255, 255];
+    const flat = index.flat;
+    for (let j = 0; j < oh; j++)
+      for (let i = 0; i < ow; i++) {
+        const at = unproject((i + 0.5) / q, (j + 0.5) / q);
+        if (!at) continue;
+        let lon = at[0];
+        // The source's own copy of this longitude.
+        lon = west0 + ((((lon - west0) % 360) + 360) % 360);
+        const fx = (lon - west0) * ppd - 0.5,
+          fy = (north0 - at[1]) * ppd - 0.5;
+        if (fx < 0 || fy < 0 || fx >= sw0 - 1 || fy >= sh0 - 1) continue;
+        const ix = fx | 0,
+          iy = fy | 0,
+          tx = fx - ix,
+          ty = fy - iy;
+        const o = (iy * sw0 + ix) * 4;
+        const v =
+          (grey[o] * (1 - tx) + grey[o + 4] * tx) * (1 - ty) +
+          (grey[o + sw0 * 4] * (1 - tx) + grey[o + sw0 * 4 + 4] * tx) * ty;
+        const delta = v - flat;
+        if (Math.abs(delta) < 1.5) continue;
+        const c = delta < 0 ? dark : light;
+        const a =
+          delta < 0 ? (-delta / flat) * 0.85 : (delta / (255 - flat)) * 0.55;
+        const p = (j * ow + i) * 4;
+        img.data[p] = c[0];
+        img.data[p + 1] = c[1];
+        img.data[p + 2] = c[2];
+        img.data[p + 3] = Math.round(Math.min(1, a) * reliefStrength * 255);
+      }
+    octx.putImageData(img, 0, 0);
+    reliefOut = `<image href="${outCanvas.toDataURL("image/png")}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none"/>`;
+  } catch (e) {
+    // Relief is a finish, not the map: without it the map is still whole.
+    console.warn(e);
+  }
+}
 const riverMode =
   d.rivers === "none" || d.rivers === false
     ? "none"
@@ -251,13 +610,18 @@ const riverMode =
 // A river appears from the zoom Natural Earth gives it, a step early since a figure is
 // looked at closer than a web map.
 const rivers =
-  riverMode === "none"
+  riverMode === "none" || city
     ? []
     : physical.rivers
         .filter((r) => r.zoom <= zoom + 1)
         .map((r) => ({ ...r, pts: visible(r.lines) }))
         .filter((r) => r.pts.length);
-const riverWidth = (rank) => Math.max(0.6, 2.2 - rank * 0.17);
+// Thinner on a view of the world or a continent, where there are many of them.
+const riverWidth = (rank) =>
+  Math.max(
+    0.5,
+    (2.2 - rank * 0.17) * Math.max(0.55, Math.min(1, (zoom - 0.8) / 3)),
+  );
 
 // Labels go where they collide with the fewest other labels, markers and routes.
 const ctx = document.createElement("canvas").getContext("2d");
@@ -366,12 +730,12 @@ const unwrap = (pts) => {
   }
   return out;
 };
-const shown = (pts) =>
-  copies(pts).map(({ dx }) => pts.map(([lon, lat]) => px([lon + dx, lat])));
+const shown = (pts, close = false) =>
+  copies(pts).flatMap((c) => pieces(c, close));
 for (const a of areas) {
   if (a.at.length < 3) continue;
   const color = a.color || accent2;
-  for (const p of shown(unwrap(a.at)))
+  for (const p of shown(unwrap(a.at), true))
     areaOut += `<path d="${smooth(p, true)}" fill="${color}" fill-opacity="${Number(a.opacity ?? 0.16)}" stroke="${color}" stroke-opacity=".6" stroke-width="${sw * 0.7}" stroke-dasharray="${sw * 3} ${sw * 2.5}"/>`;
 }
 
@@ -447,7 +811,8 @@ for (const r of routes) {
 // A scale bar, bottom left, in a round number of kilometres (true along the meridians),
 // kept clear of every label.
 let scaleOut = "";
-if (d.scale !== false) {
+// A world view's scale changes across it, so it has none.
+if (d.scale !== false && !world) {
   const kmPerPx = 111.32 / s;
   const target = kmPerPx * W * 0.14;
   const mag = 10 ** Math.floor(Math.log10(target));
@@ -464,6 +829,29 @@ if (d.scale !== false) {
     h: size * 1.3 + sw * 3,
   });
   scaleOut = `<g fill="${ink}" font-size="${(size * 0.78).toFixed(1)}"><rect x="${x}" y="${y}" width="${(len / 2).toFixed(1)}" height="${(sw * 2.2).toFixed(1)}" fill="${ink}"/><rect x="${(x + len / 2).toFixed(1)}" y="${y}" width="${(len / 2).toFixed(1)}" height="${(sw * 2.2).toFixed(1)}" fill="${paper}" stroke="${ink}" stroke-width="${sw * 0.5}"/><text x="${x}" y="${y - size * 0.35}" ${halo}>0</text><text x="${(x + len).toFixed(1)}" y="${y - size * 0.35}" text-anchor="middle" ${halo}>${km.toLocaleString()} km</text></g>`;
+}
+
+// OpenStreetMap's data asks to be credited where it is shown; a city whose streets did
+// not load says so, so the blank is not taken for the place.
+let creditOut = "";
+const credit = city
+  ? "© OpenStreetMap"
+  : streetsFailed
+    ? zh
+      ? "街道底图暂时读取失败"
+      : "Street map unavailable"
+    : "";
+if (credit) {
+  // The credit small in the corner; a failure where it is read, clear of a faded edge.
+  const sz = size * (city ? 0.62 : 0.85),
+    w = measure(credit, sz);
+  // A faded edge hides the outer 6% of the map.
+  const inset = d.edge === "fade" ? 0.07 : 0;
+  const x = city ? W * (1 - inset) - size * 0.6 : W / 2,
+    y = city ? H * (1 - inset) - size * 0.5 : H * inset + size * 2.4;
+  const left = city ? x - w : x - w / 2;
+  taken.push({ x: left - 2, y: y - sz - 2, w: w + 4, h: sz + 4 });
+  creditOut = `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${city ? "end" : "middle"}" font-size="${sz.toFixed(1)}" fill="${city ? muted : mix(muted, ink, 0.5)}" ${halo}>${esc(credit)}</text>`;
 }
 
 // Places: a marker by kind, then the name (and a note under it) beside it.
@@ -609,8 +997,9 @@ const placed = places
   .filter((p) => p.length > 1);
 const echoes = (n) => placed.some((p) => p.includes(n) || n.includes(p));
 // An area is named only when its name fits inside the area as drawn.
-const refName = (n, where, area, sz, color, spacing) => {
-  if (!n || echoes(n)) return false;
+const shownNames = new Set();
+const refName = (n, where, area, sz, color, spacing, weight = 400) => {
+  if (!n || echoes(n) || shownNames.has(n)) return false;
   const [x, y] = project(where);
   if (x < 0 || y < 0 || x > W || y > H) return false;
   const w = measure(n, sz) + spacing * [...n].length,
@@ -623,11 +1012,12 @@ const refName = (n, where, area, sz, color, spacing) => {
   const box = { x: x - w / 2, y: y - h / 2, w, h };
   if (hits(box) > 0) return false;
   taken.push(box);
-  refOut += `<text x="${x.toFixed(1)}" y="${(y + sz * 0.36).toFixed(1)}" text-anchor="middle" font-size="${sz.toFixed(1)}" fill="${color}" letter-spacing="${spacing}" ${halo}>${esc(n)}</text>`;
+  shownNames.add(n);
+  refOut += `<text x="${x.toFixed(1)}" y="${(y + sz * 0.36).toFixed(1)}" text-anchor="middle" font-size="${sz.toFixed(1)}" font-weight="${weight}" fill="${color}" letter-spacing="${spacing}" ${halo}>${esc(n)}</text>`;
   return true;
 };
 const spaced = (n) => (/[\u3000-\u9fff]/.test(n) ? size * 0.15 : size * 0.04);
-const label = (o) => (zh ? o.zh || o.en : o.en || o.zh);
+const label = (o) => rename(zh ? o.zh || o.en : o.en || o.zh);
 // Larger areas claim their place first.
 const larger = (a, b) =>
   (b.box ? (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]) : 0) -
@@ -640,15 +1030,15 @@ const cols = 40,
 const grid = Array.from({ length: cols * rows }, (_, i) => {
   const x = ((i % cols) + 0.5) * (W / cols),
     y = (Math.floor(i / cols) + 0.5) * (H / rows);
-  const lon = (x / s + x0) / k;
+  const at = unproject(x, y);
   return {
     x,
     y,
     i,
-    lon: ((((lon + 180) % 360) + 360) % 360) - 180,
-    lat: -(y / s + y0),
+    lon: at ? ((((at[0] + 180) % 360) + 360) % 360) - 180 : NaN,
+    lat: at ? at[1] : NaN,
   };
-});
+}).filter((g) => Number.isFinite(g.lat));
 const within = (lon, lat, rings) => {
   let hit = false;
   for (const r of rings)
@@ -691,31 +1081,76 @@ const spotsIn = (c, w) => {
 };
 // An area is named at its own label point when that is in view and free, otherwise at
 // the first free place inside the part of it the view shows.
-const nameArea = (o, sz, color, spacing) => {
+// A unit too small to have an outline in the data (a reef, an islet) is not named, nor
+// one whose name is already on the map.
+const nameArea = (o, sz, color, spacing, weight) => {
   const n = label(o);
-  if (!n) return false;
+  if (!n || !o.box) return false;
   const gap = spacing(n);
-  if (inView(project(o.at)) && refName(n, o.at, o.box, sz, color, gap))
+  if (inView(project(o.at)) && refName(n, o.at, o.box, sz, color, gap, weight))
     return true;
   const w = measure(n, sz) + gap * [...n].length;
-  return spotsIn(o, w).some((at) => refName(n, at, null, sz, color, gap));
+  return spotsIn(o, w).some((at) =>
+    refName(n, at, null, sz, color, gap, weight),
+  );
+};
+// The countries the map is about: those its places, routes and areas are in, or else the
+// one at the middle of the view. Their divisions are named and outlined; elsewhere only
+// countries are, so neighbours' provinces do not crowd the subject.
+const focus = new Set();
+if (countries) {
+  const points = [
+    ...places.map((p) => [+p.lon, +p.lat]),
+    ...routes.flatMap((r) => r.at),
+    ...areas.flatMap((a) => a.at),
+  ];
+  const middle = unproject(W / 2, H / 2);
+  const inside = (c, [lon, lat]) => {
+    const b = c.box;
+    if (!b || lon < b[0] || lon > b[2] || lat < b[1] || lat > b[3])
+      return false;
+    return within(
+      lon,
+      lat,
+      (c.area ?? []).map((l) => decode(l)),
+    );
+  };
+  for (const p of points.length ? points : middle ? [middle] : [])
+    for (const c of countries.names) if (inside(c, p)) focus.add(c.of);
+}
+const ofFocus = (of) => !focus.size || focus.has(of);
+// A country's name grows with the country as drawn, from the label size to nearly twice it.
+const countrySize = (c) => {
+  const [a, e] = project([c.box[0], c.box[3]]),
+    [b, f] = project([c.box[2], c.box[1]]);
+  const span = Math.sqrt(Math.abs((b - a) * (f - e)));
+  return size * Math.max(0.82, Math.min(1.7, 0.72 + span / 420));
 };
 // A country whose divisions are named is not named again over them.
 const divided = new Set();
 if (subdivisions)
   for (const p of [...subdivisions.names].sort(larger))
-    if (nameArea(p, size * 0.82, mix(muted, paper, 0.15), spaced))
+    if (
+      ofFocus(p.of) &&
+      nameArea(p, size * 0.8, mix(muted, ink, 0.1), spaced, 400)
+    )
       divided.add(p.of);
 if (countries)
-  for (const c of [...countries.names].sort(larger))
+  for (const c of [...countries.names].filter((c) => c.box).sort(larger))
     if (!divided.has(c.of))
-      nameArea(c, size * 0.88, mix(muted, paper, 0.1), (n) => spaced(n) * 1.3);
+      nameArea(
+        c,
+        countrySize(c),
+        focus.has(c.of) ? mix(muted, ink, 0.55) : mix(muted, ink, 0.12),
+        (n) => spaced(n) * 1.4,
+        focus.has(c.of) ? 600 : 500,
+      );
 let riverOut = "";
 const riverLabels = [];
 for (const r of rivers) {
   const wpx = riverWidth(r.rank);
   riverOut += `<path d="${r.pts.map((p) => trace(p, false)).join("")}" fill="none" stroke="${riverInk}" stroke-width="${wpx.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
-  const name = zh ? r.zh : r.en;
+  const name = rename(zh ? r.zh : r.en);
   if (riverMode === "named" && name) riverLabels.push({ r, name });
 }
 // Rivers picked out by name (a main stream through its differently named reaches), whole
@@ -724,10 +1159,25 @@ for (const r of rivers) {
 let highlightOut = "";
 const apart = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 for (const h of d.highlights || []) {
+  // By the name the data gives or the one the map shows instead.
   const names = [].concat(h.river ?? []).map(String);
+  const known = (n) => !!n && (names.includes(n) || names.includes(rename(n)));
   const pool = physical.rivers
-    .filter((r) => names.includes(r.zh) || names.includes(r.en))
+    .filter((r) => known(r.zh) || known(r.en))
     .flatMap((r) => r.lines.map((l) => decode(l)));
+  // In a city, the streets' own waterways by the same names, which follow it closely.
+  if (city)
+    pool.push(
+      ...tiles.flatMap((t) =>
+        t.data.waterways
+          .filter((w) => known(w.name))
+          .flatMap((w) =>
+            w.lines.map((l) =>
+              tileLine(t, l).map(([lon, lat]) => [lon + t.dx, lat]),
+            ),
+          ),
+      ),
+    );
   // Reaches joined where they meet, so a stretch can run on across them.
   const chains = [];
   while (pool.length) {
@@ -778,71 +1228,338 @@ for (const h of d.highlights || []) {
     .join("");
   highlightOut += `<path d="${path}" fill="none" stroke="${h.color || mix(cool || "#3d7fb0", ink, 0.15)}" stroke-width="${Number(h.width ?? sw * 2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
 }
-for (const { r, name } of riverLabels
-  .sort((a, b) => a.r.rank - b.r.rank)
-  .slice(0, 24)) {
-  // On the longest stretch in view, along the river's direction there.
-  const longest = r.pts
-    .map(({ pts, dx }) =>
-      pts
-        .map(([lon, lat]) => px([lon + dx, lat]))
-        .filter(([x, y]) => x > 0 && y > 0 && x < W && y < H),
-    )
+// A name along its line: on the longest stretch in view, turned to the line's direction
+// there, and only where it has room and is clear of everything else.
+// Water is named beside its line, a road on it.
+const along = (name, stretches, sz, color, italic, on = false) => {
+  const longest = stretches
+    .map((p) => p.filter(([x, y]) => x > 0 && y > 0 && x < W && y < H))
     .sort((a, b) => b.length - a.length)[0];
-  if (!longest || longest.length < 3) continue;
+  if (!longest || longest.length < 3) return false;
   let len = 0;
   for (let i = 1; i < longest.length; i++)
     len += Math.hypot(
       longest[i][0] - longest[i - 1][0],
       longest[i][1] - longest[i - 1][1],
     );
-  const sz = size * 0.82;
   const w = measure(name, sz);
-  if (len < w * 2.2) continue;
-  const mid = longest[Math.floor(longest.length / 2)],
-    a = longest[Math.max(0, Math.floor(longest.length / 2) - 2)],
-    b =
-      longest[Math.min(longest.length - 1, Math.floor(longest.length / 2) + 2)];
+  if (len < w * 2.2) return false;
+  // The middle point by length, not by count: city data bunches points at the bends.
+  let run = 0,
+    m = 0;
+  while (m < longest.length - 1 && run < len / 2) {
+    run += Math.hypot(
+      longest[m + 1][0] - longest[m][0],
+      longest[m + 1][1] - longest[m][1],
+    );
+    m++;
+  }
+  const mid = longest[m];
+  // The direction over about the name's length, so a kink right at the middle does not
+  // turn it.
+  const reach = (step) => {
+    let i = m,
+      d = 0;
+    while (i + step >= 0 && i + step < longest.length && d < w / 2) {
+      d += Math.hypot(
+        longest[i + step][0] - longest[i][0],
+        longest[i + step][1] - longest[i][1],
+      );
+      i += step;
+    }
+    return longest[i];
+  };
+  const a = reach(-1),
+    b = reach(1);
   let ang = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
   if (ang > 90) ang -= 180;
   if (ang < -90) ang += 180;
-  const box = { x: mid[0] - w / 2, y: mid[1] - sz, w, h: sz * 1.1 };
-  if (hits(box) > 0) continue;
+  const box = {
+    x: mid[0] - w / 2,
+    y: mid[1] - (on ? sz * 0.55 : sz),
+    w,
+    h: sz * 1.1,
+  };
+  if (hits(box) > 0) return false;
   taken.push(box);
-  refOut += `<text transform="translate(${mid[0].toFixed(1)} ${mid[1].toFixed(1)}) rotate(${ang.toFixed(1)})" y="${(-sz * 0.35).toFixed(1)}" text-anchor="middle" font-size="${sz.toFixed(1)}" font-style="italic" fill="${mix(sea, ink, 0.5)}" ${halo}>${esc(name)}</text>`;
+  refOut += `<text transform="translate(${mid[0].toFixed(1)} ${mid[1].toFixed(1)}) rotate(${ang.toFixed(1)})" y="${(on ? sz * 0.35 : -sz * 0.35).toFixed(1)}" text-anchor="middle" font-size="${sz.toFixed(1)}"${italic ? ` font-style="italic"` : ""} fill="${color}" ${halo}>${esc(name)}</text>`;
+  return true;
+};
+for (const { r, name } of riverLabels
+  .sort((a, b) => a.r.rank - b.r.rank)
+  .slice(0, 24))
+  along(
+    name,
+    r.pts.flatMap((c) => pieces(c, false)),
+    size * 0.82,
+    mix(riverInk, ink, 0.35),
+    true,
+  );
+// The city's own ground, each tile kept to its square so the parts of its shapes cut at
+// the edge never show: parks and woods, waterways under the water they run in, roads
+// cased and filled by class (fewer and narrower further out), railways; then the names
+// of waterways and main roads where they fit.
+let cityOut = "";
+if (city) {
+  const tint = [accent2, accent].find((c) => {
+    const h = hue(c);
+    return h >= 70 && h <= 170;
+  });
+  const green = mix(cityLand, tint || "#7da26a", 0.2);
+  const f = 2 ** ((zoom - 14) * 0.7);
+  const roadWidth = {
+    motorway: 7,
+    trunk: 6.5,
+    primary: 6,
+    secondary: 5,
+    tertiary: 4,
+    minor: 2.6,
+  };
+  // Main roads from a regional view, the rest as the view closes in on a town.
+  const roadFrom = {
+    motorway: 7,
+    trunk: 7.5,
+    primary: 9,
+    secondary: 11,
+    tertiary: 12,
+    minor: 13.5,
+  };
+  const waterWidth = { river: 2.6, canal: 1.8, stream: 1.1 };
+  const casing = mix(cityLand, ink, 0.22);
+  const path = (t, lines, close) =>
+    lines.map((l) => trace({ pts: tileLine(t, l), dx: t.dx }, close)).join("");
+  const stroked = (dd, color, width, extra = "") =>
+    dd
+      ? `<path d="${dd}" fill="none" stroke="${color}" stroke-width="${width.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"${extra}/>`
+      : "";
+  tiles.forEach((t, i) => {
+    const corner = (u) => {
+      const [lon, lat] = tileLine(t, [u, u])[0];
+      return px([lon + t.dx, lat]);
+    };
+    const [ax, ay] = corner(0),
+      [bx, by] = corner(t.data.extent);
+    if (bx < 0 || by < 0 || ax > W || ay > H) return;
+    const data = t.data;
+    let g = "";
+    const greenD = path(t, data.green, true);
+    if (greenD) g += `<path d="${greenD}" fill="${green}"/>`;
+    for (const w of data.waterways) {
+      if (w.class === "stream" && zoom < 13) continue;
+      g += stroked(
+        path(t, w.lines, false),
+        mix(sea, ink, 0.12),
+        Math.max(0.7, waterWidth[w.class] * f),
+      );
+    }
+    const waterD = path(t, data.water, true);
+    if (waterD)
+      g += `<path d="${waterD}" fill="${sea}" stroke="${shore}" stroke-width="${(sw * 0.5).toFixed(2)}" stroke-linejoin="round"/>`;
+    const roads = data.roads
+      .filter((r) => zoom >= roadFrom[r.class])
+      .sort((a, b) => roadWidth[a.class] - roadWidth[b.class])
+      .map((r) => ({
+        d: path(t, r.lines, false),
+        w: Math.max(0.8, roadWidth[r.class] * f),
+        major: r.class === "motorway" || r.class === "trunk",
+      }));
+    for (const r of roads)
+      g += stroked(r.d, r.major ? mix(casing, ink, 0.15) : casing, r.w + 1.6);
+    // Railways once the view is down to a few towns.
+    const railD = zoom >= 9 ? path(t, data.rail, false) : "";
+    g += stroked(railD, mix(muted, ink, 0.25), Math.max(0.8, 1.6 * f));
+    g += stroked(
+      railD,
+      paper,
+      Math.max(0.4, 0.8 * f),
+      ` stroke-dasharray="${(5 * Math.max(0.6, f)).toFixed(1)} ${(5 * Math.max(0.6, f)).toFixed(1)}" stroke-linecap="butt"`,
+    );
+    for (const r of roads) g += stroked(r.d, paper, r.w);
+    cityOut += `<clipPath id="geomap-tile-${i}"><rect x="${(ax - 0.3).toFixed(1)}" y="${(ay - 0.3).toFixed(1)}" width="${(bx - ax + 0.6).toFixed(1)}" height="${(by - ay + 0.6).toFixed(1)}"/></clipPath><g clip-path="url(#geomap-tile-${i})">${g}</g>`;
+  });
+  if (riverMode === "named" || d.roadNames !== false) {
+    // Each name once, gathered across the tiles it runs through, larger ways first.
+    const gather = (list, rank) => {
+      const by = new Map();
+      for (const t of tiles)
+        for (const item of t.data[list]) {
+          // As the place writes it, whatever the map's language.
+          const name = rename(item.name);
+          if (!name) continue;
+          const e = by.get(name) ?? { name, rank: rank(item), lines: [] };
+          e.lines.push(
+            ...item.lines.map((l) =>
+              tileLine(t, l).map(([lon, lat]) => px([lon + t.dx, lat])),
+            ),
+          );
+          by.set(name, e);
+        }
+      return [...by.values()].sort((a, b) => a.rank - b.rank);
+    };
+    // Stretches cut at tile edges are joined where they meet again.
+    const join = (lines) => {
+      const pool = lines.filter((l) => l.length > 1).map((l) => l.slice());
+      const out = [];
+      const near = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1.5;
+      while (pool.length) {
+        let c = pool.shift(),
+          grown = true;
+        while (grown) {
+          grown = false;
+          for (let i = 0; i < pool.length; i++) {
+            const p = pool[i];
+            if (near(c[c.length - 1], p[0])) c = c.concat(p.slice(1));
+            else if (near(c[c.length - 1], p[p.length - 1]))
+              c = c.concat(p.slice(0, -1).reverse());
+            else if (near(c[0], p[p.length - 1])) c = p.slice(0, -1).concat(c);
+            else if (near(c[0], p[0])) c = p.slice(1).reverse().concat(c);
+            else continue;
+            pool.splice(i, 1);
+            grown = true;
+            break;
+          }
+        }
+        out.push(c);
+      }
+      return out;
+    };
+    if (riverMode === "named")
+      for (const e of gather("waterways", (w) =>
+        w.class === "river" ? 0 : w.class === "canal" ? 1 : 2,
+      ).slice(0, 16))
+        along(
+          e.name,
+          join(e.lines),
+          size * 0.8,
+          mix(riverInk, ink, 0.35),
+          true,
+        );
+    if (d.roadNames !== false) {
+      const order = ["motorway", "trunk", "primary", "secondary", "tertiary"];
+      for (const e of gather("names", (r) => order.indexOf(r.class))
+        .filter((e) => zoom >= roadFrom[order[e.rank]] + 1)
+        .slice(0, 30))
+        along(
+          e.name,
+          join(e.lines),
+          size * 0.72,
+          mix(muted, ink, 0.45),
+          false,
+          true,
+        );
+    }
+  }
 }
 
 // Borders as the data's point of view classes them: settled, disputed or provisional
 // (lines of control, undefined frontiers), lease and overlay limits, and maritime lines.
+// A country border is a pale band under a fine line, as atlases draw it, so it reads
+// apart from rivers and division lines without being heavier than them; division lines
+// are fine and light, and only inside the countries the map is about.
 let borderOut = "";
-const stroke = (lines, color, width, dash) => {
-  const d = visible(lines)
+// Lines thin out on a view of the whole world or a continent, where they are many and short.
+const fine = Math.max(0.5, Math.min(1, (zoom - 0.8) / 3));
+// Lines given encoded, or already as points.
+const stroke = (lines, color, width, dash, extra = "") => {
+  const d = lines
+    .map((l) => (typeof l[0] === "number" ? decode(l) : l))
+    .flatMap(copies)
     .map((p) => trace(p, false))
     .join("");
   return d
-    ? `<path d="${d}" fill="none" stroke="${color}" stroke-width="${width}" stroke-dasharray="${dash}" stroke-linecap="round"/>`
+    ? `<path d="${d}" fill="none" stroke="${color}" stroke-width="${width}"${dash ? ` stroke-dasharray="${dash}"` : ""} stroke-linecap="round" stroke-linejoin="round"${extra}/>`
     : "";
 };
-if (subdivisions)
+if (subdivisions) {
+  let lines = subdivisions.lines.map((l) => decode(l));
+  if (focus.size) {
+    const own = countries.names
+      .filter((c) => focus.has(c.of) && c.box)
+      .map((c) => ({
+        box: c.box,
+        rings: (c.area ?? []).map((l) => decode(l)),
+      }));
+    lines = lines.filter((pts) => {
+      const [lon, lat] = pts[Math.floor(pts.length / 2)];
+      return own.some(
+        ({ box, rings }) =>
+          lon >= box[0] &&
+          lon <= box[2] &&
+          lat >= box[1] &&
+          lat <= box[3] &&
+          within(lon, lat, rings),
+      );
+    });
+  }
   borderOut += stroke(
-    subdivisions.lines,
-    d.borderColor || mix(muted, paper, 0.1),
-    sw * 0.55,
-    `${sw * 2.2} ${sw * 1.4}`,
+    lines,
+    d.borderColor ? mix(d.borderColor, paper, 0.35) : mix(muted, paper, 0.2),
+    sw * 0.5,
+    `${sw * 1.8} ${sw * 1.3}`,
   );
+}
 if (countries) {
-  const line = d.borderColor || mix(muted, ink, 0.2),
+  const line = d.borderColor || mix(muted, ink, 0.45),
     l = countries.lines;
   borderOut += stroke(
-    l.international,
-    line,
-    sw * 0.75,
-    `${sw * 4} ${sw * 1.6} ${sw} ${sw * 1.6}`,
+    [...l.international, ...l.disputed],
+    mix(land, d.borderColor || muted, 0.32),
+    sw * 3.4 * fine,
+    "",
+    ` stroke-opacity=".7"`,
   );
-  borderOut += stroke(l.disputed, line, sw * 0.6, `${sw * 1.6} ${sw * 1.6}`);
-  borderOut += stroke(l.limit, line, sw * 0.6, `0.1 ${sw * 2}`);
-  borderOut += stroke(l.maritime, line, sw * 0.75, `${sw * 5} ${sw * 3}`);
+  borderOut += stroke(l.international, line, sw * 0.6 * fine, "");
+  borderOut += stroke(
+    l.disputed,
+    line,
+    sw * 0.6 * fine,
+    `${sw * 2 * fine} ${sw * 1.5 * fine}`,
+  );
+  borderOut += stroke(l.limit, line, sw * 0.55, `0.1 ${sw * 2}`);
+  borderOut += stroke(
+    l.maritime,
+    d.borderColor || mix(sea, ink, 0.3),
+    sw * 0.55,
+    `${sw * 3} ${sw * 2}`,
+  );
 }
+
+// A world view is the earth's outline on the paper, with a graticule every 30° on the sea.
+const globeOut = { sea: "", rim: "" };
+if (world) {
+  const line = (pts) =>
+    pts
+      .map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1))
+      .join("");
+  const rim = [];
+  for (let lat = -90; lat <= 90; lat += 2) rim.push(px([lon0 - 180, lat]));
+  for (let lat = 90; lat >= -90; lat -= 2) rim.push(px([lon0 + 180, lat]));
+  const outline = line(rim) + "Z";
+  let grid = "";
+  for (
+    let lon = Math.ceil((lon0 - 179) / 30) * 30;
+    lon < lon0 + 180;
+    lon += 30
+  ) {
+    const pts = [];
+    for (let lat = -90; lat <= 90; lat += 3) pts.push(px([lon, lat]));
+    grid += line(pts);
+  }
+  for (let lat = -60; lat <= 60; lat += 30) {
+    const pts = [];
+    for (let lon = lon0 - 180; lon <= lon0 + 180; lon += 3)
+      pts.push(px([lon, lat]));
+    grid += line(pts);
+  }
+  globeOut.sea = `<path d="${outline}" fill="${sea}"/><path d="${grid}" fill="none" stroke="${mix(sea, ink, 0.1)}" stroke-width=".6"/>`;
+  globeOut.rim = `<path d="${outline}" fill="none" stroke="${mix(sea, ink, 0.35)}" stroke-width="1"/>`;
+}
+// Coasts lined on the water side: a soft band of deeper water under the land's edge.
+const lining = mix(sea, cool || "#6f9fbf", 0.45);
+const coastLining = (dd) =>
+  dd
+    ? `<path d="${dd}" fill="none" stroke="${lining}" stroke-width="${(sw * 7 * fine * fine).toFixed(1)}" stroke-opacity=".18" stroke-linejoin="round"/><path d="${dd}" fill="none" stroke="${lining}" stroke-width="${(sw * 3 * fine).toFixed(1)}" stroke-opacity=".28" stroke-linejoin="round"/>`
+    : "";
 
 const texture = d.effect ? ` filter="${api.effect(d.effect)}"` : "";
 const fade = d.edge === "fade";
@@ -850,19 +1567,22 @@ const svg =
   api.svg(`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="${esc(font)}" style="display:block">
   <defs><clipPath id="geomap-view"><rect width="${W}" height="${H}"/></clipPath></defs>
   <g clip-path="url(#geomap-view)">
-    <rect width="${W}" height="${H}" fill="${sea}"/>
-    ${
-      shorePath === undefined
-        ? `<path d="${landPath}" fill="${land}" fill-rule="evenodd" stroke="${shore}" stroke-width="${sw * 0.6}" stroke-linejoin="round"${texture}/>
+    ${world ? globeOut.sea : `<rect width="${W}" height="${H}" fill="${city ? cityLand : sea}"/>`}
+    ${city ? reliefOut : ""}${cityOut ? `<g${texture}>${cityOut}</g>` : ""}${
+      city
+        ? ""
+        : shorePath === undefined
+          ? `${coastLining(landPath)}<path d="${landPath}" fill="${land}" fill-rule="evenodd" stroke="${shore}" stroke-width="${sw * 0.6}" stroke-linejoin="round"${texture}/>
     <path d="${lakePath}" fill="${sea}" stroke="${shore}" stroke-width="${sw * 0.4}"/>`
-        : // Tile seams closed in the fills' own colours, under the real shore line.
-          `<path d="${landPath}" fill="${land}" fill-rule="evenodd" stroke="${land}" stroke-width=".8"${texture}/>
+          : // Tile seams closed in the fills' own colours, under the real shore line.
+            `${coastLining(shorePath)}<path d="${landPath}" fill="${land}" fill-rule="evenodd" stroke="${land}" stroke-width=".8"${texture}/>
     <path d="${lakePath}" fill="${sea}" stroke="${sea}" stroke-width=".8"/>
     <path d="${shorePath}" fill="none" stroke="${shore}" stroke-width="${sw * 0.6}" stroke-linejoin="round"/>`
     }
-    ${borderOut}${riverOut}${highlightOut}${areaOut}${routeOut}${markOut}${refOut}${labelOut}${scaleOut}
+    ${city ? "" : reliefOut}${borderOut}${riverOut}${highlightOut}${areaOut}${routeOut}${markOut}${refOut}${labelOut}${scaleOut}${creditOut}
+    ${world ? globeOut.rim : ""}
   </g>
-  ${fade ? "" : `<rect x=".5" y=".5" width="${W - 1}" height="${H - 1}" fill="none" stroke="${mix(ink, paper, 0.35)}" stroke-width="1"/>`}
+  ${fade || world ? "" : `<rect x=".5" y=".5" width="${W - 1}" height="${H - 1}" fill="none" stroke="${mix(ink, paper, 0.35)}" stroke-width="1"/>`}
 </svg>`);
 if (fade) {
   const edge = (to) =>

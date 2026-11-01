@@ -369,7 +369,7 @@ export function createApp(storage: Storage) {
   );
   // Pictures and geographic data are served by the library, as the signed-in user when
   // there is one.
-  app.get("/materials/:route{files|thumbs|geo}/:id", async (c) => {
+  app.get("/materials/:route{files|thumbs|geo}/*", async (c) => {
     const user = userOf(getCookie(c, "drawy_session"));
     const tag = c.req.header("if-none-match");
     const r = await fetch(

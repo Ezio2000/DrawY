@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { z } from "zod";
 import { Library, LibraryError } from "./library.ts";
+import { Streets, StreetsError } from "./streets.ts";
 import {
   describeSchema,
   kindSchema,
@@ -11,7 +12,10 @@ import {
 
 /** The library over HTTP. Callers name the user they act for in `x-drawy-user`; requests
  * without one see only public materials. */
-export function createServer(library: Library) {
+export function createServer(
+  library: Library,
+  streets = new Streets(library.streetsDir),
+) {
   const app = new Hono();
   const user = (c: { req: { header: (k: string) => string | undefined } }) =>
     c.req.header("x-drawy-user") || undefined;
@@ -23,7 +27,7 @@ export function createServer(library: Library) {
   app.onError((e, c) =>
     c.json(
       { error: e.message },
-      e instanceof LibraryError
+      e instanceof LibraryError || e instanceof StreetsError
         ? e.status
         : e instanceof z.ZodError
           ? 400
@@ -114,6 +118,20 @@ export function createServer(library: Library) {
           : "private, max-age=3600",
     });
   });
+  // City-scale ground from OpenStreetMap, one web-map tile at a time.
+  app.get("/geo/streets/:z/:x/:y", async (c) => {
+    const [z, x, y] = ["z", "x", "y"].map((k) => Number(c.req.param(k)));
+    return c.body(new Uint8Array(await streets.tile(z, x, y)), 200, {
+      "Content-Type": "application/json",
+      "Cache-Control": "public, max-age=604800",
+    });
+  });
+  app.get("/geo/relief/:tile", (c) =>
+    c.body(new Uint8Array(library.relief(c.req.param("tile"))), 200, {
+      "Content-Type": "image/webp",
+      "Cache-Control": "public, max-age=86400",
+    }),
+  );
   app.get("/geo/:layer", (c) => {
     const { bytes, etag } = library.geo(c.req.param("layer"));
     const headers = {

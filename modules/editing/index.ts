@@ -403,14 +403,16 @@ function compiles(source: string) {
     return false;
   }
 }
-/** A data value with one string in it replaced: the whole string, or one of its lines. */
+/** A data value with one string in it replaced: the whole string, or one of its lines.
+ * `named` when it was the whole of an entry's name, which other entries may refer to it by. */
 function replaceIn(
   value: unknown,
   from: string,
   to: string,
-): { value: unknown; done: boolean } {
+  key?: string,
+): { value: unknown; done: boolean; named?: boolean } {
   if (typeof value === "string") {
-    if (value === from) return { value: to, done: true };
+    if (value === from) return { value: to, done: true, named: key === "name" };
     const lines = value.split("\n");
     const i = lines.indexOf(from);
     if (i >= 0 && lines.length > 1) {
@@ -422,17 +424,27 @@ function replaceIn(
   if (Array.isArray(value)) {
     for (let i = 0; i < value.length; i++) {
       const r = replaceIn(value[i], from, to);
-      if (r.done) return { value: value.with(i, r.value), done: true };
+      if (r.done) return { ...r, value: value.with(i, r.value) };
     }
     return { value, done: false };
   }
   if (value && typeof value === "object") {
     for (const [k, v] of Object.entries(value)) {
-      const r = replaceIn(v, from, to);
-      if (r.done) return { value: { ...value, [k]: r.value }, done: true };
+      const r = replaceIn(v, from, to, k);
+      if (r.done) return { ...r, value: { ...value, [k]: r.value } };
     }
   }
   return { value, done: false };
+}
+/** Every string in a data value that is exactly `from`, as `to`. */
+function replaceAll(value: unknown, from: string, to: string): unknown {
+  if (value === from) return to;
+  if (Array.isArray(value)) return value.map((v) => replaceAll(v, from, to));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, replaceAll(v, from, to)]),
+    );
+  return value;
 }
 
 /** Changes words or a picture a person pointed at in a module to what they chose. The
@@ -456,7 +468,12 @@ export function replace(
     kind === "picture" ? { materials: [to] } : {};
   // A label that is the words themselves follows them.
   const label = kind === "text" && module.label === from ? to : module.label;
-  const inData = replaceIn(module.data, from, to);
+  const first = replaceIn(module.data, from, to);
+  // A renamed entry (a place on a map) takes the references to it along: routes and
+  // areas that list it by name would otherwise lose it.
+  const inData = first.named
+    ? { ...first, value: replaceAll(first.value, from, to) }
+    : first;
   if (inData.done)
     return edit(
       work,

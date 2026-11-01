@@ -67,6 +67,8 @@ const patterns: [RegExp, (...m: string[]) => string][] = [
   ],
   [/^素材不存在: (.*)$/, (id) => "Material not found: " + id],
   [/^没有这份地理数据: (.*)$/, (layer) => "No geographic data named " + layer],
+  [/^没有这块街道数据: (.*)$/, (tile) => "No street tile " + tile],
+  [/^街道数据读取失败: ([\s\S]*)$/, (d) => "Street data could not be read: " + d],
   [/^(\S+) 不是图片素材$/, (id) => `${id} is not a picture`],
   [/^未知风格 (\S+)，可用：(.*)$/, (id, all) => `Unknown style ${id}; available: ${all}`],
   [/^已达到本轮 (\d+) 次生成上限$/, (n) => `Reached this run's limit of ${n} generations`],

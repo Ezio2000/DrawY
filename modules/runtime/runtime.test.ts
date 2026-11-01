@@ -9,6 +9,7 @@ import { capture } from "../observation/capture.ts";
 import { fit, zoom } from "../contracts/geometry.ts";
 import { useOf } from "../materials/index.ts";
 import type { DrawingMaterial, Material } from "@drawy/materials/schema";
+import { boil } from "../../materials/streets.ts";
 
 /** Curated materials as the library serves them. */
 const seed = (name: string) =>
@@ -34,6 +35,8 @@ const held: (() => void)[] = [];
 const develop = () => held.splice(0).forEach((send) => send());
 
 let browser: Browser, page: Page, server: Server, origin: string;
+/** Street tiles answered with an error, or the connection dropped as when offline. */
+let streetsDown: false | "error" | "offline" = false;
 let work = fixture();
 beforeAll(async () => {
   const bundle = await readFile("dist/runtime/runtime.js");
@@ -66,6 +69,42 @@ beforeAll(async () => {
       };
       if (id === "g-late") held.push(send);
       else send();
+    } else if (url.pathname.startsWith("/materials/geo/streets/")) {
+      // One real tile of central Guangzhou; every other tile empty, or all unreachable.
+      const [z, x, y] = url.pathname.split("/").slice(-3).map(Number);
+      if (streetsDown === "offline") return req.socket.destroy();
+      if (streetsDown) {
+        res.statusCode = 502;
+        return res.end("{}");
+      }
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify(
+          boil(
+            z === 14 && x === 13347 && y === 7110
+              ? readFileSync(
+                  new URL(
+                    "../../materials/fixtures/streets-14-13347-7110.pbf",
+                    import.meta.url,
+                  ),
+                )
+              : new Uint8Array(),
+            z,
+            x,
+            y,
+          ),
+        ),
+      );
+    } else if (url.pathname.startsWith("/materials/geo/relief/")) {
+      res.setHeader("content-type", "image/webp");
+      res.end(
+        readFileSync(
+          new URL(
+            `../../materials/seed/geo/relief/${url.pathname.split("/").at(-1)}.webp`,
+            import.meta.url,
+          ),
+        ),
+      );
     } else if (url.pathname.startsWith("/materials/geo/")) {
       res.setHeader("content-type", "application/json");
       res.end(
@@ -851,8 +890,9 @@ it("maps across the 180th meridian in one piece and names what the view shows", 
           },
         ],
       }),
-      // A coast seen close, drawn from the finer tiles.
-      map("coast", 1400, { bounds: [-1.6, 49.1, 0.1, 49.8] }),
+      // A coast seen close, drawn from the finer tiles (closer still, a region's view, the
+      // ground comes from OpenStreetMap's tiles instead).
+      map("coast", 1400, { bounds: [-8, 46, 4, 52] }),
     ],
     links: [],
   };
@@ -898,4 +938,178 @@ it("maps across the 180th meridian in one piece and names what the view shows", 
   expect(seen.stretch).toBeGreaterThan(140);
   expect(seen.stretch).toBeLessThan(240);
   expect(seen.shore).toBeGreaterThan(1000);
+});
+
+it("draws a city's real streets under a walk through it, and says so when they cannot load", async () => {
+  const drawings = seed("drawings") as DrawingMaterial[];
+  const geomap = drawings.find((m) => m.id === "geomap")!;
+  work.materials = {
+    geomap: useOf({
+      ...geomap,
+      source: readFileSync(
+        new URL("../../materials/seed/drawings/geomap.js", import.meta.url),
+        "utf8",
+      ),
+    } as Material)!,
+  };
+  // A walk of a few kilometres with no bounds given: the view fits the stops, not a
+  // region around them.
+  const walk = {
+    places: [
+      { name: "北京路", lon: 113.2695, lat: 23.1232 },
+      { name: "海珠桥", lon: 113.2727, lat: 23.1145 },
+      { name: "二沙岛", lon: 113.2985, lat: 23.1122 },
+    ],
+    routes: [{ points: ["北京路", "海珠桥", "二沙岛"], color: "#123456" }],
+    // A name the data gives, shown in another language, and picked out by that name.
+    names: { 珠江: "Pearl River" },
+    highlights: [{ river: "Pearl River", color: "#abcdef" }],
+  };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      {
+        id: "walk",
+        label: "walk",
+        drawingId: "geomap",
+        data: walk,
+        bounds: { x: 0, y: 0, width: 960, height: 600 },
+        anchors: {},
+        group: null,
+        target: null,
+      },
+    ],
+    links: [],
+  };
+  const look = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(
+        '[data-module-id="walk"]',
+      )!.shadowRoot!;
+      return {
+        errors: window.drawyErrors,
+        text: [...root.querySelectorAll("text")].map((t) => t.textContent),
+        tiles: root.querySelectorAll('clipPath[id^="geomap-tile-"]').length,
+        highlight: root.querySelectorAll('path[stroke="#abcdef"]').length,
+        scale: [...root.querySelectorAll("text")]
+          .map((t) => t.textContent!)
+          .find((t) => / km$/.test(t)),
+      };
+    });
+  await open();
+  const city = await look();
+  expect(city.errors).toEqual([]);
+  expect(city.tiles).toBeGreaterThan(1);
+  // The Pearl River under the name given for it, the roads the tile names, and the
+  // data's credit; the river picked out by its new name.
+  expect(city.text).toEqual(
+    expect.arrayContaining(["Pearl River", "© OpenStreetMap"]),
+  );
+  expect(city.text).not.toContain("珠江");
+  expect(city.highlight).toBe(1);
+  expect(city.text.length).toBeGreaterThan(6);
+  expect(parseFloat(city.scale!)).toBeLessThanOrEqual(2);
+
+  try {
+    for (const down of ["error", "offline"] as const) {
+      streetsDown = down;
+      await page.reload();
+      await page.waitForFunction(() => window.drawyReady);
+      const blank = await look();
+      expect(blank.errors).toEqual([]);
+      expect(blank.tiles).toBe(0);
+      expect(blank.text).toContain("街道底图暂时读取失败");
+    }
+    // Back online, the same page draws the streets the next time the map is drawn.
+    streetsDown = false;
+    await page.evaluate(() => {
+      const work = structuredClone(window.drawyData.work),
+        scene = work.scenes.root;
+      scene.modules[0].data = { ...scene.modules[0].data, size: 15 };
+      window.drawyView.update(work, scene);
+    });
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-module-id="walk"]')
+          ?.shadowRoot?.querySelectorAll('clipPath[id^="geomap-tile-"]').length,
+      null,
+      { timeout: 2500 },
+    );
+  } finally {
+    streetsDown = false;
+  }
+});
+
+it("draws the world in a rounded projection and a country in relief, naming what the map is about", async () => {
+  const drawings = seed("drawings") as DrawingMaterial[];
+  const geomap = drawings.find((m) => m.id === "geomap")!;
+  work.materials = {
+    geomap: useOf({
+      ...geomap,
+      source: readFileSync(
+        new URL("../../materials/seed/drawings/geomap.js", import.meta.url),
+        "utf8",
+      ),
+    } as Material)!,
+  };
+  const map = (id: string, y: number, data: Record<string, unknown>) => ({
+    id,
+    label: id,
+    drawingId: "geomap",
+    data,
+    bounds: { x: 0, y, width: 960, height: 600 },
+    anchors: {},
+    group: null,
+    target: null,
+  });
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      map("world", 0, {
+        borders: "countries",
+        bounds: [-180, -60, 180, 85],
+        names: { 巴西: "Brasil" },
+      }),
+      map("china", 700, { borders: "subdivisions", bounds: [73, 17, 135, 54] }),
+    ],
+    links: [],
+  };
+  await open();
+  const seen = await page.evaluate(() => {
+    const root = (id: string) =>
+      document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!;
+    const text = (id: string) =>
+      [...root(id).querySelectorAll("text")].map((t) => t.textContent!);
+    // The earth's rim: where it meets the top and bottom of the view, how far in.
+    const rim = root("world").querySelector<SVGPathElement>("path")!;
+    const box = rim.getBBox();
+    const top = rim
+      .getAttribute("d")!
+      .match(/[\d.]+ [\d.]+/g)!
+      .map((p) => p.split(" ").map(Number))
+      .filter(([, y]) => y < box.y + 2);
+    return {
+      errors: window.drawyErrors,
+      world: text("world"),
+      china: text("china"),
+      corner: Math.min(...top.map(([x]) => x)) - box.x,
+      relief: root("china").querySelectorAll("image").length,
+      reliefTiles: performance
+        .getEntriesByType("resource")
+        .filter((e) => /\/materials\/geo\/relief\//.test(e.name)).length,
+    };
+  });
+  expect(seen.errors).toEqual([]);
+  // Rounded at its sides: the rim is well in from the corners at the top.
+  expect(seen.corner).toBeGreaterThan(100);
+  // Each country once, and no unit too small to be outlined.
+  expect(seen.world.filter((t) => t === "澳大利亚")).toHaveLength(1);
+  expect(seen.world).not.toContain("黄岩岛");
+  expect(seen.world).toEqual(expect.arrayContaining(["俄罗斯", "Brasil"]));
+  // China's provinces are named, its neighbours as countries, not by their provinces.
+  expect(seen.china).toEqual(expect.arrayContaining(["四川省", "蒙古"]));
+  expect(seen.china).not.toContain("科布多省");
+  expect(seen.relief).toBe(1);
+  expect(seen.reliefTiles).toBeGreaterThan(0);
 });
