@@ -146,8 +146,6 @@ const deepseek: Role = {
   model: "deepseek-flash",
   effort: "high",
   efforts: ["low", "high", "max"],
-  builtinSearch: false,
-  search: "service",
   maxOutput: 8192,
 };
 const chunks = (list: object[]) =>

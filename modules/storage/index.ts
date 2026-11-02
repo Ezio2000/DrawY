@@ -6,8 +6,10 @@ import {
   ADMIN,
   MEMBER,
   defaultCatalog,
-  normalizeCatalog,
+  emptySettings,
+  modelCatalogSchema,
   settingsFor,
+  userSettingsSchema,
   permissions,
   DomainError,
   type Account,
@@ -45,7 +47,7 @@ export class Storage {
     if (!columns.some((c) => c.name === "cause")) this.recordCauses();
     this.recordRoles();
     if (!this.db.prepare("SELECT 1 FROM system WHERE key='models'").get())
-      this.saveModels(this.firstCatalog());
+      this.saveModels(defaultCatalog());
   }
   /** Gives the app its two built-in roles and every account one: accounts made before
    * roles existed are members, except the first, who set the app up and administers it. */
@@ -75,32 +77,14 @@ export class Storage {
         "UPDATE users SET role=? WHERE rowid=(SELECT MIN(rowid) FROM users)",
       ).run(ADMIN);
   }
-  /** The models the app starts with: those the first administrator had connected for
-   * themselves, from when each account connected its own. */
-  private firstCatalog(): ModelCatalog {
-    const catalog = defaultCatalog();
-    const row = this.db
-      .prepare(
-        "SELECT settings.data FROM settings JOIN users ON users.id=settings.user_id WHERE users.role=? ORDER BY users.rowid LIMIT 1",
-      )
-      .get(ADMIN) as { data: string } | undefined;
-    const old = row && JSON.parse(row.data);
-    if (!old?.author) return catalog;
-    // Settings saved before speeds had a Fast switch instead.
-    const { fast, ...author } = old.author;
-    if (!author.speed) author.speed = fast ? "fast" : "default";
-    return normalizeCatalog({
-      models: [{ ...catalog.models[0], ...author, name: author.model }],
-      default: catalog.default,
-      image: old.image ?? catalog.images[0],
-    });
-  }
+  /** The shared model catalog; one that no longer reads (saved by an older version)
+   * gives way to the starting one. */
   models(): ModelCatalog {
     const row = this.db
       .prepare("SELECT data FROM system WHERE key='models'")
       .get() as { data: string };
-    // Catalogs saved before pictures and search were set apart read as they were.
-    return normalizeCatalog(JSON.parse(row.data));
+    const read = modelCatalogSchema.safeParse(JSON.parse(row.data));
+    return read.success ? read.data : defaultCatalog();
   }
   saveModels(catalog: ModelCatalog) {
     this.db
@@ -404,20 +388,14 @@ export class UserStore {
   get viewer() {
     return { id: this.userId, all: this.can("materials.all") };
   }
-  /** The user's own preferences and model pick. Settings saved before models were managed
-   * for everyone held a whole connection; only the preferences carry over. */
+  /** The user's own preferences and picks; a pick saved in another shape is let go. */
   ownSettings(): UserSettings {
     const r = this.storage.db
       .prepare("SELECT data FROM settings WHERE user_id=?")
       .get(this.userId);
     const value = r ? JSON.parse(r.data as string) : {};
-    return {
-      preferences: value.preferences ?? "",
-      model: value.model ?? null,
-      image: value.image ?? null,
-      searchService: value.searchService ?? null,
-      searchModes: value.searchModes ?? {},
-    };
+    const own = userSettingsSchema.partial().safeParse(value);
+    return { ...emptySettings(), ...(own.success ? own.data : {}) };
   }
   saveOwnSettings(value: UserSettings) {
     this.storage.db
@@ -426,9 +404,9 @@ export class UserStore {
       )
       .run(this.userId, JSON.stringify(value));
   }
-  /** What a run draws, searches and paints with: the drawing model, picture model and
-   * search service the user picked, or the defaults when they have not or one was taken
-   * away; the way they want that model to search, if it can; and their preferences. */
+  /** What a run draws, searches and paints with: the drawing model, effort, speed, search
+   * and picture model the user picked, or the defaults when they have not or one was taken
+   * away, and their preferences. */
   settings(): Settings {
     return settingsFor(this.storage.models(), this.ownSettings());
   }
@@ -463,6 +441,13 @@ export class UserStore {
       "SELECT data FROM runs WHERE user_id=? AND id=?",
       runId,
     );
+  }
+  /** A run, if this user has one by that id. */
+  runOrUndefined(runId: string): Run | undefined {
+    const r = this.storage.db
+      .prepare("SELECT data FROM runs WHERE user_id=? AND id=?")
+      .get(this.userId, runId) as { data: string } | undefined;
+    return r && (JSON.parse(r.data) as Run);
   }
   runs(workId: string): Run[] {
     this.work(workId);

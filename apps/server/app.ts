@@ -20,6 +20,7 @@ import {
   type Account,
   type Work,
   menuFor,
+  costOf,
   type Permission,
 } from "../../modules/contracts/index.ts";
 import {
@@ -41,7 +42,7 @@ import {
 import { MaterialsError, viewerHeaders } from "@drawy/materials/client";
 import { kindSchema, shelfSchema } from "@drawy/materials/schema";
 import { Agent } from "../../modules/agent/index.ts";
-import { tracer } from "../../modules/trace/index.ts";
+import { tracer, type TraceSummary } from "../../modules/trace/index.ts";
 import { picture } from "../../modules/observation/index.ts";
 import { localize, requestLocale } from "../../modules/contracts/messages.ts";
 type Env = {
@@ -151,18 +152,12 @@ export function createApp(storage: Storage) {
   // Any setting alone may change: the picker saves only what it picked.
   app.put("/api/settings", async (c) => {
     const store = c.get("store"),
-      own = store.ownSettings(),
       change = userSettingsSchema.partial().parse(await c.req.json());
-    // How one model searches is saved beside how the others do.
-    store.saveOwnSettings({
-      ...own,
-      ...change,
-      searchModes: { ...own.searchModes, ...change.searchModes },
-    });
+    store.saveOwnSettings({ ...store.ownSettings(), ...change });
     return c.json({ ok: true });
   });
   // The drawing models, picture models and search services anyone may pick, by name and
-  // what they can do only: connections stay with those who manage them.
+  // the options they offer only: connections and prices stay with those who manage them.
   app.get("/api/models", (c) =>
     c.json(menuFor(storage.models(), c.get("store").ownSettings())),
   );
@@ -528,8 +523,17 @@ export function createApp(storage: Storage) {
       ),
     );
   });
+  // Each trace is its run's, so it carries what the run cost.
+  const costed = (store: UserStore, trace: TraceSummary) => {
+    const run = store.runOrUndefined(trace.id);
+    return { ...trace, cost: run && costOf(run.usage, run.prices), services: run?.services };
+  };
   app.get("/api/traces", (c) =>
-    c.json(tracer.list(c.get("user").id, Number(c.req.query("limit") || 60))),
+    c.json(
+      tracer
+        .list(c.get("user").id, Number(c.req.query("limit") || 60))
+        .map((t) => costed(c.get("store"), t)),
+    ),
   );
   app.get("/api/traces/files/:name", (c) => {
     const file = tracer.file(c.req.param("name"));
@@ -542,7 +546,7 @@ export function createApp(storage: Storage) {
   app.get("/api/traces/:id", (c) => {
     const trace = tracer.get(c.get("user").id, c.req.param("id"));
     if (!trace) throw new DomainError("没有这次运行的记录", 404);
-    return c.json(trace);
+    return c.json({ ...trace, trace: costed(c.get("store"), trace.trace) });
   });
   app.get("/api/events", (c) =>
     streamSSE(c, async (stream) => {

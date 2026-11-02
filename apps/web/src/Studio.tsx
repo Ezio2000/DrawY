@@ -1,15 +1,12 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   BookOpen,
   ChevronRight,
   Compass,
   Eye,
-  FilePlus2,
   Globe,
-  Hand,
   Lightbulb,
   PenTool,
-  RotateCcw,
   Search,
   Sparkles,
   SquareArrowOutUpRight,
@@ -19,16 +16,17 @@ import {
 import { Questions } from "./Questions.tsx";
 import { Markdown, plain, sourcesOf } from "./Markdown.tsx";
 import { cx } from "./cx.ts";
-import { ago, span } from "./time.ts";
+import { span } from "./time.ts";
 import { useT, type Words } from "./i18n.tsx";
 import { useLocale } from "@drawy/ui";
 import { localize } from "../../../modules/contracts/messages.ts";
-import type {
-  Run,
-  Step,
-  Work,
-  Picture,
-  RevisionSummary,
+import { money } from "./money.ts";
+import {
+  costOf,
+  type Run,
+  type Step,
+  type Work,
+  type Picture,
 } from "../../../modules/contracts/index.ts";
 type ToolStep = Extract<Step, { kind: "tool" }>;
 type Tool<N extends ToolStep["name"]> = Extract<ToolStep, { name: N }>;
@@ -314,53 +312,12 @@ function Elapsed() {
   return s >= 8 ? <small className={cx("now-time")}>{t.now.seconds(s)}</small> : null;
 }
 
-/** What the studio needs to show revisions where they were made and bring them back. */
-interface Revisions {
-  current: number;
-  previewing?: number;
-  /** Whether the work can be changed now; while the author works it cannot. */
-  locked: boolean;
-  look: (revision: number) => void;
-  restore: (revision: number) => void;
-}
-const RevisionContext = createContext<Revisions>({
-  current: 0,
-  locked: true,
-  look: () => {},
-  restore: () => {},
-});
-/** A revision where it was made: which it is, and looking at it or bringing it back. */
+/** A revision where it was made, by its number; the drafts panel looks at and restores it. */
 function Revision({ revision, label }: { revision: number; label?: string }) {
   const t = useT();
-  const r = useContext(RevisionContext);
-  const now = revision === r.current;
   return (
-    <span
-      className={cx("revision")}
-      data-current={now || undefined}
-      data-previewing={revision === r.previewing || undefined}
-    >
-      <button
-        className={cx("revision-look")}
-        data-tip={now ? undefined : t.history.look}
-        disabled={now && r.previewing === undefined}
-        onClick={() => r.look(revision)}
-      >
-        {label ?? t.history.revision(revision)}
-      </button>
-      {now ? (
-        <b>{t.history.current}</b>
-      ) : (
-        <button
-          className={cx("revision-restore")}
-          aria-label={t.history.restore}
-          data-tip={t.history.restore}
-          disabled={r.locked}
-          onClick={() => r.restore(revision)}
-        >
-          <RotateCcw size={12} />
-        </button>
-      )}
+    <span className={cx("revision")}>
+      {label ?? t.history.revision(revision)}
     </span>
   );
 }
@@ -725,66 +682,45 @@ function Draft({ step }: { step: Tool<"write_work"> }) {
 }
 
 /** What a run spent on each service: the drawing model's tokens, the searches and pages
- * read, and the pictures painted. Runs saved before these were counted are counted from
- * their steps. */
+ * read, and the pictures painted. */
 export function spentBy(run: Run) {
   const u = run.usage;
-  const looked = run.steps.filter(
-    (s): s is Tool<"web_search"> => s.kind === "tool" && s.name === "web_search",
-  );
-  const read = (s: Tool<"web_search">) => s.action === "open_page" || s.action === "find_in_page";
   return {
     input: u?.input ?? 0,
     cached: u?.cached ?? 0,
+    cacheWrite: u?.cacheWrite ?? 0,
     output: u?.output ?? 0,
     reasoning: u?.reasoning ?? 0,
-    searches: u?.searches ?? looked.filter((s) => !read(s)).length,
-    pages: u?.pages ?? looked.filter(read).length,
-    images:
-      u?.images?.count ??
-      run.steps.reduce(
-        (n, s) =>
-          n +
-          (s.kind === "tool" && s.name === "generate_images"
-            ? s.images.filter((i) => i.status === "ready").length
-            : 0),
-        0,
-      ),
+    searches: u?.searches ?? 0,
+    pages: u?.pages ?? 0,
+    images: u?.images?.count ?? 0,
     imageTokens: (u?.images?.input ?? 0) + (u?.images?.output ?? 0),
     hosted: Object.entries(u?.hosted ?? {}).filter(([n]) => n !== "web_search"),
+    cost: costOf(u, run.prices),
   };
 }
 type Spent = ReturnType<typeof spentBy>;
-const total = (list: Spent[]): Spent =>
-  list.reduce(
-    (a, b) => ({
-      input: a.input + b.input,
-      cached: a.cached + b.cached,
-      output: a.output + b.output,
-      reasoning: a.reasoning + b.reasoning,
-      searches: a.searches + b.searches,
-      pages: a.pages + b.pages,
-      images: a.images + b.images,
-      imageTokens: a.imageTokens + b.imageTokens,
-      hosted: [...a.hosted, ...b.hosted],
-    }),
-    { input: 0, cached: 0, output: 0, reasoning: 0, searches: 0, pages: 0, images: 0, imageTokens: 0, hosted: [] },
-  );
-/** The spending in full, one service a line, each with who provided it when known. */
-function spentLines(s: Spent, t: Words, by?: { author?: string; search?: string; image?: string }) {
-  const named = (label: string, who?: string) => (who ? `${label} · ${who}` : label);
-  return [
-    t.usage.line(named(t.usage.author, by?.author), [
-      t.usage.input(k(s.input), k(s.cached)),
-      t.usage.output(k(s.output), k(s.reasoning)),
-    ]),
-    t.usage.line(named(t.usage.search, by?.search), [
-      t.usage.searchCalls(s.searches),
-      t.usage.pages(s.pages),
-    ]),
-    t.usage.line(named(t.usage.image, by?.image), [t.usage.imageTokens(s.images, k(s.imageTokens))]),
-  ];
-}
+const sum = (a: number, b: number) => a + b;
+const total = (list: Spent[]): Spent => ({
+  input: list.map((s) => s.input).reduce(sum, 0),
+  cached: list.map((s) => s.cached).reduce(sum, 0),
+  cacheWrite: list.map((s) => s.cacheWrite).reduce(sum, 0),
+  output: list.map((s) => s.output).reduce(sum, 0),
+  reasoning: list.map((s) => s.reasoning).reduce(sum, 0),
+  searches: list.map((s) => s.searches).reduce(sum, 0),
+  pages: list.map((s) => s.pages).reduce(sum, 0),
+  images: list.map((s) => s.images).reduce(sum, 0),
+  imageTokens: list.map((s) => s.imageTokens).reduce(sum, 0),
+  hosted: list.flatMap((s) => s.hosted),
+  cost: list.some((s) => s.cost)
+    ? {
+        author: list.map((s) => s.cost?.author ?? 0).reduce(sum, 0),
+        search: list.map((s) => s.cost?.search ?? 0).reduce(sum, 0),
+        image: list.map((s) => s.cost?.image ?? 0).reduce(sum, 0),
+        total: list.map((s) => s.cost?.total ?? 0).reduce(sum, 0),
+      }
+    : undefined,
+});
 /** Who searched for a run, as the user picked it. */
 const searchedBy = (run: Run, t: Words) =>
   !run.services
@@ -794,89 +730,137 @@ const searchedBy = (run: Run, t: Words) =>
       : run.services.search === "service"
         ? run.services.searchBy
         : t.composer.searchOff;
-/** A run's spending in a few words, and in full on hover. */
+/** Spending as a bill: one line a service, what it used and what that cost, and the
+ * total. */
+function Bill({
+  s,
+  title,
+  by,
+}: {
+  s: Spent;
+  title?: string;
+  by?: { author?: string; search?: string; image?: string };
+}) {
+  const t = useT(),
+    w = t.usage;
+  const rows = [
+    {
+      key: "author",
+      label: w.author,
+      who: by?.author,
+      parts: [
+        w.input(k(s.input), k(s.cached)),
+        w.output(k(s.output), k(s.reasoning)),
+      ],
+      cost: s.cost?.author,
+    },
+    {
+      key: "search",
+      label: w.search,
+      who: by?.search,
+      parts: [w.searchCalls(s.searches), w.pages(s.pages)],
+      cost: s.cost?.search,
+    },
+    {
+      key: "image",
+      label: w.image,
+      who: by?.image,
+      parts: [w.imageTokens(s.images, k(s.imageTokens))],
+      cost: s.cost?.image,
+    },
+  ];
+  return (
+    <table className={cx("bill")}>
+      {title && <caption>{title}</caption>}
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.key}>
+            <th>
+              <b>{r.label}</b>
+              {r.who && <small>{r.who}</small>}
+            </th>
+            <td>{r.parts.join(" · ")}</td>
+            <td>{r.cost === undefined ? "—" : money(r.cost)}</td>
+          </tr>
+        ))}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th>{w.total}</th>
+          <td />
+          <td>{s.cost ? money(s.cost.total) : w.unpriced}</td>
+        </tr>
+      </tfoot>
+    </table>
+  );
+}
+/** A run's spending in a few words. */
 function usage(run: Run, t: Words) {
   const s = spentBy(run);
   const tokens = s.input + s.output;
-  const short = [
+  return [
+    s.cost && money(s.cost.total),
     !!s.searches && t.usage.searches(s.searches),
     !!s.pages && t.usage.pagesShort(s.pages),
     ...s.hosted.map(([n, c]) => `${toolName(n)} ×${c}`),
     !!s.images && t.usage.images(s.images),
     !!tokens && t.usage.tokens(k(tokens)),
   ].filter(Boolean) as string[];
-  const lines = run.usage || s.searches || s.images
-    ? spentLines(s, t, {
-        author: run.services && `${run.services.author} · ${run.services.model}`,
-        search: searchedBy(run, t),
-        image: run.services?.image,
-      })
-    : [];
-  return { short, lines };
 }
 /** What the whole work has spent over every request, service by service. */
 function WorkUsage({ runs }: { runs: Run[] }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const s = total(runs.map(spentBy));
-  if (!s.input && !s.output && !s.searches && !s.pages && !s.images) return null;
+  if (!s.input && !s.output && !s.searches && !s.pages && !s.images)
+    return null;
   const names = (pick: (r: Run) => string | undefined) =>
-    [...new Set(runs.map(pick).filter(Boolean))].join("、") || undefined;
-  const lines = spentLines(s, t, {
-    author: names((r) => r.services?.author),
-    search: names((r) => (r.services?.search === "off" ? undefined : searchedBy(r, t))),
-    image: names((r) => (spentBy(r).images ? r.services?.image : undefined)),
-  });
+    [...new Set(runs.map(pick).filter(Boolean))].join(t.now.list) || undefined;
   return (
     <div className={cx("work-usage")} data-open={open || undefined}>
       <button aria-expanded={open} onClick={() => setOpen(!open)}>
         <b>{t.usage.allRuns(runs.length)}</b>
         <span>
           {[
+            s.cost && money(s.cost.total),
             t.usage.tokens(k(s.input + s.output)),
             t.usage.searches(s.searches),
-            t.usage.pagesShort(s.pages),
             t.usage.images(s.images),
-          ].join(" · ")}
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </span>
+        <ChevronRight size={13} />
       </button>
-      {open && <SpentLines lines={lines} />}
+      {open && (
+        <Bill
+          s={s}
+          by={{
+            author: names((r) => r.services?.author),
+            search: names((r) =>
+              r.services?.search === "off" ? undefined : searchedBy(r, t),
+            ),
+            image: names((r) =>
+              spentBy(r).images ? r.services?.image : undefined,
+            ),
+          }}
+        />
+      )}
     </div>
   );
 }
-/** Spending service by service, one to a line. */
-function SpentLines({ lines, title }: { lines: string[]; title?: string }) {
-  return (
-    <ul className={cx("spent-lines")}>
-      {title && <li><b>{title}</b></li>}
-      {lines.map((l) => (
-        <li key={l}>{l}</li>
-      ))}
-    </ul>
-  );
-}
 
-type Entry =
-  | { at: number; kind: "run"; run: Run }
-  | { at: number; kind: "hand"; revisions: RevisionSummary[] };
-
-/** The conversation with the author, how it went about each request, and the revisions
- * the work went through, in the order they happened; the composer sits underneath. */
+/** The conversation with the author and how it went about each request, in the order
+ * they happened; the drafts each saved are kept in the drafts panel. */
 export function Studio({
   runs,
   work,
-  history,
-  previewing,
-  look,
   restore,
   resume,
   openTrace,
 }: {
   runs: Run[];
   work: Work;
-  history: RevisionSummary[];
-  previewing?: number;
-  look: (revision: number) => void;
   restore: (revision: number) => void;
   resume: () => void;
   /** Opens the record of a run. */
@@ -888,77 +872,29 @@ export function Studio({
   const [open, O] = useState<Record<string, boolean>>({});
   const used = new Set(Object.keys(work.materials));
   const last = runs.at(-1);
-  // Revisions people made themselves sit between the requests, a run of edits as one.
-  const entries: Entry[] = runs.map((run) => ({ at: run.startedAt, kind: "run", run }));
-  for (const r of [...history].reverse()) {
-    if (r.cause.kind === "run" || r.cause.kind === "create") continue;
-    const prev = entries.at(-1);
-    const after = entries.findLast((e) => e.at <= r.updatedAt);
-    if (
-      prev?.kind === "hand" &&
-      after === prev &&
-      r.cause.kind === "edit" &&
-      prev.revisions.at(-1)!.cause.kind === "edit"
-    )
-      prev.revisions.push(r);
-    else entries.push({ at: r.updatedAt, kind: "hand", revisions: [r] });
-    entries.sort((a, b) => a.at - b.at);
-  }
-  const revisions: Revisions = {
-    current: work.revision,
-    previewing,
-    locked: live(last) || last?.status === "waiting",
-    look,
-    restore,
-  };
   return (
-    <RevisionContext.Provider value={revisions}>
-      {!entries.length && <p className={cx("journal-empty")}>{t.journal.empty}</p>}
+    <>
+      {!runs.length && <p className={cx("journal-empty")}>{t.journal.empty}</p>}
       <WorkUsage runs={runs} />
-      {entries.map((e) =>
-        e.kind === "hand" ? (
-          <HandEntry key={"hand" + e.revisions[0].revision} revisions={e.revisions} />
-        ) : (
-          <RunView
-            key={e.run.id}
-            run={e.run}
-            work={work}
-            last={e.run === last}
-            unfolded={open[e.run.id] ?? (e.run === last && live(e.run))}
-            fold={(on) => O({ ...open, [e.run.id]: on })}
-            used={used}
-            zoom={Z}
-            resume={resume}
-            restore={restore}
-            openTrace={openTrace}
-            locale={locale}
-            t={t}
-          />
-        ),
-      )}
+      {runs.map((run) => (
+        <RunView
+          key={run.id}
+          run={run}
+          work={work}
+          last={run === last}
+          unfolded={open[run.id] ?? (run === last && live(run))}
+          fold={(on) => O({ ...open, [run.id]: on })}
+          used={used}
+          zoom={Z}
+          resume={resume}
+          restore={restore}
+          openTrace={openTrace}
+          locale={locale}
+          t={t}
+        />
+      ))}
       {zoom && <Lightbox picture={zoom} close={() => Z(undefined)} />}
-    </RevisionContext.Provider>
-  );
-}
-/** Revisions the person made by hand, or brought back, between requests. */
-function HandEntry({ revisions }: { revisions: RevisionSummary[] }) {
-  const t = useT();
-  const latest = revisions.at(-1)!;
-  const cause = latest.cause;
-  const Icon = cause.kind === "restore" ? RotateCcw : cause.kind === "edit" ? Hand : FilePlus2;
-  return (
-    <div className={cx("hand")}>
-      <Icon size={13} />
-      <span>
-        {cause.kind === "restore"
-          ? t.history.restored(cause.revision)
-          : revisions.length > 1
-            ? t.history.editedTimes(revisions.length)
-            : t.history.edited}
-        <small> · {ago(latest.updatedAt)}</small>
-      </span>
-      <Revision revision={latest.revision} />
-    </div>
+    </>
   );
 }
 function RunView({
@@ -1057,11 +993,10 @@ function RunView({
   const saved = r.steps.findLast(
     (s): s is Tool<"write_work"> => s.kind === "tool" && s.name === "write_work" && !!s.revision,
   );
-  const spent = usage(r, t);
   const facts = [
     !!count && t.journal.steps(count),
     r.elapsedMs && span(r.elapsedMs),
-    ...spent.short,
+    ...usage(r, t),
   ].filter(Boolean);
   const answer = reply >= 0 ? (r.steps[reply] as Extract<Step, { kind: "message" }>) : undefined;
   const sources = sourcesOf(answer?.citations);
@@ -1093,7 +1028,27 @@ function RunView({
         </div>
       )}
       {items.slice(1)}
-      {unfolded && !!spent.lines.length && <SpentLines title={t.usage.thisRun} lines={spent.lines} />}
+      {unfolded && r.usage && (
+        <Bill
+          s={spentBy(r)}
+          title={t.usage.thisRun}
+          by={{
+            author:
+              r.services &&
+              [
+                r.services.author,
+                r.services.effort && t.settings.efforts[r.services.effort],
+                r.services.speed &&
+                  r.services.speed !== "default" &&
+                  t.settings.speeds[r.services.speed],
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            search: searchedBy(r, t),
+            image: r.services?.image,
+          }}
+        />
+      )}
       {working && unfolded && (
         <div className={cx("run-now")}>
           <Current run={r} />

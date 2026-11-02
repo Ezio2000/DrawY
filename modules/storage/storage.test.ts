@@ -7,8 +7,7 @@ import { Storage } from "./index.ts";
 import { createWork, writeWork, restore, undo } from "../workspace/index.ts";
 import { moveParts } from "../editing/index.ts";
 import {
-  defaultRole,
-  defaultImage,
+  emptySettings,
   modelCatalogSchema,
   defaultCatalog,
   type Work,
@@ -46,7 +45,7 @@ describe("user owned works", () => {
       steps: [],
       observations: [],
     });
-    a.saveOwnSettings({ preferences: "blue", model: null, image: null, searchService: null, searchModes: {} });
+    a.saveOwnSettings({ ...emptySettings(), preferences: "blue" });
     expect(b.works()).toEqual([]);
     expect(() => b.work(work.id)).toThrow();
     expect(() => b.capture(capture.id)).toThrow();
@@ -58,60 +57,29 @@ describe("user owned works", () => {
     expect(() => b.delete(work.id)).toThrow();
     expect(a.work(work.id)).toEqual(work);
   });
-  it("moves the first account's own connection into the shared models, keeping the Fast switch as a speed", () => {
-    for (const [fast, speed] of [
-      [true, "fast"],
-      [false, "default"],
-    ] as const) {
-      const at = mkdtempSync(join(tmpdir(), "drawy-old-"));
-      let old = new Storage(at);
-      const first = register(old, "first", "abcdef"),
-        second = register(old, "second", "abcdef");
-      const { speed: _, protocol: __, efforts: ___, vision: ____, tools: _____, builtinSearch: ______, search: _______, maxOutput: ________, ...author } = defaultRole();
-      const saved = (user: string, credential: string) =>
-        old.db.prepare("INSERT OR REPLACE INTO settings VALUES(?,?)").run(
-          user,
-          JSON.stringify({
-            author: { ...author, credential, fast },
-            image: { ...defaultImage(), credential },
-            preferences: "mine " + credential,
-          }),
-        );
-      saved(first.id, "key-1");
-      saved(second.id, "key-2");
-      // As before roles and shared models existed.
-      old.db.exec("DELETE FROM system; UPDATE users SET role='member'");
-      old.close();
-      old = new Storage(at);
-      try {
-        expect(old.account(first.id).role).toBe("admin");
-        expect(old.account(second.id).role).toBe("member");
-        const catalog = old.models();
-        expect(catalog.models).toHaveLength(1);
-        expect(catalog.models[0]).toMatchObject({
-          credential: "key-1",
-          speed,
-        });
-        expect(catalog.images[0].credential).toBe("key-1");
-        // Models saved before search was a setting search as their connection allowed.
-        expect(catalog.models[0]).toMatchObject({ protocol: "responses", builtinSearch: true, search: "builtin", vision: true });
-        const store = old.scoped(second.id);
-        expect(store.settings().author.credential).toBe("key-1");
-        expect(store.settings().preferences).toBe("mine key-2");
-      } finally {
-        old.close();
-        rmSync(at, { recursive: true });
-      }
-    }
-  });
-  it("saves a speed the connection lacks as default", () => {
+  it("saves a speed or a format the connection lacks as one it has", () => {
     const base = defaultCatalog();
     const catalog = modelCatalogSchema.parse({
       ...base,
-      models: [{ ...base.models[0], channel: "oauth", speed: "flex", protocol: "chat" }],
+      writers: [
+        {
+          ...base.writers[0],
+          channel: "oauth",
+          models: [{ ...base.writers[0].models[0], speed: "flex", protocol: "chat" }],
+        },
+      ],
     });
     // A ChatGPT account speaks the Responses API and has no built-in search to offer.
-    expect(catalog.models[0]).toMatchObject({ speed: "default", protocol: "responses", builtinSearch: false, search: "off" });
+    expect(catalog.writers[0].models[0]).toMatchObject({
+      speed: "default",
+      speeds: ["default", "fast"],
+      protocol: "responses",
+      builtinSearch: false,
+    });
+  });
+  it("starts again from the default catalog when the saved one no longer reads", () => {
+    db.db.prepare("UPDATE system SET data=? WHERE key='models'").run(JSON.stringify({ models: [] }));
+    expect(db.models()).toEqual(defaultCatalog());
   });
   it("updates shared drawing source and restores the complete composition atomically", async () => {
     const store = db.scoped(register(db, "a", "abcdef").id);
@@ -703,57 +671,55 @@ describe("roles and shared models", () => {
     const admin = await signup("admin"),
       member = await signup("member");
     expect([admin.role, member.role]).toEqual(["admin", "member"]);
-    // Members see the models by name only, and cannot manage anything.
+    // Members see the models by name and the options they offer only, and cannot manage
+    // anything.
     const seen = await call(member.cookie, "/models");
     expect(seen.body).toEqual({
-      models: [
+      writers: [
         {
-          id: "default",
-          name: "gpt-6-astra",
+          id: "gpt-6-astra",
+          name: "gpt-6-astra[api]",
+          provider: "api",
           description: "",
-          model: "gpt-6-astra",
-          host: "api.openai.com",
           ready: false,
           vision: true,
-          tools: true,
+          efforts: ["low", "medium", "high", "xhigh"],
+          speeds: ["flex", "default", "fast"],
           builtinSearch: true,
-          search: "builtin",
         },
       ],
-      default: "default",
-      chosen: "default",
       images: [
-        {
-          id: "default",
-          name: "gpt-image-2.5-sunburst",
-          description: "",
-          detail: "gpt-image-2.5-sunburst",
-          ready: false,
-        },
+        { id: "gpt-image-2-5-sunburst", name: "gpt-image-2.5-sunburst[api]", description: "", ready: false },
       ],
-      image: "default",
       searches: [],
-      search: null,
+      chosen: {
+        writer: "gpt-6-astra",
+        effort: "medium",
+        speed: "default",
+        web: "builtin",
+        search: "builtin",
+        image: "gpt-image-2-5-sunburst",
+      },
     });
-    expect(JSON.stringify(seen.body)).not.toContain("credential");
+    expect(JSON.stringify(seen.body)).not.toMatch(/credential|prices/);
     for (const path of ["/admin/models", "/admin/accounts", "/admin/roles"])
       expect((await call(member.cookie, path)).status).toBe(403);
-    // The administrator connects two models; members pick one, which their runs use.
+    // The administrator connects a second provider; members pick its model, which their
+    // runs use.
     const catalog = (await call(admin.cookie, "/admin/models")).body;
-    const fast = {
-      ...catalog.models[0],
-      id: "quick",
-      name: "Quick",
-      description: "For small changes",
+    const quick = {
+      ...catalog.writers[0],
+      id: "quick-provider",
+      name: "quick",
       credential: "key",
-      effort: "low",
+      models: [{ ...catalog.writers[0].models[0], id: "quick", efforts: ["low", "high"], effort: "low" }],
     };
     expect(
       (
         await call(admin.cookie, "/admin/models", "PUT", {
           ...catalog,
-          models: [...catalog.models, fast],
-          default: "missing",
+          writers: [...catalog.writers, quick],
+          defaults: { ...catalog.defaults, writer: "missing" },
         })
       ).status,
     ).toBe(400);
@@ -761,52 +727,58 @@ describe("roles and shared models", () => {
       (
         await call(admin.cookie, "/admin/models", "PUT", {
           ...catalog,
-          models: [...catalog.models, fast],
+          writers: [...catalog.writers, quick],
         })
       ).status,
     ).toBe(200);
-    await call(member.cookie, "/settings", "PUT", {
-      preferences: "",
-      model: "quick",
-    });
-    expect((await call(member.cookie, "/models")).body.chosen).toBe("quick");
-    expect(db.scoped(member.id).settings().author).toMatchObject({
-      credential: "key",
-      effort: "low",
+    await call(member.cookie, "/settings", "PUT", { preferences: "", writer: "quick" });
+    expect((await call(member.cookie, "/models")).body.chosen.writer).toBe("quick");
+    expect(db.scoped(member.id).settings()).toMatchObject({
+      author: { credential: "key", effort: "low" },
+      authorName: "gpt-6-astra[quick]",
     });
     expect(db.scoped(admin.id).settings().author.credential).toBe("");
+    // Effort and speed are picked within what the model offers.
+    await call(member.cookie, "/settings", "PUT", { effort: "high", speed: "fast" });
+    expect(db.scoped(member.id).settings().author).toMatchObject({ effort: "high", speed: "fast" });
     // Drawing, search and pictures are picked apart: DeepSeek draws, a search service
     // looks things up and Flare paints; then OpenAI draws with its own search, and Flare
     // still paints.
     const current = (await call(admin.cookie, "/admin/models")).body;
     const deepseek = {
-      ...current.models[0],
-      id: "deepseek",
-      name: "DeepSeek",
-      description: "",
-      protocol: "chat",
+      id: "deepseek-provider",
+      name: "deepseek",
+      channel: "api",
       baseUrl: "https://api.deepseek.com",
       credential: "ds-key",
-      model: "deepseek-flash",
-      efforts: ["low", "high", "max"],
-      effort: "high",
-      // Chat Completions has no built-in search to offer, whatever is claimed.
-      builtinSearch: true,
-      search: "service",
+      models: [
+        {
+          ...current.writers[0].models[0],
+          id: "deepseek",
+          name: "DeepSeek",
+          protocol: "chat",
+          model: "deepseek-flash",
+          efforts: ["low", "high", "max"],
+          effort: "high",
+          // Chat Completions has no built-in search to offer, whatever is claimed.
+          builtinSearch: true,
+        },
+      ],
     };
     const saved = await call(admin.cookie, "/admin/models", "PUT", {
       ...current,
-      models: [...current.models, deepseek],
-      images: [
-        ...current.images,
+      writers: [...current.writers, deepseek],
+      painters: [
+        ...current.painters,
         {
-          id: "flare",
-          name: "Flare",
-          description: "",
+          id: "flare-provider",
+          name: "flare",
           channel: "api",
           baseUrl: "https://flare.invalid/v1",
           credential: "flare-key",
-          model: "flare-image",
+          models: [
+            { id: "flare", name: "Flare", description: "", model: "flare-image", prices: { image: 0.02, textInput: 0, imageInput: 0, output: 0, textOutput: 0 } },
+          ],
         },
       ],
       searches: [
@@ -816,36 +788,32 @@ describe("roles and shared models", () => {
           provider: "deepseek",
           baseUrl: "https://api.deepseek.com/v1/tools",
           credential: "ds-key",
+          prices: { query: 0.005, page: 0 },
         },
       ],
-      defaultSearch: "web",
     });
     expect(saved.status).toBe(200);
-    expect(saved.body.models[2]).toMatchObject({ builtinSearch: false, search: "service" });
-    await call(member.cookie, "/settings", "PUT", { model: "deepseek", image: "flare" });
+    expect(saved.body.writers[2].models[0]).toMatchObject({ builtinSearch: false, speeds: [] });
+    await call(member.cookie, "/settings", "PUT", { writer: "deepseek", image: "flare", web: "web" });
     let mine = db.scoped(member.id).settings();
     expect(mine).toMatchObject({
-      author: { protocol: "chat", model: "deepseek-flash" },
+      author: { protocol: "chat", model: "deepseek-flash", effort: "high", speed: "default" },
       authorName: "DeepSeek",
       search: { mode: "service", service: { id: "web" } },
       image: { model: "flare-image", credential: "flare-key" },
       imageName: "Flare",
+      prices: { search: 0.005, image: { image: 0.02 } },
     });
     const picker = (await call(member.cookie, "/models")).body;
-    expect(picker).toMatchObject({ chosen: "deepseek", image: "flare", search: "web" });
-    expect(picker.models.find((m: any) => m.id === "deepseek")).toMatchObject({
-      builtinSearch: false,
-      search: "service",
-    });
-    await call(member.cookie, "/settings", "PUT", { model: "quick", searchModes: { quick: "builtin" } });
+    expect(picker.chosen).toEqual({ writer: "deepseek", effort: "high", web: "web", search: "service", image: "flare" });
+    // The model's own search is wanted apart from the model: DeepSeek has none, so it does
+    // not search; the OpenAI model it was wanted for does.
+    await call(member.cookie, "/settings", "PUT", { web: "builtin" });
+    expect(db.scoped(member.id).settings().search).toEqual({ mode: "off" });
+    await call(member.cookie, "/settings", "PUT", { writer: "quick" });
     mine = db.scoped(member.id).settings();
     expect(mine.search).toEqual({ mode: "builtin" });
     expect(mine.imageName).toBe("Flare");
-    // Each model keeps its own way of searching, and one turned off stays off.
-    await call(member.cookie, "/settings", "PUT", { searchModes: { deepseek: "off" } });
-    expect(db.scoped(member.id).ownSettings().searchModes).toEqual({ quick: "builtin", deepseek: "off" });
-    await call(member.cookie, "/settings", "PUT", { model: "deepseek" });
-    expect(db.scoped(member.id).settings().search).toEqual({ mode: "off" });
     // A role that manages models makes its accounts able to.
     const editors = await call(admin.cookie, "/admin/roles", "POST", {
       name: "Model editors",

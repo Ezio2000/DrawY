@@ -251,7 +251,7 @@ export interface Capture {
   url: string;
 }
 export * from "./models.ts";
-import type { SearchMode } from "./models.ts";
+import type { Effort, RunPrices, SearchMode, Speed } from "./models.ts";
 /** What a role may do beyond drawing: manage the models, see and use every material,
  * publish and withdraw materials, and manage accounts and their roles. */
 export const permissions = [
@@ -417,7 +417,9 @@ export type Step =
  * pictures it generated cost the picture model. */
 export interface RunUsage {
   input: number;
+  /** Input tokens read from the provider's cache, and written to it where that is paid. */
   cached: number;
+  cacheWrite?: number;
   output: number;
   reasoning: number;
   /** Web searches made and pages read, by whichever way the run searched. */
@@ -425,7 +427,16 @@ export interface RunUsage {
   pages?: number;
   /** Calls to tools the provider runs (web search and the like), by tool. */
   hosted?: Record<string, number>;
-  images?: { count: number; input: number; output: number };
+  /** Pictures painted, and the picture model's tokens: all input and output, and the
+   * parts priced apart (text and image input, text output). */
+  images?: {
+    count: number;
+    input: number;
+    output: number;
+    textInput?: number;
+    imageInput?: number;
+    textOutput?: number;
+  };
 }
 export interface Run {
   id: string;
@@ -444,10 +455,14 @@ export interface Run {
   usage?: RunUsage;
   /** Who made it: the drawing model, how it searched and the picture model, by name. */
   services?: RunServices;
+  /** What its spending is priced at, fixed when it started (`costOf` gives the cost). */
+  prices?: RunPrices;
 }
 export interface RunServices {
   author: string;
   model: string;
+  effort?: Effort;
+  speed?: Speed;
   search: SearchMode;
   /** The search service's name, when it searched with one. */
   searchBy?: string;

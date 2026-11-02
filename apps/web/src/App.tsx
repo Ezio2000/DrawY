@@ -2,7 +2,7 @@ import { SceneView, DetailView } from "./SceneView.tsx";
 import { Studio, Now, live } from "./Studio.tsx";
 import { ExportMenu } from "./Export.tsx";
 import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Undo2,
   Redo2,
@@ -11,6 +11,7 @@ import {
   MessagesSquare,
   ImagePlus,
   PencilLine,
+  History,
 } from "lucide-react";
 import { Lantern } from "@drawy/ui/brand";
 import { ModelSketch, KinshipSketch } from "@drawy/ui/sketches";
@@ -63,6 +64,7 @@ import type {
   StyleMaterial,
 } from "@drawy/materials/schema";
 import { TraceView } from "./TraceView.tsx";
+import { Drafts } from "./Drafts.tsx";
 import { Title } from "./Title.tsx";
 import { ChooseLocale, dictionaries, useLanguage } from "./i18n.tsx";
 const sketches = [OrbitSketch, ModelSketch, KinshipSketch];
@@ -83,10 +85,35 @@ const sceneOf = (path: string) => {
   const id = path.match(/^\/a\/[^/]+\/([^/]+)/)?.[1];
   return id && decodeURIComponent(id);
 };
-/** What the panel beside the canvas shows: the studio (the conversation with the author,
- * its process and the revisions, with the composer under them) or the editor, while the
- * work is edited by hand. */
-type Panel = "" | "journal" | "edit";
+/** What the panel beside the canvas shows: the studio (the conversation with the author
+ * and its process), the drafts (every revision, to look at or bring back) or the editor,
+ * while the work is edited by hand. */
+type Panel = "" | "journal" | "drafts" | "edit";
+/** How wide the studio and the drafts panel are, each as the person last dragged it: the
+ * conversation reads best wide, a list of drafts needs far less. */
+type Sized = "journal" | "drafts";
+const panelWidths: Record<Sized, { min: number; initial: number }> = {
+  journal: { min: 360, initial: 520 },
+  drafts: { min: 260, initial: 340 },
+};
+const panelWidth = {
+  max: () => Math.max(420, Math.round(innerWidth * 0.62)),
+  clamp: (kind: Sized, n: number) =>
+    Math.min(panelWidth.max(), Math.max(panelWidths[kind].min, n)),
+  read(kind: Sized) {
+    try {
+      const n = Number(localStorage.getItem("drawy.panel." + kind));
+      return n ? panelWidth.clamp(kind, n) : panelWidths[kind].initial;
+    } catch {
+      return panelWidths[kind].initial;
+    }
+  },
+  save(kind: Sized, n: number) {
+    try {
+      localStorage.setItem("drawy.panel." + kind, String(Math.round(n)));
+    } catch {}
+  },
+};
 /** Whether the panel can sit beside the canvas; on narrower screens it covers it. */
 const roomy = () => innerWidth > 1080;
 /** How a library material rides along with a message. */
@@ -130,6 +157,10 @@ export function App() {
     [choosing, setChoosing] = useState<(m: PictureMaterial) => void>(),
     [detailId, setDetail] = useState<string>(),
     [panel, setPanel] = useState<Panel>(""),
+    [widths, setWidths] = useState(() => ({
+      journal: panelWidth.read("journal"),
+      drafts: panelWidth.read("drafts"),
+    })),
     [picking, setPicking] = useState(false),
     [scenes, M] = useState(false),
     [dismissed, setDismissed] = useState(""),
@@ -144,6 +175,7 @@ export function App() {
     [handed, setHanded] = useState("");
   const page = pageOf(path);
   const journal = panel === "journal";
+  const drafting = panel === "drafts";
   const editing = panel === "edit";
   const J = (on: boolean) => setPanel(on ? "journal" : "");
   const toggle = (p: Panel) => {
@@ -168,6 +200,9 @@ export function App() {
   );
   const run = runs.at(-1),
     working = live(run);
+  // While the author works or waits for an answer, the composer leaves the page for the
+  // studio, without the model picks; it comes back once the run ends.
+  const engaged = working || run?.status === "waiting";
   const addressed = sceneOf(path);
   const sceneId =
     work && addressed && work.scenes[addressed]
@@ -225,7 +260,7 @@ export function App() {
   const editless = working || run?.status === "waiting" || !!preview;
   const manages = !!user?.permissions.includes("models.manage");
   const connected =
-    models && !!models.models.find((m) => m.id === models.chosen)?.ready;
+    models && !!models.writers.find((m) => m.id === models.chosen.writer)?.ready;
   useEffect(() => {
     if (!work) return H([]);
     void api<RevisionSummary[]>("/works/" + work.id + "/revisions").then(H, () => {});
@@ -831,9 +866,9 @@ export function App() {
       <span className={cx("now-line")}>{handed}</span>
     </div>
   );
-  // With the studio open the composer sits under the conversation; otherwise it floats
-  // under the canvas.
-  const docked = !journal;
+  // The composer sits at the bottom of the page, its model picks under it; while a run is
+  // under way it moves into the open studio, picks left behind.
+  const docked = !(journal && engaged);
   const composer = (place: "home" | "dock" | "panel") => (
     <Composer
       place={place}
@@ -869,7 +904,7 @@ export function App() {
       stop={() => void attempt(stop)}
       attach={(files) => void attempt(() => upload(files))}
       pick={() => setPicking(true)}
-      models={models}
+      models={place === "panel" || engaged ? undefined : models}
       choose={(change) => {
         setModels((m) => m && chosen(m, change));
         // What the server settles on (a search the new model lacks falls back) is shown next.
@@ -960,7 +995,6 @@ export function App() {
                   <Lantern size={40} className={cx("hero-mark")} />
                   <Title name="hero" size="hero" />
                 </h1>
-                {composer("home")}
                 <nav className={cx("examples")}>
                   {t.home.examples.map((text, i) => {
                     const Sketch = sketches[i];
@@ -980,13 +1014,23 @@ export function App() {
                   })}
                 </nav>
               </section>
+              <div className={cx("home-composer")}>{composer("home")}</div>
             </div>
           ) : !work ? (
             <div className={cx("loading")}>
               <Spinner />
             </div>
           ) : (
-            <div className={cx("workspace")} data-panel={panel || undefined}>
+            <div
+              className={cx("workspace")}
+              data-panel={panel || undefined}
+              style={
+                {
+                  "--journal": widths.journal + "px",
+                  "--drafts": widths.drafts + "px",
+                } as CSSProperties
+              }
+            >
               <section
                 ref={stage}
                 className={cx("stage")}
@@ -1173,6 +1217,14 @@ export function App() {
                   >
                     <MessagesSquare size={17} />
                   </button>
+                  <button
+                    aria-label={t.work.drafts}
+                    data-tip={t.work.drafts}
+                    aria-pressed={drafting}
+                    onClick={() => toggle("drafts")}
+                  >
+                    <History size={17} />
+                  </button>
                   <ExportMenu
                     work={work}
                     sceneId={sceneId}
@@ -1182,9 +1234,20 @@ export function App() {
                   />
                 </nav>
                 <div className={cx("side-panel")} data-kind={panel || undefined} inert={!panel}>
+                  {panel && !editing && (
+                    <Resizer
+                      kind={drafting ? "drafts" : "journal"}
+                      width={drafting ? widths.drafts : widths.journal}
+                      set={(kind, n) => setWidths((w) => ({ ...w, [kind]: n }))}
+                      label={t.work.resize}
+                    />
+                  )}
                   <header>
                     <h2>
-                      <Title name={editing ? "edit" : "journal"} size="section" />
+                      <Title
+                        name={editing ? "edit" : drafting ? "drafts" : "journal"}
+                        size="section"
+                      />
                     </h2>
                   </header>
                   <section
@@ -1221,13 +1284,19 @@ export function App() {
                         pickPicture={(chosen) => setChoosing(() => chosen)}
                         ask={() => ask()}
                       />
+                    ) : drafting ? (
+                      <Drafts
+                        history={history}
+                        current={work.revision}
+                        previewing={preview?.revision}
+                        locked={engaged}
+                        look={(r) => void attempt(() => look(r))}
+                        restore={(r) => void attempt(() => restore(r))}
+                      />
                     ) : (
                       <Studio
                         runs={runs}
                         work={work}
-                        history={history}
-                        previewing={preview?.revision}
-                        look={(r) => void attempt(() => look(r))}
                         restore={(r) => void attempt(() => restore(r))}
                         resume={() =>
                           void attempt(() =>
@@ -1238,7 +1307,9 @@ export function App() {
                       />
                     )}
                   </section>
-                  {journal && <footer className={cx("side-composer")}>{composer("panel")}</footer>}
+                  {journal && engaged && (
+                    <footer className={cx("side-composer")}>{composer("panel")}</footer>
+                  )}
                 </div>
               </aside>
             </div>
@@ -1292,5 +1363,69 @@ export function App() {
       </ChooseLocale.Provider>
       </AccountContext.Provider>
     </LocaleContext.Provider>
+  );
+}
+
+/** The panel's left edge, dragged to share the page between the canvas and the panel; the
+ * width is remembered for next time. Arrow keys move it too. */
+function Resizer({
+  kind,
+  width,
+  set,
+  label,
+}: {
+  kind: Sized;
+  width: number;
+  set: (kind: Sized, n: number) => void;
+  label: string;
+}) {
+  const clamp = (n: number) => panelWidth.clamp(kind, n);
+  const [dragging, setDragging] = useState(false);
+  return (
+    <div
+      className={cx("resizer")}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={label}
+      aria-valuenow={width}
+      tabIndex={0}
+      data-dragging={dragging || undefined}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        const start = e.clientX,
+          from = width;
+        let last = from;
+        setDragging(true);
+        const move = (m: PointerEvent) => {
+          last = clamp(from + start - m.clientX);
+          set(kind, last);
+        };
+        const up = () => {
+          setDragging(false);
+          panelWidth.save(kind, last);
+          removeEventListener("pointermove", move);
+          removeEventListener("pointerup", up);
+        };
+        addEventListener("pointermove", move);
+        addEventListener("pointerup", up);
+      }}
+      onDoubleClick={() => {
+        set(kind, panelWidths[kind].initial);
+        panelWidth.save(kind, panelWidths[kind].initial);
+      }}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 80 : 20;
+        const next =
+          e.key === "ArrowLeft"
+            ? width + step
+            : e.key === "ArrowRight"
+              ? width - step
+              : undefined;
+        if (next === undefined) return;
+        e.preventDefault();
+        set(kind, clamp(next));
+        panelWidth.save(kind, clamp(next));
+      }}
+    />
   );
 }

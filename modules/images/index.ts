@@ -27,6 +27,13 @@ const sizes = {
   portrait: [1024, 1536],
 } as const;
 
+/** The token counts the Images API reports, input and output split by kind. */
+type ImageUsage = {
+  input_tokens?: number;
+  output_tokens?: number;
+  input_tokens_details?: { text_tokens?: number; image_tokens?: number };
+  output_tokens_details?: { text_tokens?: number; image_tokens?: number };
+};
 /** A picture being made in the background. */
 export interface Development {
   id: string;
@@ -34,8 +41,9 @@ export interface Development {
   done: Promise<{
     status: "ready" | "failed";
     error?: string;
-    /** The picture model's token counts, when it reports them. */
-    usage?: { input_tokens?: number; output_tokens?: number };
+    /** The picture model's token counts, when it reports them (`imageTokensOf` splits
+     * them as they are priced). */
+    usage?: ImageUsage;
   }>;
   settled?: { status: "ready" | "failed"; error?: string; at: number };
 }
@@ -205,7 +213,7 @@ async function paint(
   if (!r.ok) throw Error(`生图失败 ${r.status}: ${await r.text()}`);
   const data = (await r.json()) as {
     data: { b64_json: string }[];
-    usage?: { input_tokens?: number; output_tokens?: number };
+    usage?: ImageUsage;
   };
   return {
     bytes: Buffer.from(data.data[0].b64_json, "base64"),

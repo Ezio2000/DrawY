@@ -13,6 +13,7 @@ import {
   type Effort,
   type Settings,
   type RunUsage,
+  imageTokensOf,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { writeWork, setBrief } from "../workspace/index.ts";
@@ -145,14 +146,14 @@ function searchesLeft(run: Run) {
 export function steering(
   run: Run,
   tools: Item[],
-  protocol: Role["protocol"] = "responses",
+  role: Pick<Role, "protocol" | "baseUrl"> = { protocol: "responses", baseUrl: "https://api.openai.com/v1" },
 ): Item {
   const isSearch = (t: Item) =>
     t.type === "web_search" || (t.type === "function" && searching.has(t.name));
-  const narrow = adapterFor(protocol).narrow;
+  const narrow = adapterFor(role.protocol).narrow;
   if (!narrow || !tools.some(isSearch)) return {};
   const left = searchesLeft(run);
-  return left === Infinity ? {} : narrow(tools, left, isSearch);
+  return left === Infinity ? {} : narrow(tools, left, isSearch, role);
 }
 /** What this request has searched so far, told to the author beside its brief and each
  * look, so it judges against what it already found rather than searching again. */
@@ -184,6 +185,8 @@ function spend(run: Run, usage: Item) {
   const u = (run.usage ??= { input: 0, cached: 0, output: 0, reasoning: 0 });
   u.input += usage.input_tokens ?? 0;
   u.cached += usage.input_tokens_details?.cached_tokens ?? 0;
+  const written = usage.input_tokens_details?.cache_write_tokens ?? 0;
+  if (written) u.cacheWrite = (u.cacheWrite ?? 0) + written;
   u.output += usage.output_tokens ?? 0;
   u.reasoning += usage.output_tokens_details?.reasoning_tokens ?? 0;
 }
@@ -737,10 +740,13 @@ export class Agent {
     run.services = {
       author: settings.authorName,
       model: settings.author.model,
+      effort: settings.author.effort,
+      speed: settings.author.speed,
       search: settings.search.mode,
       ...(settings.search.service ? { searchBy: settings.search.service.name } : {}),
       image: settings.imageName,
     };
+    run.prices = settings.prices;
     await tracer.within(run.id, () =>
       tracer
         .span(
@@ -864,7 +870,7 @@ export class Agent {
       const effort = deliberate(ctx.input, settings.author, deciding);
       deciding = false;
       const turnStart = Date.now();
-      const steer = steering(run, availableTools, settings.author.protocol);
+      const steer = steering(run, availableTools, settings.author);
       let firstOutput: number | undefined;
       const result = await tracer.span(
         "turn",
@@ -1318,9 +1324,13 @@ export class Agent {
               if (r.status === "ready") {
                 const u = usageOf(run);
                 const images = (u.images ??= { count: 0, input: 0, output: 0 });
+                const t = imageTokensOf(r.usage);
                 images.count++;
-                images.input += r.usage?.input_tokens ?? 0;
-                images.output += r.usage?.output_tokens ?? 0;
+                images.input += t.input;
+                images.output += t.output;
+                images.textInput = (images.textInput ?? 0) + t.textInput;
+                images.imageInput = (images.imageInput ?? 0) + t.imageInput;
+                images.textOutput = (images.textOutput ?? 0) + t.textOutput;
               }
               this.emit(store, run);
               // An open canvas redraws the picture with its measured content.

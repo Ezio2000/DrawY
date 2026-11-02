@@ -11,7 +11,7 @@ import { writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { generate } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
-import type { Run, Work } from "../contracts/index.ts";
+import { costOf, modelCatalogSchema, type Run, type Work } from "../contracts/index.ts";
 import { removeParts, setData } from "../editing/index.ts";
 import { tracer } from "../trace/index.ts";
 import { library as client } from "../materials/index.ts";
@@ -621,9 +621,9 @@ it("gives a Claude model's deciding turns the most effort it accepts, as a chang
     work.scenes.child.modules = [];
     store.commit(work, 0, { kind: "edit" });
     const catalog = db.models();
-    Object.assign(catalog.models[0], {
+    catalog.writers[0].baseUrl = "https://api.anthropic.com";
+    Object.assign(catalog.writers[0].models[0], {
       protocol: "anthropic",
-      baseUrl: "https://api.anthropic.com",
       model: "claude-sonnet-5-5",
       effort: "high",
       efforts: ["low", "medium", "high", "xhigh"],
@@ -803,13 +803,22 @@ it("develops pictures while the author composes and holds finish until they were
       credential: "test",
       baseUrl: "https://example.invalid",
     };
-    store.storage.saveModels({ ...store.storage.models(), images: [{ ...store.storage.models().images[0], ...settings.image }] });
+    const catalog = store.storage.models();
+    Object.assign(catalog.painters[0], { credential: "test", baseUrl: "https://example.invalid" });
+    store.storage.saveModels(catalog);
     let paint!: () => void;
     const painted = new Promise<void>((r) => (paint = r));
     const png = await picture();
     library.route(async () => {
       await painted;
-      return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+      return Response.json({
+        data: [{ b64_json: png.toString("base64") }],
+        usage: {
+          input_tokens: 1300,
+          input_tokens_details: { text_tokens: 100, image_tokens: 1200 },
+          output_tokens: 4000,
+        },
+      });
     });
     const seen: any[][] = [];
     let id = "";
@@ -884,6 +893,15 @@ it("develops pictures while the author composes and holds finish until they were
       run.steps.find((s) => s.kind === "tool" && s.name === "generate_images"),
     ).toMatchObject({
       images: [{ id, status: "ready" }],
+    });
+    // The picture model's tokens are kept split as they are priced: text and image input.
+    expect(run.usage?.images).toEqual({
+      count: 1,
+      input: 1300,
+      output: 4000,
+      textInput: 100,
+      imageInput: 1200,
+      textOutput: 0,
     });
   } finally {
     db.close();
@@ -1131,8 +1149,8 @@ it.each(["api", "oauth"] as const)("keeps hosted searches in the %s conversation
     work.scenes.child.modules = [];
     store.commit(work, 0, { kind: "edit" });
     const catalog = db.models();
-    catalog.models[0].channel = channel;
-    db.saveModels(catalog);
+    catalog.writers[0].channel = channel;
+    db.saveModels(modelCatalogSchema.parse(catalog));
     const run: Run = { id: "search-run", workId: work.id, sceneId: "root", status: "running", steps: [], observations: [], startedAt: Date.now() };
     store.saveRun(run);
     const search = { type: "web_search_call", id: "ws_1", status: "completed", action: { type: "search", queries: ["OpenAI latest release"] } };
@@ -1236,10 +1254,10 @@ it("searches through the search service for a model without its own, counting ea
     work.scenes.child.modules = [];
     store.commit(work, 0, { kind: "edit" });
     const catalog = db.models();
-    Object.assign(catalog.models[0], { name: "DeepSeek", protocol: "chat", model: "deepseek-flash", builtinSearch: false, search: "service" });
-    catalog.searches = [{ id: "web", name: "DeepSeek Search", provider: "deepseek", baseUrl: "https://search.invalid/v1/tools", credential: "k" }];
-    catalog.defaultSearch = "web";
-    db.saveModels(catalog);
+    Object.assign(catalog.writers[0].models[0], { name: "DeepSeek", protocol: "chat", model: "deepseek-flash", builtinSearch: false, speeds: [] });
+    catalog.searches = [{ id: "web", name: "DeepSeek Search", provider: "deepseek", baseUrl: "https://search.invalid/v1/tools", credential: "k", prices: { query: 0.01, page: 0.02 } }];
+    catalog.defaults.web = "web";
+    db.saveModels(modelCatalogSchema.parse(catalog));
     const earlier = Array.from({ length: SEARCH_LIMIT - 4 }, (_, i) => ({ kind: "tool" as const, id: "old" + i, status: "done" as const, name: "web_search" as const, queries: ["q"], urls: [] }));
     const run: Run = { id: "service-run", workId: work.id, sceneId: "root", status: "running", steps: [...earlier], observations: [], startedAt: Date.now() };
     store.saveRun(run);
@@ -1290,7 +1308,10 @@ it("searches through the search service for a model without its own, counting ea
     expect(run.steps).toContainEqual({ kind: "tool", id: "c1", status: "done", name: "web_search", queries: ["release date", "launch city"], urls: [], action: "search" });
     expect(run.steps).toContainEqual({ kind: "tool", id: "c2", status: "done", name: "web_search", queries: [], urls: ["https://news.invalid/a"], action: "open_page" });
     expect(run.usage).toMatchObject({ searches: 3, pages: 1 });
-    expect(run.services).toEqual({ author: "DeepSeek", model: "deepseek-flash", search: "service", searchBy: "DeepSeek Search", image: "gpt-image-2.5-sunburst" });
+    expect(run.services).toEqual({ author: "DeepSeek", model: "deepseek-flash", effort: "medium", speed: "default", search: "service", searchBy: "DeepSeek Search", image: "gpt-image-2.5-sunburst[api]" });
+    // Each query asked and the page read are priced at the service's prices.
+    expect(run.prices).toMatchObject({ search: 0.01, page: 0.02 });
+    expect(costOf(run.usage, run.prices)!.search).toBeCloseTo(3 * 0.01 + 0.02);
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 it("steers the service's search like the provider's own, except over Chat Completions", () => {
@@ -1299,6 +1320,10 @@ it("steers the service's search like the provider's own, except over Chat Comple
   const run = (steps: Run["steps"]): Run => ({ id: "r", workId: "w", sceneId: "root", status: "running", steps, observations: [], startedAt: 0 });
   expect(steering(run(search(2)), listed)).toEqual({});
   expect(steering(run(search(SEARCH_LIMIT)), listed)).toEqual({ tool_choice: { type: "allowed_tools", mode: "auto", tools: [{ type: "function", name: "write_work" }] } });
-  expect(steering(run(search(SEARCH_LIMIT)), listed, "chat")).toEqual({});
-  expect(steering(run(search(SEARCH_LIMIT)), listed, "anthropic")).toEqual({});
+  expect(steering(run(search(SEARCH_LIMIT)), listed, { protocol: "chat", baseUrl: "https://example.invalid" })).toEqual({});
+  expect(steering(run(search(SEARCH_LIMIT)), listed, { protocol: "anthropic", baseUrl: "https://api.anthropic.com" })).toEqual({});
+  // DeepSeek Responses rejects allowed_tools; search execution still enforces the budget.
+  const deepseek = { protocol: "responses" as const, baseUrl: "https://api.deepseek.com" };
+  expect(steering(run(search(SEARCH_LIMIT)), listed, deepseek)).toEqual({});
+  expect(steering(run(search(2)), listed, deepseek)).toEqual({});
 });

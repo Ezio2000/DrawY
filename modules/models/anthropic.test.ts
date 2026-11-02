@@ -1,7 +1,7 @@
 import { it, expect, vi, afterEach } from "vitest";
 import { generate, forResponses, toMessages, citationsOf } from "./index.ts";
 import { toAnthropic, anthropicTools, claudeVersion, perTurnEffort } from "./anthropic.ts";
-import { defaultRole, roleSchema, type Role } from "../contracts/index.ts";
+import { defaultWriter, defaultRole, settleWriter, type Role } from "../contracts/index.ts";
 
 const role: Role = {
   ...defaultRole(),
@@ -49,9 +49,7 @@ it("reads Claude model versions", () => {
 });
 
 it("offers built-in search to Claude with an API key", () => {
-  const r = roleSchema.parse({ ...role, builtinSearch: true, search: "builtin" });
-  expect(r.builtinSearch).toBe(true);
-  expect(r.search).toBe("builtin");
+  expect(settleWriter({ channel: "api" }, { ...defaultWriter("anthropic"), builtinSearch: true }).builtinSearch).toBe(true);
   expect(anthropicTools([{ type: "web_search", search_context_size: "low" }], role.model)).toEqual([
     { type: "web_search_20260209", name: "web_search", max_uses: 8, cache_control: { type: "ephemeral" } },
   ]);
@@ -225,7 +223,7 @@ it("reports Claude's own searches as hosted calls with their sources", async () 
     ),
   );
   const events: any[] = [];
-  const result = await generate({ ...role, builtinSearch: true, search: "builtin" }, { instructions: "", input: [{ role: "user", content: "How tall?" }], tools: [{ type: "web_search", search_context_size: "low" }], signal: new AbortController().signal, onEvent: (e) => events.push(e) });
+  const result = await generate(role, { instructions: "", input: [{ role: "user", content: "How tall?" }], tools: [{ type: "web_search", search_context_size: "low" }], signal: new AbortController().signal, onEvent: (e) => events.push(e) });
   const done = events.find((e) => e.type === "response.output_item.done" && e.item.type === "web_search_call");
   expect(done.item).toMatchObject({
     id: "srvtoolu_1",

@@ -3,12 +3,12 @@
    on the left, the title in serif type along the top, one composer at the bottom that also
    tells what the author is doing, and a strip of tools on the right that unfolds into a panel.
    While the author works, its process appears on the canvas itself: pencilled outlines where
-   modules will land, a pencil that draws each line as it goes, a viewfinder where it looks. */
+   modules will land, each line drawn as it arrives, a viewfinder where it looks. */
 
 .app {
   --rail: 56px;
   --rail-open: 272px;
-  --journal: 392px;
+  --journal: 520px;
   --veil: rgba(250, 249, 245, 0.86);
   /* Card grounds from the Anthropic palette's oat. */
   --oat: #f0eee6;
@@ -348,10 +348,11 @@
 /* ---------- Home ---------- */
 
 .home {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   height: 100%;
-  padding: 48px 32px;
+  padding: 32px 32px 0;
   overflow-y: auto;
 }
 
@@ -359,9 +360,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 36px;
+  flex: 1;
   width: min(720px, 100%);
-  margin-top: -5vh;
+  padding-bottom: 24px;
 }
 
 .hero-title {
@@ -991,126 +994,172 @@ h2:has(> .title) {
   padding: 2px;
 }
 
-/* The model picker: the model's name beside the send button, its menu of models each
-   with a line on what it is for, as in Claude. */
-.model-picker {
-  position: relative;
+/* The picks a run is made with, in a quiet row under the box at its right, as in Claude
+   Code: the drawing model, its effort and speed, the web search and the picture model,
+   each a menu of its own. */
+.composer-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
 }
 
-.model-button {
+.model-bar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 0 6px;
+}
+
+/* Where the row is short of room, the long names give way (the model's last); effort and
+   speed stay whole. */
+.pick {
+  position: relative;
+  flex: none;
+}
+
+.pick[data-long] {
+  flex: 0 1 auto;
+  min-width: 48px;
+}
+
+.pick:first-child {
+  flex-shrink: 0.4;
+}
+
+.pick-button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 32px;
-  max-width: 200px;
-  padding: 0 8px 0 10px;
-  margin-right: 6px;
+  height: 28px;
+  max-width: min(260px, 100%);
+  padding: 0 7px 0 9px;
   border-radius: 8px;
-  font-size: 13.5px;
+  font-size: 13px;
   color: var(--text-2);
 }
 
-.model-button > span {
+.pick:first-child .pick-button {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.pick-button > span {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.model-button:hover,
-.model-button[aria-expanded="true"] {
+.pick-button > svg {
+  flex: none;
+  color: var(--text-3);
+}
+
+.pick-button {
+  padding: 0 8px;
+}
+
+.pick-button:hover,
+.pick-button[aria-expanded="true"] {
   background: var(--fill);
   color: var(--text);
 }
 
-.models-menu {
-  top: calc(100% + 8px);
-  right: 0;
-  width: 280px;
-  max-height: min(420px, 60vh);
-  overflow-y: auto;
+/* A search wanted that the model picked cannot make: the run will not search. */
+.pick-button[data-off] > span {
+  text-decoration: line-through;
+  color: var(--text-3);
 }
 
-.composer[data-place="panel"] .models-menu,
-.composer[data-place="dock"] .models-menu {
+.models-menu {
   top: auto;
-  bottom: calc(100% + 10px);
+  bottom: calc(100% + 8px);
+  right: 0;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  max-height: min(440px, 62vh);
+  overflow-y: auto;
   transform-origin: bottom right;
 }
 
-.models-menu > button {
+/* The model's menu opens rightwards from the first pick, the rest leftwards. */
+.pick:first-child .models-menu {
+  right: auto;
+  left: 0;
+  transform-origin: bottom left;
+}
+
+.models-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
   min-height: 36px;
   padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text);
+  text-align: left;
   white-space: normal;
 }
 
-.models-menu > button > span {
+.models-menu button:hover {
+  background: var(--fill);
+}
+
+.models-menu button > span {
+  display: grid;
+  gap: 1px;
   flex: 1;
   min-width: 0;
 }
 
-.models-menu > button > svg:last-child {
+.models-menu button small {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.models-menu button > svg:last-child {
   flex: none;
   color: var(--ai-deep);
 }
 
-.models-menu > button:disabled {
+.models-menu button:disabled {
   opacity: 0.55;
   cursor: default;
 }
 
-.models-menu > button:disabled:hover {
+.models-menu button:disabled:hover {
   background: none;
 }
 
 .models-head {
-  margin: 8px 10px 2px;
+  margin: 6px 10px 4px;
   font-size: 11.5px;
   font-weight: 500;
   letter-spacing: 0.02em;
   color: var(--text-3);
 }
 
-.models-head:first-child {
-  margin-top: 4px;
-}
-
-.model-button:has(.model-part) {
-  max-width: min(380px, 52vw);
-}
-
-.model-button > span {
-  min-width: 0;
-  flex: 0 1 auto;
-}
-
-.model-part {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding-left: 7px;
-  margin-left: 3px;
-  border-left: 1px solid var(--line-strong);
+.models-sub {
+  margin: 8px 10px 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--text-3);
-  font-size: 12.5px;
 }
 
-.model-part > span {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.models-group + .models-group {
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px solid var(--separator);
 }
 
-.model-part > svg {
-  flex: none;
-}
-
-.model-part[data-off] {
-  text-decoration: line-through;
-}
-
-/* Where the box is narrow, the drawing model alone; the tip names the rest. */
-.composer[data-place="panel"] .model-part {
-  display: none;
+/* The home page: the greeting and examples in the middle, the composer at the bottom. */
+.home-composer {
+  width: min(760px, 100%);
+  padding-bottom: 20px;
 }
 
 /* ---------- Workspace ---------- */
@@ -1506,34 +1555,6 @@ h2:has(> .title) {
   animation: drift 5s var(--ease-in-out) infinite alternate;
 }
 
-/* The author's pencil: it blocks in the layout, then draws each stroke at the tip of the
-   line being drawn. Resting, it floats where it stopped; it leaves when the work is done. */
-
-.pen {
-  transition: opacity 0.5s var(--ease);
-}
-
-.pen[data-state="away"] {
-  opacity: 0;
-}
-
-.pen > svg {
-  position: absolute;
-  left: -6.8px;
-  top: -26.3px;
-  filter: drop-shadow(1px 3px 3px rgba(60, 45, 20, 0.18));
-  transform-origin: 6.8px 26.3px;
-  transition: transform 0.4s var(--ease-out);
-}
-
-.pen[data-state="resting"] > svg {
-  animation: hover 2.8s var(--ease-in-out) infinite;
-}
-
-.pen[data-state="drawing"] > svg {
-  transform: rotate(-4deg);
-}
-
 /* Where the author is looking: corner marks around the view and a slow band of light. */
 
 .viewfinder {
@@ -1580,7 +1601,7 @@ h2:has(> .title) {
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  width: min(660px, calc(100% - 360px));
+  width: min(720px, calc(100% - 300px));
   min-width: min(420px, calc(100% - 32px));
   translate: -50% 0;
 }
@@ -2071,13 +2092,59 @@ button.now:hover .now-line {
   width: var(--panel);
 }
 
+.side-panel[data-kind="drafts"] {
+  --panel: var(--drafts, 340px);
+}
+
 .side-panel > * {
   width: var(--panel);
 }
 
 .side-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
+}
+
+.side-panel:has(> .resizer[data-dragging]) {
+  transition: none;
+}
+
+/* The panel's left edge: dragged, it shares the page between canvas and panel. */
+.side-panel > .resizer {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 9px;
+  margin-left: -4px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.side-panel > .resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: transparent;
+  transition: background 0.2s var(--ease);
+}
+
+.side-panel > .resizer:hover::after,
+.side-panel > .resizer:focus-visible::after,
+.side-panel > .resizer[data-dragging]::after {
+  width: 2px;
+  left: 3.5px;
+  background: var(--ai);
+}
+
+body:has(.resizer[data-dragging]) {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .side-panel > header {
@@ -3176,73 +3243,14 @@ button.now:hover .now-line {
 .revision {
   display: inline-flex;
   align-items: center;
-  height: 24px;
+  height: 22px;
+  padding: 0 9px;
   border-radius: 999px;
   background: var(--bg);
-  box-shadow: inset 0 0 0 1px var(--line-strong);
+  box-shadow: inset 0 0 0 1px var(--line);
   font-size: 12px;
-  color: var(--text);
+  color: var(--text-2);
   white-space: nowrap;
-}
-
-.revision-look {
-  height: 100%;
-  padding: 0 10px;
-  border-radius: 999px;
-}
-
-.revision-look:hover:not(:disabled) {
-  background: var(--fill);
-}
-
-.revision-look:disabled {
-  opacity: 1;
-  color: inherit;
-  cursor: default;
-}
-
-.revision b {
-  margin-right: 9px;
-  padding-left: 7px;
-  border-left: 1px solid var(--line);
-  font-weight: 500;
-  color: var(--ai-deep);
-}
-
-.revision-restore {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 22px;
-  margin-right: 1px;
-  border-left: 1px solid var(--line);
-  border-radius: 0 999px 999px 0;
-  color: var(--text-3);
-}
-
-.revision-restore:hover:not(:disabled) {
-  background: var(--fill);
-  color: var(--text);
-}
-
-.revision-restore:disabled {
-  opacity: 0.4;
-}
-
-.revision[data-current] {
-  background: #fbf3ee;
-  box-shadow: inset 0 0 0 1px rgba(217, 119, 87, 0.4);
-}
-
-.revision[data-previewing] {
-  background: var(--ink);
-  box-shadow: none;
-  color: var(--paper);
-}
-
-.revision[data-previewing] .revision-restore {
-  color: var(--paper);
-  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .run-result {
@@ -4777,9 +4785,9 @@ button.now:hover .now-line {
 
 .traces > aside li button {
   display: grid;
-  gap: 3px;
+  gap: 4px;
   width: 100%;
-  padding: 10px 12px;
+  padding: 11px 12px;
   border-radius: 12px;
   text-align: left;
 }
@@ -4789,10 +4797,22 @@ button.now:hover .now-line {
 }
 
 .traces > aside li button[aria-current] {
-  background: var(--oat);
+  background: var(--bg);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 2px 10px rgba(60, 45, 20, 0.06);
 }
 
-.traces > aside li b {
+.trace-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.trace-row b {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -4800,19 +4820,31 @@ button.now:hover .now-line {
   font-weight: 500;
 }
 
+.trace-cost {
+  flex: none;
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
 .trace-prompt {
+  display: -webkit-box;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   font-size: 12.5px;
+  line-height: 1.45;
   color: var(--text-2);
 }
 
 .traces > aside small {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 4px 10px;
+  margin-top: 2px;
+  font-size: 11.5px;
   color: var(--text-3);
 }
 
@@ -4868,95 +4900,239 @@ button.now:hover .now-line {
 .traces > main {
   min-width: 0;
   overflow: auto;
-  padding: 28px 32px 64px;
+  padding: 28px 36px 64px;
+  background: var(--paper);
 }
 
-.trace-head h2 {
+.traces > main > * {
+  max-width: 1120px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.trace-head {
+  margin-bottom: 18px;
+}
+
+.trace-title {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.trace-title h2 {
+  min-width: 0;
   font-family: var(--font-serif);
   font-size: 26px;
   font-weight: 400;
   line-height: 1.3;
 }
 
-.trace-head > p {
-  margin: 6px 0 20px;
+.trace-title .status {
+  flex: none;
+  padding: 2px 9px;
+  border-radius: 99px;
+  background: var(--fill);
+  font-size: 12px;
+}
+
+.trace-head blockquote {
+  margin: 10px 0 0;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--line-strong);
   font-size: 14px;
   line-height: 1.6;
   color: var(--text-2);
   white-space: pre-wrap;
 }
 
-.trace-head dl {
+.trace-made {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trace-made li {
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* The run in a few figures: what it cost, how long it took, the tokens in and out. */
+.stats {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 10px;
-  margin: 0;
+  margin: 18px 0 0;
 }
 
-.trace-head dl > div {
-  padding: 12px 14px;
+.stat {
+  padding: 14px 16px;
   border-radius: 14px;
-  background: var(--oat);
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--line);
 }
 
-.trace-head dt {
+.stat:first-child {
+  background: var(--oat);
+  box-shadow: none;
+}
+
+.stat dt {
   font-size: 12px;
   color: var(--text-3);
 }
 
-.trace-head dd {
-  margin: 4px 0 0;
-  font-size: 17px;
-  font-variant-numeric: tabular-nums;
+.stat dd {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 0;
 }
 
-.trace-head dd small {
+.stat dd > b {
+  font-size: 22px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.stat dd > span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+
+.stat small {
   font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
   color: var(--text-3);
 }
 
-.trace-head nav {
+.stat-bad {
+  color: var(--red-text);
+}
+
+/* A part of the run on a card of its own: what it used, and its timeline. */
+.trace-card {
+  margin-top: 14px;
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--line);
+  overflow: hidden;
+}
+
+.trace-card > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.trace-card h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.trace-filter {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 22px 0 12px;
+  margin-left: auto;
 }
 
-.trace-head nav button,
+.trace-filter button,
 .views button {
-  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 11px;
   border-radius: 99px;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-2);
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
-.trace-head nav button:hover,
+.trace-filter button small {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.trace-filter button:hover,
 .views button:hover {
   color: var(--text);
   box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 
-.trace-head nav button[aria-pressed="true"],
+.trace-filter button[aria-pressed="true"],
 .views button[aria-pressed="true"] {
   background: var(--ink);
   color: var(--paper);
   box-shadow: none;
 }
 
-/* What the run used, one row per tool, model or picture model. */
-.meters {
-  margin: 0 0 18px;
+.trace-filter button[aria-pressed="true"] small {
+  color: inherit;
+  opacity: 0.7;
 }
 
-.meters summary {
-  margin-bottom: 6px;
-  font-size: 12.5px;
+/* Each kind of work has a colour: its tag, its bar on the timeline. */
+[data-kind="turn"] {
+  --kind: #d97757;
+}
+
+[data-kind="tool"] {
+  --kind: #6f8fa8;
+}
+
+[data-kind="generation"] {
+  --kind: #8a6fb0;
+}
+
+[data-kind="capture"] {
+  --kind: #5f9a74;
+}
+
+[data-kind="search"] {
+  --kind: #c9a14a;
+}
+
+[data-kind="compact"],
+[data-kind="execution"],
+[data-kind="note"] {
+  --kind: #a49d8f;
+}
+
+.span-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  min-width: 42px;
+  font-style: normal;
+  font-size: 11px;
   color: var(--text-3);
-  cursor: pointer;
 }
 
-.meters table {
+.span-kind::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--kind, var(--text-3));
+}
+
+.meters {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
@@ -4964,8 +5140,8 @@ button.now:hover .now-line {
 }
 
 .meters th {
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--separator);
+  padding: 8px 16px;
+  background: var(--surface);
   font-size: 11.5px;
   font-weight: 500;
   text-align: right;
@@ -4973,8 +5149,8 @@ button.now:hover .now-line {
 }
 
 .meters td {
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--separator);
+  padding: 8px 16px;
+  border-top: 1px solid var(--separator);
   text-align: right;
   color: var(--text-2);
 }
@@ -4985,13 +5161,8 @@ button.now:hover .now-line {
   color: var(--text);
 }
 
-.meters td i {
-  display: inline-block;
-  min-width: 34px;
+.meters td .span-kind {
   margin-right: 8px;
-  font-size: 11px;
-  font-style: normal;
-  color: var(--text-3);
 }
 
 .meters td small {
@@ -5003,40 +5174,34 @@ button.now:hover .now-line {
   color: var(--red-text);
 }
 
-.trace-meters {
-  display: block;
-  margin-top: 2px;
-  font-size: 11.5px;
-  color: var(--text-3);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
 .spans {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--separator);
 }
 
-.spans > li {
-  border-bottom: 1px solid var(--separator);
+.spans > li + li {
+  border-top: 1px solid var(--separator);
 }
 
 .spans > li > button {
   display: grid;
-  grid-template-columns: minmax(280px, 42%) 1fr 64px;
+  grid-template-columns: minmax(300px, 46%) 1fr 64px;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   width: 100%;
-  padding: 8px 6px;
+  padding: 8px 16px;
   text-align: left;
   font-size: 13px;
 }
 
 .spans > li > button:hover,
 .spans > li > button[aria-expanded="true"] {
-  background: var(--fill);
+  background: var(--surface);
+}
+
+.spans > li[data-kind="execution"] > button {
+  background: var(--paper);
+  font-weight: 500;
 }
 
 .span-name {
@@ -5048,12 +5213,13 @@ button.now:hover .now-line {
   white-space: nowrap;
 }
 
-.span-name i {
+.span-name b {
   flex: none;
-  min-width: 28px;
-  font-style: normal;
-  font-size: 11.5px;
-  color: var(--text-3);
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  color: var(--text);
 }
 
 .span-name small {
@@ -5072,8 +5238,8 @@ button.now:hover .now-line {
 
 .span-bar {
   position: relative;
-  height: 8px;
-  border-radius: 4px;
+  height: 6px;
+  border-radius: 3px;
   background: var(--fill);
 }
 
@@ -5081,28 +5247,8 @@ button.now:hover .now-line {
   position: absolute;
   top: 0;
   bottom: 0;
-  border-radius: 4px;
-  background: #b9b3a6;
-}
-
-.spans [data-kind="turn"] .span-bar i {
-  background: #d97757;
-}
-
-.spans [data-kind="tool"] .span-bar i {
-  background: #6f8fa8;
-}
-
-.spans [data-kind="generation"] .span-bar i {
-  background: #8a6fb0;
-}
-
-.spans [data-kind="capture"] .span-bar i {
-  background: #5f9a74;
-}
-
-.spans [data-kind="search"] .span-bar i {
-  background: #c9a14a;
+  border-radius: 3px;
+  background: var(--kind, #b9b3a6);
 }
 
 .spans [data-status="error"] .span-bar i {
@@ -5119,7 +5265,8 @@ button.now:hover .now-line {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 6px 20px 34px;
+  padding: 10px 16px 20px 40px;
+  background: var(--surface);
 }
 
 .part {
@@ -5601,27 +5748,284 @@ button.now:hover .now-line {
   color: var(--text-2);
 }
 
-.spent-lines {
-  display: grid;
-  gap: 3px;
-  margin: 6px 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-3);
+.work-usage > button > svg {
+  margin-left: auto;
+  align-self: center;
+  transition: transform 0.25s var(--ease-out);
 }
 
-.spent-lines b {
-  font-weight: 500;
+.work-usage > button[aria-expanded="true"] > svg {
+  transform: rotate(90deg);
+}
+
+/* Spending as a bill: a line a service, what it used and its cost, and the total. */
+.bill {
+  width: 100%;
+  margin: 8px 0 2px;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.45;
   color: var(--text-2);
 }
 
-.run > .spent-lines {
-  margin: 4px 0 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
+.run > .bill {
+  margin: 4px 0 10px;
+  border-radius: 10px;
   background: var(--fill);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.bill caption {
+  padding: 0 0 4px;
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.bill th,
+.bill td {
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+  font-weight: 400;
+}
+
+.bill tbody tr + tr > * {
+  border-top: 1px solid var(--separator);
+}
+
+.bill th {
+  width: 34%;
+}
+
+.bill th b {
+  display: block;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.bill th small {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.bill td:last-child {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+.bill tfoot > tr > * {
+  border-top: 1px solid var(--line-strong);
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* The drafts panel: each request with the drafts it saved, newest first. */
+.drafts {
+  display: grid;
+  gap: 14px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.drafts-group > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.drafts-group > header > i {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--fill);
+  color: var(--text-3);
+}
+
+.drafts-group > header > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.drafts-group > header > small {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.drafts-group > ul {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 0 11px;
+  padding: 0 0 0 18px;
+  list-style: none;
+  border-left: 1px solid var(--line);
+}
+
+.drafts-group li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 9px;
+}
+
+.drafts-group li:hover {
+  background: var(--fill);
+}
+
+.drafts-group li[data-previewing] {
+  background: var(--blue-soft);
+}
+
+.drafts-look {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.drafts-look > b {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.drafts-look > small {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.drafts-look[aria-pressed="true"] > svg {
+  color: var(--ai-deep);
+}
+
+.drafts-group li > em {
+  flex: none;
+  margin-right: 10px;
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ai-deep);
+}
+
+.drafts-restore {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 26px;
+  margin-right: 4px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--text-2);
+  opacity: 0;
+}
+
+.drafts-group li:hover .drafts-restore,
+.drafts-group li[data-previewing] .drafts-restore,
+.drafts-restore:focus-visible {
+  opacity: 1;
+}
+
+.drafts-restore:hover:not(:disabled) {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+/* Model settings: a provider's models listed inside it, prices as numbers with units. */
+.entries.nested {
+  gap: 8px;
+}
+
+.entries.nested .entry {
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.entries.nested .entry-row {
+  padding: 10px 12px;
+}
+
+.entries.nested .entry-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.add-model {
+  margin-top: 10px;
+}
+
+.add-provider {
+  position: relative;
+}
+
+.add-provider .popover {
+  top: calc(100% + 6px);
+  right: 0;
+  width: 280px;
+}
+
+.add-provider .popover button > span {
+  display: grid;
+  gap: 1px;
+}
+
+.add-provider .popover small {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.number-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.number-field input {
+  width: 120px;
+  text-align: right;
+}
+
+.number-field small {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* Over the canvas, the picks under the box sit on a veil of their own. */
+.composer-wrap[data-place="dock"] > .model-bar {
+  align-self: flex-end;
+  padding: 2px 4px;
+  border-radius: 10px;
+  background: var(--veil);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 /* Toggles where several can be on at once. */

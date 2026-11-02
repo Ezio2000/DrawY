@@ -1,6 +1,6 @@
 import { SceneRenderer } from "../runtime/scene.ts";
 import { fit, union, zoom, type Camera } from "../contracts/geometry.ts";
-import { plan, play, gesture, hatching, along, type Mark } from "./ink.ts";
+import { plan, play, gesture, hatching } from "./ink.ts";
 import type {
   Bounds,
   Instance,
@@ -56,8 +56,6 @@ export class Canvas {
   readonly layer = document.createElement("div");
   readonly ready: Promise<void>;
   private camera: Camera = { x: 0, y: 0, scale: 1 };
-  /** Holds the author's pen, which the canvas moves along whatever is being drawn. */
-  readonly pen = document.createElement("div");
   private pending?: SceneRenderer;
   private sketches = new Map<
     string,
@@ -66,16 +64,11 @@ export class Canvas {
       bounds: Bounds;
       shaded: boolean;
       ground: boolean;
-      /** Passes the pen has made over it while its drawing was being written. */
+      /** Passes made over it while its drawing was being written. */
       passes: number;
     }
   >();
   private sketched = 0;
-  private marks: (Mark & { at: number })[] = [];
-  private present = false;
-  private tip = { x: 0, y: 0 };
-  private steering = 0;
-  private steered = 0;
   private gliding = 0;
   private movable: boolean;
   /** Editing: a press selects instead of opening or operating what is drawn, any module
@@ -117,10 +110,6 @@ export class Canvas {
     this.layer.style.cssText =
       "position:absolute;left:0;top:0;width:0;height:0;overflow:visible;pointer-events:none;z-index:2;transform-origin:0 0";
     this.element.append(this.layer);
-    this.pen.style.cssText =
-      "position:absolute;left:0;top:0;z-index:4;pointer-events:none";
-    this.pen.dataset.state = "away";
-    this.element.append(this.pen);
     this.hover.style.cssText =
       "position:absolute;border:1px dashed rgba(193,95,60,.55);border-radius:6px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
     this.element.append(this.hover);
@@ -348,8 +337,6 @@ export class Canvas {
         ground: false,
         passes: 0,
       });
-      if (this.present)
-        this.marks.push({ start: 0, at, duration: 700, tip: along(path) });
       at += 240;
     }
     for (const s of wanted.values()) {
@@ -370,8 +357,8 @@ export class Canvas {
       at += 320;
       added = true;
     }
-    // While the pen is free and a drawing is still being written, it goes over the modules
-    // that use it: a second line around the outline, then cross-hatching, then a slow trace.
+    // While a drawing is still being written, the modules that use it are gone over again:
+    // a second line around the outline, then cross-hatching, then a pause.
     const working = [...wanted.values()].filter(
       (s) =>
         s.drawingId === drawings.writing &&
@@ -402,23 +389,14 @@ export class Canvas {
           at,
           1100,
         );
-      else if (this.present)
-        this.marks.push({
-          start: 0,
-          at,
-          duration: 2400,
-          tip: along(sketch.element.querySelector("path")!),
-        });
       at += pass === 1 ? 1500 : pass === 2 ? 1100 : 2400;
-      this.steer();
     }
     this.sketched = at;
     if (added || wanted.size !== this.sketches.size) {
       if (this.automatic) this.fit(true);
-      this.steer();
     }
   }
-  /** Draws a pencil line into a sketch at a time on the pen's schedule, the pen following. */
+  /** Draws a pencil line into a sketch at a time on the sketch's schedule. */
   private pencil(
     sketch: Element,
     d: string,
@@ -437,29 +415,6 @@ export class Canvas {
       easing: "cubic-bezier(0.45, 0.05, 0.35, 1)",
       fill: "both",
     });
-    if (this.present)
-      this.marks.push({ start: 0, at, duration, tip: along(path) });
-  }
-  /** Brings the author's pen onto the canvas while it works, and takes it away after. */
-  attend(present: boolean) {
-    if (this.present === present) return;
-    this.present = present;
-    if (present && this.pen.dataset.state === "away") {
-      // It waits in the middle of a blank page, or just off the corner of a drawing.
-      const { top, bottom } = this.options.insets?.() || { top: 0, bottom: 80 },
-        w = this.element.clientWidth,
-        h = this.element.clientHeight - bottom,
-        { x, y, scale } = this.camera,
-        b = this.renderer.bounds;
-      this.tip = this.renderer.instances.size
-        ? {
-            x: Math.min(w - 40, x + (b.x + b.width) * scale + 24),
-            y: Math.min(h - 24, y + (b.y + b.height) * scale + 12),
-          }
-        : { x: w / 2, y: top + (h - top) / 2 };
-    }
-    if (!present) this.marks = [];
-    this.steer();
   }
   private erase(id: string, delay: number) {
     const sketch = this.sketches.get(id);
@@ -476,34 +431,6 @@ export class Canvas {
         () => sketch.element.remove(),
       );
   }
-  private follow(marks: Mark[], now: number) {
-    if (!this.present) return;
-    for (const m of marks) this.marks.push({ ...m, at: now + m.start });
-    this.steer();
-  }
-  /** Moves the pen to the tip of the latest stroke, easing between strokes; at rest it waits
-   * where it last drew. */
-  private steer = () => {
-    cancelAnimationFrame(this.steering);
-    const now = performance.now(),
-      dt = Math.min(64, now - this.steered || 16);
-    this.steered = now;
-    this.marks = this.marks.filter((m) => m.at + m.duration > now);
-    const active = this.marks.filter((m) => m.at <= now).at(-1);
-    const point = active?.tip(Math.min(1, (now - active.at) / active.duration));
-    let state = this.present ? "resting" : "away";
-    if (point) {
-      const rect = this.element.getBoundingClientRect();
-      const k = 1 - Math.exp(-dt / 40);
-      this.tip.x += (point.x - rect.left - this.tip.x) * k;
-      this.tip.y += (point.y - rect.top - this.tip.y) * k;
-      state = "drawing";
-    }
-    this.pen.style.transform = `translate(${this.tip.x}px,${this.tip.y}px)`;
-    this.pen.dataset.state = state;
-    if (state !== "away" || this.marks.length)
-      this.steering = requestAnimationFrame(this.steer);
-  };
   private unfold(before: SceneRenderer | undefined, after: SceneRenderer) {
     const leaving = before
       ? [...before.instances.values()].filter((m) => !after.instances.has(m.id))
@@ -566,7 +493,7 @@ export class Canvas {
       pace = Math.min(1, budget / end),
       done = new Map<string, number>();
     inked.forEach((m, i) => {
-      this.follow(play(plans[i], starts[i] * pace, pace), now);
+      play(plans[i], starts[i] * pace, pace);
       done.set(m.id, (starts[i] + plans[i].time) * pace);
       this.erase(m.id, starts[i] * pace);
     });
@@ -612,7 +539,7 @@ export class Canvas {
         done.get(l.from.moduleId) ?? 0,
         done.get(l.to.moduleId) ?? 0,
       );
-      this.follow(play(plan(host), Math.max(0, ready - 150), pace), now);
+      play(plan(host), Math.max(0, ready - 150), pace);
     }
   }
   private paint() {
@@ -1037,7 +964,6 @@ export class Canvas {
   }
   dispose() {
     cancelAnimationFrame(this.gliding);
-    cancelAnimationFrame(this.steering);
     this.abort.abort();
     this.observer.disconnect();
     this.pending?.dispose();
