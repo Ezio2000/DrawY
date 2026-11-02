@@ -9,6 +9,7 @@ import {
   permissions,
   DomainError,
   type Account,
+  type Invite,
   type AccountRole,
   type ModelCatalog,
   type Permission,
@@ -36,7 +37,8 @@ export class Storage {
  CREATE TABLE IF NOT EXISTS settings(user_id TEXT PRIMARY KEY,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS runs(user_id TEXT NOT NULL,id TEXT NOT NULL,work_id TEXT NOT NULL,data TEXT NOT NULL,context TEXT,PRIMARY KEY(user_id,id));
  CREATE TABLE IF NOT EXISTS roles(id TEXT PRIMARY KEY,data TEXT NOT NULL);
- CREATE TABLE IF NOT EXISTS system(key TEXT PRIMARY KEY,data TEXT NOT NULL);`);
+ CREATE TABLE IF NOT EXISTS system(key TEXT PRIMARY KEY,data TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS invites(code TEXT PRIMARY KEY,created_by TEXT,created_at INTEGER NOT NULL,used_by TEXT,used_at INTEGER);`);
     const columns = this.db.prepare("PRAGMA table_info(revisions)").all();
     if (!columns.some((c) => c.name === "cause")) this.recordCauses();
     this.recordRoles();
@@ -175,6 +177,51 @@ export class Storage {
       throw new DomainError("至少要保留一位管理员", 409);
     this.db.prepare("UPDATE users SET role=? WHERE id=?").run(roleId, userId);
     return this.account(userId);
+  }
+  /** Every invite, newest first, with who made and who used it. */
+  invites(): Invite[] {
+    return this.db
+      .prepare("SELECT * FROM invites ORDER BY created_at DESC, rowid DESC")
+      .all()
+      .map((r) => ({
+        code: r.code as string,
+        createdAt: r.created_at as number,
+        createdBy: r.created_by ? this.accountName(r.created_by as string) : null,
+        usedBy: r.used_by
+          ? { id: r.used_by as string, name: this.accountName(r.used_by as string) }
+          : null,
+        usedAt: (r.used_at as number | null) ?? null,
+      }));
+  }
+  addInvite(code: string, userId: string) {
+    this.db
+      .prepare("INSERT INTO invites(code,created_by,created_at) VALUES(?,?,?)")
+      .run(code, userId, Date.now());
+  }
+  /** Marks an unused invite as used by an account; whether it was unused. */
+  useInvite(code: string, userId: string) {
+    return (
+      this.db
+        .prepare(
+          "UPDATE invites SET used_by=?,used_at=? WHERE code=? AND used_by IS NULL",
+        )
+        .run(userId, Date.now(), code).changes > 0
+    );
+  }
+  /** Withdraws an invite nobody has used; a used one stays as the record of who came in
+   * with it. */
+  deleteInvite(code: string) {
+    const r = this.db
+      .prepare("SELECT used_by FROM invites WHERE code=?")
+      .get(code) as { used_by: string | null } | undefined;
+    if (!r) throw new DomainError("邀请码不存在", 404);
+    if (r.used_by) throw new DomainError("邀请码已被使用，不能删除", 409);
+    this.db.prepare("DELETE FROM invites WHERE code=?").run(code);
+  }
+  /** Whether accounts exist yet: until one does, anyone may set the app up without an
+   * invite. */
+  hasAccounts() {
+    return !!this.db.prepare("SELECT 1 FROM users LIMIT 1").get();
   }
   /** Gives revisions saved before they recorded their cause one: the first creates the
    * work, those a run's steps saved belong to its request, and the rest were edits. */

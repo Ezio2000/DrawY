@@ -6,7 +6,8 @@ import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { Storage, type UserStore } from "../../modules/storage/index.ts";
 import {
-  register,
+  signUp,
+  createInvites,
   login,
   saveRole,
   removeRole,
@@ -89,14 +90,23 @@ export function createApp(storage: Storage) {
   const userOf = (token?: string) =>
     token ? storage.userFor(token) : undefined;
   app.get("/api/health", (c) => c.json({ ok: true }));
+  // Whether the sign-up page asks for an invite: not while the app has no accounts, since
+  // the first one sets it up.
+  app.get("/api/auth/signup", (c) =>
+    c.json({ invite: storage.hasAccounts() }),
+  );
   for (const action of ["register", "login"] as const)
     app.post("/api/auth/" + action, async (c) => {
-      const { name, password } = z
-        .object({ name: z.string(), password: z.string() })
+      const { name, password, invite } = z
+        .object({
+          name: z.string(),
+          password: z.string(),
+          invite: z.string().optional(),
+        })
         .parse(await c.req.json());
       const user =
         action === "register"
-          ? register(storage, name, password)
+          ? signUp(storage, name, password, invite)
           : login(storage, name, password);
       setCookie(c, "drawy_session", storage.session(user.id), {
         httpOnly: true,
@@ -184,6 +194,22 @@ export function createApp(storage: Storage) {
     allowed(c, "accounts.manage");
     const { role } = z.object({ role: z.string() }).parse(await c.req.json());
     return c.json(storage.setRole(c.req.param("id"), role));
+  });
+  app.get("/api/admin/invites", (c) => {
+    allowed(c, "accounts.manage");
+    return c.json(storage.invites());
+  });
+  app.post("/api/admin/invites", async (c) => {
+    allowed(c, "accounts.manage");
+    const { count } = z
+      .object({ count: z.number().int().min(1).max(50).default(1) })
+      .parse(await c.req.json().catch(() => ({})));
+    return c.json(createInvites(storage, c.get("user").id, count));
+  });
+  app.delete("/api/admin/invites/:code", (c) => {
+    allowed(c, "accounts.manage");
+    storage.deleteInvite(c.req.param("code"));
+    return c.json({ ok: true });
   });
   app.get("/api/admin/roles", (c) => {
     allowed(c, "accounts.manage");
