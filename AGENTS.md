@@ -74,7 +74,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 绘制模型的 `decisionUsesSetting` 对应“决策轮沿用设置”，默认关闭。开启后 `deliberate` 在构思和看图评判轮同样使用 `role.effort`，不自动提升；已有上下文最后一次 `configuration_update` 若仍是高档位，会追加设置档位恢复它。该选项对 Responses、Chat Completions 和 Messages 的决策策略都生效。
 
-输入框右下方的 `ModelBar` 是五个独立的选择：绘制模型（按供应商分组）、思考强度（模型开放多于一档才出现）、速度（`menuFor` 只在开放多于一档时给 `chosen.speed`）、联网搜索、生图模型；按钮不带下拉箭头。选了之后前端先用 `chosen()` 乐观显示，再 `PUT /api/settings` 并重新读 `/api/models` 看落定结果。地址、凭证和价格只在设置中显示。
+输入框右下方的 `ModelBar` 有三个按钮、五个选择：绘制模型、思考强度（模型开放多于一档才出现）和速度（`menuFor` 只在开放多于一档时给 `chosen.speed`）合成一个按钮（模型名深色，强度和速度浅灰在后），点开的面板上方是按供应商分组的模型列表，下方是强度和速度的分段选择（`Segments`），面板在三者都调完前保持打开；联网搜索和生图模型各一个按钮，选完即关。按钮都是纯文字，不带图标和下拉箭头。选了之后前端先用 `chosen()` 乐观显示，再 `PUT /api/settings` 并重新读 `/api/models` 看落定结果。地址、凭证和价格只在设置中显示。
 
 绘制模型的可选 `provider` 保存 OpenRouter 提供商标识。设置页的“固定提供商”留空时自动路由，填写后 Responses、Chat Completions 和 Messages 都传 `provider: { only: [标识], allow_fallbacks: false }`；不能切到其他提供商，渠道不可用时返回错误。轮次的 `request.provider` 同样记录这个限制。
 
