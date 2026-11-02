@@ -811,7 +811,14 @@ it("develops pictures while the author composes and holds finish until they were
     const png = await picture();
     library.route(async () => {
       await painted;
-      return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+      return Response.json({
+        data: [{ b64_json: png.toString("base64") }],
+        usage: {
+          input_tokens: 1300,
+          input_tokens_details: { text_tokens: 100, image_tokens: 1200 },
+          output_tokens: 4000,
+        },
+      });
     });
     const seen: any[][] = [];
     let id = "";
@@ -886,6 +893,15 @@ it("develops pictures while the author composes and holds finish until they were
       run.steps.find((s) => s.kind === "tool" && s.name === "generate_images"),
     ).toMatchObject({
       images: [{ id, status: "ready" }],
+    });
+    // The picture model's tokens are kept split as they are priced: text and image input.
+    expect(run.usage?.images).toEqual({
+      count: 1,
+      input: 1300,
+      output: 4000,
+      textInput: 100,
+      imageInput: 1200,
+      textOutput: 0,
     });
   } finally {
     db.close();

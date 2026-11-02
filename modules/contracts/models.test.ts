@@ -1,6 +1,7 @@
 import { it, expect } from "vitest";
 import {
   costOf,
+  imageTokensOf,
   defaultCatalog,
   defaultWriter,
   emptySettings,
@@ -63,7 +64,7 @@ function catalog(): ModelCatalog {
         ],
       },
     ],
-    painters: [{ ...base.painters[0], credential: "k", models: [{ ...base.painters[0].models[0], prices: { image: 0.04, input: 5, output: 40 } }] }],
+    painters: [{ ...base.painters[0], credential: "k", models: [{ ...base.painters[0].models[0], prices: { image: 0.04, textInput: 5, imageInput: 8, output: 30, textOutput: 10 } }] }],
     searches: [
       { id: "s", name: "SearXNG", provider: "searxng", baseUrl: "http://localhost:8888", credential: "", prices: { query: 0.002, page: 0 } },
     ],
@@ -157,7 +158,7 @@ it("prices a run at the speed it picked, the way it searched and the pictures it
     author: { input: 4, cached: 1, cacheWrite: 0, output: 20 },
     search: 0.002,
     page: 0,
-    image: { image: 0.04, input: 5, output: 40 },
+    image: { image: 0.04, textInput: 5, imageInput: 8, output: 30, textOutput: 10 },
   });
   const cost = costOf(
     {
@@ -167,13 +168,14 @@ it("prices a run at the speed it picked, the way it searched and the pictures it
       reasoning: 50_000,
       searches: 5,
       pages: 2,
-      images: { count: 2, input: 1000, output: 10_000 },
+      images: { count: 2, input: 3000, output: 10_000, textInput: 1000, imageInput: 2000, textOutput: 500 },
     },
     fast.prices,
   )!;
   expect(cost.author).toBeCloseTo(0.6 * 4 + 0.4 * 1 + 0.1 * 20);
   expect(cost.search).toBeCloseTo(0.01);
-  expect(cost.image).toBeCloseTo(0.08 + 0.005 + 0.4);
+  // Text and image input, image and text output, each at its own price.
+  expect(cost.image).toBeCloseTo(0.08 + (1000 * 5 + 2000 * 8 + 9500 * 30 + 500 * 10) / 1e6);
   expect(cost.total).toBeCloseTo(cost.author + cost.search + cost.image);
   // Claude's cache writes are priced on their own.
   expect(
@@ -185,4 +187,25 @@ it("prices a run at the speed it picked, the way it searched and the pictures it
   // The model's own search is priced by the call.
   expect(settingsFor(c, emptySettings()).prices).toMatchObject({ search: 0.01, page: 0 });
   expect(costOf(undefined, undefined)).toBeUndefined();
+});
+
+it("splits a picture model's tokens as they are priced, so a style reference costs image input", () => {
+  const prices = { image: 0, textInput: 5, imageInput: 8, output: 30, textOutput: 0 };
+  const run = (usage: object) => {
+    const t = imageTokensOf(usage);
+    return costOf(
+      { input: 0, cached: 0, output: 0, reasoning: 0, images: { count: 1, ...t } },
+      { author: { input: 0, cached: 0, cacheWrite: 0, output: 0 }, search: 0, page: 0, image: prices },
+    )!.image;
+  };
+  // As the Images API reports a picture painted with one style reference.
+  const withReference = {
+    input_tokens: 1300,
+    input_tokens_details: { text_tokens: 100, image_tokens: 1200 },
+    output_tokens: 4000,
+  };
+  expect(imageTokensOf(withReference)).toEqual({ input: 1300, output: 4000, textInput: 100, imageInput: 1200, textOutput: 0 });
+  expect(run(withReference)).toBeCloseTo((100 * 5 + 1200 * 8 + 4000 * 30) / 1e6);
+  // A provider that does not split its input is counted as text.
+  expect(imageTokensOf({ input_tokens: 50, output_tokens: 10 })).toMatchObject({ textInput: 50, imageInput: 0 });
 });

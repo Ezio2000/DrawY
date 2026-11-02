@@ -777,7 +777,7 @@ describe("roles and shared models", () => {
           baseUrl: "https://flare.invalid/v1",
           credential: "flare-key",
           models: [
-            { id: "flare", name: "Flare", description: "", model: "flare-image", prices: { image: 0.02, input: 0, output: 0 } },
+            { id: "flare", name: "Flare", description: "", model: "flare-image", prices: { image: 0.02, textInput: 0, imageInput: 0, output: 0, textOutput: 0 } },
           ],
         },
       ],

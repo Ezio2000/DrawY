@@ -13,6 +13,7 @@ import {
   type Effort,
   type Settings,
   type RunUsage,
+  imageTokensOf,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { writeWork, setBrief } from "../workspace/index.ts";
@@ -1323,9 +1324,13 @@ export class Agent {
               if (r.status === "ready") {
                 const u = usageOf(run);
                 const images = (u.images ??= { count: 0, input: 0, output: 0 });
+                const t = imageTokensOf(r.usage);
                 images.count++;
-                images.input += r.usage?.input_tokens ?? 0;
-                images.output += r.usage?.output_tokens ?? 0;
+                images.input += t.input;
+                images.output += t.output;
+                images.textInput = (images.textInput ?? 0) + t.textInput;
+                images.imageInput = (images.imageInput ?? 0) + t.imageInput;
+                images.textOutput = (images.textOutput ?? 0) + t.textOutput;
               }
               this.emit(store, run);
               // An open canvas redraws the picture with its measured content.

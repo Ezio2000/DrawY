@@ -307,13 +307,37 @@ export const defaultRole = (): Role => {
 export interface ImageRole extends Connection {
   model: string;
 }
+/** What a picture model charges, in US dollars: per picture where it prices by the
+ * picture, and per million tokens of each kind the Images API reports apart (text and
+ * image input, image output and, on models that write some, text output), since each has
+ * its own price; reference pictures are image input. */
+export interface ImagePrices {
+  image: number;
+  textInput: number;
+  imageInput: number;
+  output: number;
+  textOutput: number;
+}
 export interface ImageModel {
   id: string;
   model: string;
   name: string;
   description: string;
-  /** What each picture costs, and its tokens per million where the provider counts them. */
-  prices: { image: number; input: number; output: number };
+  prices: ImagePrices;
+}
+/** The token counts a picture model reports, split as they are priced. A provider that
+ * does not split its input counts it all as text. */
+export function imageTokensOf(usage: any) {
+  const input = usage?.input_tokens ?? 0,
+    output = usage?.output_tokens ?? 0;
+  const image = usage?.input_tokens_details?.image_tokens ?? 0;
+  return {
+    input,
+    output,
+    textInput: usage?.input_tokens_details?.text_tokens ?? Math.max(0, input - image),
+    imageInput: image,
+    textOutput: usage?.output_tokens_details?.text_tokens ?? 0,
+  };
 }
 export type ImageProvider = Provider<ImageModel>;
 export const imageLabel = (p: Pick<Provider<unknown>, "name">, m: Pick<ImageModel, "name" | "model">) =>
@@ -323,7 +347,8 @@ export const defaultImageModel = (): ImageModel => ({
   model: "gpt-image-2.5-sunburst",
   name: "",
   description: "",
-  prices: { image: 0, input: 0, output: 0 },
+  // gpt-image-2.5 at the official standard prices.
+  prices: { image: 0, textInput: 5, imageInput: 8, output: 30, textOutput: 0 },
 });
 
 // ---- Search services
@@ -413,7 +438,13 @@ const imageProviderSchema = z.object({
       model: z.string().min(1),
       name: z.string().max(80),
       description: z.string().max(200),
-      prices: z.object({ image: money, input: money, output: money }),
+      prices: z.object({
+        image: money,
+        textInput: money,
+        imageInput: money,
+        output: money,
+        textOutput: money,
+      }),
     }),
   ),
 });
@@ -533,7 +564,7 @@ export interface RunPrices {
   author: TokenPrices;
   search: number;
   page: number;
-  image: { image: number; input: number; output: number };
+  image: ImagePrices;
 }
 /** What a run cost, in US dollars, by service. */
 export interface RunCost {
@@ -552,7 +583,15 @@ export function costOf(usage: RunUsage | undefined, prices: RunPrices | undefine
   const author = (fresh * a.input + u.cached * a.cached + write * a.cacheWrite + u.output * a.output) / 1e6;
   const search = (u.searches ?? 0) * prices.search + (u.pages ?? 0) * prices.page;
   const i = u.images;
-  const image = i ? i.count * prices.image.image + (i.input * prices.image.input + i.output * prices.image.output) / 1e6 : 0;
+  const p = prices.image;
+  const image = i
+    ? i.count * p.image +
+      ((i.textInput ?? i.input - (i.imageInput ?? 0)) * p.textInput +
+        (i.imageInput ?? 0) * p.imageInput +
+        (i.output - (i.textOutput ?? 0)) * p.output +
+        (i.textOutput ?? 0) * p.textOutput) /
+        1e6
+    : 0;
   return { author, search, image, total: author + search + image };
 }
 

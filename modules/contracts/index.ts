@@ -427,7 +427,16 @@ export interface RunUsage {
   pages?: number;
   /** Calls to tools the provider runs (web search and the like), by tool. */
   hosted?: Record<string, number>;
-  images?: { count: number; input: number; output: number };
+  /** Pictures painted, and the picture model's tokens: all input and output, and the
+   * parts priced apart (text and image input, text output). */
+  images?: {
+    count: number;
+    input: number;
+    output: number;
+    textInput?: number;
+    imageInput?: number;
+    textOutput?: number;
+  };
 }
 export interface Run {
   id: string;

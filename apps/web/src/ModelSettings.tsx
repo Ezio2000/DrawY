@@ -776,17 +776,31 @@ function imageGroups(m: ImageModel, patch: Patch<ImageModel>, w: W) {
           unit={w.perImage}
         />
       </Row>
-      <Row label={w.priceImageInput} hint={w.perMillion}>
+      <Row label={w.priceTextInput} hint={w.priceTextInputHint}>
         <NumberField
-          value={m.prices.input}
-          set={(input) => set({ input })}
+          value={m.prices.textInput}
+          set={(textInput) => set({ textInput })}
           unit="$ / 1M"
         />
       </Row>
-      <Row label={w.priceImageOutput} hint={w.perMillion}>
+      <Row label={w.priceImageInput} hint={w.priceImageInputHint}>
+        <NumberField
+          value={m.prices.imageInput}
+          set={(imageInput) => set({ imageInput })}
+          unit="$ / 1M"
+        />
+      </Row>
+      <Row label={w.priceImageOutput} hint={w.priceImageOutputHint}>
         <NumberField
           value={m.prices.output}
           set={(output) => set({ output })}
+          unit="$ / 1M"
+        />
+      </Row>
+      <Row label={w.priceTextOutput} hint={w.priceTextOutputHint}>
+        <NumberField
+          value={m.prices.textOutput}
+          set={(textOutput) => set({ textOutput })}
           unit="$ / 1M"
         />
       </Row>
