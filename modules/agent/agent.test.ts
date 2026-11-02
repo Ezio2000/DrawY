@@ -417,7 +417,7 @@ it("compacts at the budget with original references and closes interrupted tool 
     store.saveRun(run);
     const ctx = {
       input: [
-        { role: "user", content: "x".repeat(384001) },
+        { role: "user", content: "x".repeat(600001) },
         { type: "configuration_update", reasoning: { effort: "max" } },
       ] as any[],
       generations: 0,
@@ -501,7 +501,7 @@ it("goes on without old pictures when a summary fails, and sizes the context by 
     });
     const ctx = {
       input: [
-        { role: "user", content: "x".repeat(384001) },
+        { role: "user", content: "x".repeat(600001) },
         shot(1),
         shot(2),
         shot(3),
@@ -527,7 +527,7 @@ it("goes on without old pictures when a summary fails, and sizes the context by 
             },
             { type: "function_call", name: "read_work", arguments: "{}", call_id: "r" },
           ],
-          usage: { input_tokens: 50000, output_tokens: 100 },
+          usage: { input_tokens: 190000, output_tokens: 100 },
           response: {},
         };
       agent.cancel(store, run.id);
@@ -542,7 +542,7 @@ it("goes on without old pictures when a summary fails, and sizes the context by 
         i.content.some((c: any) => c.type === "input_image"),
     );
     expect(pictures.map((i: any) => i.content[0].text)).toEqual(["look 2", "look 3"]);
-    // The second turn did not summarize again: the reported 50k tokens are under budget.
+    // The second turn did not summarize again: the reported 190k tokens plus the work stay below the 200k threshold.
     expect(summaries).toBe(1);
   } finally {
     db.close();

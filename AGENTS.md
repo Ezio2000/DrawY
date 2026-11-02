@@ -42,7 +42,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 5. `view_canvas` 经 `modules/observation` 请求截图服务。截图服务用 `modules/runtime/document.ts` 生成页面，加载 `/runtime/runtime.js` 渲染场景，截下图片，连同几何信息一起作为图片消息送回同一段对话。
 6. 运行过程中的每个变化，都以 `run` 事件经 SSE（`/api/events`）推给前端。前端由 `modules/canvas` 把过程画成铅笔起稿和图片显影的动画。整个过程同时由 `modules/trace` 记入 `trace.sqlite`。
 
-上下文超过 12.8 万 token 时 `compact` 把对话换成摘要。大小取上一轮 `usage.input_tokens`（记在 `Context.measured`）加之后新增项的估算，估算不计 `encrypted_content` 和图片 base64；摘要用 low 推理强度、16k 输出上限，并去掉对话里的 `configuration_update`；摘要失败时只把较早的截图换成文字占位，运行继续。
+上下文达到 20 万 token 时 `compact` 把对话换成摘要。大小取上一轮 `usage.input_tokens`（记在 `Context.measured`）加之后新增项的估算，估算不计 `encrypted_content` 和图片 base64；摘要用 low 推理强度、16k 输出上限，并去掉对话里的 `configuration_update`；摘要失败时只把较早的截图换成文字占位，运行继续。
 
 ## 账号、角色与模型
 
