@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Spinner } from "@drawy/ui";
 import { Brand } from "./Title.tsx";
@@ -12,8 +12,17 @@ export function Auth({ done }: { done: (user: User) => void }) {
   const [signup, S] = useState(false),
     [name, N] = useState(""),
     [password, P] = useState(""),
+    [invite, I] = useState(""),
+    // Whether signing up takes an invite: it does once the app has its first account.
+    [needsInvite, setNeedsInvite] = useState(true),
     [busy, B] = useState(false),
     [error, E] = useState("");
+  useEffect(() => {
+    void api<{ invite: boolean }>("/auth/signup").then(
+      (r) => setNeedsInvite(r.invite),
+      () => {},
+    );
+  }, []);
   return (
     <div className={cx("auth")}>
       <section className={cx("auth-side")}>
@@ -34,7 +43,9 @@ export function Auth({ done }: { done: (user: User) => void }) {
                   await api<User>(
                     "/auth/" + (signup ? "register" : "login"),
                     "POST",
-                    { name, password },
+                    signup && needsInvite
+                      ? { name, password, invite }
+                      : { name, password },
                   ),
                 );
               } catch (e) {
@@ -66,6 +77,17 @@ export function Auth({ done }: { done: (user: User) => void }) {
               required
               minLength={6}
             />
+            {signup && needsInvite && (
+              <input
+                aria-label={t.auth.invite}
+                placeholder={t.auth.invite}
+                autoComplete="off"
+                spellCheck={false}
+                value={invite}
+                onChange={(e) => I(e.target.value)}
+                required
+              />
+            )}
             {error && (
               <p className={cx("error")} role="alert">
                 {error}

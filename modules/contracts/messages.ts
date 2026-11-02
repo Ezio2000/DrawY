@@ -27,6 +27,11 @@ const exact: Record<string, string> = {
     "Enter a username and a password of at least 6 characters",
   "用户名已存在": "That username is already taken",
   "用户名或密码错误": "Wrong username or password",
+  请输入邀请码: "Enter an invite code",
+  邀请码无效或已被使用: "That invite code is invalid or has already been used",
+  邀请码不存在: "Invite code not found",
+  "邀请码已被使用，不能删除": "A used invite code can't be removed",
+  "一次可以生成 1 到 50 个邀请码": "You can make 1 to 50 invite codes at a time",
   "只有画法素材有预览": "Only drawing materials have previews",
   "请在模型设置中配置生图凭证":
     "Set up the image model's credentials in Settings",

@@ -4529,6 +4529,43 @@ button.now:hover .now-line {
   font-size: 13px;
 }
 
+/* Invites: a code to read out and copy, what became of it, and its two actions. */
+.invite-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  user-select: all;
+}
+
+.invite-when {
+  font-size: 12.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.invite-action {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.invite-action:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.invites li {
+  min-height: 52px;
+}
+
 /* Everyone's own settings, then a gap before what a role lets one run. */
 .settings-nav button[data-break] {
   margin-top: 14px;

@@ -11,7 +11,7 @@ import {
   settingsSchema,
   type Work,
 } from "../contracts/index.ts";
-import { register, login } from "../identity/index.ts";
+import { register, login, createInvites } from "../identity/index.ts";
 import { createApp } from "../../apps/server/app.ts";
 import { serveLibrary, picture } from "@drawy/materials/testing";
 import { library as client } from "../materials/index.ts";
@@ -21,6 +21,9 @@ beforeEach(() => {
   db = new Storage(dir);
   library = serveLibrary(client.base);
 });
+/** A fresh invite for signing up over HTTP once the app has an account. */
+const invite = () =>
+  db.hasAccounts() ? createInvites(db, db.accounts()[0].id)[0].code : undefined;
 afterEach(() => {
   library.close();
   db.close();
@@ -345,7 +348,7 @@ describe("user owned works", () => {
       const r = await app.request("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, password: "abcdef" }),
+        body: JSON.stringify({ name, password: "abcdef", invite: invite() }),
       });
       return {
         cookie: r.headers.get("set-cookie")!.split(";")[0],
@@ -627,7 +630,7 @@ describe("HTTP identity boundary", () => {
       const r = await app.request("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, password: "abcdef" }),
+        body: JSON.stringify({ name, password: "abcdef", invite: invite() }),
       });
       return r.headers.get("set-cookie")!.split(";")[0];
     };
@@ -673,7 +676,7 @@ describe("roles and shared models", () => {
       const r = await app.request("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, password: "abcdef" }),
+        body: JSON.stringify({ name, password: "abcdef", invite: invite() }),
       });
       const account = (await r.json()) as { id: string; role: string };
       return { ...account, cookie: r.headers.get("set-cookie")!.split(";")[0] };
@@ -788,7 +791,7 @@ describe("roles and shared models", () => {
       const r = await app.request("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, password: "abcdef" }),
+        body: JSON.stringify({ name, password: "abcdef", invite: invite() }),
       });
       const account = (await r.json()) as { id: string };
       return { ...account, cookie: r.headers.get("set-cookie")!.split(";")[0] };
@@ -844,6 +847,68 @@ describe("roles and shared models", () => {
     expect((await file(bob.cookie)).status).toBe(200);
     expect((await publish(admin.cookie, false)).status).toBe(200);
     expect(ids(await shelf(alice.cookie, "mine"))).toEqual([mine.id]);
+  });
+});
+describe("invites", () => {
+  it("lets the first account set the app up, then admits each later one with an unused invite", async () => {
+    const { app } = createApp(db);
+    const post = (path: string, body: object, cookie = "") =>
+      app.request("/api" + path, {
+        method: "POST",
+        headers: { cookie, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const call = async (cookie: string, path: string, method = "GET") => {
+      const r = await app.request("/api" + path, { method, headers: { cookie } });
+      return { status: r.status, body: await r.json() };
+    };
+    expect((await (await app.request("/api/auth/signup")).json()).invite).toBe(false);
+    const first = await post("/auth/register", { name: "admin", password: "abcdef" });
+    expect(first.status).toBe(200);
+    const admin = first.headers.get("set-cookie")!.split(";")[0];
+    expect((await (await app.request("/api/auth/signup")).json()).invite).toBe(true);
+    // Without an invite, or with one that doesn't exist, nobody else gets in.
+    expect(
+      (await post("/auth/register", { name: "a", password: "abcdef" })).status,
+    ).toBe(400);
+    expect(
+      (await post("/auth/register", { name: "a", password: "abcdef", invite: "NOPE-NOPE" }))
+        .status,
+    ).toBe(403);
+    const made = await post("/admin/invites", { count: 2 }, admin);
+    const [one, two] = (await made.json()) as { code: string }[];
+    expect(one.code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+    // A failed sign-up leaves the invite; a lowercase, undashed one still works, once.
+    expect(
+      (await post("/auth/register", { name: "admin", password: "abcdef", invite: one.code }))
+        .status,
+    ).toBe(409);
+    const typed = one.code.toLowerCase().replace("-", " ");
+    const member = await post("/auth/register", { name: "a", password: "abcdef", invite: typed });
+    expect(member.status).toBe(200);
+    const memberCookie = member.headers.get("set-cookie")!.split(";")[0];
+    expect(
+      (await post("/auth/register", { name: "b", password: "abcdef", invite: one.code }))
+        .status,
+    ).toBe(403);
+    // Only those who manage accounts see and change invites.
+    expect((await call(memberCookie, "/admin/invites")).status).toBe(403);
+    expect((await post("/admin/invites", {}, memberCookie)).status).toBe(403);
+    const list = (await call(admin, "/admin/invites")).body;
+    expect(list).toHaveLength(2);
+    expect(list.find((i: { code: string }) => i.code === one.code)).toMatchObject({
+      createdBy: "admin",
+      usedBy: { name: "a" },
+    });
+    expect(list.find((i: { code: string }) => i.code === two.code).usedBy).toBeNull();
+    // A used invite stays as a record; an unused one can be withdrawn.
+    expect((await call(admin, "/admin/invites/" + one.code, "DELETE")).status).toBe(409);
+    expect((await call(admin, "/admin/invites/" + two.code, "DELETE")).status).toBe(200);
+    expect(
+      (await post("/auth/register", { name: "b", password: "abcdef", invite: two.code }))
+        .status,
+    ).toBe(403);
+    expect((await call(admin, "/admin/invites")).body).toHaveLength(1);
   });
 });
 describe("exported pages", () => {

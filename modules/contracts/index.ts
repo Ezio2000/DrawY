@@ -415,6 +415,16 @@ export interface Account {
   builtinRole: boolean;
   permissions: Permission[];
 }
+/** A one-time code an administrator hands out, which lets one person create an account. */
+export interface Invite {
+  code: string;
+  createdAt: number;
+  /** Who made it, by name; a removed account has none. */
+  createdBy: string | null;
+  /** The account it made, once used. */
+  usedBy: { id: string; name: string | null } | null;
+  usedAt: number | null;
+}
 export interface Observation {
   /** When the canvas was looked at. */
   at: number;

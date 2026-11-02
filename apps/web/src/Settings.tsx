@@ -10,6 +10,8 @@ import {
   ChevronDown,
   Search,
   Check,
+  Copy,
+  Ticket,
 } from "lucide-react";
 import { Segmented, Switch, Spinner, pageLocale } from "@drawy/ui";
 import {
@@ -18,6 +20,7 @@ import {
   speedFor,
   type Account,
   type AccountRole,
+  type Invite,
   type ModelCatalog,
   type ModelOption,
   type UserSettings,
@@ -27,6 +30,7 @@ import { cx } from "./cx.ts";
 import { Title } from "./Title.tsx";
 import { useT, dictionaries } from "./i18n.tsx";
 import { AccountContext, useCan } from "./account.tsx";
+import { ago } from "./time.ts";
 
 const channels = {
   api: { baseUrl: "https://api.openai.com/v1" },
@@ -155,7 +159,13 @@ const sharing = (c: ModelCatalog) => {
   return account.every((k) => c.image[k] === model[k]);
 };
 
-type Tab = "preferences" | "author" | "image" | "accounts" | "roles";
+type Tab =
+  | "preferences"
+  | "author"
+  | "image"
+  | "accounts"
+  | "invites"
+  | "roles";
 
 /** The user's standing preferences; and, for those whose role allows it, the models
  * everyone draws and paints with, and the accounts and their roles. */
@@ -300,6 +310,7 @@ export function Settings() {
       ["author", PenTool, models],
       ["image", ImageIcon, models],
       ["accounts", Users, accounts],
+      ["invites", Ticket, accounts],
       ["roles", ShieldCheck, accounts],
     ] as const
   ).filter(([, , shown]) => shown);
@@ -537,6 +548,7 @@ export function Settings() {
           </section>
         )}
         {tab === "accounts" && <Accounts />}
+        {tab === "invites" && <Invites />}
         {tab === "roles" && <Roles />}
       </div>
       {(dirty || done || error) && (
@@ -707,6 +719,123 @@ function Accounts() {
             ))}
             {!shown.length && (
               <li className={cx("members-none")}>{w.noAccounts}</li>
+            )}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** The invite codes sign-ups need: made here, copied to hand out, each used once. An
+ * unused one can be withdrawn; a used one stays to show who came in with it. */
+function Invites() {
+  const t = useT(),
+    w = t.settings;
+  const [list, setList] = useState<Invite[]>(),
+    [copied, setCopied] = useState<string>(),
+    [error, E] = useState("");
+  useEffect(() => {
+    void api<Invite[]>("/admin/invites").then(setList, (e) => E(e.message));
+  }, []);
+  const attempt = async (fn: () => Promise<void>) => {
+    E("");
+    try {
+      await fn();
+    } catch (e) {
+      E(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const unused = (list ?? []).filter((i) => !i.usedBy).length;
+  return (
+    <section>
+      <Head title={t.titles.invites} hint={w.invitesHint}>
+        {list && (
+          <button
+            className={cx("secondary small")}
+            onClick={() =>
+              void attempt(async () => {
+                const made = await api<Invite[]>("/admin/invites", "POST", {
+                  count: 1,
+                });
+                setList((old) => [...made, ...old!]);
+              })
+            }
+          >
+            <Plus size={15} />
+            {w.makeInvite}
+          </button>
+        )}
+      </Head>
+      {error && (
+        <p className={cx("error")} role="alert">
+          {error}
+        </p>
+      )}
+      {!list ? (
+        !error && <Spinner />
+      ) : (
+        <div className={cx("group-card members invites")}>
+          <div className={cx("members-bar")}>
+            <small>{w.invitesCount(unused, list.length)}</small>
+          </div>
+          <ul>
+            {list.map((i) => (
+              <li key={i.code}>
+                <span className={cx("member-name")}>
+                  <code className={cx("invite-code")}>{i.code}</code>
+                  {i.usedBy ? (
+                    <Badge tone="muted">
+                      {w.inviteUsed(i.usedBy.name ?? w.inviteRemovedAccount)}
+                    </Badge>
+                  ) : (
+                    <Badge tone="accent">{w.inviteUnused}</Badge>
+                  )}
+                </span>
+                <small className={cx("invite-when")}>
+                  {ago(i.usedAt ?? i.createdAt)}
+                </small>
+                {!i.usedBy && (
+                  <>
+                    <button
+                      className={cx("invite-action")}
+                      title={copied === i.code ? w.inviteCopied : w.inviteCopy}
+                      aria-label={w.inviteCopy}
+                      onClick={() =>
+                        void navigator.clipboard?.writeText(i.code).then(() => {
+                          setCopied(i.code);
+                          setTimeout(
+                            () => setCopied((c) => (c === i.code ? undefined : c)),
+                            1500,
+                          );
+                        })
+                      }
+                    >
+                      {copied === i.code ? <Check size={15} /> : <Copy size={15} />}
+                    </button>
+                    <button
+                      className={cx("invite-action")}
+                      title={w.inviteRemove}
+                      aria-label={w.inviteRemove}
+                      onClick={() => {
+                        if (!confirm(w.inviteRemoveConfirm(i.code))) return;
+                        void attempt(async () => {
+                          await api(
+                            "/admin/invites/" + encodeURIComponent(i.code),
+                            "DELETE",
+                          );
+                          setList((old) => old!.filter((x) => x.code !== i.code));
+                        });
+                      }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </>
+                )}
+              </li>
+            ))}
+            {!list.length && (
+              <li className={cx("members-none")}>{w.noInvites}</li>
             )}
           </ul>
         </div>
