@@ -204,7 +204,8 @@ export class Canvas {
       first.element.style.visibility = "";
       if (this.automatic) this.fit(false);
       else this.paint();
-      this.unfold(undefined, first);
+      // Opening a work or entering a scene shows what is already drawn as it is: only
+      // what arrives while it is open unfolds.
       this.options.shown?.(scene);
     });
   }

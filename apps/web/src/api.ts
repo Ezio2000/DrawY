@@ -2,6 +2,7 @@ import { pageLocale } from "@drawy/ui";
 import type {
   Account,
   ModelChoice,
+  ServiceChoice,
 } from "../../../modules/contracts/index.ts";
 export async function api<T = any>(
   path: string,
@@ -37,9 +38,14 @@ export interface Summary {
   cover: string | null;
 }
 export type User = Account;
-/** The drawing models the user can pick from, and the one they use. */
+/** What the user can draw, search and paint with, and what they picked of each. */
 export interface Models {
   models: ModelChoice[];
   default: string;
   chosen: string;
+  images: ServiceChoice[];
+  image: string;
+  searches: ServiceChoice[];
+  /** The search service a model searching with one uses. */
+  search: string | null;
 }

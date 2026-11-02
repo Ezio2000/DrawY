@@ -20,6 +20,10 @@ import {
   type Account,
   type Work,
   type ModelChoice,
+  type ServiceChoice,
+  canSearchBuiltin,
+  searchFor,
+  searchReady,
   type Permission,
 } from "../../modules/contracts/index.ts";
 import {
@@ -148,32 +152,70 @@ export function createApp(storage: Storage) {
     return c.json({ ok: true });
   });
   app.get("/api/settings", (c) => c.json(c.get("store").ownSettings()));
-  // Either setting alone may change: the model picker saves only the model.
+  // Any setting alone may change: the picker saves only what it picked.
   app.put("/api/settings", async (c) => {
-    const store = c.get("store");
+    const store = c.get("store"),
+      own = store.ownSettings(),
+      change = userSettingsSchema.partial().parse(await c.req.json());
+    // How one model searches is saved beside how the others do.
     store.saveOwnSettings({
-      ...store.ownSettings(),
-      ...userSettingsSchema.partial().parse(await c.req.json()),
+      ...own,
+      ...change,
+      searchModes: { ...own.searchModes, ...change.searchModes },
     });
     return c.json({ ok: true });
   });
-  // The drawing models anyone may pick, by name only: connections stay with those who
-  // manage them.
+  // The drawing models, picture models and search services anyone may pick, by name and
+  // what they can do only: connections stay with those who manage them.
   app.get("/api/models", (c) => {
     const catalog = storage.models(),
-      own = c.get("store").ownSettings();
+      store = c.get("store"),
+      own = store.ownSettings(),
+      chosen = store.settings();
+    const service = catalog.searches.find((s) => s.id === chosen.search.service?.id) ??
+      catalog.searches.find((s) => s.id === (own.searchService ?? catalog.defaultSearch)) ??
+      catalog.searches[0];
+    const host = (url: string) => {
+      try {
+        return new URL(url).host;
+      } catch {
+        return url;
+      }
+    };
     const models: ModelChoice[] = catalog.models.map((m) => ({
       id: m.id,
       name: m.name,
       description: m.description,
+      model: m.model,
+      host: host(m.baseUrl),
+      ready: !!m.credential && m.tools,
+      vision: m.vision,
+      tools: m.tools,
+      builtinSearch: canSearchBuiltin(m),
+      search: searchFor(m, own.searchModes[m.id] ?? m.search, service),
+    }));
+    const images: ServiceChoice[] = catalog.images.map((m) => ({
+      id: m.id,
+      name: m.name,
+      description: m.description,
+      detail: m.model,
       ready: !!m.credential,
+    }));
+    const searches: ServiceChoice[] = catalog.searches.map((s) => ({
+      id: s.id,
+      name: s.name,
+      description: "",
+      detail: s.provider,
+      ready: searchReady(s),
     }));
     return c.json({
       models,
       default: catalog.default,
-      chosen: models.some((m) => m.id === own.model)
-        ? own.model
-        : catalog.default,
+      chosen: models.some((m) => m.id === own.model) ? own.model : catalog.default,
+      images,
+      image: images.some((m) => m.id === own.image) ? own.image : catalog.defaultImage,
+      searches,
+      search: service?.id ?? null,
     });
   });
   app.get("/api/admin/models", (c) => {

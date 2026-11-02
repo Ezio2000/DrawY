@@ -28,7 +28,7 @@ import { AccountContext } from "./account.tsx";
 import { cx } from "./cx.ts";
 import { Rail, Rename } from "./Rail.tsx";
 import { Auth } from "./Auth.tsx";
-import { Composer, type Attachment } from "./Composer.tsx";
+import { Composer, chosen, type Attachment } from "./Composer.tsx";
 import { Library } from "./Library.tsx";
 import { Settings } from "./Settings.tsx";
 import {
@@ -870,9 +870,13 @@ export function App() {
       attach={(files) => void attempt(() => upload(files))}
       pick={() => setPicking(true)}
       models={models}
-      chooseModel={(id) => {
-        setModels((m) => m && { ...m, chosen: id });
-        void attempt(() => api("/settings", "PUT", { model: id }));
+      choose={(change) => {
+        setModels((m) => m && chosen(m, change));
+        // What the server settles on (a search the new model lacks falls back) is shown next.
+        void attempt(async () => {
+          await api("/settings", "PUT", change);
+          setModels(await api<Models>("/models"));
+        });
       }}
     />
   );

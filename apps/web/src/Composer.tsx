@@ -10,7 +10,13 @@ import {
   Shapes,
   PencilLine,
   ChevronDown,
+  Eye,
+  EyeOff,
+  Wrench,
+  Globe,
+  Image as ImageIcon,
 } from "lucide-react";
+import type { SearchMode, UserSettings } from "../../../modules/contracts/index.ts";
 import { Spinner, useLocale } from "@drawy/ui";
 import type { StyleMaterial } from "@drawy/materials/schema";
 import { api, type Models } from "./api.ts";
@@ -59,7 +65,7 @@ export function Composer({
   pick,
   status,
   models,
-  chooseModel,
+  choose,
 }: {
   place: "home" | "dock" | "panel";
   value: string;
@@ -83,9 +89,9 @@ export function Composer({
   pick: () => void;
   /** What the author is doing, its question or its reply, shown in the box. */
   status?: ReactNode;
-  /** The drawing models to pick from, and picking one. */
+  /** What draws, searches and paints, and picking each. */
   models?: Models;
-  chooseModel: (id: string) => void;
+  choose: (change: Pick<Partial<UserSettings>, Choice>) => void;
 }) {
   const t = useT();
   const picker = useRef<HTMLInputElement>(null);
@@ -184,7 +190,7 @@ export function Composer({
           {setStyle && <StylePicker style={style} pick={setStyle} />}
           <span className={cx("composer-gap")} />
           {!!models?.models.length && (
-            <ModelPicker models={models} pick={chooseModel} />
+            <ModelPicker models={models} pick={choose} />
           )}
           {working ? (
             <button
@@ -213,53 +219,175 @@ export function Composer({
   );
 }
 
-/** Which drawing model draws: its name beside the send button, and a menu of the models
- * an administrator connected, each with what it is good for. */
+type Choice = "model" | "image" | "searchService" | "searchModes";
+/** The picks a change makes, shown at once while it is saved. */
+export function chosen(m: Models, change: Pick<Partial<UserSettings>, Choice>): Models {
+  return {
+    ...m,
+    chosen: change.model ?? m.chosen,
+    image: change.image ?? m.image,
+    search: change.searchService ?? m.search,
+    models: m.models.map((x) =>
+      change.searchModes?.[x.id] ? { ...x, search: change.searchModes[x.id] } : x,
+    ),
+  };
+}
+/** Who draws, who searches and who paints: their names beside the send button, and a
+ * menu to pick each on its own, with what each drawing model can do. */
 function ModelPicker({
   models,
   pick,
 }: {
   models: Models;
-  pick: (id: string) => void;
+  pick: (change: Pick<Partial<UserSettings>, Choice>) => void;
 }) {
-  const t = useT();
+  const t = useT(),
+    w = t.composer;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useDismiss(open, () => setOpen(false), ref);
   const chosen =
     models.models.find((m) => m.id === models.chosen) ?? models.models[0];
+  const image = models.images.find((m) => m.id === models.image) ?? models.images[0];
+  const service = models.searches.find((s) => s.id === models.search);
+  const searchName = (mode: SearchMode) =>
+    mode === "builtin"
+      ? w.searchBuiltinBy(chosen.name)
+      : mode === "service" && service
+        ? service.name
+        : w.searchNone;
+  const summary = w.services(chosen.name, searchName(chosen.search), image?.name ?? "");
+  const mode = (search: SearchMode, searchService?: string) =>
+    pick({
+      searchModes: { [chosen.id]: search },
+      ...(searchService ? { searchService } : {}),
+    });
   return (
     <div className={cx("model-picker")} ref={ref}>
       <button
         className={cx("model-button")}
-        aria-label={t.composer.model(chosen.name)}
+        aria-label={summary}
+        data-tip={open ? undefined : summary}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
         <span>{chosen.name}</span>
+        <span className={cx("model-part")} data-off={chosen.search === "off" || undefined}>
+          <Globe size={12} />
+          <span>{searchName(chosen.search)}</span>
+        </span>
+        {image && (
+          <span className={cx("model-part")}>
+            <ImageIcon size={12} />
+            <span>{image.name}</span>
+          </span>
+        )}
         <ChevronDown size={14} />
       </button>
       {open && (
         <div className={cx("popover models-menu")} role="menu">
+          <p className={cx("models-head")}>{w.authorSection}</p>
           {models.models.map((m) => (
             <button
               key={m.id}
               role="menuitemradio"
               aria-checked={m.id === chosen.id}
               disabled={!m.ready}
-              onClick={() => {
-                pick(m.id);
-                setOpen(false);
-              }}
+              onClick={() => pick({ model: m.id })}
             >
               <span>
                 <b>{m.name}</b>
                 <small>
-                  {m.ready ? m.description : t.composer.modelUnconnected}
+                  {m.ready
+                    ? m.description || `${m.model} · ${m.host}`
+                    : m.tools
+                      ? w.modelUnconnected
+                      : w.noTools}
                 </small>
+                <span className={cx("abilities")}>
+                  <em data-on={m.vision || undefined}>
+                    {m.vision ? <Eye size={11} /> : <EyeOff size={11} />}
+                    {m.vision ? w.canSee : w.cannotSee}
+                  </em>
+                  <em data-on={m.tools || undefined}>
+                    <Wrench size={11} />
+                    {m.tools ? w.canTools : w.cannotTools}
+                  </em>
+                  <em data-on={m.builtinSearch || undefined}>
+                    <Globe size={11} />
+                    {m.builtinSearch ? w.canSearch : w.cannotSearch}
+                  </em>
+                </span>
               </span>
               {m.id === chosen.id && <Check size={15} />}
+            </button>
+          ))}
+          <p className={cx("models-head")}>{w.searchSection(chosen.name)}</p>
+          <button
+            role="menuitemradio"
+            aria-checked={chosen.search === "builtin"}
+            disabled={!chosen.builtinSearch}
+            onClick={() => mode("builtin")}
+          >
+            <span>
+              <b>{w.searchBuiltin}</b>
+              <small>{chosen.builtinSearch ? w.searchBuiltinHint(chosen.name) : w.searchBuiltinMissing}</small>
+            </span>
+            {chosen.search === "builtin" && <Check size={15} />}
+          </button>
+          {models.searches.length ? (
+            models.searches.map((s) => {
+              const on = chosen.search === "service" && models.search === s.id;
+              return (
+                <button
+                  key={s.id}
+                  role="menuitemradio"
+                  aria-checked={on}
+                  disabled={!s.ready}
+                  onClick={() => mode("service", s.id)}
+                >
+                  <span>
+                    <b>{w.searchService(s.name)}</b>
+                    <small>{s.ready ? w.searchServiceHint : w.modelUnconnected}</small>
+                  </span>
+                  {on && <Check size={15} />}
+                </button>
+              );
+            })
+          ) : (
+            <button role="menuitemradio" aria-checked={false} disabled>
+              <span>
+                <b>{w.searchServiceNone}</b>
+                <small>{w.searchServiceMissing}</small>
+              </span>
+            </button>
+          )}
+          <button
+            role="menuitemradio"
+            aria-checked={chosen.search === "off"}
+            onClick={() => mode("off")}
+          >
+            <span>
+              <b>{w.searchOff}</b>
+              <small>{w.searchOffHint}</small>
+            </span>
+            {chosen.search === "off" && <Check size={15} />}
+          </button>
+          <p className={cx("models-head")}>{w.imageSection}</p>
+          {models.images.map((m) => (
+            <button
+              key={m.id}
+              role="menuitemradio"
+              aria-checked={m.id === image?.id}
+              disabled={!m.ready}
+              onClick={() => pick({ image: m.id })}
+            >
+              <span>
+                <b>{m.name}</b>
+                <small>{m.ready ? m.description || m.detail : w.modelUnconnected}</small>
+              </span>
+              {m.id === image?.id && <Check size={15} />}
             </button>
           ))}
         </div>

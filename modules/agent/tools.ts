@@ -130,3 +130,23 @@ export const tools = [
     },
   ),
 ];
+export const searchSchema = z.object({
+  /** Several facts are looked up together, one query each. */
+  queries: z.array(z.string().min(1)).min(1).max(4),
+});
+export const openSchema = z.object({ url: z.string().min(1) });
+/** Web search through the search service the app calls, for a model that has none of
+ * its own or whose own is not chosen. Listed after the drawing tools, so a run that does
+ * not search shares their prefix. */
+export const searchTools = [
+  fn(
+    "web_search",
+    "Search the web through the app's search service. Put every fact the figure needs in one call, one query each; each query returns up to five results with title, URL, date and snippet. Each call counts against this request's search budget.",
+    schema(searchSchema),
+  ),
+  fn(
+    "open_page",
+    "Read one web page's text (up to about 12,000 characters), to settle a fact a search result only hints at. Open a page once: what it says stays above. Counts against this request's search budget.",
+    schema(openSchema),
+  ),
+];

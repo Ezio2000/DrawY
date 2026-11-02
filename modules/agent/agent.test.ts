@@ -762,7 +762,7 @@ it("develops pictures while the author composes and holds finish until they were
       credential: "test",
       baseUrl: "https://example.invalid",
     };
-    store.storage.saveModels({ ...store.storage.models(), image: settings.image });
+    store.storage.saveModels({ ...store.storage.models(), images: [{ ...store.storage.models().images[0], ...settings.image }] });
     let paint!: () => void;
     const painted = new Promise<void>((r) => (paint = r));
     const png = await picture();
@@ -1154,7 +1154,7 @@ it("shows any hosted tool as a step, records it under its turn and adds up what 
     expect(run.status).toBe("completed");
     expect(run.steps).toContainEqual({ kind: "tool", id: "ci_1", status: "done", name: "hosted", tool: "code_interpreter", detail: "print(6 * 7)" });
     expect(run.steps).toContainEqual({ kind: "tool", id: "ws_1", status: "done", name: "web_search", queries: [], urls: ["https://example.com/a"], action: "open_page" });
-    expect(run.usage).toEqual({ input: 500, cached: 250, output: 30, reasoning: 12, hosted: { code_interpreter: 1, web_search: 1 } });
+    expect(run.usage).toEqual({ input: 500, cached: 250, output: 30, reasoning: 12, pages: 1, hosted: { code_interpreter: 1, web_search: 1 } });
     // A look tells the author what it has already searched, to judge against it.
     expect(looked.research).toMatchObject({ calls: 1, pagesOpened: ["https://example.com/a"] });
     // Each hosted call is a tool span under the turn that made it, and metered by its name.
@@ -1185,4 +1185,72 @@ it("keeps web search within the request's budget without changing the tools it l
   expect(steering(run([...search(1), draft, ...search(2)]), listed)).toEqual(onlyDrawing);
   // A channel without web search is never steered.
   expect(steering(run([draft, ...search(5)]), listed.slice(0, 2))).toEqual({});
+});
+
+it("searches through the search service for a model without its own, within the same budget", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-service-")), db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "servicer", "abcdef").id), work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const catalog = db.models();
+    Object.assign(catalog.models[0], { name: "DeepSeek", protocol: "chat", model: "deepseek-flash", builtinSearch: false, search: "service" });
+    catalog.searches = [{ id: "web", name: "DeepSeek Search", provider: "deepseek", baseUrl: "https://search.invalid/v1/tools", credential: "k" }];
+    catalog.defaultSearch = "web";
+    db.saveModels(catalog);
+    const earlier = Array.from({ length: SEARCH_LIMIT - 2 }, (_, i) => ({ kind: "tool" as const, id: "old" + i, status: "done" as const, name: "web_search" as const, queries: ["q"], urls: [] }));
+    const run: Run = { id: "service-run", workId: work.id, sceneId: "root", status: "running", steps: [...earlier], observations: [], startedAt: Date.now() };
+    store.saveRun(run);
+    const asked: { url: string; body: any }[] = [];
+    library.route(async (url, init) => {
+      asked.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      return String(url).endsWith("/search")
+        ? Response.json({ results: [{ title: "Release", url: "https://news.invalid/a", snippet: "It shipped.", date: "2026-04-24T00:00:00Z" }] })
+        : Response.json({ content: "The whole page." });
+    });
+    const script = [
+      ["web_search", { queries: ["release date", "launch city"] }],
+      ["open_page", { url: "https://news.invalid/a" }],
+      ["web_search", { queries: ["once more"] }],
+      ["view_canvas", {}],
+      ["finish", { message: "done" }],
+    ] as const;
+    const outputs: any[] = [];
+    let turn = 0;
+    vi.mocked(generate).mockImplementation(async (role, _instructions, input, tools) => {
+      expect(role.protocol).toBe("chat");
+      // Only the service's search is offered, never the provider's own as well.
+      expect(tools.some((t) => t.type === "web_search")).toBe(false);
+      expect(tools.filter((t) => ["web_search", "open_page"].includes(t.name)).length).toBe(2);
+      const last = input.findLast((i) => i.type === "function_call_output");
+      if (last) outputs.push(JSON.parse(last.output));
+      const [name, args] = script[turn++];
+      return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(args) }], usage: {}, response: {} };
+    });
+    await new Agent(() => {}).execute(store, run, { input: [], generations: 0 }, "request");
+    expect(run.status).toBe("completed");
+    expect(asked).toEqual([
+      { url: "https://search.invalid/v1/tools/search", body: { query: "release date" } },
+      { url: "https://search.invalid/v1/tools/search", body: { query: "launch city" } },
+      { url: "https://search.invalid/v1/tools/fetch", body: { url: "https://news.invalid/a" } },
+    ]);
+    expect(outputs[0].results[0]).toEqual({ query: "release date", results: [{ title: "Release", url: "https://news.invalid/a", snippet: "It shipped.", date: "2026-04-24" }] });
+    expect(outputs[1]).toEqual({ url: "https://news.invalid/a", text: "The whole page." });
+    // Past the budget the call is refused, and leaves no step behind.
+    expect(outputs[2].error).toContain("closed");
+    expect(run.steps.filter((s) => s.kind === "tool" && s.name === "web_search")).toHaveLength(SEARCH_LIMIT);
+    expect(run.steps).toContainEqual({ kind: "tool", id: "c1", status: "done", name: "web_search", queries: ["release date", "launch city"], urls: [], action: "search" });
+    expect(run.steps).toContainEqual({ kind: "tool", id: "c2", status: "done", name: "web_search", queries: [], urls: ["https://news.invalid/a"], action: "open_page" });
+    expect(run.usage).toMatchObject({ searches: 1, pages: 1 });
+    expect(run.services).toEqual({ author: "DeepSeek", model: "deepseek-flash", search: "service", searchBy: "DeepSeek Search", image: "gpt-image-2.5-sunburst" });
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+it("steers the service's search like the provider's own, except over Chat Completions", () => {
+  const listed = [{ type: "function", name: "write_work" }, { type: "function", name: "web_search" }, { type: "function", name: "open_page" }];
+  const search = (n: number) => Array.from({ length: n }, (_, i) => ({ kind: "tool" as const, id: "ws" + i, status: "done" as const, name: "web_search" as const, queries: ["q"], urls: [] }));
+  const run = (steps: Run["steps"]): Run => ({ id: "r", workId: "w", sceneId: "root", status: "running", steps, observations: [], startedAt: 0 });
+  expect(steering(run(search(2)), listed)).toEqual({});
+  expect(steering(run(search(SEARCH_LIMIT)), listed)).toEqual({ tool_choice: { type: "allowed_tools", mode: "auto", tools: [{ type: "function", name: "write_work" }] } });
+  expect(steering(run(search(SEARCH_LIMIT)), listed, "chat")).toEqual({});
 });
