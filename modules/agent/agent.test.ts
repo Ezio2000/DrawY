@@ -1099,7 +1099,7 @@ it.each(["api", "oauth"] as const)("keeps hosted searches in the %s conversation
     let turn = 0;
     const states: string[] = [];
     vi.mocked(generate).mockImplementation(async (_role, _instructions, input, tools, _signal, onEvent) => {
-      expect(tools.some(t => t.type === "web_search")).toBe(channel === "api");
+      expect(tools.filter(t => t.type === "web_search")).toEqual(channel === "api" ? [{ type: "web_search", search_context_size: "low" }] : []);
       if (turn++ === 0) {
         onEvent!({ type: "response.output_item.added", item: { type: "web_search_call", id: "ws_1" } });
         onEvent!({ type: "response.output_item.done", item: search });

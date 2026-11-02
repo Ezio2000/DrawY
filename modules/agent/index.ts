@@ -42,7 +42,7 @@ import { partialJson } from "./partial.ts";
 import { tracer } from "../trace/index.ts";
 import type { MessageLocale } from "../contracts/messages.ts";
 const toolsFor = (channel: Role["channel"]) =>
-  channel === "api" ? [...tools, { type: "web_search" }] : tools;
+  channel === "api" ? [...tools, { type: "web_search", search_context_size: "low" }] : tools;
 function searchActivity(item: Item): ToolActivity & { name: "web_search" } {
   const action = item.action || {};
   return {
