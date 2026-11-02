@@ -59,9 +59,10 @@ function dataUrl(bytes: Uint8Array) {
           : b.subarray(0, 6).toString() === "GIF89a" || b.subarray(0, 6).toString() === "GIF87a"
             ? "image/gif"
             : "image/svg+xml";
-  // SVG stays text, so a recolourable picture can still be inked where it is drawn.
+  // SVG stays text, so a recolourable picture can still be inked where it is drawn; quotes
+  // and brackets are escaped too, so the address holds inside HTML, CSS and code strings.
   return type === "image/svg+xml"
-    ? `data:${type};charset=utf-8,${encodeURIComponent(b.toString("utf8"))}`
+    ? `data:${type};charset=utf-8,${encodeURIComponent(b.toString("utf8")).replace(/['()]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())}`
     : `data:${type};base64,${b.toString("base64")}`;
 }
 export function createApp(storage: Storage) {
@@ -338,6 +339,35 @@ export function createApp(storage: Storage) {
         }),
       ),
     );
+    // Pictures named by address in detail pages and drawing code come along too: from a
+    // file, a site-relative address would point at the reader's own disk.
+    const files = new Map<string, Promise<string | undefined>>();
+    const address = /\/materials\/(files|thumbs)\/([\w.-]+)(?:\?size=(\d+))?/g;
+    const inline = async (text: string) => {
+      for (const [whole, route, id, size] of text.matchAll(address))
+        if (!files.has(whole))
+          files.set(
+            whole,
+            (route === "thumbs"
+              ? library.thumb(id, store.viewer, Number(size) || 256)
+              : library.file(id, store.viewer, 0)
+            ).then(dataUrl, () => undefined),
+          );
+      const found = new Map(
+        await Promise.all([...files].map(async ([k, v]) => [k, await v] as const)),
+      );
+      return text.replace(address, (whole) => found.get(whole) ?? whole);
+    };
+    const details = Object.fromEntries(
+      await Promise.all(
+        Object.entries(work.details).map(async ([id, d]) => [id, { ...d, html: await inline(d.html) }]),
+      ),
+    );
+    const drawings = Object.fromEntries(
+      await Promise.all(
+        Object.entries(work.drawings).map(async ([id, d]) => [id, { ...d, source: await inline(d.source) }]),
+      ),
+    );
     const english = requestLocale((n) => c.req.header(n)) === "en";
     const url = new URL(c.req.url);
     const origin =
@@ -345,7 +375,7 @@ export function createApp(storage: Storage) {
       "://" +
       (c.req.header("x-forwarded-host") || c.req.header("host") || url.host);
     const page = standaloneDocument(
-      { ...work, materials },
+      { ...work, materials, details, drawings },
       sceneId,
       await readFile("dist/runtime/runtime.js", "utf8"),
       origin,

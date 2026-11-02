@@ -225,6 +225,21 @@ export function ExportMenu({
     })).clone();
     return { blob: await r.blob(), name: nameOf(r, "drawy.png") };
   };
+  // Sharing needs the click that asked for it, which a picture still being drawn would
+  // outlast: the picture is drawn when the menu opens and sharing waits until it is ready.
+  const [ready, setReady] = useState<{ key: string; blob: Blob; name: string }>();
+  const key = `${work.id}:${sceneId}:${work.revision}`;
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    png().then(
+      (p) => live && setReady({ key, ...p }),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [open, key]);
   const title =
     work.scenes[sceneId]?.parentId ? `${work.title} · ${work.scenes[sceneId].title}` : work.title;
   const share =
@@ -233,6 +248,25 @@ export function ExportMenu({
   async function run(format: Format) {
     setBusy(format);
     try {
+      // The clipboard is written within the click, handed the picture still to come.
+      if (format === "copy") {
+        await navigator.clipboard.write([
+          new ClipboardItem({ "image/png": png().then((p) => p.blob) }),
+        ]);
+        done(w.copied);
+        setOpen(false);
+        return;
+      }
+      if (format === "share") {
+        const p = ready!;
+        await navigator
+          .share({ title, files: [new File([p.blob], p.name, { type: "image/png" })] })
+          .catch((e) => {
+            if (e?.name !== "AbortError") throw e;
+          });
+        setOpen(false);
+        return;
+      }
       if (format === "pdf" || format === "html") {
         const r = await fetchFile(base + (format === "pdf" ? "/picture?format=pdf" : "/page"));
         save(await r.blob(), nameOf(r, "drawy." + format));
@@ -241,16 +275,7 @@ export function ExportMenu({
         const stem = name.replace(/\.png$/, "");
         if (format === "png") save(blob, name);
         else if (format === "jpeg") save(await jpeg(blob), stem + ".jpg");
-        else if (format === "copy") {
-          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-          done(w.copied);
-        } else if (format === "share") {
-          await navigator
-            .share({ title, files: [new File([blob], name, { type: "image/png" })] })
-            .catch((e) => {
-              if (e?.name !== "AbortError") throw e;
-            });
-        } else save(await card(blob, title, w.credit, cards[format]), `${stem} · ${w[format]}.png`);
+        else save(await card(blob, title, w.credit, cards[format]), `${stem} · ${w[format]}.png`);
       }
       setOpen(false);
     } catch (e) {
@@ -259,9 +284,15 @@ export function ExportMenu({
       setBusy(undefined);
     }
   }
+  const preparing = (format: Format) => format === "share" && ready?.key !== key;
   const item = (format: Format, Icon: typeof Download, label: string, hint: string) => (
-    <button key={format} role="menuitem" disabled={!!busy} onClick={() => void run(format)}>
-      {busy === format ? <Spinner size={15} /> : <Icon size={16} />}
+    <button
+      key={format}
+      role="menuitem"
+      disabled={!!busy || preparing(format)}
+      onClick={() => void run(format)}
+    >
+      {busy === format || preparing(format) ? <Spinner size={15} /> : <Icon size={16} />}
       <span>
         {label}
         <small>{hint}</small>
