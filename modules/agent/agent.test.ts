@@ -1227,7 +1227,7 @@ it("keeps web search within the request's budget without changing the tools it l
   expect(steering(run([draft, ...search(5)]), listed.slice(0, 2))).toEqual({});
 });
 
-it("searches through the search service for a model without its own, within the same budget", async () => {
+it("searches through the search service for a model without its own, counting each query against the budget", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-service-")), db = new Storage(dir);
   try {
     const store = db.scoped(register(db, "servicer", "abcdef").id), work = fixture();
@@ -1239,7 +1239,7 @@ it("searches through the search service for a model without its own, within the 
     catalog.searches = [{ id: "web", name: "DeepSeek Search", provider: "deepseek", baseUrl: "https://search.invalid/v1/tools", credential: "k" }];
     catalog.defaultSearch = "web";
     db.saveModels(catalog);
-    const earlier = Array.from({ length: SEARCH_LIMIT - 2 }, (_, i) => ({ kind: "tool" as const, id: "old" + i, status: "done" as const, name: "web_search" as const, queries: ["q"], urls: [] }));
+    const earlier = Array.from({ length: SEARCH_LIMIT - 4 }, (_, i) => ({ kind: "tool" as const, id: "old" + i, status: "done" as const, name: "web_search" as const, queries: ["q"], urls: [] }));
     const run: Run = { id: "service-run", workId: work.id, sceneId: "root", status: "running", steps: [...earlier], observations: [], startedAt: Date.now() };
     store.saveRun(run);
     const asked: { url: string; body: any }[] = [];
@@ -1252,7 +1252,8 @@ it("searches through the search service for a model without its own, within the 
     const script = [
       ["web_search", { queries: ["release date", "launch city"] }],
       ["open_page", { url: "https://news.invalid/a" }],
-      ["web_search", { queries: ["once more"] }],
+      ["web_search", { queries: ["once more", "and again"] }],
+      ["web_search", { queries: ["last"] }],
       ["view_canvas", {}],
       ["finish", { message: "done" }],
     ] as const;
@@ -1274,15 +1275,20 @@ it("searches through the search service for a model without its own, within the 
       { url: "https://search.invalid/v1/tools/search", body: { query: "release date" } },
       { url: "https://search.invalid/v1/tools/search", body: { query: "launch city" } },
       { url: "https://search.invalid/v1/tools/fetch", body: { url: "https://news.invalid/a" } },
+      { url: "https://search.invalid/v1/tools/search", body: { query: "once more" } },
     ]);
     expect(outputs[0].results[0]).toEqual({ query: "release date", results: [{ title: "Release", url: "https://news.invalid/a", snippet: "It shipped.", date: "2026-04-24" }] });
     expect(outputs[1]).toEqual({ url: "https://news.invalid/a", text: "The whole page." });
+    // The queries past the budget are not asked, and the author is told which.
+    expect(outputs[2].results.map((r: any) => r.query)).toEqual(["once more"]);
+    expect(outputs[2].notAsked).toEqual(["and again"]);
+    expect(run.steps).toContainEqual({ kind: "tool", id: "c3", status: "done", name: "web_search", queries: ["once more"], urls: [], action: "search" });
     // Past the budget the call is refused, and leaves no step behind.
-    expect(outputs[2].error).toContain("closed");
-    expect(run.steps.filter((s) => s.kind === "tool" && s.name === "web_search")).toHaveLength(SEARCH_LIMIT);
+    expect(outputs[3].error).toContain("closed");
+    expect(run.steps.filter((s) => s.kind === "tool" && s.name === "web_search")).toHaveLength(SEARCH_LIMIT - 1);
     expect(run.steps).toContainEqual({ kind: "tool", id: "c1", status: "done", name: "web_search", queries: ["release date", "launch city"], urls: [], action: "search" });
     expect(run.steps).toContainEqual({ kind: "tool", id: "c2", status: "done", name: "web_search", queries: [], urls: ["https://news.invalid/a"], action: "open_page" });
-    expect(run.usage).toMatchObject({ searches: 1, pages: 1 });
+    expect(run.usage).toMatchObject({ searches: 3, pages: 1 });
     expect(run.services).toEqual({ author: "DeepSeek", model: "deepseek-flash", search: "service", searchBy: "DeepSeek Search", image: "gpt-image-2.5-sunburst" });
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
 });

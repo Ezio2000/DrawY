@@ -59,11 +59,19 @@ const toolsFor = (settings: Pick<Settings, "search">): Item[] =>
       ? [...tools, ...searchTools]
       : tools;
 const searching = new Set(searchTools.map((t) => t.name));
-/** Adds a web search or a page read to what a run has spent. */
-function counted(run: Run, action: string | undefined) {
+/** Adds web searches or a page read to what a run has spent. */
+function counted(run: Run, action: string | undefined, searches = 1) {
   const u = usageOf(run);
   if (action === "open_page" || action === "find_in_page") u.pages = (u.pages ?? 0) + 1;
-  else u.searches = (u.searches ?? 0) + 1;
+  else u.searches = (u.searches ?? 0) + searches;
+}
+/** What a search step spends of the budget. The search service is asked once per query,
+ * and each is paid for, so a call with several queries counts each; a page read, and a
+ * provider's own search, which is paid for by the call, count one. */
+function cost(run: Run, step: Extract<Step, { kind: "tool"; name: "web_search" }>) {
+  return run.services?.search === "service" && step.action !== "open_page"
+    ? Math.max(1, step.queries.length)
+    : 1;
 }
 const usageOf = (run: Run): RunUsage =>
   (run.usage ??= { input: 0, cached: 0, output: 0, reasoning: 0 });
@@ -105,17 +113,21 @@ function hostedActivity(item: Item): ToolActivity {
     ...(detail ? { detail } : {}),
   };
 }
-/** Web search calls a request may make in all, and once its first draft is saved: the
- * research belongs before the drawing, and a look needs at most one targeted follow-up. */
+/** Web searches a request may make in all, and once its first draft is saved: the
+ * research belongs before the drawing, and a look needs at most one targeted follow-up.
+ * The search service counts each query; a provider's own search counts each call. */
 export const SEARCH_LIMIT = 8,
   SEARCH_AFTER_DRAFT = 2;
-/** The web search calls this request may still make. */
+/** The web searches this request may still make. */
 function searchesLeft(run: Run) {
   const drafted = run.steps.findIndex(
     (s) => s.kind === "tool" && s.name === "write_work" && s.status === "done",
   );
   const searched = (from: number) =>
-    run.steps.filter((s, i) => i > from && s.kind === "tool" && s.name === "web_search").length;
+    run.steps.reduce(
+      (n, s, i) => (i > from && s.kind === "tool" && s.name === "web_search" ? n + cost(run, s) : n),
+      0,
+    );
   return Math.max(
     0,
     Math.min(
@@ -167,7 +179,11 @@ function research(run: Run) {
     calls: searches.length,
     ...(asked.length ? { queriesAsked: asked } : {}),
     ...(pages.length ? { pagesOpened: pages } : {}),
-    ...(left !== Infinity ? { searchCallsLeft: left } : {}),
+    ...(left !== Infinity
+      ? run.services?.search === "service"
+        ? { searchQueriesLeft: left }
+        : { searchCallsLeft: left }
+      : {}),
     note: left
       ? "What these found is above. Judge the figure against it; asking these again in other words returns the same results. Search again only for a fact the figure states that none of it covers, and leave out what stays unconfirmed."
       : "Web search is closed for the rest of this request. Work from what is above, and leave out what stays unconfirmed.",
@@ -1168,9 +1184,16 @@ export class Agent {
               images: [],
             };
           }
-          counted(run, call.name === "open_page" ? "open_page" : "search");
           if (call.name === "web_search") {
-            const { queries } = searchSchema.parse(args);
+            const asked = searchSchema.parse(args).queries;
+            // Past what is left, the later queries are not asked.
+            const queries = asked.slice(0, left);
+            const skipped = asked.slice(left);
+            if (skipped.length && step?.kind === "tool" && step.name === "web_search") {
+              step.queries = queries;
+              this.emit(store, run);
+            }
+            counted(run, "search", queries.length);
             const results = await Promise.all(
               queries.map(async (query) => {
                 try {
@@ -1183,8 +1206,17 @@ export class Agent {
             );
             if (results.every((r) => "error" in r))
               throw Error((results[0] as { error: string }).error);
-            output = { results };
+            output = {
+              results,
+              ...(skipped.length
+                ? {
+                    notAsked: skipped,
+                    note: "These queries were not asked: the request's search budget ran out. Work from what you found, and leave out what stays unconfirmed.",
+                  }
+                : {}),
+            };
           } else {
+            counted(run, "open_page");
             const { url } = openSchema.parse(args);
             output = { url, text: await readPage(service, url, abort.signal) };
           }

@@ -141,7 +141,7 @@ export const openSchema = z.object({ url: z.string().min(1) });
 export const searchTools = [
   fn(
     "web_search",
-    "Search the web through the app's search service. Put every fact the figure needs in one call, one query each; each query returns up to five results with title, URL, date and snippet. Each call counts against this request's search budget.",
+    "Search the web through the app's search service. Put every fact the figure needs in one call, one query each; each query returns up to five results with title, URL, date and snippet. Each query counts against this request's search budget.",
     schema(searchSchema),
   ),
   fn(
