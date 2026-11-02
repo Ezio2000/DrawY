@@ -1080,3 +1080,45 @@ it("tells the author what the user changed themselves since its last turn", asyn
     rmSync(dir, { recursive: true });
   }
 });
+
+it.each(["api", "oauth"] as const)("keeps hosted searches in the %s conversation and continues with drawing tools", async (channel) => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-search-")), db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "searcher", "abcdef").id), work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const catalog = db.models();
+    catalog.models[0].channel = channel;
+    db.saveModels(catalog);
+    const run: Run = { id: "search-run", workId: work.id, sceneId: "root", status: "running", steps: [], observations: [], startedAt: Date.now() };
+    store.saveRun(run);
+    const search = { type: "web_search_call", id: "ws_1", status: "completed", action: { type: "search", queries: ["OpenAI latest release"] } };
+    const annotation = { type: "url_citation", start_index: 2, end_index: 5, url: "https://openai.com/", title: "OpenAI" };
+    const message = { type: "message", role: "assistant", content: [{ type: "output_text", text: "说明[1]", annotations: [annotation] }] };
+    let turn = 0;
+    const states: string[] = [];
+    vi.mocked(generate).mockImplementation(async (_role, _instructions, input, tools, _signal, onEvent) => {
+      expect(tools.filter(t => t.type === "web_search")).toEqual(channel === "api" ? [{ type: "web_search", search_context_size: "low" }] : []);
+      if (turn++ === 0) {
+        onEvent!({ type: "response.output_item.added", item: { type: "web_search_call", id: "ws_1" } });
+        onEvent!({ type: "response.output_item.done", item: search });
+        return { items: [search, message], usage: {}, response: {} };
+      }
+      expect(input).toContainEqual(search);
+      expect(input).toContainEqual(message);
+      expect(input.some(i => i.type === "function_call_output" && i.call_id === "ws_1")).toBe(false);
+      const name = turn === 2 ? "view_canvas" : "finish";
+      return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(name === "finish" ? { message: "done" } : {}) }], usage: {}, response: {} };
+    });
+    await new Agent((_user, event: any) => {
+      const step = event.run?.steps.find((s: any) => s.name === "web_search");
+      if (step) states.push(step.status);
+    }).execute(store, run, { input: [], generations: 0 }, "request");
+    expect(run.status).toBe("completed");
+    expect(states).toContain("running");
+    expect(states).toContain("done");
+    expect(run.steps).toContainEqual({ kind: "tool", id: "ws_1", status: "done", name: "web_search", queries: ["OpenAI latest release"], urls: [] });
+    expect(run.steps).toContainEqual({ kind: "message", role: "assistant", text: "说明[1]", citations: [{ start: 2, end: 5, url: "https://openai.com/", title: "OpenAI" }] });
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
+});

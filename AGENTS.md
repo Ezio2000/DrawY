@@ -69,6 +69,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 - `editing`：把手动操作变成 `WorkEdit` 的纯函数、面板控件的推断（`fieldsOf`），以及两个版本之间的差别（`changesBetween`）。前后端都用，不依赖存储和素材库。
 - `runtime`：画法执行环境。画法接收 `api`（`svg/html/mermaid/material/materials/draw/effect/emit`，连线另有 `from/to/fromSide/toSide`），交互脚本使用 `on/set/move/openScene/openDetail/animate/cleanup`。打包入口是 `browser.ts`，`scene.ts` 负责场景，`fixture.ts` 供测试使用。
 - `agent`：运行循环与重试（`index.ts`）、工具 schema（`tools.ts`）、系统提示词与素材目录（`prompts.ts`），以及解析流式到达的工具参数（`partial.ts`）。
+- API Key 创作轮次在自定义工具旁提供 OpenAI 内置 `web_search`（`search_context_size: "low"`）；搜索由 OpenAI 执行，`web_search_call` 随其他输出原样进入后续上下文和 trace，不走本地工具执行器。运行步骤记录搜索查询或页面 URL；消息保留 `url_citation` 的位置、标题和链接，前端在原文位置显示可点击来源。OAuth 和上下文压缩不添加搜索工具。
 - `models`：用 OpenAI Responses 格式调用创作模型和生图模型，支持 API Key 和 ChatGPT OAuth 两种方式，并负责缓存键。
 - `observation`：截图服务的客户端。`capture.ts` 在截图容器里运行，运行时测试也直接调用它。
 - `images`：按作品风格生成图片，并把结果回报给作者。风格参考图由 `styleReferences` 选出，记在素材的 `origin.styleReferences`；生成图一律是该用户的私人素材。

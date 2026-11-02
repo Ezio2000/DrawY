@@ -1,3 +1,6 @@
+import type { Citation } from "../../../modules/contracts/index.ts";
+import { CitedText } from "./CitedText.tsx";
+import { citationsOf } from "../../../modules/models/index.ts";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { RefreshCw } from "lucide-react";
 import { api } from "./api.ts";
@@ -330,12 +333,12 @@ function Part({
   );
 }
 /** Long text shows its beginning until asked for the rest. */
-function Text({ text }: { text: string }) {
+function Text({ text, citations }: { text: string; citations?: Citation[] }) {
   const [all, setAll] = useState(false);
   const long = text.length > 1600;
   return (
     <div className={cx("text")}>
-      <pre>{long && !all ? text.slice(0, 1200) + "…" : text}</pre>
+      <pre><CitedText text={long && !all ? text.slice(0, 1200) + "…" : text} citations={citations} /></pre>
       {long && (
         <button onClick={() => setAll(!all)}>
           {all ? w().fold : w().unfold(text.length.toLocaleString())}
@@ -361,7 +364,7 @@ function Content({ part }: { part: Item | string }) {
   if (typeof part === "string") return <Text text={part} />;
   if (part.type === "input_image")
     return <Shot url={part.image_url} label={part.detail} />;
-  if (typeof part.text === "string") return <Text text={part.text} />;
+  if (typeof part.text === "string") return <Text text={part.text} citations={citationsOf([{ type: "message", content: [part] }])} />;
   return <pre>{pretty(part)}</pre>;
 }
 /** Model input or output items as a conversation: messages with their text and images,
