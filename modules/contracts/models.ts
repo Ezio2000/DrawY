@@ -200,6 +200,11 @@ export interface WriterModel {
   speed: Speed;
   /** Whether people may have it search the web with its provider's own search. */
   builtinSearch: boolean;
+  /** Whether its Responses endpoint accepts `max_tool_calls` and `tool_choice:
+   * allowed_tools`, with which a run holds a turn to the searches left without changing the
+   * tools listed. Some services that speak Responses (DeepSeek's) reject them; without them
+   * the run still refuses a search service's calls past the budget. */
+  toolLimits: boolean;
   /** Its token prices at the default speed, and each built-in search call's price. */
   prices: TokenPrices & { search: number };
   /** What each speed costs against the default, as a multiple. */
@@ -222,6 +227,9 @@ export interface Role extends Connection {
   provider?: string;
   effort: Effort;
   decisionUsesSetting: boolean;
+  /** Whether its endpoint accepts the request fields that narrow the tools (see
+   * `WriterModel.toolLimits`). */
+  toolLimits: boolean;
   /** The reasoning levels it accepts; a run raises or keeps its effort among them. */
   efforts: Effort[];
   speed: Speed;
@@ -279,6 +287,7 @@ export const defaultWriter = (protocol: Protocol = "responses"): WriterModel => 
   speeds: protocolSpecs[protocol].speeds ? ["flex", "default", "fast"] : [],
   speed: "default",
   builtinSearch: protocolSpecs[protocol].builtinSearch,
+  toolLimits: true,
   prices: { ...noTokens(), search: 0 },
   speedRates: {},
 });
@@ -293,6 +302,7 @@ export const defaultRole = (): Role => {
     model: m.model,
     effort: m.effort,
     decisionUsesSetting: m.decisionUsesSetting,
+    toolLimits: m.toolLimits,
     efforts: m.efforts,
     speed: m.speed,
     vision: m.vision,
@@ -423,6 +433,8 @@ const writerModelObject = z.object({
   speeds: z.array(z.enum(speeds)),
   speed: z.enum(speeds),
   builtinSearch: z.boolean(),
+  // Catalogs saved before it was asked keep the request limits they always had.
+  toolLimits: z.boolean().default(true),
   prices: z.object({ ...tokenPricesShape, search: money }),
   speedRates: z.partialRecord(z.enum(speeds), z.number().min(0).max(100)),
 });
@@ -622,6 +634,7 @@ export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings 
       ...(m.provider ? { provider: m.provider } : {}),
       effort,
       decisionUsesSetting: m.decisionUsesSetting,
+      toolLimits: m.toolLimits,
       efforts: m.efforts,
       speed,
       vision: m.vision,

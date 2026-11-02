@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowUp,
-  Paperclip,
+  Plus,
   Square,
   X,
   Palette,
@@ -9,9 +9,6 @@ import {
   ImageUp,
   Shapes,
   PencilLine,
-  Globe,
-  Image as ImageIcon,
-  Gauge,
 } from "lucide-react";
 import type { UserSettings } from "../../../modules/contracts/index.ts";
 import { Spinner, useLocale } from "@drawy/ui";
@@ -260,19 +257,23 @@ export function chosen(m: Models, change: Partial<UserSettings>): Models {
 /** One pick beside the composer: what is picked, and a menu of the rest. */
 function Pick({
   label,
-  icon,
   value,
+  shown,
   off,
   long,
+  wide,
   children,
 }: {
   label: string;
-  icon?: ReactNode;
   value: string;
+  /** What the button shows, where it is more than the value's words. */
+  shown?: ReactNode;
   /** Whether what is wanted is not what will happen (a search the model lacks). */
   off?: boolean;
   /** Whether its name may be long, and so give way where room is short. */
   long?: boolean;
+  /** Whether its menu holds several settings side by side, and so is wider. */
+  wide?: boolean;
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -289,12 +290,14 @@ function Pick({
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        {icon}
-        <span>{value}</span>
+        {shown ?? <span>{value}</span>}
       </button>
       {open && (
-        <div className={cx("popover models-menu")} role="menu">
-          <p className={cx("models-head")}>{label}</p>
+        <div
+          className={cx("popover models-menu")}
+          data-wide={wide || undefined}
+          role="menu"
+        >
           {children(() => setOpen(false))}
         </div>
       )}
@@ -361,70 +364,77 @@ export function ModelBar({
     close();
     pick(change);
   };
+  const effortName = c.effort && writer.efforts.length > 1 ? names.efforts[c.effort] : undefined,
+    speedName = c.speed ? names.speeds[c.speed] : undefined;
   return (
     <div className={cx("model-bar")}>
-      <Pick label={w.authorSection} value={writer.name} long>
-        {(close) =>
-          providers.map((p) => (
-            <div key={p} className={cx("models-group")}>
-              {providers.length > 1 && <p className={cx("models-sub")}>{p}</p>}
-              {models.writers
-                .filter((m) => m.provider === p)
-                .map((m) => (
-                  <Option
-                    key={m.id}
-                    on={m.id === writer.id}
-                    disabled={!m.ready}
-                    note={m.ready ? m.description : w.modelUnconnected}
-                    pick={() => choose({ writer: m.id }, close)}
-                  >
-                    {m.name}
-                  </Option>
-                ))}
-            </div>
-          ))
+      {/* The model, how hard it thinks and how fast it is served are one choice of how the
+          drawing is written: one button, and a panel that sets all three. */}
+      <Pick
+        label={w.authorSection}
+        value={[writer.name, effortName, speedName].filter(Boolean).join(" · ")}
+        shown={
+          <span className={cx("pick-writer")}>
+            <b>{writer.name}</b>
+            {effortName && <i>{effortName}</i>}
+            {speedName && <i>{speedName}</i>}
+          </span>
         }
+        long
+        wide
+      >
+        {() => (
+          <>
+            <p className={cx("models-head")}>{w.authorSection}</p>
+            {providers.map((p) => (
+              <div key={p} className={cx("models-group")}>
+                {providers.length > 1 && <p className={cx("models-sub")}>{p}</p>}
+                {models.writers
+                  .filter((m) => m.provider === p)
+                  .map((m) => (
+                    <Option
+                      key={m.id}
+                      on={m.id === writer.id}
+                      disabled={!m.ready}
+                      note={m.ready ? m.description : w.modelUnconnected}
+                      pick={() => pick({ writer: m.id })}
+                    >
+                      {m.name}
+                    </Option>
+                  ))}
+              </div>
+            ))}
+            {c.effort && writer.efforts.length > 1 && (
+              <Segments
+                label={names.effort}
+                options={writer.efforts}
+                value={c.effort}
+                name={(e) => names.efforts[e]}
+                pick={(effort) => pick({ effort })}
+              />
+            )}
+            {c.speed && (
+              <Segments
+                label={names.speed}
+                options={writer.speeds}
+                value={c.speed}
+                name={(s) => names.speeds[s]}
+                hint={names.speedHints[c.speed]}
+                pick={(speed) => pick({ speed })}
+              />
+            )}
+          </>
+        )}
       </Pick>
-      {c.effort && writer.efforts.length > 1 && (
-        <Pick label={names.effort} value={names.efforts[c.effort]}>
-          {(close) =>
-            writer.efforts.map((e) => (
-              <Option
-                key={e}
-                on={e === c.effort}
-                pick={() => choose({ effort: e }, close)}
-              >
-                {names.efforts[e]}
-              </Option>
-            ))
-          }
-        </Pick>
-      )}
-      {c.speed && (
-        <Pick label={names.speed} icon={<Gauge size={13} />} value={names.speeds[c.speed]}>
-          {(close) =>
-            writer.speeds.map((s) => (
-              <Option
-                key={s}
-                on={s === c.speed}
-                note={names.speedHints[s]}
-                pick={() => choose({ speed: s }, close)}
-              >
-                {names.speeds[s]}
-              </Option>
-            ))
-          }
-        </Pick>
-      )}
       <Pick
         label={w.searchSection}
-        icon={<Globe size={13} />}
         value={webName}
         off={c.web !== "off" && c.search === "off"}
         long
       >
         {(close) => (
           <>
+            <p className={cx("models-head")}>{w.searchSection}</p>
             <Option
               on={c.web === "off"}
               pick={() => choose({ web: "off" }, close)}
@@ -456,27 +466,61 @@ export function ModelBar({
         )}
       </Pick>
       {image && (
-        <Pick
-          label={w.imageSection}
-          icon={<ImageIcon size={13} />}
-          value={image.name}
-          long
-        >
-          {(close) =>
-            models.images.map((m) => (
-              <Option
-                key={m.id}
-                on={m.id === image.id}
-                disabled={!m.ready}
-                note={m.ready ? m.description : w.modelUnconnected}
-                pick={() => choose({ image: m.id }, close)}
-              >
-                {m.name}
-              </Option>
-            ))
-          }
+        <Pick label={w.imageSection} value={image.name} long>
+          {(close) => (
+            <>
+              <p className={cx("models-head")}>{w.imageSection}</p>
+              {models.images.map((m) => (
+                <Option
+                  key={m.id}
+                  on={m.id === image.id}
+                  disabled={!m.ready}
+                  note={m.ready ? m.description : w.modelUnconnected}
+                  pick={() => choose({ image: m.id }, close)}
+                >
+                  {m.name}
+                </Option>
+              ))}
+            </>
+          )}
         </Pick>
       )}
+    </div>
+  );
+}
+
+/** A setting of the drawing model with a few levels, picked side by side in its panel. */
+function Segments<T extends string>({
+  label,
+  options,
+  value,
+  name,
+  hint,
+  pick,
+}: {
+  label: string;
+  options: readonly T[];
+  value: T;
+  name: (v: T) => string;
+  hint?: string;
+  pick: (v: T) => void;
+}) {
+  return (
+    <div className={cx("models-setting")}>
+      <p className={cx("models-head")}>{label}</p>
+      <div className={cx("models-seg")} role="group" aria-label={label}>
+        {options.map((o) => (
+          <button
+            key={o}
+            role="menuitemradio"
+            aria-checked={o === value}
+            onClick={() => pick(o)}
+          >
+            {name(o)}
+          </button>
+        ))}
+      </div>
+      {hint && <small className={cx("models-hint")}>{hint}</small>}
     </div>
   );
 }
@@ -500,7 +544,7 @@ function AddMenu({ upload, pick }: { upload: () => void; pick: () => void }) {
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <Paperclip size={17} />
+        <Plus size={19} />
       </button>
       {open && (
         <div className={cx("popover")} role="menu">

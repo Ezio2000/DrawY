@@ -512,7 +512,7 @@
   height: 26px;
   flex-shrink: 0;
   border-radius: 7px;
-  color: rgba(250, 249, 245, 0.7);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .toast button:hover {
