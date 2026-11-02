@@ -160,6 +160,7 @@ export async function picture(
   store: UserStore,
   workId: string,
   sceneId: string,
+  format: "png" | "pdf" = "png",
 ) {
   const work = store.work(workId);
   if (!work.scenes[sceneId]?.modules.length)
@@ -175,6 +176,7 @@ export async function picture(
         body: JSON.stringify({
           origin,
           cookie: token,
+          format,
           url: `${origin}/api/works/${work.id}/scenes/${encodeURIComponent(sceneId)}?revision=${work.revision}`,
         }),
       },

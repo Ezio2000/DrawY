@@ -226,9 +226,13 @@ export class SceneRenderer {
     const img = document.createElement("img");
     img.alt = m.name;
     img.draggable = false;
-    img.src =
-      m.url +
-      (o.color && m.recolor ? "?color=" + encodeURIComponent(o.color) : "");
+    img.src = !(o.color && m.recolor)
+      ? m.url
+      : m.url.startsWith("data:")
+        ? // A picture carried inside an exported file is recoloured here, as the library
+          // would: its SVG text inks with currentColor.
+          m.url.replaceAll("currentColor", encodeURIComponent(o.color))
+        : m.url + "?color=" + encodeURIComponent(o.color);
     const spare = height - m.height * k;
     const top = { bottom: spare, center: spare / 2, top: 0 }[
       o.align ?? "bottom"

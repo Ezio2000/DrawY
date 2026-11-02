@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Storage } from "../storage/index.ts";
 import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
-import { Agent } from "./index.ts";
+import { Agent, steering, SEARCH_LIMIT } from "./index.ts";
 import { settleSchema } from "./tools.ts";
 import { writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
@@ -13,6 +13,7 @@ import { generate } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
 import type { Run, Work } from "../contracts/index.ts";
 import { removeParts, setData } from "../editing/index.ts";
+import { tracer } from "../trace/index.ts";
 import { library as client } from "../materials/index.ts";
 import { serveLibrary, picture } from "@drawy/materials/testing";
 let library: ReturnType<typeof serveLibrary>;
@@ -1118,7 +1119,70 @@ it.each(["api", "oauth"] as const)("keeps hosted searches in the %s conversation
     expect(run.status).toBe("completed");
     expect(states).toContain("running");
     expect(states).toContain("done");
-    expect(run.steps).toContainEqual({ kind: "tool", id: "ws_1", status: "done", name: "web_search", queries: ["OpenAI latest release"], urls: [] });
+    expect(run.steps).toContainEqual({ kind: "tool", id: "ws_1", status: "done", name: "web_search", queries: ["OpenAI latest release"], urls: [], action: "search" });
     expect(run.steps).toContainEqual({ kind: "message", role: "assistant", text: "说明[1]", citations: [{ start: 2, end: 5, url: "https://openai.com/", title: "OpenAI" }] });
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+it("shows any hosted tool as a step, records it under its turn and adds up what the run spent", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-hosted-")), db = new Storage(dir);
+  tracer.open(dir);
+  try {
+    const store = db.scoped(register(db, "hosting", "abcdef").id), work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const run: Run = { id: "hosted-run", workId: work.id, sceneId: "root", status: "running", steps: [], observations: [], startedAt: Date.now() };
+    store.saveRun(run);
+    tracer.begin({ id: run.id, userId: store.userId, workId: work.id, title: "t", prompt: "p", status: "running" });
+    const code = { type: "code_interpreter_call", id: "ci_1", status: "completed", code: "print(6 * 7)" };
+    const search = { type: "web_search_call", id: "ws_1", status: "completed", action: { type: "open_page", url: "https://example.com/a" } };
+    const usage = (n: number) => ({ input_tokens: n, output_tokens: 10, input_tokens_details: { cached_tokens: n / 2 }, output_tokens_details: { reasoning_tokens: 4 } });
+    let turn = 0, looked: any;
+    vi.mocked(generate).mockImplementation(async (_role, _instructions, input, _tools, _signal, onEvent) => {
+      if (turn === 2) looked = JSON.parse(input.findLast((i) => i.type === "function_call_output")!.output);
+      if (turn++ === 0) {
+        for (const item of [code, search]) {
+          onEvent!({ type: "response.output_item.added", item: { type: item.type, id: item.id } });
+          onEvent!({ type: "response.output_item.done", item });
+        }
+        return { items: [code, search], usage: usage(100), response: {} };
+      }
+      const name = turn === 2 ? "view_canvas" : "finish";
+      return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(name === "finish" ? { message: "done" } : {}) }], usage: usage(200), response: {} };
+    });
+    await tracer.within(run.id, () => new Agent(() => {}).execute(store, run, { input: [], generations: 0 }, "request"));
+    expect(run.status).toBe("completed");
+    expect(run.steps).toContainEqual({ kind: "tool", id: "ci_1", status: "done", name: "hosted", tool: "code_interpreter", detail: "print(6 * 7)" });
+    expect(run.steps).toContainEqual({ kind: "tool", id: "ws_1", status: "done", name: "web_search", queries: [], urls: ["https://example.com/a"], action: "open_page" });
+    expect(run.usage).toEqual({ input: 500, cached: 250, output: 30, reasoning: 12, hosted: { code_interpreter: 1, web_search: 1 } });
+    // A look tells the author what it has already searched, to judge against it.
+    expect(looked.research).toMatchObject({ calls: 1, pagesOpened: ["https://example.com/a"] });
+    // Each hosted call is a tool span under the turn that made it, and metered by its name.
+    const { spans, trace } = tracer.get(store.userId, run.id)!;
+    const first = spans.find((s) => s.kind === "turn")!;
+    const hosted = spans.filter((s) => s.attrs.hosted);
+    expect(hosted.map((s) => [s.kind, s.name, s.parentId])).toEqual([
+      ["tool", "code_interpreter", first.id],
+      ["tool", "web_search", first.id],
+    ]);
+    const meter = (key: string) => trace.meters.find((m) => m.key === key);
+    expect(meter("web_search")).toMatchObject({ kind: "tool", calls: 1 });
+    expect(meter("code_interpreter")).toMatchObject({ kind: "tool", calls: 1 });
+    expect(meter("model")).toMatchObject({ kind: "turn", calls: 3, input: 500, cached: 250, output: 30 });
+  } finally { tracer.close(); db.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+it("keeps web search within the request's budget without changing the tools it lists", () => {
+  const listed = [{ type: "function", name: "write_work" }, { type: "function", name: "view_canvas" }, { type: "web_search" }];
+  const search = (n: number) => Array.from({ length: n }, (_, i) => ({ kind: "tool" as const, id: "ws" + i, status: "done" as const, name: "web_search" as const, queries: ["q"], urls: [] }));
+  const draft = { kind: "tool" as const, id: "w", status: "done" as const, name: "write_work" as const, drawings: [], scenes: [], details: [], materials: [], removed: 0, revision: 2 };
+  const run = (steps: Run["steps"]): Run => ({ id: "r", workId: "w", sceneId: "root", status: "running", steps, observations: [], startedAt: 0 });
+  const onlyDrawing = { tool_choice: { type: "allowed_tools", mode: "auto", tools: [{ type: "function", name: "write_work" }, { type: "function", name: "view_canvas" }] } };
+  // Research before the first draft is free up to the request's limit.
+  expect(steering(run(search(3)), listed)).toEqual({ max_tool_calls: SEARCH_LIMIT - 3 });
+  expect(steering(run(search(SEARCH_LIMIT)), listed)).toEqual(onlyDrawing);
+  // Once a draft is saved, a look gets a couple of follow-up calls, then search closes.
+  expect(steering(run([...search(1), draft]), listed)).toEqual({ max_tool_calls: 2 });
+  expect(steering(run([...search(1), draft, ...search(2)]), listed)).toEqual(onlyDrawing);
+  // A channel without web search is never steered.
+  expect(steering(run([draft, ...search(5)]), listed.slice(0, 2))).toEqual({});
 });

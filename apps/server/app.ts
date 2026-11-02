@@ -17,6 +17,7 @@ import {
   userSettingsSchema,
   workEditSchema,
   type Account,
+  type Work,
   type ModelChoice,
   type Permission,
 } from "../../modules/contracts/index.ts";
@@ -26,7 +27,10 @@ import {
   undo,
   writeWork,
 } from "../../modules/workspace/index.ts";
-import { documentFor } from "../../modules/runtime/document.ts";
+import {
+  documentFor,
+  standaloneDocument,
+} from "../../modules/runtime/document.ts";
 import {
   library,
   upload,
@@ -42,6 +46,24 @@ import { localize, requestLocale } from "../../modules/contracts/messages.ts";
 type Env = {
   Variables: { store: UserStore; user: Account };
 };
+/** Bytes as a data URL, typed by their first bytes. */
+function dataUrl(bytes: Uint8Array) {
+  const b = Buffer.from(bytes);
+  const type =
+    b[0] === 0x89 && b[1] === 0x50
+      ? "image/png"
+      : b[0] === 0xff && b[1] === 0xd8
+        ? "image/jpeg"
+        : b.subarray(8, 12).toString() === "WEBP"
+          ? "image/webp"
+          : b.subarray(0, 6).toString() === "GIF89a" || b.subarray(0, 6).toString() === "GIF87a"
+            ? "image/gif"
+            : "image/svg+xml";
+  // SVG stays text, so a recolourable picture can still be inked where it is drawn.
+  return type === "image/svg+xml"
+    ? `data:${type};charset=utf-8,${encodeURIComponent(b.toString("utf8"))}`
+    : `data:${type};base64,${b.toString("base64")}`;
+}
 export function createApp(storage: Storage) {
   const app = new Hono<Env>();
   const listeners = new Map<string, Set<(event: object) => void>>();
@@ -280,19 +302,60 @@ export function createApp(storage: Storage) {
     if (!work.scenes[sceneId]) throw new DomainError("场景不存在", 404);
     return c.html(documentFor(work, sceneId));
   });
+  /** The file name a scene is saved under. */
+  const fileName = (work: Work, sceneId: string, extension: string) =>
+    (work.scenes[sceneId]?.parentId
+      ? `${work.title} - ${work.scenes[sceneId].title}`
+      : work.title
+    ).replace(/[\\/:*?"<>|]+/g, " ") + extension;
+  const attachment = (name: string) =>
+    `attachment; filename*=UTF-8''${encodeURIComponent(name)}`;
+  // A scene drawn whole, as a picture (PNG) or a page that keeps it as vectors (PDF).
   app.get("/api/works/:id/scenes/:scene/picture", async (c) => {
     const store = c.get("store"),
       work = store.work(c.req.param("id")),
       scene = work.scenes[c.req.param("scene")];
     if (!scene) throw new DomainError("场景不存在", 404);
-    const name =
-      (scene.parentId ? `${work.title} - ${scene.title}` : work.title).replace(
-        /[\\/:*?"<>|]+/g,
-        " ",
-      ) + ".png";
-    return c.body(await picture(store, work.id, scene.id), 200, {
-      "Content-Type": "image/png",
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+    const format = c.req.query("format") === "pdf" ? "pdf" : "png";
+    return c.body(await picture(store, work.id, scene.id, format), 200, {
+      "Content-Type": format === "pdf" ? "application/pdf" : "image/png",
+      "Content-Disposition": attachment(fileName(work, scene.id, "." + format)),
+    });
+  });
+  // The whole work as one HTML file to send around: it opens in any browser, every scene
+  // explorable, with its pictures inside.
+  app.get("/api/works/:id/scenes/:scene/page", async (c) => {
+    const store = c.get("store"),
+      work = await freshen(store.work(c.req.param("id")), store.viewer),
+      sceneId = c.req.param("scene");
+    if (!work.scenes[sceneId]) throw new DomainError("场景不存在", 404);
+    const materials = Object.fromEntries(
+      await Promise.all(
+        Object.values(work.materials).map(async (m) => {
+          if (m.kind !== "picture" || m.status !== "ready") return [m.id, m];
+          const bytes = await library.file(m.id, store.viewer, 0).catch(() => undefined);
+          return [m.id, bytes ? { ...m, url: dataUrl(bytes) } : m];
+        }),
+      ),
+    );
+    const english = requestLocale((n) => c.req.header(n)) === "en";
+    const url = new URL(c.req.url);
+    const origin =
+      (c.req.header("x-forwarded-proto") || url.protocol.replace(":", "")) +
+      "://" +
+      (c.req.header("x-forwarded-host") || c.req.header("host") || url.host);
+    const page = standaloneDocument(
+      { ...work, materials },
+      sceneId,
+      await readFile("dist/runtime/runtime.js", "utf8"),
+      origin,
+      english
+        ? { back: "Back to", credit: "Made with DrawY" }
+        : { back: "返回", credit: "用 DrawY 绘制" },
+    );
+    return c.body(page, 200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Disposition": attachment(fileName(work, sceneId, ".html")),
     });
   });
   // A hand edit on the canvas: any change to the work, committed like the author's.
@@ -475,6 +538,8 @@ export function createApp(storage: Storage) {
     return new Response(r.status === 304 ? null : r.body, {
       status: r.status,
       headers: {
+        // Map layers are public, and read by exported pages opened from a file.
+        ...(c.req.param("route") === "geo" ? { "Access-Control-Allow-Origin": "*" } : {}),
         "Content-Type":
           r.headers.get("content-type") || "application/octet-stream",
         "Cache-Control": r.headers.get("cache-control") || "no-store",

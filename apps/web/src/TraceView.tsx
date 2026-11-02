@@ -9,7 +9,7 @@ import { ago } from "./time.ts";
 import { Title } from "./Title.tsx";
 import { pageLocale, Spinner } from "@drawy/ui";
 import { dictionaries } from "./i18n.tsx";
-import type { Span, TraceSummary } from "../../../modules/trace/index.ts";
+import type { Meter, Span, TraceSummary } from "../../../modules/trace/index.ts";
 
 /** The trace page's words in the page's language. */
 const w = () => dictionaries[pageLocale()].traces;
@@ -27,6 +27,19 @@ const pretty = (v: unknown) => {
 };
 const thousands = (n: number) =>
   n >= 10_000 ? `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k` : String(n);
+/** What a meter counts, in words: a known kind of work, or the tool's own name. */
+const meterName = (key: string) =>
+  w().meters[key] ?? (w().kinds as Record<string, string>)[key] ?? key.replace(/[_-]+/g, " ");
+/** Tool calls and pictures before model turns and the rest. */
+const order = (m: Meter) =>
+  m.kind === "tool" ? 0 : m.kind === "generation" ? 1 : m.kind === "turn" ? 2 : 3;
+/** A run's tools and pictures in a few words, for the list of runs. */
+const brief = (meters: Meter[] = []) =>
+  meters
+    .filter((m) => m.kind === "tool" || m.kind === "generation")
+    .sort((a, b) => order(a) - order(b) || b.calls - a.calls)
+    .map((m) => `${meterName(m.key)} ${m.calls}`)
+    .join(" · ");
 function Status({ value }: { value: string }) {
   return (
     <i className={cx("status")} data-status={value}>
@@ -97,11 +110,11 @@ export function TraceView() {
                 <small>
                   <Status value={t.status} />
                   {ago(t.startedAt)} · {seconds(t.durationMs)}
-                  {t.counts.generation ? w().images(t.counts.generation) : ""}
                   {t.counts.errors ? (
                     <em>{w().errors(t.counts.errors)}</em>
                   ) : null}
                 </small>
+                {brief(t.meters) && <span className={cx("trace-meters")}>{brief(t.meters)}</span>}
               </button>
             </li>
           ))}
@@ -200,6 +213,7 @@ function Timeline({ trace, spans }: { trace: TraceSummary; spans: Span[] }) {
             ))}
         </nav>
       </header>
+      {!!trace.meters?.length && <Meters meters={trace.meters} />}
       <ol className={cx("spans")}>
         {shown.map(({ span: s, depth }) => {
           const end = s.endedAt ?? Date.now();
@@ -238,6 +252,47 @@ function Timeline({ trace, spans }: { trace: TraceSummary; spans: Span[] }) {
     </>
   );
 }
+/** What each kind of work in the run used: calls, time, tokens and failures, one row per
+ * tool, model or picture model, whatever tools the run had. */
+function Meters({ meters }: { meters: Meter[] }) {
+  const rows = [...meters].sort((a, b) => order(a) - order(b) || b.calls - a.calls);
+  return (
+    <details className={cx("meters")} open>
+      <summary>{w().meterTitle}</summary>
+      <table>
+        <thead>
+          <tr>
+            <th>{w().meterName}</th>
+            <th>{w().meterCalls}</th>
+            <th>{w().meterTime}</th>
+            <th>{w().input}</th>
+            <th>{w().output}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((m) => (
+            <tr key={m.key} data-kind={m.kind}>
+              <td>
+                <i>{w().kinds[m.kind]}</i>
+                {meterName(m.key)}
+              </td>
+              <td>
+                {m.calls}
+                {!!m.errors && <em> {w().errors(m.errors).replace(/^ · /, "")}</em>}
+              </td>
+              <td>{seconds(m.ms)}</td>
+              <td title={m.cached ? `${w().cached} ${m.cached.toLocaleString()}` : undefined}>
+                {m.input ? thousands(m.input) : "—"}
+                {!!m.cached && <small> {w().cached} {thousands(m.cached)}</small>}
+              </td>
+              <td>{m.output ? thousands(m.output) : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </details>
+  );
+}
 type Item = Record<string, any>;
 const k = (n = 0) =>
   n >= 1000 ? `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k` : String(n);
@@ -260,12 +315,32 @@ function metric(s: Span) {
     const u = usageOf(a);
     return w().metric(k(u.input), u.hit, k(u.output));
   }
-  if (s.kind === "generation") return a.size;
+  if (s.kind === "generation")
+    return [a.size, a.usage && w().tokensShort(k(a.usage.input_tokens ?? 0), k(a.usage.output_tokens ?? 0))]
+      .filter(Boolean)
+      .join(" · ");
+  // A tool call shows what it was asked: a query, a URL, a subject.
+  if (s.kind === "tool")
+    return [a.hosted && a.args?.type, ...words(a.args)].filter(Boolean).join(" · ").slice(0, 90);
   if (s.kind === "search")
     return (a.subjects as string[] | undefined)?.join(", ");
   if (s.kind === "capture") return w().shots((a.shots || []).length);
   if (s.kind === "note" && a.status) return `HTTP ${a.status} · ${a.ms}ms`;
   return "";
+}
+/** The words in a tool's arguments, however they are nested or encoded. */
+function words(v: unknown, depth = 0): string[] {
+  if (typeof v === "string") {
+    if (!depth && /^[\[{]/.test(v.trim()))
+      try {
+        return words(JSON.parse(v), 1);
+      } catch {}
+    return v && v.length < 200 ? [v] : [];
+  }
+  if (depth > 3 || !v || typeof v !== "object") return [];
+  return (Array.isArray(v) ? v : Object.entries(v).filter(([k]) => k !== "type").map(([, x]) => x)).flatMap(
+    (x) => words(x, depth + 1),
+  );
 }
 /** The whole input each model turn was sent: where its execution started, then every
  * turn's additions and outputs in order; a compaction starts it afresh. */
@@ -387,6 +462,14 @@ function Conversation({ items }: { items: Item[] }) {
               <Text text={pretty(item.output)} />
             </li>
           );
+        // A call the provider ran itself, such as its web search: what it did, as recorded.
+        if (typeof item.type === "string" && item.type.endsWith("_call"))
+          return (
+            <li key={i} data-role="call">
+              <b>{w().call(item.type.replace(/_call$/, ""))}</b>
+              <Text text={pretty(item.action ?? item)} />
+            </li>
+          );
         if (item.type === "configuration_update")
           return (
             <li key={i} data-role="reasoning">
@@ -466,6 +549,9 @@ function Attributes({
                   {a.request.model} · {w().thinkingEffort} {a.request.effort} ·{" "}
                   {a.request.serviceTier} · {w().instructionsChars(k(a.request.instructionsChars))} ·{" "}
                   {w().toolCount(a.request.tools)}
+                  {a.request.steer?.max_tool_calls !== undefined &&
+                    ` · ${w().searchLeft(a.request.steer.max_tool_calls)}`}
+                  {a.request.steer?.tool_choice && ` · ${w().searchClosed}`}
                 </dd>
               </>
             )}
