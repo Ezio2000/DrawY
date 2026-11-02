@@ -264,15 +264,15 @@ it("fails a cut-off or refused Claude turn, and leaves overloads to be retried",
   await expect(generate(role, "", [], [], new AbortController().signal)).rejects.toThrow(/^模型请求 529/);
 });
 
-it("asks a newer Claude model for its effort per turn and its fallback on Anthropic's API", async () => {
+it("asks a newer Claude model for its effort per turn, and never for a fallback model", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => sse([start, ...end("end_turn")])));
   await generate(role, "", [{ role: "user", content: "Hi" }], [], new AbortController().signal);
   const headers = new Headers((vi.mocked(fetch).mock.calls[0][1] as RequestInit).headers);
   expect(headers.get("anthropic-beta")).toContain("mid-conversation-output-config-2026-07-01");
-  expect(headers.get("anthropic-beta")).toContain("server-side-fallback-2026-07-01");
-  expect(body().fallbacks).toBe("default");
+  expect(headers.get("anthropic-beta")).not.toContain("server-side-fallback");
+  expect(body().fallbacks).toBeUndefined();
   expect(body().thinking.block_binding).toEqual({ prefix_mismatch_behavior: "drop_block" });
-  // Through another address, no fallback is asked for.
+  // Another address is reached at its own /v1.
   vi.stubGlobal("fetch", vi.fn(async () => sse([start, ...end("end_turn")])));
   await generate({ ...role, baseUrl: "https://proxy.example/v1" }, "", [{ role: "user", content: "Hi" }], [], new AbortController().signal);
   expect(String(vi.mocked(fetch).mock.calls[0][0])).toBe("https://proxy.example/v1/messages");

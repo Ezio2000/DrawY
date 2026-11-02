@@ -30,8 +30,6 @@ export const perTurnEffort = (model: string) =>
  * the request. */
 const boundThinking = (model: string) =>
   at(model, { opus: 5.5, sonnet: 5.5, haiku: 5.5, fable: 5.1, mythos: 5.1 });
-/** Models that may hand a turn they decline to another model on Anthropic's own API. */
-const fallsBack = (model: string) => at(model, { opus: 5, sonnet: 5.5, fable: 5.1, mythos: 5.1 });
 /** The web search with dynamic filtering needs a 4.6 model or later. */
 const searchTool = (model: string) =>
   at(model, { opus: 4.6, sonnet: 4.6, fable: 5, mythos: 5 })
@@ -180,23 +178,6 @@ export function anthropicTools(tools: Item[], model: string): Block[] {
   return out;
 }
 
-/** After a turn was handed to a fallback model partway, what the declining model wrote
- * before the hand-over is not sent back, apart from its words and finished searches. */
-function afterFallback(content: Block[]): Block[] {
-  const last = content.findLastIndex((b) => b.type === "fallback");
-  if (last < 0) return content;
-  const results = new Set(
-    content.filter((b) => typeof b.tool_use_id === "string").map((b) => b.tool_use_id),
-  );
-  return content.filter(
-    (b, i) =>
-      i > last ||
-      b.type === "text" ||
-      (typeof b.tool_use_id === "string") ||
-      (b.type === "server_tool_use" && results.has(b.id)),
-  );
-}
-
 /** The answer's blocks as Responses items, each keeping the blocks it came from. */
 function itemsOf(content: Block[]): Item[] {
   const items: Item[] = [];
@@ -244,7 +225,7 @@ function itemsOf(content: Block[]): Item[] {
       const result = results.get(b.id);
       items.push({ ...hostedCall(b, result), anthropic: result ? [b, result] : [b] });
     }
-    // Results were placed with their calls; fallback markers are only a record.
+    // Results were placed with their calls.
   }
   return items;
 }
@@ -286,13 +267,11 @@ export async function messages(
     // The run retries a failed turn itself, with its own waits.
     maxRetries: 0,
   });
-  const official = /(^|\.)anthropic\.com$/.test(new URL(role.baseUrl).hostname);
   const level = effortFor(role.effort, role.efforts);
   const list = anthropicTools(tools, role.model);
   const betas = [
     ...(perTurnEffort(role.model) ? ["mid-conversation-output-config-2026-07-01"] : []),
     ...(boundThinking(role.model) ? ["thinking-binding-controls-2026-08-01"] : []),
-    ...(official && fallsBack(role.model) ? ["server-side-fallback-2026-07-01"] : []),
   ];
   const conversation: Item[] = toAnthropic(input, list.length > 0, role.model);
   const turn = crypto.randomUUID().slice(0, 8);
@@ -324,7 +303,6 @@ export async function messages(
       // The newest turn is cached too, so the next one reads all of this from the cache.
       cache_control: { type: "ephemeral" },
       ...(betas.length ? { betas } : {}),
-      ...(official && fallsBack(role.model) ? { fallbacks: "default" } : {}),
     };
     let stream;
     try {
@@ -396,10 +374,11 @@ export async function messages(
     if (stop !== "pause_turn") break;
   }
   if (stop === "max_tokens") throw Error("这一轮要写的内容太多，模型的输出被截断了");
+  // A declined turn is not handed to another model: the run stops and says so.
   if (stop === "refusal") throw Error("模型拒绝了这一轮的内容");
   if (stop === "model_context_window_exceeded") throw Error("这一轮要写的内容太多，模型的输出被截断了");
   if (!stop || stop === "pause_turn") throw Error("模型连接在完成前中断");
-  const items = itemsOf(afterFallback(content));
+  const items = itemsOf(content);
   for (const item of items)
     if (item.type === "message")
       onEvent({ type: "response.output_item.done", item: { ...item, id: `msg_${turn}` } });
