@@ -5,8 +5,8 @@
  * `anthropic`, so the next request sends them back exactly as they came: thinking blocks
  * are checked against the conversation they were written in, and a changed byte drops them. */
 import Anthropic from "@anthropic-ai/sdk";
-import { effortFor, type Effort, type Role } from "../contracts/index.ts";
-export type Item = Record<string, any>;
+import { effortFor, pinnedProvider, topEffort, type Role } from "../contracts/index.ts";
+import type { Adapter, Answer, Item, Request } from "./types.ts";
 type Block = Record<string, any>;
 type Message = { role: "user" | "assistant" | "system"; content: Block[]; output_config?: Item };
 
@@ -251,16 +251,13 @@ function hostedCall(use: Block, result?: Block): Item {
   };
 }
 
-/** One turn with a Claude model, streamed and reported as the Responses API would. */
-export async function messages(
+/** One turn with a Claude model, streamed and reported as the Responses API would. The
+ * turn's own effort is read from the conversation (see `toAnthropic`); the request keeps
+ * the configured one, so the cached prefix holds. */
+async function generate(
   role: Role,
-  instructions: string,
-  input: Item[],
-  tools: Item[],
-  signal: AbortSignal,
-  onEvent: (event: Item) => void,
-  budget: number,
-) {
+  { instructions, input, tools, signal, onEvent, budget }: Request,
+): Promise<Answer> {
   const client = new Anthropic({
     apiKey: role.credential,
     baseURL: role.baseUrl.replace(/\/$/, "").replace(/\/v1$/, ""),
@@ -288,7 +285,7 @@ export async function messages(
   for (let round = 0; round < 6; round++) {
     const params: Item = {
       model: role.model,
-      ...(role.provider ? { provider: { only: [role.provider], allow_fallbacks: false } } : {}),
+      ...pinnedProvider(role),
       max_tokens: budget,
       system: [{ type: "text", text: instructions, cache_control: { type: "ephemeral" } }],
       messages: round ? [...conversation, { role: "assistant", content: [...content] }] : conversation,
@@ -406,3 +403,14 @@ function failure(e: unknown, signal: AbortSignal): unknown {
     return Error(`模型请求 ${e.status ?? (/overloaded/i.test(e.message) ? 529 : "失败")}: ${e.message}`);
   return e;
 }
+
+export const anthropic: Adapter = {
+  generate,
+  // The newer Claude models take an effort change as a system message in the conversation;
+  // the others keep the configured effort, since changing it would restart the cache.
+  effortControl: (role) => (perTurnEffort(role.model) ? "conversation" : "fixed"),
+  decidingEffort: (role) => topEffort(role.efforts) ?? role.effort,
+  // Messages has no way to narrow the tools without changing them; Claude's own search is
+  // held to a number per request in its tool, and a search service's calls are refused
+  // past the budget by the run.
+};

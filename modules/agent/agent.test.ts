@@ -72,7 +72,7 @@ it("feeds canvas images into the author conversation and requires another look a
     let turn = 0,
       sawImage = false;
     vi.mocked(generate).mockImplementation(
-      async (_role, _instructions, input, _tools, _signal, onEvent) => {
+      async (_role, { input, onEvent }) => {
         if (turn === 0)
           for (const event of [
             { type: "response.reasoning_summary_part.added" },
@@ -195,7 +195,7 @@ it("lays out streamed modules on the write step before the write is saved", asyn
     ];
     let turn = 0;
     vi.mocked(generate).mockImplementation(
-      async (_role, _instructions, _input, _tools, _signal, onEvent) => {
+      async (_role, { onEvent }) => {
         if (turn === 0) {
           onEvent!({
             type: "response.output_item.added",
@@ -426,7 +426,7 @@ it("compacts at the budget with original references and closes interrupted tool 
     let turn = 0;
     const agent = new Agent(() => {});
     vi.mocked(generate).mockImplementation(
-      async (role, _instructions, input, tools, _signal, _event, budget) => {
+      async (role, { input, tools, budget }) => {
         if (turn++ === 0) {
           expect(tools).toEqual([]);
           // A summary is made with little reasoning and room to finish.
@@ -512,7 +512,7 @@ it("goes on without old pictures when a summary fails, and sizes the context by 
     const agent = new Agent(() => {});
     const seen: any[][] = [];
     let summaries = 0;
-    vi.mocked(generate).mockImplementation(async (_role, _i, input, tools) => {
+    vi.mocked(generate).mockImplementation(async (_role, { input, tools = [] }) => {
       if (!tools.length) {
         summaries++;
         throw Error("模型输出被截断");
@@ -555,7 +555,7 @@ it("goes on without old pictures when a summary fails, and sizes the context by 
 function script(calls: [string, unknown][], seen: any[][] = []) {
   let turn = 0;
   vi.mocked(generate).mockImplementation(
-    async (_role, _instructions, input) => {
+    async (_role, { input }) => {
       seen.push(structuredClone(input));
       const [name, args] = calls[turn++];
       return {
@@ -644,8 +644,9 @@ it("gives a Claude model's deciding turns the most effort it accepts, as a chang
       input.findLast((i) => i.type === "configuration_update")?.reasoning.effort;
     expect(seen.map(effort)).toEqual(["xhigh", "high", "xhigh"]);
     expect(vi.mocked(generate).mock.lastCall![0]).toMatchObject({ protocol: "anthropic", effort: "high" });
-    // The request's own effort is left alone.
-    expect(vi.mocked(generate).mock.lastCall![9]).toBeUndefined();
+    // The turn asks for the decided effort; Claude reads it from the conversation, and the
+    // request's own stays as configured (see anthropic.test.ts).
+    expect(vi.mocked(generate).mock.lastCall![1].effort).toBe("xhigh");
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
@@ -969,7 +970,7 @@ it("tries a turn again when the model's stream breaks, without the broken attemp
       response: {},
     });
     vi.mocked(generate).mockImplementation(
-      async (_role, _instructions, _input, _tools, _signal, onEvent) => {
+      async (_role, { onEvent }) => {
         switch (calls++) {
           case 0:
             onEvent?.({ type: "response.reasoning_summary_part.added" });
@@ -1139,7 +1140,7 @@ it.each(["api", "oauth"] as const)("keeps hosted searches in the %s conversation
     const message = { type: "message", role: "assistant", content: [{ type: "output_text", text: "说明[1]", annotations: [annotation] }] };
     let turn = 0;
     const states: string[] = [];
-    vi.mocked(generate).mockImplementation(async (_role, _instructions, input, tools, _signal, onEvent) => {
+    vi.mocked(generate).mockImplementation(async (_role, { input, tools = [], onEvent }) => {
       expect(tools.filter(t => t.type === "web_search")).toEqual(channel === "api" ? [{ type: "web_search", search_context_size: "low" }] : []);
       if (turn++ === 0) {
         onEvent!({ type: "response.output_item.added", item: { type: "web_search_call", id: "ws_1" } });
@@ -1178,7 +1179,7 @@ it("shows any hosted tool as a step, records it under its turn and adds up what 
     const search = { type: "web_search_call", id: "ws_1", status: "completed", action: { type: "open_page", url: "https://example.com/a" } };
     const usage = (n: number) => ({ input_tokens: n, output_tokens: 10, input_tokens_details: { cached_tokens: n / 2 }, output_tokens_details: { reasoning_tokens: 4 } });
     let turn = 0, looked: any;
-    vi.mocked(generate).mockImplementation(async (_role, _instructions, input, _tools, _signal, onEvent) => {
+    vi.mocked(generate).mockImplementation(async (_role, { input, onEvent }) => {
       if (turn === 2) looked = JSON.parse(input.findLast((i) => i.type === "function_call_output")!.output);
       if (turn++ === 0) {
         for (const item of [code, search]) {
@@ -1259,7 +1260,7 @@ it("searches through the search service for a model without its own, counting ea
     ] as const;
     const outputs: any[] = [];
     let turn = 0;
-    vi.mocked(generate).mockImplementation(async (role, _instructions, input, tools) => {
+    vi.mocked(generate).mockImplementation(async (role, { input, tools = [] }) => {
       expect(role.protocol).toBe("chat");
       // Only the service's search is offered, never the provider's own as well.
       expect(tools.some((t) => t.type === "web_search")).toBe(false);

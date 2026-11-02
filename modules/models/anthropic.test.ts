@@ -79,14 +79,7 @@ it("streams a Claude turn as Responses events and items", async () => {
     ),
   );
   const events: any[] = [];
-  const result = await generate(
-    role,
-    "instructions",
-    [{ role: "user", content: [{ type: "input_text", text: "Draw a map" }] }],
-    [{ type: "function", name: "write_work", description: "Write", parameters: { type: "object" }, strict: false }],
-    new AbortController().signal,
-    (e) => events.push(e),
-  );
+  const result = await generate(role, { instructions: "instructions", input: [{ role: "user", content: [{ type: "input_text", text: "Draw a map" }] }], tools: [{ type: "function", name: "write_work", description: "Write", parameters: { type: "object" }, strict: false }], signal: new AbortController().signal, onEvent: (e) => events.push(e) });
   expect(events.map((e) => e.type)).toEqual([
     "response.reasoning_summary_part.added",
     "response.reasoning_summary_text.delta",
@@ -232,14 +225,7 @@ it("reports Claude's own searches as hosted calls with their sources", async () 
     ),
   );
   const events: any[] = [];
-  const result = await generate(
-    { ...role, builtinSearch: true, search: "builtin" },
-    "",
-    [{ role: "user", content: "How tall?" }],
-    [{ type: "web_search", search_context_size: "low" }],
-    new AbortController().signal,
-    (e) => events.push(e),
-  );
+  const result = await generate({ ...role, builtinSearch: true, search: "builtin" }, { instructions: "", input: [{ role: "user", content: "How tall?" }], tools: [{ type: "web_search", search_context_size: "low" }], signal: new AbortController().signal, onEvent: (e) => events.push(e) });
   const done = events.find((e) => e.type === "response.output_item.done" && e.item.type === "web_search_call");
   expect(done.item).toMatchObject({
     id: "srvtoolu_1",
@@ -254,19 +240,27 @@ it("reports Claude's own searches as hosted calls with their sources", async () 
 
 it("fails a cut-off or refused Claude turn, and leaves overloads to be retried", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => sse([start, ...end("max_tokens")])));
-  await expect(generate(role, "", [], [], new AbortController().signal)).rejects.toThrow("截断");
+  await expect(generate(role, { instructions: "", input: [], tools: [], signal: new AbortController().signal })).rejects.toThrow("截断");
   vi.stubGlobal("fetch", vi.fn(async () => sse([start, ...end("refusal")])));
-  await expect(generate(role, "", [], [], new AbortController().signal)).rejects.toThrow("拒绝");
+  await expect(generate(role, { instructions: "", input: [], tools: [], signal: new AbortController().signal })).rejects.toThrow("拒绝");
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => new Response(JSON.stringify({ type: "error", error: { type: "overloaded_error", message: "Overloaded" } }), { status: 529 })),
   );
-  await expect(generate(role, "", [], [], new AbortController().signal)).rejects.toThrow(/^模型请求 529/);
+  await expect(generate(role, { instructions: "", input: [], tools: [], signal: new AbortController().signal })).rejects.toThrow(/^模型请求 529/);
 });
 
 it("asks a newer Claude model for its effort per turn, and never for a fallback model", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => sse([start, ...end("end_turn")])));
-  await generate(role, "", [{ role: "user", content: "Hi" }], [], new AbortController().signal);
+  // A turn that thinks harder says so in the conversation; the request keeps its own effort.
+  await generate(role, {
+    instructions: "",
+    input: [{ role: "user", content: "Hi" }, { type: "configuration_update", reasoning: { effort: "max" } }],
+    signal: new AbortController().signal,
+    effort: "max",
+  });
+  expect(body().output_config).toEqual({ effort: "high" });
+  expect(body().messages.at(-1)).toEqual({ role: "system", content: [], output_config: { effort: "max" } });
   const headers = new Headers((vi.mocked(fetch).mock.calls[0][1] as RequestInit).headers);
   expect(headers.get("anthropic-beta")).toContain("mid-conversation-output-config-2026-07-01");
   expect(headers.get("anthropic-beta")).not.toContain("server-side-fallback");
@@ -274,7 +268,7 @@ it("asks a newer Claude model for its effort per turn, and never for a fallback 
   expect(body().thinking.block_binding).toEqual({ prefix_mismatch_behavior: "drop_block" });
   // Another address is reached at its own /v1.
   vi.stubGlobal("fetch", vi.fn(async () => sse([start, ...end("end_turn")])));
-  await generate({ ...role, baseUrl: "https://proxy.example/v1" }, "", [{ role: "user", content: "Hi" }], [], new AbortController().signal);
+  await generate({ ...role, baseUrl: "https://proxy.example/v1" }, { instructions: "", input: [{ role: "user", content: "Hi" }], tools: [], signal: new AbortController().signal });
   expect(String(vi.mocked(fetch).mock.calls[0][0])).toBe("https://proxy.example/v1/messages");
   expect(body().fallbacks).toBeUndefined();
 });

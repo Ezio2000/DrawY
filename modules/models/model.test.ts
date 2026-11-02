@@ -28,13 +28,7 @@ it("retains completed streamed tool arguments when final output is empty", async
     "fetch",
     vi.fn(async () => new Response(data)),
   );
-  const result = await generate(
-    role,
-    "test",
-    [],
-    [],
-    new AbortController().signal,
-  );
+  const result = await generate(role, { instructions: "test", input: [], tools: [], signal: new AbortController().signal });
   expect(result.items).toEqual([item]);
   const body = JSON.parse(
     (vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string,
@@ -56,7 +50,7 @@ it("does not return executable calls after output truncation", async () => {
     vi.fn(async () => new Response(data)),
   );
   await expect(
-    generate(role, "", [], [], new AbortController().signal),
+    generate(role, { instructions: "", input: [], tools: [], signal: new AbortController().signal }),
   ).rejects.toThrow("截断");
 });
 it("does not treat a disconnected stream as completion", async () => {
@@ -70,7 +64,7 @@ it("does not treat a disconnected stream as completion", async () => {
     ),
   );
   await expect(
-    generate(role, "", [], [], new AbortController().signal),
+    generate(role, { instructions: "", input: [], tools: [], signal: new AbortController().signal }),
   ).rejects.toThrow("中断");
 });
 
@@ -100,13 +94,7 @@ it.each([
           ),
       ),
     );
-    await generate(
-      { ...role, channel, speed },
-      "",
-      [],
-      [],
-      new AbortController().signal,
-    );
+    await generate({ ...role, channel, speed }, { instructions: "", input: [], tools: [], signal: new AbortController().signal });
     const options = vi.mocked(fetch).mock.calls.at(-1)![1] as RequestInit;
     const body = JSON.parse(options.body as string);
     expect(body.service_tier).toBe(tier);
@@ -126,16 +114,7 @@ it("keeps requests that extend one another on their cached prefix", async () => 
     vi.fn(async () => new Response(data)),
   );
   for (const channel of ["oauth", "api"] as const)
-    await generate(
-      { ...role, channel },
-      "test",
-      [],
-      [],
-      new AbortController().signal,
-      undefined,
-      undefined,
-      "work-1",
-    );
+    await generate({ ...role, channel }, { instructions: "test", input: [], tools: [], signal: new AbortController().signal, cacheKey: "work-1" });
   const [oauth, api] = vi
     .mocked(fetch)
     .mock.calls.map(([, init]) => init as RequestInit);
@@ -152,7 +131,7 @@ it("preserves hosted search output and citation offsets for continuation", async
   const items = [search, message];
   const events = [...items.map(item => ({ type: "response.output_item.done", item })), { type: "response.completed", response: { usage: {} } }];
   vi.stubGlobal("fetch", vi.fn(async () => new Response(events.map(e => "data: " + JSON.stringify(e) + "\n\n").join(""))));
-  const result = await generate({ ...role, channel: "api" }, "", [], [{ type: "web_search" }], new AbortController().signal);
+  const result = await generate({ ...role, channel: "api" }, { instructions: "", input: [], tools: [{ type: "web_search" }], signal: new AbortController().signal });
   expect(result.items).toEqual(items);
   expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).tools).toEqual([{ type: "web_search" }]);
   const { citationsOf } = await import("./index.ts");
@@ -192,21 +171,10 @@ it("speaks Chat Completions and reports its stream as the Responses API would", 
     ),
   );
   const events: any[] = [];
-  const result = await generate(
-    deepseek,
-    "be an author",
-    [{ role: "user", content: [{ type: "input_text", text: "draw" }] }],
-    [
+  const result = await generate(deepseek, { instructions: "be an author", input: [{ role: "user", content: [{ type: "input_text", text: "draw" }] }], tools: [
       { type: "function", name: "write_work", description: "w", parameters: { type: "object" }, strict: false },
       { type: "web_search", search_context_size: "low" },
-    ],
-    new AbortController().signal,
-    (e) => events.push(e),
-    32768,
-    "key",
-    { tool_choice: { type: "allowed_tools" } },
-    "max",
-  );
+    ], signal: new AbortController().signal, onEvent: (e) => events.push(e), budget: 32768, cacheKey: "key", steer: { tool_choice: { type: "allowed_tools" } }, effort: "max" });
   const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
   expect(url).toBe("https://api.deepseek.invalid/chat/completions");
   const body = JSON.parse(init.body as string);
@@ -280,13 +248,7 @@ it("turns the conversation into messages, with pictures after the results they f
 });
 it("names pictures in words for a model that cannot see, and keeps its reasoning from the Responses API", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(chunks([{ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }]))));
-  await generate(
-    { ...deepseek, vision: false },
-    "",
-    [{ role: "user", content: [{ type: "input_image", image_url: "data:," }] }],
-    [],
-    new AbortController().signal,
-  );
+  await generate({ ...deepseek, vision: false }, { instructions: "", input: [{ role: "user", content: [{ type: "input_image", image_url: "data:," }] }], tools: [], signal: new AbortController().signal });
   const sent = JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string);
   expect(JSON.stringify(sent.messages)).not.toContain("image_url");
   expect(sent.messages[1].content[0].text).toContain("cannot see pictures");
@@ -294,11 +256,11 @@ it("names pictures in words for a model that cannot see, and keeps its reasoning
     "fetch",
     vi.fn(async () => new Response(chunks([{ type: "response.completed", response: { usage: {} } }]))),
   );
-  await generate(role, "", [{ type: "reasoning", summary: [], reasoning_content: "mine" }, { role: "user", content: "hi" }], [], new AbortController().signal);
+  await generate(role, { instructions: "", input: [{ type: "reasoning", summary: [], reasoning_content: "mine" }, { role: "user", content: "hi" }], tools: [], signal: new AbortController().signal });
   const responses = JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string);
   expect(responses.input).toEqual([{ role: "user", content: "hi" }]);
 });
 it("fails a Chat Completions turn cut off by its output limit", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(chunks([{ choices: [{ delta: { content: "x" }, finish_reason: "length" }] }]))));
-  await expect(generate(deepseek, "", [], [], new AbortController().signal)).rejects.toThrow("截断");
+  await expect(generate(deepseek, { instructions: "", input: [], tools: [], signal: new AbortController().signal })).rejects.toThrow("截断");
 });

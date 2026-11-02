@@ -13,9 +13,6 @@ import {
   type Effort,
   type Settings,
   type RunUsage,
-  efforts,
-  serviceTiers,
-  speedFor,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { writeWork, setBrief } from "../workspace/index.ts";
@@ -34,8 +31,14 @@ import {
 import { develop, type Development } from "../images/index.ts";
 import { observe, requireObserved, Unavailable } from "../observation/index.ts";
 import { AUTHOR, catalogue } from "./prompts.ts";
-import { generate, textOf, citationsOf, type Item } from "../models/index.ts";
-import { perTurnEffort } from "../models/anthropic.ts";
+import {
+  adapterFor,
+  generate,
+  requestOf,
+  textOf,
+  citationsOf,
+  type Item,
+} from "../models/index.ts";
 import {
   tools,
   askSchema,
@@ -136,33 +139,20 @@ function searchesLeft(run: Run) {
     ),
   );
 }
-/** Keeps a turn within the request's search budget. The tools stay listed, so the cached
- * prefix holds: within budget the turn may make only the calls left, and past it the turn
- * may call the drawing tools only. */
+/** Keeps a turn within the request's search budget, where the model's request format has
+ * a way to (its adapter's `narrow`). The tools stay listed, so the cached prefix holds;
+ * where there is no such way, the search service's calls are refused past the budget. */
 export function steering(
   run: Run,
   tools: Item[],
   protocol: Role["protocol"] = "responses",
 ): Item {
-  const hosted = tools.some((t) => t.type === "web_search"),
-    service = tools.some((t) => t.type === "function" && searching.has(t.name));
-  // Chat Completions and Messages have no way to narrow the tools without changing them;
-  // the search service's own calls are refused past the budget instead, and Claude's own
-  // search is held to a number per request in its tool.
-  if ((!hosted && !service) || protocol !== "responses") return {};
+  const isSearch = (t: Item) =>
+    t.type === "web_search" || (t.type === "function" && searching.has(t.name));
+  const narrow = adapterFor(protocol).narrow;
+  if (!narrow || !tools.some(isSearch)) return {};
   const left = searchesLeft(run);
-  if (left === Infinity) return {};
-  // max_tool_calls counts only the provider's own tools; the service's calls are counted here.
-  if (left > 0) return hosted ? { max_tool_calls: left } : {};
-  return {
-    tool_choice: {
-      type: "allowed_tools",
-      mode: "auto",
-      tools: tools
-        .filter((t) => t.type === "function" && !searching.has(t.name))
-        .map((t) => ({ type: "function", name: t.name })),
-    },
-  };
+  return left === Infinity ? {} : narrow(tools, left, isSearch);
 }
 /** What this request has searched so far, told to the author beside its brief and each
  * look, so it judges against what it already found rather than searching again. */
@@ -444,19 +434,22 @@ async function compact(
     let result: Awaited<ReturnType<typeof generate>>;
     try {
       result = await generate(
-      // A summary needs little thought: at the author's effort, xhigh reasoning used up the
-      // output budget and the cut-off summary failed the whole run.
-      { ...author, effort: "low" },
-      "Summarize this drawing conversation for continuation. Preserve user requirements, the brief and its basis, reference-image intent, chosen and generated material ids, decisions, unfinished work and tool failures. Do not execute the task. The latest saved work and original reference images will be supplied separately.",
-      // Effort changes made for the author's turns would override the summary's own.
-      ctx.input.filter((i) => i.type !== "configuration_update"),
-      [],
-      signal,
-      undefined,
-      16384,
-      // A summary asks with other instructions; it keeps off the author's cached prefix.
-      store.userId + ":compact",
-    );
+        // A summary needs little thought: at the author's effort, xhigh reasoning used up
+        // the output budget and the cut-off summary failed the whole run.
+        { ...author, effort: "low" },
+        {
+          instructions:
+            "Summarize this drawing conversation for continuation. Preserve user requirements, the brief and its basis, reference-image intent, chosen and generated material ids, decisions, unfinished work and tool failures. Do not execute the task. The latest saved work and original reference images will be supplied separately.",
+          // Effort changes made for the author's turns would override the summary's own.
+          input: ctx.input.filter((i) => i.type !== "configuration_update"),
+          // Without tools the calls and results so far are told in words.
+          tools: [],
+          signal,
+          budget: 16384,
+          // A summary asks with other instructions; it keeps off the author's cached prefix.
+          cacheKey: store.userId + ":compact",
+        },
+      );
     } catch (e) {
       if (signal.aborted) throw e;
       // Without a summary the run goes on with less to read rather than stopping.
@@ -502,33 +495,23 @@ async function compact(
 /** The most thought goes where the work is decided: the turn that answers the user (the
  * brief and its concept, or whether to ask) and the turn that judges a look. Without it
  * the author acts at once there, with almost no reasoning, whatever effort is configured;
- * the turns that carry decisions out keep the configured effort. A configuration_update
- * item changes the effort mid-conversation and lasts until the next one, while the
- * request's own effort stays as configured so the cached prefix holds. GPT-6 models take
- * these items, and so do the newer Claude models, as an effort-only system message. */
+ * the turns that carry decisions out keep the configured effort. How the effort changes
+ * is the request format's (its adapter's `effortControl`): per request, or by a
+ * configuration_update item that lasts until the next one, while the request's own effort
+ * stays as configured so the cached prefix holds. Returns the effort the turn thinks at. */
 function deliberate(input: Item[], role: Role, deciding: boolean): Effort {
+  const adapter = adapterFor(role.protocol),
+    control = adapter.effortControl(role);
+  if (control === "fixed") return role.effort;
   // Keeping the configured level also restores it when earlier history raised the effort.
-  deciding &&= !role.decisionUsesSetting;
-  // Chat Completions asks for its effort on each request, which leaves the cached prefix
-  // alone: the deciding turns ask for the most the model accepts.
-  if (role.protocol === "chat")
-    return deciding && role.efforts.length
-      ? role.efforts.reduce((a, b) => (efforts.indexOf(b) > efforts.indexOf(a) ? b : a))
-      : role.effort;
-  // Claude models that take an effort change as a message ask for the most they accept;
-  // the others keep the configured effort, since changing it would restart the cache.
-  const claude = role.protocol === "anthropic";
-  if (claude ? !perTurnEffort(role.model) : !/^gpt-(?:[6-9]|\d{2,})/.test(role.model))
-    return role.effort;
-  const top = role.efforts.length
-    ? role.efforts.reduce((a, b) => (efforts.indexOf(b) > efforts.indexOf(a) ? b : a))
-    : role.effort;
-  const effort = deciding ? (claude ? top : "max") : role.effort;
-  const current =
-    input.findLast((i) => i.type === "configuration_update")?.reasoning
-      ?.effort ?? role.effort;
-  if (effort !== current)
-    input.push({ type: "configuration_update", reasoning: { effort } });
+  const effort =
+    deciding && !role.decisionUsesSetting ? adapter.decidingEffort(role) : role.effort;
+  if (control === "conversation") {
+    const current =
+      input.findLast((i) => i.type === "configuration_update")?.reasoning?.effort ??
+      role.effort;
+    if (effort !== current) input.push({ type: "configuration_update", reasoning: { effort } });
+  }
   return effort;
 }
 /** A model request that failed on the way rather than on its content. */
@@ -891,15 +874,8 @@ export class Agent {
           inputItems: ctx.input.length,
           estimatedTokens: contextSize(ctx),
           request: {
-            model: settings.author.model,
-            ...(settings.author.provider
-              ? { provider: { only: [settings.author.provider], allow_fallbacks: false } }
-              : {}),
+            ...requestOf(settings.author),
             effort,
-            serviceTier:
-              serviceTiers[
-                speedFor(settings.author.channel, settings.author.speed)
-              ],
             instructionsChars: instructions.length,
             tools: availableTools.length,
             ...(Object.keys(steer).length ? { steer } : {}),
@@ -914,13 +890,17 @@ export class Agent {
           let result!: Awaited<ReturnType<typeof generate>>;
           for (const wait of [2000, 8000, 0]) {
             try {
-              result = await generate(
-                settings.author,
+              result = await generate(settings.author, {
                 instructions,
-                ctx.input,
-                availableTools,
-                abort.signal,
-                (event) => {
+                input: ctx.input,
+                tools: availableTools,
+                signal: abort.signal,
+                // One key for all of a user's works: every request begins with the same
+                // instructions and tools, and a work's turns extend its earlier ones.
+                cacheKey: store.userId,
+                steer,
+                effort,
+                onEvent: (event) => {
                   if (
                     firstOutput === undefined &&
                     event.type.endsWith(".delta")
@@ -1025,13 +1005,7 @@ export class Agent {
                     }
                   }
                 },
-                undefined,
-                // One key for all of a user's works: every request begins with the same
-                // instructions and tools, and a work's turns extend its earlier ones.
-                store.userId,
-                steer,
-                settings.author.protocol === "chat" ? effort : undefined,
-              );
+              });
               break;
             } catch (e) {
               if (abort.signal.aborted || !transient(e)) throw e;
