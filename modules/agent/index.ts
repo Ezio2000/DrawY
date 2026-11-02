@@ -156,6 +156,8 @@ function forAuthor(work: Work) {
 interface Context {
   input: Item[];
   generations: number;
+  /** The tokens the model last reported for the first `items` items of the input. */
+  measured?: { tokens: number; items: number };
 }
 async function userMessage(
   store: UserStore,
@@ -211,12 +213,49 @@ function ownChanges(store: UserStore, work: Work) {
     : "";
 }
 
-// Estimate conservatively without counting base64 bytes as text tokens.
-function contextSize(input: Item[]): number {
+/** Characters of JSON, a third of a token each. Pictures count as a fixed size and
+ * encrypted reasoning not at all: both are base64 that reads as far more text than the
+ * tokens they cost, so counting them as characters started compaction at under half the
+ * real limit. */
+function estimate(items: Item[]): number {
   return Math.ceil(
-    JSON.stringify(input, (key, value) =>
-      key === "image_url" ? " ".repeat(6400) : value,
+    JSON.stringify(items, (key, value) =>
+      key === "image_url"
+        ? " ".repeat(6400)
+        : key === "encrypted_content"
+          ? ""
+          : value,
     ).length / 3,
+  );
+}
+/** The context's size in tokens: what the model last reported for it, plus an estimate
+ * of what has been added since. */
+function contextSize(ctx: Context): number {
+  const m = ctx.measured;
+  return m && m.items <= ctx.input.length
+    ? m.tokens + estimate(ctx.input.slice(m.items))
+    : estimate(ctx.input);
+}
+/** The context without its older screenshots, when a summary could not be made: each
+ * look is described by its tool output, and the latest work is in the messages. */
+function withoutOldPictures(input: Item[]): Item[] {
+  const pictured = input.flatMap((item, i) =>
+    Array.isArray(item.content) &&
+    item.content.some((c: Item) => c.type === "input_image")
+      ? [i]
+      : [],
+  );
+  const keep = new Set(pictured.slice(-2));
+  return input.map((item, i) =>
+    pictured.includes(i) && !keep.has(i)
+      ? {
+          ...item,
+          content: [
+            ...item.content.filter((c: Item) => c.type !== "input_image"),
+            { type: "input_text", text: "(An earlier picture, left out to save space.)" },
+          ],
+        }
+      : item,
   );
 }
 async function compact(
@@ -225,20 +264,35 @@ async function compact(
   ctx: Context,
   signal: AbortSignal,
 ) {
-  const size = contextSize(ctx.input);
+  const size = contextSize(ctx);
   if (size < 128000) return;
   await tracer.span("compact", "context", { size }, async (span) => {
-    const result = await generate(
-      store.settings().author,
+    const author = store.settings().author;
+    let result: Awaited<ReturnType<typeof generate>>;
+    try {
+      result = await generate(
+      // A summary needs little thought: at the author's effort, xhigh reasoning used up the
+      // output budget and the cut-off summary failed the whole run.
+      { ...author, effort: "low" },
       "Summarize this drawing conversation for continuation. Preserve user requirements, the brief and its basis, reference-image intent, chosen and generated material ids, decisions, unfinished work and tool failures. Do not execute the task. The latest saved work and original reference images will be supplied separately.",
-      ctx.input,
+      // Effort changes made for the author's turns would override the summary's own.
+      ctx.input.filter((i) => i.type !== "configuration_update"),
       [],
       signal,
       undefined,
-      4096,
+      16384,
       // A summary asks with other instructions; it keeps off the author's cached prefix.
       store.userId + ":compact",
     );
+    } catch (e) {
+      if (signal.aborted) throw e;
+      // Without a summary the run goes on with less to read rather than stopping.
+      ctx.input = withoutOldPictures(ctx.input);
+      ctx.measured = undefined;
+      store.context(run.id, ctx);
+      span.set({ error: String(e), replaced: false });
+      return;
+    }
     const references = [
       ...new Set(
         store
@@ -260,6 +314,7 @@ async function compact(
       ),
       workMessage(run.sceneId, store.work(run.workId)),
     ];
+    ctx.measured = undefined;
     store.context(run.id, ctx);
     // The next turn starts from this summary alone.
     span.set({
@@ -391,9 +446,11 @@ export class Agent {
       startedAt: Date.now(),
     };
     const previous = store.runs(workId).at(-1);
+    const before = previous && (store.context(previous.id) as Context);
     const ctx: Context = {
-      input: previous ? store.context(previous.id).input : [],
+      input: before ? before.input : [],
       generations: 0,
+      ...(before?.measured ? { measured: before.measured } : {}),
     };
     ctx.input.push(
       message,
@@ -627,7 +684,7 @@ export class Agent {
         {
           input: ctx.input.slice(seen),
           inputItems: ctx.input.length,
-          estimatedTokens: contextSize(ctx.input),
+          estimatedTokens: contextSize(ctx),
           request: {
             model: settings.author.model,
             effort,
@@ -747,6 +804,11 @@ export class Agent {
       drafts.clear();
       ctx.input.push(...result.items);
       seen = ctx.input.length;
+      if (result.usage.input_tokens)
+        ctx.measured = {
+          tokens: result.usage.input_tokens + (result.usage.output_tokens ?? 0),
+          items: ctx.input.length,
+        };
       const text = textOf(result.items);
       if (said) {
         said.text = text;
@@ -966,7 +1028,7 @@ export class Agent {
           break;
         }
         case "write_work": {
-          const { work, added } = await writeWork(
+          const { work, added, keptTitle } = await writeWork(
             store,
             run.workId,
             args,
@@ -977,6 +1039,9 @@ export class Agent {
           output = {
             revision: work.revision,
             ...(added.length ? { materialsAdded: added } : {}),
+            ...(keptTitle
+              ? { title: `Kept the user's title "${work.title}".` }
+              : {}),
           };
           Object.assign(step!, { revision: work.revision, materials: added });
           break;

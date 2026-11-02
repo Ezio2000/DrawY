@@ -97,9 +97,10 @@ export function useOf(m: Material): MaterialUse | null {
 }
 
 const CALL = /api\.(?:material|draw|effect)\(\s*["'`]([a-z0-9-]+)["'`]/g;
-const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+// "--" is allowed: pictures generated before the slug was cut first carry it.
+const ID = /^[a-z0-9]+(?:-+[a-z0-9]+)*$/;
 /** Ids the work's code calls literally, and id-like strings in its module data. */
-const QUOTED = /["'`]([a-z0-9]+(?:-[a-z0-9]+)*)["'`]/g;
+const QUOTED = /["'`]([a-z0-9]+(?:-+[a-z0-9]+)*)["'`]/g;
 function named(work: Work) {
   const called = new Set<string>(),
     mentioned = new Set<string>(),

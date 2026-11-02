@@ -179,6 +179,8 @@ export interface Work {
   style: Record<string, string>;
   revision: number;
   updatedAt: number;
+  /** The user named the work themselves; the author keeps that title. */
+  named?: boolean;
 }
 /** What made a revision: the work's creation, one request to the author (every revision
  * it saves while answering), a hand edit on the canvas, or bringing back an earlier one. */

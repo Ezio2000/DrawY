@@ -61,7 +61,10 @@ export async function writeWork(
     for (const key of edit.remove?.[section] || []) delete work[section][key];
   }
   for (const key of edit.remove?.materials || []) delete work.materials[key];
-  if (edit.title !== undefined) work.title = edit.title;
+  // A title the user gave stays: the author retitled works the user had renamed.
+  const keptTitle =
+    edit.title !== undefined && !!work.named && cause.kind === "run";
+  if (edit.title !== undefined && !keptTitle) work.title = edit.title;
   if (edit.style) work.style = edit.style;
   if (!work.brief && Object.values(work.scenes).some((s) => s.modules.length))
     throw new DomainError("请先用 set_brief 确定创作简报，再绘制");
@@ -69,7 +72,7 @@ export async function writeWork(
   validateWork(work);
   const saved = store.commit(work, edit.baseRevision, cause);
   used(added, workId, store.userId);
-  return { work: saved, added };
+  return { work: saved, added, keptTitle };
 }
 const quoteable = (text: string) =>
   text
@@ -91,7 +94,9 @@ export async function setBrief(
   for (const [part, quote] of Object.entries(brief.basis)) {
     if (quote === undefined) continue;
     const pieces = quote
-      .split(/…|\.\.\.|\/|；|;/)
+      // Quotes are joined by ellipses, slashes, semicolons, or set end to end in their own
+      // quotation marks («“我种草莓”“我们这是山东”»); each piece must be the user's words.
+      .split(/…|\.\.\.|\/|；|;|[“”「」『』"、]/)
       .map(quoteable)
       .filter(Boolean);
     if (!pieces.length || pieces.some((p) => !corpus.includes(p)))
@@ -102,7 +107,7 @@ export async function setBrief(
   const style = await styleOf(brief.style);
   const work = structuredClone(store.work(workId));
   if (work.brief?.style !== brief.style) work.style = { ...style.tokens };
-  if (!work.brief) {
+  if (!work.brief && !work.named) {
     work.title = brief.subject;
     work.scenes[work.rootSceneId].title = brief.subject;
   }
@@ -164,7 +169,11 @@ export function validateWork(work: Work) {
 export function restore(store: UserStore, workId: string, revision: number) {
   const current = store.work(workId);
   return store.commit(
-    { ...store.revision(workId, revision), title: current.title },
+    {
+      ...store.revision(workId, revision),
+      title: current.title,
+      ...(current.named ? { named: true } : {}),
+    },
     current.revision,
     { kind: "restore", revision },
   );

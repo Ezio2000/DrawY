@@ -358,8 +358,9 @@ export class Library {
       d.name.en
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "")
-        .slice(0, 32) || "picture";
+        // Cut first: a cut that lands on a hyphen would leave "--" before the suffix.
+        .slice(0, 32)
+        .replace(/^-+|-+$/g, "") || "picture";
     const id = `${d.origin.kind === "upload" ? "u" : "g"}-${slug}-${crypto.randomUUID().slice(0, 6)}`;
     // An opaque upload is a whole picture, not a cut-out.
     const role =

@@ -42,9 +42,13 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 5. `view_canvas` 经 `modules/observation` 请求截图服务。截图服务用 `modules/runtime/document.ts` 生成页面，加载 `/runtime/runtime.js` 渲染场景，截下图片，连同几何信息一起作为图片消息送回同一段对话。
 6. 运行过程中的每个变化，都以 `run` 事件经 SSE（`/api/events`）推给前端。前端由 `modules/canvas` 把过程画成铅笔起稿和图片显影的动画。整个过程同时由 `modules/trace` 记入 `trace.sqlite`。
 
+上下文超过 12.8 万 token 时 `compact` 把对话换成摘要。大小取上一轮 `usage.input_tokens`（记在 `Context.measured`）加之后新增项的估算，估算不计 `encrypted_content` 和图片 base64；摘要用 low 推理强度、16k 输出上限，并去掉对话里的 `configuration_update`；摘要失败时只把较早的截图换成文字占位，运行继续。
+
 ## 账号、角色与模型
 
-账号的角色记在 `users.role`，角色在 `roles` 表（`storage` 的 `roles/role/saveRole/deleteRole/account/accounts/setRole`，`identity` 的 `saveRole/removeRole` 做校验）。权限清单是 `contracts` 的 `permissions`：`models.manage`、`materials.all`、`materials.manage`、`accounts.manage`。内置角色 `admin` 读出时永远拥有全部权限（以后新增的权限也自动有），不能修改；`member` 是新账号的默认角色，权限可改、不能删；删掉自建角色时它的账号变回 `member`。第一个注册的账号是 `admin`；旧库升级时最早的账号成为 `admin`；`setRole` 不允许去掉最后一位管理员。服务端用 `app.ts` 的 `allowed(c, 权限)` 拦截，管理接口都在 `/api/admin/*`；前端用 `account.tsx` 的 `useCan()` 决定显示什么，但它只是界面，权限以服务端为准。新加权限时要补 `permissions`、`i18n.tsx` 的 `settings.permissions/permissionHints` 中英文，以及服务端拦截。
+账号的角色记在 `users.role`，角色在 `roles` 表（`storage` 的 `roles/role/saveRole/deleteRole/account/accounts/setRole`，`identity` 的 `saveRole/removeRole` 做校验）。权限清单是 `contracts` 的 `permissions`：`models.manage`、`materials.all`、`materials.manage`、`accounts.manage`。内置角色 `admin` 读出时永远拥有全部权限（以后新增的权限也自动有），不能修改；`member` 是新账号的默认角色，权限可改、不能删；删掉自建角色时它的账号变回 `member`。第一个注册的账号是 `admin`；旧库升级时最早的账号成为 `admin`；`setRole` 不允许去掉最后一位管理员。
+
+作品标题：用户重命名（`store.rename`）会在作品上记 `named: true`，之后作者运行里的 `write_work.title` 和第一次简报都不再改标题（`writeWork` 返回 `keptTitle`，工具结果里告诉作者），撤销、恢复也保留它。这条规则只出现在工具结果里，不写进系统提示词或工具说明，保持缓存前缀不变。生成图和上传图的 ID 先截断再去首尾连字符；`take` 的 `ID`/`QUOTED` 正则接受 `--`，兼容以前生成的 ID。服务端用 `app.ts` 的 `allowed(c, 权限)` 拦截，管理接口都在 `/api/admin/*`；前端用 `account.tsx` 的 `useCan()` 决定显示什么，但它只是界面，权限以服务端为准。新加权限时要补 `permissions`、`i18n.tsx` 的 `settings.permissions/permissionHints` 中英文，以及服务端拦截。
 
 模型配置全站共用：`ModelCatalog`（`models` 若干绘制模型，每个是带 `id/name/description` 的 `Role`；`default`；`image`）存在 `system` 表，只有 `models.manage` 能读写（`/api/admin/models`）。每个用户自己只存 `UserSettings`（长期偏好和所选模型 `model`），`/api/models` 只给出名称、说明和是否已接入，不给凭证。`UserStore.settings()` 把这两者合成运行要用的 `Settings`（所选模型不存在时用默认），`agent` 和 `images` 只读这个结果。旧库升级时，最早账号原来的 `author/image` 连接成为第一份 `ModelCatalog`（`Storage.firstCatalog`）。
 

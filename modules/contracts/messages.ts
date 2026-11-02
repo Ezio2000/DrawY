@@ -31,6 +31,9 @@ const exact: Record<string, string> = {
   "请在模型设置中配置生图凭证":
     "Set up the image model's credentials in Settings",
   "请先配置模型凭证": "Set up the model's credentials in Settings first",
+  "这一轮要写的内容太多，模型的输出被截断了":
+    "There was too much to write in one go, and the model's output was cut off",
+  // Runs saved before this wording still carry the old one.
   "模型输出被截断，请缩小本轮作品修改范围":
     "The model's output was cut off; ask for a smaller change",
   "模型连接在完成前中断": "The connection to the model ended before it finished",
