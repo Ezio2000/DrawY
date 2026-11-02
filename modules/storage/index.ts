@@ -7,7 +7,7 @@ import {
   MEMBER,
   defaultCatalog,
   normalizeCatalog,
-  searchFor,
+  settingsFor,
   permissions,
   DomainError,
   type Account,
@@ -430,24 +430,7 @@ export class UserStore {
    * search service the user picked, or the defaults when they have not or one was taken
    * away; the way they want that model to search, if it can; and their preferences. */
   settings(): Settings {
-    const own = this.ownSettings(),
-      catalog = this.storage.models();
-    const pick = <T extends { id: string }>(list: T[], id: string | null, fallback: string | null) =>
-      list.find((m) => m.id === id) ?? list.find((m) => m.id === fallback) ?? list[0];
-    const model = pick(catalog.models, own.model, catalog.default);
-    const image = pick(catalog.images, own.image, catalog.defaultImage);
-    const service = pick(catalog.searches, own.searchService, catalog.defaultSearch);
-    const { id: _, name, description: __, ...author } = model;
-    const mode = searchFor(author, own.searchModes[model.id] ?? model.search, service);
-    const { id: ___, name: imageName, description: ____, ...painter } = image;
-    return {
-      author,
-      authorName: name,
-      search: mode === "service" ? { mode, service } : { mode },
-      image: painter,
-      imageName,
-      preferences: own.preferences,
-    };
+    return settingsFor(this.storage.models(), this.ownSettings());
   }
   capture(captureId: string) {
     return this.one<Capture>(

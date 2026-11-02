@@ -4180,6 +4180,10 @@ button.now:hover .now-line {
   gap: 12px;
 }
 
+.setting[data-wide] > div:last-child {
+  justify-content: flex-start;
+}
+
 .setting > div:first-child {
   display: grid;
   gap: 3px;
