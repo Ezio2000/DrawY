@@ -146,14 +146,14 @@ function searchesLeft(run: Run) {
 export function steering(
   run: Run,
   tools: Item[],
-  protocol: Role["protocol"] = "responses",
+  role: Pick<Role, "protocol" | "baseUrl"> = { protocol: "responses", baseUrl: "https://api.openai.com/v1" },
 ): Item {
   const isSearch = (t: Item) =>
     t.type === "web_search" || (t.type === "function" && searching.has(t.name));
-  const narrow = adapterFor(protocol).narrow;
+  const narrow = adapterFor(role.protocol).narrow;
   if (!narrow || !tools.some(isSearch)) return {};
   const left = searchesLeft(run);
-  return left === Infinity ? {} : narrow(tools, left, isSearch);
+  return left === Infinity ? {} : narrow(tools, left, isSearch, role);
 }
 /** What this request has searched so far, told to the author beside its brief and each
  * look, so it judges against what it already found rather than searching again. */
@@ -870,7 +870,7 @@ export class Agent {
       const effort = deliberate(ctx.input, settings.author, deciding);
       deciding = false;
       const turnStart = Date.now();
-      const steer = steering(run, availableTools, settings.author.protocol);
+      const steer = steering(run, availableTools, settings.author);
       let firstOutput: number | undefined;
       const result = await tracer.span(
         "turn",

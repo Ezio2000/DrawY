@@ -47,7 +47,7 @@ export interface Adapter {
   /** Request fields that hold a turn to the searches left without changing the tools
    * listed, which would restart the cache; absent where the API has no such way, and the
    * run refuses calls past the budget instead. */
-  narrow?(tools: Item[], left: number, isSearch: (tool: Item) => boolean): Item;
+  narrow?(tools: Item[], left: number, isSearch: (tool: Item) => boolean, role: Pick<Role, "baseUrl">): Item;
   /** What a turn's trace records of the request beyond its model and effort. */
   describe?(role: Role): Item;
 }

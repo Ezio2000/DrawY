@@ -1320,6 +1320,10 @@ it("steers the service's search like the provider's own, except over Chat Comple
   const run = (steps: Run["steps"]): Run => ({ id: "r", workId: "w", sceneId: "root", status: "running", steps, observations: [], startedAt: 0 });
   expect(steering(run(search(2)), listed)).toEqual({});
   expect(steering(run(search(SEARCH_LIMIT)), listed)).toEqual({ tool_choice: { type: "allowed_tools", mode: "auto", tools: [{ type: "function", name: "write_work" }] } });
-  expect(steering(run(search(SEARCH_LIMIT)), listed, "chat")).toEqual({});
-  expect(steering(run(search(SEARCH_LIMIT)), listed, "anthropic")).toEqual({});
+  expect(steering(run(search(SEARCH_LIMIT)), listed, { protocol: "chat", baseUrl: "https://example.invalid" })).toEqual({});
+  expect(steering(run(search(SEARCH_LIMIT)), listed, { protocol: "anthropic", baseUrl: "https://api.anthropic.com" })).toEqual({});
+  // DeepSeek Responses rejects allowed_tools; search execution still enforces the budget.
+  const deepseek = { protocol: "responses" as const, baseUrl: "https://api.deepseek.com" };
+  expect(steering(run(search(SEARCH_LIMIT)), listed, deepseek)).toEqual({});
+  expect(steering(run(search(2)), listed, deepseek)).toEqual({});
 });

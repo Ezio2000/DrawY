@@ -139,3 +139,5 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 **测试要验证真实行为。** `agent.test.ts` 用 `vi.mock` 替换掉 `models` 和 `observation`，按脚本逐轮返回工具调用。素材相关的测试用 `@drawy/materials/testing` 的 `serveLibrary`，在临时目录里起一个带种子数据的真实素材库，并拦截 fetch。新测试沿用这两种方式，不要另写素材库的 mock。测试失败时，先判断是实现错了还是测试过时了，不要为了让测试通过去改断言或写特例。
 
 **`promo/` 是独立工程。** 它是 60 秒宣传片，有自己的 npm 依赖和 `build.sh`，不属于主程序的构建和测试；只有任务明确涉及时才去动它。
+
+DeepSeek 的 Responses 接口不接受 `tool_choice: allowed_tools`，也不支持 `max_tool_calls`；其适配请求不发送这两项，独立搜索仍在 DrawY 执行时按预算拒绝超额调用，工具列表保持不变。

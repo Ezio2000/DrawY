@@ -77,7 +77,10 @@ export const responses: Adapter = {
   // keep the configured effort, since changing the request's would restart the cache.
   effortControl: (role) => (/^gpt-(?:[6-9]|\d{2,})/.test(role.model) ? "conversation" : "fixed"),
   decidingEffort: () => "max",
-  narrow(tools, left, isSearch) {
+  narrow(tools, left, isSearch, role) {
+    // DeepSeek implements Responses without allowed_tools or max_tool_calls. The
+    // independent search executor enforces its budget without changing this tool list.
+    if (new URL(role.baseUrl).hostname === "api.deepseek.com") return {};
     // max_tool_calls counts only the provider's own tools; a search service's calls are
     // counted by the run.
     if (left > 0) return tools.some((t) => t.type === "web_search") ? { max_tool_calls: left } : {};
