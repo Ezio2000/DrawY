@@ -6,6 +6,8 @@ import {
   ADMIN,
   MEMBER,
   defaultCatalog,
+  normalizeCatalog,
+  searchFor,
   permissions,
   DomainError,
   type Account,
@@ -87,17 +89,18 @@ export class Storage {
     // Settings saved before speeds had a Fast switch instead.
     const { fast, ...author } = old.author;
     if (!author.speed) author.speed = fast ? "fast" : "default";
-    return {
+    return normalizeCatalog({
       models: [{ ...catalog.models[0], ...author, name: author.model }],
       default: catalog.default,
-      image: old.image ?? catalog.image,
-    };
+      image: old.image ?? catalog.images[0],
+    });
   }
   models(): ModelCatalog {
     const row = this.db
       .prepare("SELECT data FROM system WHERE key='models'")
       .get() as { data: string };
-    return JSON.parse(row.data);
+    // Catalogs saved before pictures and search were set apart read as they were.
+    return normalizeCatalog(JSON.parse(row.data));
   }
   saveModels(catalog: ModelCatalog) {
     this.db
@@ -408,7 +411,13 @@ export class UserStore {
       .prepare("SELECT data FROM settings WHERE user_id=?")
       .get(this.userId);
     const value = r ? JSON.parse(r.data as string) : {};
-    return { preferences: value.preferences ?? "", model: value.model ?? null };
+    return {
+      preferences: value.preferences ?? "",
+      model: value.model ?? null,
+      image: value.image ?? null,
+      searchService: value.searchService ?? null,
+      searchModes: value.searchModes ?? {},
+    };
   }
   saveOwnSettings(value: UserSettings) {
     this.storage.db
@@ -417,17 +426,28 @@ export class UserStore {
       )
       .run(this.userId, JSON.stringify(value));
   }
-  /** What a run draws and paints with: the model the user picked, or the default when
-   * they have not or it was taken away, the shared image model, and their preferences. */
+  /** What a run draws, searches and paints with: the drawing model, picture model and
+   * search service the user picked, or the defaults when they have not or one was taken
+   * away; the way they want that model to search, if it can; and their preferences. */
   settings(): Settings {
     const own = this.ownSettings(),
       catalog = this.storage.models();
-    const model =
-      catalog.models.find((m) => m.id === own.model) ??
-      catalog.models.find((m) => m.id === catalog.default) ??
-      catalog.models[0];
-    const { id: _, name: __, description: ___, ...author } = model;
-    return { author, image: catalog.image, preferences: own.preferences };
+    const pick = <T extends { id: string }>(list: T[], id: string | null, fallback: string | null) =>
+      list.find((m) => m.id === id) ?? list.find((m) => m.id === fallback) ?? list[0];
+    const model = pick(catalog.models, own.model, catalog.default);
+    const image = pick(catalog.images, own.image, catalog.defaultImage);
+    const service = pick(catalog.searches, own.searchService, catalog.defaultSearch);
+    const { id: _, name, description: __, ...author } = model;
+    const mode = searchFor(author, own.searchModes[model.id] ?? model.search, service);
+    const { id: ___, name: imageName, description: ____, ...painter } = image;
+    return {
+      author,
+      authorName: name,
+      search: mode === "service" ? { mode, service } : { mode },
+      image: painter,
+      imageName,
+      preferences: own.preferences,
+    };
   }
   capture(captureId: string) {
     return this.one<Capture>(

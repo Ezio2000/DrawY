@@ -12,12 +12,24 @@ import {
   Check,
   Copy,
   Ticket,
+  Globe,
 } from "lucide-react";
 import { Segmented, Switch, Spinner, pageLocale } from "@drawy/ui";
 import {
   permissions,
   speeds,
   speedFor,
+  efforts,
+  effortFor,
+  protocols,
+  protocolEndpoints,
+  searchModes,
+  searchProviders,
+  searchEndpoints,
+  searchReady,
+  canSearchBuiltin,
+  type ImageOption,
+  type SearchService,
   type Account,
   type AccountRole,
   type Invite,
@@ -36,9 +48,8 @@ const channels = {
   api: { baseUrl: "https://api.openai.com/v1" },
   oauth: { baseUrl: "https://chatgpt.com/backend-api/codex" },
 } as const;
-const efforts = ["low", "medium", "high", "xhigh"] as const;
-const account = ["channel", "baseUrl", "credential", "accountId"] as const;
-type Connection = Pick<ModelOption, (typeof account)[number]>;
+type Connection = Pick<ModelOption, "channel" | "baseUrl" | "credential" | "accountId">;
+const newId = (prefix: string) => prefix + "-" + crypto.randomUUID().slice(0, 8);
 /** Settings changed and not yet saved, which leaving the page would lose. */
 let unsaved = false;
 /** Whether the page may be left: always, unless settings are unsaved and the user would
@@ -152,16 +163,10 @@ const Badge = ({
   </span>
 );
 
-/** The image model shares the default drawing model's account when every part of the
- * connection is the same. */
-const sharing = (c: ModelCatalog) => {
-  const model = c.models.find((m) => m.id === c.default) ?? c.models[0];
-  return account.every((k) => c.image[k] === model[k]);
-};
-
 type Tab =
   | "preferences"
   | "author"
+  | "search"
   | "image"
   | "accounts"
   | "invites"
@@ -184,9 +189,7 @@ export function Settings() {
     [error, E] = useState(""),
     [busy, B] = useState(false),
     [done, D] = useState(false),
-    // The image model uses its own account rather than the default drawing model's.
-    [separate, setSeparate] = useState(false),
-    // The drawing model opened for editing.
+    // The model or service opened for editing.
     [editing, setEditing] = useState<string>();
   useEffect(() => {
     void Promise.all([
@@ -197,7 +200,6 @@ export function Settings() {
         const v = { own, catalog };
         setSaved(v);
         set(v);
-        if (catalog) setSeparate(!sharing(catalog));
       },
       (e) => E(e.message),
     );
@@ -224,30 +226,48 @@ export function Settings() {
       </div>
     );
   const catalog = value.catalog;
-  const shared = !separate;
   const change = (catalog: ModelCatalog) => {
     D(false);
     set({ ...value, catalog });
   };
-  /** Changes one drawing model; while the image model shares the default one's
-   * account, it follows every change to it. */
+  /** Changes one drawing model. What its connection cannot offer is let go at once: a
+   * ChatGPT account speaks only the Responses API, and only an API key with it has the
+   * provider's own search. */
   const model = (id: string, patch: Partial<ModelOption>) => {
     if (!catalog) return;
-    const next = {
+    change({
       ...catalog,
-      models: catalog.models.map((m) => (m.id === id ? { ...m, ...patch } : m)),
-    };
-    if (shared && id === catalog.default) {
-      const chosen = next.models.find((m) => m.id === id)!;
-      next.image = {
-        ...next.image,
-        ...Object.fromEntries(account.map((k) => [k, chosen[k]])),
-      };
-    }
-    change(next);
+      models: catalog.models.map((m) => {
+        if (m.id !== id) return m;
+        const next = { ...m, ...patch };
+        if (next.channel === "oauth") next.protocol = "responses";
+        // A model moved to another format follows it to that provider, unless its address
+        // was set by hand.
+        if (
+          next.protocol !== m.protocol &&
+          Object.values(protocolEndpoints).includes(m.baseUrl) &&
+          !patch.baseUrl
+        )
+          next.baseUrl = protocolEndpoints[next.protocol];
+        if (!canSearchBuiltin({ ...next, builtinSearch: true })) next.builtinSearch = false;
+        if (next.search === "builtin" && !next.builtinSearch) next.search = "off";
+        next.effort = effortFor(next.effort, next.efforts) ?? next.effort;
+        return next;
+      }),
+    });
   };
-  const image = (patch: Partial<ModelCatalog["image"]>) =>
-    catalog && change({ ...catalog, image: { ...catalog.image, ...patch } });
+  const image = (id: string, patch: Partial<ImageOption>) =>
+    catalog &&
+    change({
+      ...catalog,
+      images: catalog.images.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+    });
+  const service = (id: string, patch: Partial<SearchService>) =>
+    catalog &&
+    change({
+      ...catalog,
+      searches: catalog.searches.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+    });
   const connection = (
     of: Connection,
     patch: (p: Partial<ModelOption>) => void,
@@ -270,7 +290,7 @@ export function Settings() {
                 })
               }
             >
-              {c === "api" ? "OpenAI API" : w.chatgpt}
+              {c === "api" ? w.apiKey : w.chatgpt}
             </button>
           ))}
         </Segmented>
@@ -308,6 +328,7 @@ export function Settings() {
     [
       ["preferences", UserRound, true],
       ["author", PenTool, models],
+      ["search", Globe, models],
       ["image", ImageIcon, models],
       ["accounts", Users, accounts],
       ["invites", Ticket, accounts],
@@ -365,7 +386,7 @@ export function Settings() {
                   const base =
                     catalog.models.find((m) => m.id === catalog.default) ??
                     catalog.models[0];
-                  const id = "m-" + crypto.randomUUID().slice(0, 8);
+                  const id = newId("m");
                   // A new model starts from the default one's connection, so adding
                   // another model of the same account takes only its name.
                   change({
@@ -403,7 +424,7 @@ export function Settings() {
                   }
                   aside={
                     <code className={cx("entry-code")}>
-                      {m.model} · {w.efforts[m.effort]}
+                      {m.model} · {w.efforts[m.effort]} · {w.searchModesShort[m.search]}
                     </code>
                   }
                   open={editing === m.id}
@@ -429,23 +450,63 @@ export function Settings() {
                       <Switch
                         checked={m.id === catalog.default}
                         disabled={m.id === catalog.default}
-                        onChange={() => {
-                          const next = { ...catalog, default: m.id };
-                          // The image model keeps sharing whichever model is the default.
-                          if (shared)
-                            next.image = {
-                              ...next.image,
-                              ...Object.fromEntries(
-                                account.map((k) => [k, m[k]]),
-                              ),
-                            };
-                          change(next);
-                        }}
+                        onChange={() => change({ ...catalog, default: m.id })}
                       />
                     </Row>
                   </Group>
                   <Group title={w.connection}>
                     {connection(m, (p) => model(m.id, p), true, m.speed)}
+                    {m.channel === "api" && (
+                      <Row label={w.protocol} hint={w.protocolHints[m.protocol]}>
+                        <Segmented label={w.protocol}>
+                          {protocols.map((v) => (
+                            <button
+                              key={v}
+                              aria-pressed={m.protocol === v}
+                              onClick={() => model(m.id, { protocol: v })}
+                            >
+                              {w.protocols[v]}
+                            </button>
+                          ))}
+                        </Segmented>
+                      </Row>
+                    )}
+                  </Group>
+                  <Group title={w.abilities}>
+                    <Row label={w.vision} hint={w.visionHint}>
+                      <Switch checked={m.vision} onChange={(on) => model(m.id, { vision: on })} />
+                    </Row>
+                    <Row label={w.tools} hint={w.toolsHint}>
+                      <Switch checked={m.tools} onChange={(on) => model(m.id, { tools: on })} />
+                    </Row>
+                    <Row
+                      label={w.builtinSearch}
+                      hint={
+                        canSearchBuiltin({ ...m, builtinSearch: true })
+                          ? w.builtinSearchHint
+                          : w.builtinSearchUnavailable
+                      }
+                    >
+                      <Switch
+                        checked={m.builtinSearch}
+                        disabled={!canSearchBuiltin({ ...m, builtinSearch: true })}
+                        onChange={(on) => model(m.id, { builtinSearch: on })}
+                      />
+                    </Row>
+                    <Row label={w.defaultSearch} hint={w.defaultSearchHint}>
+                      <Segmented label={w.defaultSearch}>
+                        {searchModes.map((v) => (
+                          <button
+                            key={v}
+                            aria-pressed={m.search === v}
+                            disabled={v === "builtin" && !m.builtinSearch}
+                            onClick={() => model(m.id, { search: v })}
+                          >
+                            {w.searchModes[v]}
+                          </button>
+                        ))}
+                      </Segmented>
+                    </Row>
                   </Group>
                   <Group title={w.parameters}>
                     <Row label={w.model}>
@@ -455,9 +516,28 @@ export function Settings() {
                         onChange={(e) => model(m.id, { model: e.target.value })}
                       />
                     </Row>
+                    <Row label={w.acceptedEfforts} hint={w.acceptedEffortsHint}>
+                      <div className={cx("chips")} role="group" aria-label={w.acceptedEfforts}>
+                        {efforts.map((v) => (
+                          <button
+                            key={v}
+                            aria-pressed={m.efforts.includes(v)}
+                            onClick={() =>
+                              model(m.id, {
+                                efforts: m.efforts.includes(v)
+                                  ? m.efforts.filter((x) => x !== v)
+                                  : efforts.filter((x) => x === v || m.efforts.includes(x)),
+                              })
+                            }
+                          >
+                            {w.efforts[v]}
+                          </button>
+                        ))}
+                      </div>
+                    </Row>
                     <Row label={w.effort}>
                       <Segmented label={w.effort}>
-                        {efforts.map((v) => (
+                        {(m.efforts.length ? m.efforts : efforts).map((v) => (
                           <button
                             key={v}
                             aria-pressed={m.effort === v}
@@ -468,7 +548,9 @@ export function Settings() {
                         ))}
                       </Segmented>
                     </Row>
-                    <Row label={w.speed} hint={w.speedHints[m.speed]}>
+{/* Speeds are the Responses API's service tiers; the other formats have none. */}
+                    {m.protocol === "responses" && (
+                                        <Row label={w.speed} hint={w.speedHints[m.speed]}>
                       <Segmented label={w.speed}>
                         {speeds[m.channel].map((v) => (
                           <button
@@ -480,6 +562,17 @@ export function Settings() {
                           </button>
                         ))}
                       </Segmented>
+                    </Row>
+                    )}
+                    <Row label={w.maxOutput} hint={w.maxOutputHint}>
+                      <input
+                        className={cx("mono")}
+                        type="number"
+                        min={1024}
+                        step={1024}
+                        value={m.maxOutput}
+                        onChange={(e) => model(m.id, { maxOutput: Math.round(Number(e.target.value) || 0) })}
+                      />
                     </Row>
                   </Group>
                   <footer className={cx("entry-foot")}>
@@ -512,39 +605,226 @@ export function Settings() {
             </ul>
           </section>
         )}
+        {tab === "search" && catalog && (
+          <section>
+            <Head title={t.titles.search} hint={w.searchHint}>
+              <button
+                className={cx("secondary small")}
+                onClick={() => {
+                  const id = newId("s");
+                  change({
+                    ...catalog,
+                    searches: [
+                      ...catalog.searches,
+                      {
+                        id,
+                        name: w.providers.deepseek,
+                        provider: "deepseek",
+                        baseUrl: searchEndpoints.deepseek,
+                        credential: "",
+                      },
+                    ],
+                    defaultSearch: catalog.defaultSearch ?? id,
+                  });
+                  setEditing(id);
+                }}
+              >
+                <Plus size={15} />
+                {w.addSearch}
+              </button>
+            </Head>
+            {!catalog.searches.length && <p className={cx("settings-empty")}>{w.noSearch}</p>}
+            <ul className={cx("entries")}>
+              {catalog.searches.map((m) => (
+                <Entry
+                  key={m.id}
+                  icon={<Globe size={16} />}
+                  title={m.name}
+                  detail={w.providers[m.provider]}
+                  badges={
+                    <>
+                      {m.id === catalog.defaultSearch && <Badge tone="accent">{w.isDefaultService}</Badge>}
+                      {!searchReady(m) && <Badge tone="muted">{t.composer.modelUnconnected}</Badge>}
+                    </>
+                  }
+                  aside={<code className={cx("entry-code")}>{m.baseUrl}</code>}
+                  open={editing === m.id}
+                  toggle={() => setEditing(editing === m.id ? undefined : m.id)}
+                >
+                  <Group title={w.basics}>
+                    <Row label={w.modelName} hint={w.serviceNameHint}>
+                      <input value={m.name} onChange={(e) => service(m.id, { name: e.target.value })} />
+                    </Row>
+                    <Row label={w.isDefaultService} hint={w.defaultSearchServiceHint}>
+                      <Switch
+                        checked={m.id === catalog.defaultSearch}
+                        disabled={m.id === catalog.defaultSearch}
+                        onChange={() => change({ ...catalog, defaultSearch: m.id })}
+                      />
+                    </Row>
+                  </Group>
+                  <Group title={w.connection}>
+                    <Row label={w.provider} hint={w.providerHints[m.provider]}>
+                      <Segmented label={w.provider}>
+                        {searchProviders.map((v) => (
+                          <button
+                            key={v}
+                            aria-pressed={m.provider === v}
+                            onClick={() => service(m.id, { provider: v, baseUrl: searchEndpoints[v] })}
+                          >
+                            {w.providers[v]}
+                          </button>
+                        ))}
+                      </Segmented>
+                    </Row>
+                    <Row label={w.baseUrl}>
+                      <input value={m.baseUrl} onChange={(e) => service(m.id, { baseUrl: e.target.value })} />
+                    </Row>
+                    <Row label="API Key">
+                      <input
+                        className={cx("mono")}
+                        type="password"
+                        autoComplete="off"
+                        value={m.credential}
+                        spellCheck={false}
+                        placeholder={m.provider === "searxng" ? w.credentialOptional : w.credentialEmpty}
+                        onChange={(e) => service(m.id, { credential: e.target.value })}
+                      />
+                    </Row>
+                  </Group>
+                  <footer className={cx("entry-foot")}>
+                    <small />
+                    <button
+                      className={cx("secondary small danger")}
+                      onClick={() => {
+                        const searches = catalog.searches.filter((x) => x.id !== m.id);
+                        change({
+                          ...catalog,
+                          searches,
+                          defaultSearch:
+                            catalog.defaultSearch === m.id ? (searches[0]?.id ?? null) : catalog.defaultSearch,
+                        });
+                        setEditing(undefined);
+                      }}
+                    >
+                      <Trash2 size={14} />
+                      {w.removeSearch}
+                    </button>
+                  </footer>
+                </Entry>
+              ))}
+            </ul>
+          </section>
+        )}
         {tab === "image" && catalog && (
           <section>
-            <Head title={t.titles.image} hint={w.imageHint} />
-            <Group title={w.connection}>
-              <Row label={w.shared} hint={w.sharedHint}>
-                <Switch
-                  checked={shared}
-                  onChange={(on) => {
-                    setSeparate(!on);
-                    // Sharing again takes the default model's account back; going
-                    // separate starts from it, to be changed below.
-                    if (on) {
-                      const base =
-                        catalog.models.find((m) => m.id === catalog.default) ??
-                        catalog.models[0];
-                      image(
-                        Object.fromEntries(account.map((k) => [k, base[k]])),
-                      );
-                    }
-                  }}
-                />
-              </Row>
-              {!shared && connection(catalog.image, image, false)}
-            </Group>
-            <Group title={w.parameters}>
-              <Row label={w.model}>
-                <input
-                  className={cx("mono")}
-                  value={catalog.image.model}
-                  onChange={(e) => image({ model: e.target.value })}
-                />
-              </Row>
-            </Group>
+            <Head title={t.titles.image} hint={w.imageHint}>
+              <button
+                className={cx("secondary small")}
+                onClick={() => {
+                  const base =
+                    catalog.images.find((m) => m.id === catalog.defaultImage) ?? catalog.images[0];
+                  const id = newId("i");
+                  change({
+                    ...catalog,
+                    images: [...catalog.images, { ...base, id, name: w.newImage, description: "" }],
+                  });
+                  setEditing(id);
+                }}
+              >
+                <Plus size={15} />
+                {w.addImage}
+              </button>
+            </Head>
+            <ul className={cx("entries")}>
+              {catalog.images.map((m) => (
+                <Entry
+                  key={m.id}
+                  icon={<ImageIcon size={16} />}
+                  title={m.name}
+                  detail={m.description || m.model}
+                  badges={
+                    <>
+                      {m.id === catalog.defaultImage && <Badge tone="accent">{w.isDefault}</Badge>}
+                      {!m.credential && <Badge tone="muted">{t.composer.modelUnconnected}</Badge>}
+                    </>
+                  }
+                  aside={<code className={cx("entry-code")}>{m.model}</code>}
+                  open={editing === m.id}
+                  toggle={() => setEditing(editing === m.id ? undefined : m.id)}
+                >
+                  <Group title={w.basics}>
+                    <Row label={w.modelName} hint={w.modelNameHint}>
+                      <input value={m.name} onChange={(e) => image(m.id, { name: e.target.value })} />
+                    </Row>
+                    <Row label={w.description} hint={w.descriptionHint}>
+                      <input value={m.description} onChange={(e) => image(m.id, { description: e.target.value })} />
+                    </Row>
+                    <Row label={w.isDefault} hint={w.isDefaultImageHint}>
+                      <Switch
+                        checked={m.id === catalog.defaultImage}
+                        disabled={m.id === catalog.defaultImage}
+                        onChange={() => change({ ...catalog, defaultImage: m.id })}
+                      />
+                    </Row>
+                  </Group>
+                  <Group title={w.connection}>
+                    <Row label={w.sameAs} hint={w.sameAsHint}>
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const from = catalog.models.find((x) => x.id === e.target.value);
+                          if (from)
+                            image(m.id, {
+                              channel: from.channel,
+                              baseUrl: from.baseUrl,
+                              credential: from.credential,
+                              accountId: from.accountId,
+                            });
+                        }}
+                      >
+                        <option value="">{w.sameAsPick}</option>
+                        {catalog.models.map((x) => (
+                          <option key={x.id} value={x.id}>
+                            {x.name}
+                          </option>
+                        ))}
+                      </select>
+                    </Row>
+                    {connection(m, (p) => image(m.id, p), false)}
+                  </Group>
+                  <Group title={w.parameters}>
+                    <Row label={w.model}>
+                      <input
+                        className={cx("mono")}
+                        value={m.model}
+                        onChange={(e) => image(m.id, { model: e.target.value })}
+                      />
+                    </Row>
+                  </Group>
+                  <footer className={cx("entry-foot")}>
+                    <small>
+                      {m.id === catalog.defaultImage
+                        ? w.defaultKept
+                        : catalog.images.length < 2
+                          ? w.lastKept
+                          : ""}
+                    </small>
+                    <button
+                      className={cx("secondary small danger")}
+                      disabled={catalog.images.length < 2 || m.id === catalog.defaultImage}
+                      onClick={() => {
+                        change({ ...catalog, images: catalog.images.filter((x) => x.id !== m.id) });
+                        setEditing(undefined);
+                      }}
+                    >
+                      <Trash2 size={14} />
+                      {w.removeModel}
+                    </button>
+                  </footer>
+                </Entry>
+              ))}
+            </ul>
           </section>
         )}
         {tab === "accounts" && <Accounts />}
@@ -562,7 +842,6 @@ export function Settings() {
                 className={cx("secondary small")}
                 onClick={() => {
                   set(saved);
-                  if (saved?.catalog) setSeparate(!sharing(saved.catalog));
                   E("");
                 }}
               >

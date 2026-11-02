@@ -33,7 +33,7 @@ for (const channel of ["api", "oauth"] as const)
     };
     store.storage.saveModels({
       ...store.storage.models(),
-      image: settings.image,
+      images: [{ ...store.storage.models().images[0], ...settings.image }],
     });
     const png = await picture();
     const calls: RequestInit[] = [];
@@ -90,7 +90,7 @@ it("cuts a long name before trimming its hyphens, so no id carries \"--\"", asyn
   const store = db.scoped(register(db, "author", "abcdef").id);
   store.storage.saveModels({
     ...store.storage.models(),
-    image: { ...store.settings().image, credential: "test", baseUrl: "https://example.invalid" },
+    images: [{ ...store.storage.models().images[0], credential: "test", baseUrl: "https://example.invalid" }],
   });
   const png = await picture();
   library.route(async () =>
@@ -117,7 +117,7 @@ it("retries a dropped connection or a busy server before giving up", async () =>
   };
   store.storage.saveModels({
     ...store.storage.models(),
-    image: settings.image,
+    images: [{ ...store.storage.models().images[0], ...settings.image }],
   });
   const png = await picture();
   let calls = 0;
@@ -149,7 +149,7 @@ it("records a failed picture so the work and the author both learn of it", async
   };
   store.storage.saveModels({
     ...store.storage.models(),
-    image: settings.image,
+    images: [{ ...store.storage.models().images[0], ...settings.image }],
   });
   library.route(async () => new Response("unsafe prompt", { status: 400 }));
   const [made] = await develop(store, fixture(), [
@@ -180,7 +180,7 @@ it("makes pictures that reference another in the same request after it, all priv
   };
   store.storage.saveModels({
     ...store.storage.models(),
-    image: settings.image,
+    images: [{ ...store.storage.models().images[0], ...settings.image }],
   });
   const png = await picture();
   const prompts: { subject: string; references: number }[] = [];
@@ -251,7 +251,7 @@ it("paints new pictures to look like the ones the work already has in its style"
   };
   store.storage.saveModels({
     ...store.storage.models(),
-    image: settings.image,
+    images: [{ ...store.storage.models().images[0], ...settings.image }],
   });
   const png = await picture();
   const sent: { prompt: string; images: number }[] = [];

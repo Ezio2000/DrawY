@@ -10,6 +10,10 @@ import {
   type Question,
   type Cause,
   type Role,
+  type Effort,
+  type Settings,
+  type RunUsage,
+  efforts,
   serviceTiers,
   speedFor,
 } from "../contracts/index.ts";
@@ -31,18 +35,46 @@ import { develop, type Development } from "../images/index.ts";
 import { observe, requireObserved, Unavailable } from "../observation/index.ts";
 import { AUTHOR, catalogue } from "./prompts.ts";
 import { generate, textOf, citationsOf, type Item } from "../models/index.ts";
+import { perTurnEffort } from "../models/anthropic.ts";
 import {
   tools,
   askSchema,
   findSchema,
   generateSchema,
   settleSchema,
+  searchTools,
+  searchSchema,
+  openSchema,
 } from "./tools.ts";
+import { searchWeb, readPage } from "../search/index.ts";
 import { partialJson } from "./partial.ts";
 import { tracer } from "../trace/index.ts";
 import type { MessageLocale } from "../contracts/messages.ts";
-const toolsFor = (channel: Role["channel"]) =>
-  channel === "api" ? [...tools, { type: "web_search", search_context_size: "low" }] : tools;
+/** The tools a run offers: the drawing tools, and the one way it searches, if any. A run
+ * never has both the model's own search and the search service. */
+const toolsFor = (settings: Pick<Settings, "search">): Item[] =>
+  settings.search.mode === "builtin"
+    ? [...tools, { type: "web_search", search_context_size: "low" }]
+    : settings.search.mode === "service"
+      ? [...tools, ...searchTools]
+      : tools;
+const searching = new Set(searchTools.map((t) => t.name));
+/** Adds web searches or a page read to what a run has spent. */
+function counted(run: Run, action: string | undefined, searches = 1) {
+  const u = usageOf(run);
+  if (action === "open_page" || action === "find_in_page") u.pages = (u.pages ?? 0) + 1;
+  else u.searches = (u.searches ?? 0) + searches;
+}
+/** What a search step spends of the budget. The search service is asked once per query,
+ * and each is paid for, so a call with several queries counts each; a page read, and a
+ * provider's own search, which is paid for by the call, count one. */
+function cost(run: Run, step: Extract<Step, { kind: "tool"; name: "web_search" }>) {
+  return run.services?.search === "service" && step.action !== "open_page"
+    ? Math.max(1, step.queries.length)
+    : 1;
+}
+const usageOf = (run: Run): RunUsage =>
+  (run.usage ??= { input: 0, cached: 0, output: 0, reasoning: 0 });
 /** Whether an output item is a call to a tool the provider runs itself, such as its web
  * search: those arrive finished in the model's output and are never answered here. */
 const hosted = (item: Item) =>
@@ -81,17 +113,21 @@ function hostedActivity(item: Item): ToolActivity {
     ...(detail ? { detail } : {}),
   };
 }
-/** Web search calls a request may make in all, and once its first draft is saved: the
- * research belongs before the drawing, and a look needs at most one targeted follow-up. */
+/** Web searches a request may make in all, and once its first draft is saved: the
+ * research belongs before the drawing, and a look needs at most one targeted follow-up.
+ * The search service counts each query; a provider's own search counts each call. */
 export const SEARCH_LIMIT = 8,
   SEARCH_AFTER_DRAFT = 2;
-/** The web search calls this request may still make. */
+/** The web searches this request may still make. */
 function searchesLeft(run: Run) {
   const drafted = run.steps.findIndex(
     (s) => s.kind === "tool" && s.name === "write_work" && s.status === "done",
   );
   const searched = (from: number) =>
-    run.steps.filter((s, i) => i > from && s.kind === "tool" && s.name === "web_search").length;
+    run.steps.reduce(
+      (n, s, i) => (i > from && s.kind === "tool" && s.name === "web_search" ? n + cost(run, s) : n),
+      0,
+    );
   return Math.max(
     0,
     Math.min(
@@ -103,17 +139,27 @@ function searchesLeft(run: Run) {
 /** Keeps a turn within the request's search budget. The tools stay listed, so the cached
  * prefix holds: within budget the turn may make only the calls left, and past it the turn
  * may call the drawing tools only. */
-export function steering(run: Run, tools: Item[]): Item {
-  if (!tools.some((t) => t.type === "web_search")) return {};
+export function steering(
+  run: Run,
+  tools: Item[],
+  protocol: Role["protocol"] = "responses",
+): Item {
+  const hosted = tools.some((t) => t.type === "web_search"),
+    service = tools.some((t) => t.type === "function" && searching.has(t.name));
+  // Chat Completions and Messages have no way to narrow the tools without changing them;
+  // the search service's own calls are refused past the budget instead, and Claude's own
+  // search is held to a number per request in its tool.
+  if ((!hosted && !service) || protocol !== "responses") return {};
   const left = searchesLeft(run);
   if (left === Infinity) return {};
-  if (left > 0) return { max_tool_calls: left };
+  // max_tool_calls counts only the provider's own tools; the service's calls are counted here.
+  if (left > 0) return hosted ? { max_tool_calls: left } : {};
   return {
     tool_choice: {
       type: "allowed_tools",
       mode: "auto",
       tools: tools
-        .filter((t) => t.type === "function")
+        .filter((t) => t.type === "function" && !searching.has(t.name))
         .map((t) => ({ type: "function", name: t.name })),
     },
   };
@@ -133,7 +179,11 @@ function research(run: Run) {
     calls: searches.length,
     ...(asked.length ? { queriesAsked: asked } : {}),
     ...(pages.length ? { pagesOpened: pages } : {}),
-    ...(left !== Infinity ? { searchCallsLeft: left } : {}),
+    ...(left !== Infinity
+      ? run.services?.search === "service"
+        ? { searchQueriesLeft: left }
+        : { searchCallsLeft: left }
+      : {}),
     note: left
       ? "What these found is above. Judge the figure against it; asking these again in other words returns the same results. Search again only for a fact the figure states that none of it covers, and leave out what stays unconfirmed."
       : "Web search is closed for the rest of this request. Work from what is above, and leave out what stays unconfirmed.",
@@ -156,6 +206,22 @@ function activity(name: string, args: any): ToolActivity {
   switch (name) {
     case "read_work":
       return { name };
+    case "web_search":
+      return {
+        name,
+        queries: (Array.isArray(args.queries) ? args.queries : []).filter(
+          (q: unknown): q is string => typeof q === "string" && !!q,
+        ),
+        urls: [],
+        action: "search",
+      };
+    case "open_page":
+      return {
+        name: "web_search",
+        queries: [],
+        urls: typeof args.url === "string" && args.url ? [args.url] : [],
+        action: "open_page",
+      };
     case "set_brief":
       return {
         name,
@@ -322,13 +388,14 @@ function ownChanges(store: UserStore, work: Work) {
 /** Characters of JSON, a third of a token each. Pictures count as a fixed size and
  * encrypted reasoning not at all: both are base64 that reads as far more text than the
  * tokens they cost, so counting them as characters started compaction at under half the
- * real limit. */
+ * real limit. The blocks kept for Claude repeat what their item says, with signed
+ * thinking, and are not counted either. */
 function estimate(items: Item[]): number {
   return Math.ceil(
     JSON.stringify(items, (key, value) =>
       key === "image_url"
         ? " ".repeat(6400)
-        : key === "encrypted_content"
+        : key === "encrypted_content" || key === "anthropic"
           ? ""
           : value,
     ).length / 3,
@@ -438,10 +505,23 @@ async function compact(
  * the turns that carry decisions out keep the configured effort. A configuration_update
  * item changes the effort mid-conversation and lasts until the next one, while the
  * request's own effort stays as configured so the cached prefix holds. GPT-6 models take
- * these items. */
-function deliberate(input: Item[], role: Role, deciding: boolean) {
-  if (!/^gpt-(?:[6-9]|\d{2,})/.test(role.model)) return role.effort;
-  const effort = deciding ? "max" : role.effort;
+ * these items, and so do the newer Claude models, as an effort-only system message. */
+function deliberate(input: Item[], role: Role, deciding: boolean): Effort {
+  // Chat Completions asks for its effort on each request, which leaves the cached prefix
+  // alone: the deciding turns ask for the most the model accepts.
+  if (role.protocol === "chat")
+    return deciding && role.efforts.length
+      ? role.efforts.reduce((a, b) => (efforts.indexOf(b) > efforts.indexOf(a) ? b : a))
+      : role.effort;
+  // Claude models that take an effort change as a message ask for the most they accept;
+  // the others keep the configured effort, since changing it would restart the cache.
+  const claude = role.protocol === "anthropic";
+  if (claude ? !perTurnEffort(role.model) : !/^gpt-(?:[6-9]|\d{2,})/.test(role.model))
+    return role.effort;
+  const top = role.efforts.length
+    ? role.efforts.reduce((a, b) => (efforts.indexOf(b) > efforts.indexOf(a) ? b : a))
+    : role.effort;
+  const effort = deciding ? (claude ? top : "max") : role.effort;
   const current =
     input.findLast((i) => i.type === "configuration_update")?.reasoning
       ?.effort ?? role.effort;
@@ -669,6 +749,13 @@ export class Agent {
     const start = Date.now();
     let flush: ReturnType<typeof setTimeout> | undefined;
     const settings = store.settings();
+    run.services = {
+      author: settings.authorName,
+      model: settings.author.model,
+      search: settings.search.mode,
+      ...(settings.search.service ? { searchBy: settings.search.service.name } : {}),
+      image: settings.imageName,
+    };
     await tracer.within(run.id, () =>
       tracer
         .span(
@@ -680,7 +767,12 @@ export class Agent {
                 s.kind === "message" && s.role === "user",
             )?.text,
             model: settings.author.model,
+            protocol: settings.author.protocol,
             effort: settings.author.effort,
+            search: settings.search.mode,
+            ...(settings.search.service
+              ? { searchService: settings.search.service.provider }
+              : {}),
             speed: settings.author.speed,
             imageModel: settings.image.model,
           },
@@ -695,7 +787,7 @@ export class Agent {
               execution.set({
                 instructions,
                 context: ctx.input,
-                tools: toolsFor(settings.author.channel).map((t) =>
+                tools: toolsFor(settings).map((t) =>
                   "name" in t ? t.name : t.type,
                 ),
               });
@@ -756,7 +848,7 @@ export class Agent {
     flushing: (f: ReturnType<typeof setTimeout> | undefined) => void,
   ) {
     const settings = store.settings();
-    const availableTools = toolsFor(settings.author.channel);
+    const availableTools = toolsFor(settings);
     // Tool arguments stream in; each flush shows what has been laid out so far.
     const drafts = new Map<
       string,
@@ -787,7 +879,7 @@ export class Agent {
       const effort = deliberate(ctx.input, settings.author, deciding);
       deciding = false;
       const turnStart = Date.now();
-      const steer = steering(run, availableTools);
+      const steer = steering(run, availableTools, settings.author.protocol);
       let firstOutput: number | undefined;
       const result = await tracer.span(
         "turn",
@@ -905,13 +997,9 @@ export class Agent {
                           Object.assign(step, hostedActivity(call), {
                             status: failed ? "failed" : "done",
                           });
-                        const used = ((run.usage ??= {
-                          input: 0,
-                          cached: 0,
-                          output: 0,
-                          reasoning: 0,
-                        }).hosted ??= {});
+                        const used = (usageOf(run).hosted ??= {});
                         used[tool] = (used[tool] ?? 0) + 1;
+                        if (call.type === "web_search_call") counted(run, call.action?.type);
                         // Recorded like any tool call, under the turn that made it.
                         tracer.record(
                           "tool",
@@ -937,6 +1025,7 @@ export class Agent {
                 // instructions and tools, and a work's turns extend its earlier ones.
                 store.userId,
                 steer,
+                settings.author.protocol === "chat" ? effort : undefined,
               );
               break;
             } catch (e) {
@@ -1073,6 +1162,66 @@ export class Agent {
       )
         throw Error(`${call.name} must be the only tool call`);
       switch (call.name) {
+        case "web_search":
+        case "open_page": {
+          const service = store.settings().search.service;
+          if (!service) throw Error("This request has no search service.");
+          // The call is already among the steps; the budget is what was left before it.
+          const left = searchesLeft({
+            ...run,
+            steps: run.steps.filter((s) => s !== step),
+          });
+          if (!left) {
+            run.steps.splice(run.steps.indexOf(step!), 1);
+            step = undefined;
+            this.emit(store, run);
+            return {
+              done: false,
+              output: {
+                error:
+                  "Web search is closed for the rest of this request. Work from what you already found, and leave out what stays unconfirmed.",
+              },
+              images: [],
+            };
+          }
+          if (call.name === "web_search") {
+            const asked = searchSchema.parse(args).queries;
+            // Past what is left, the later queries are not asked.
+            const queries = asked.slice(0, left);
+            const skipped = asked.slice(left);
+            if (skipped.length && step?.kind === "tool" && step.name === "web_search") {
+              step.queries = queries;
+              this.emit(store, run);
+            }
+            counted(run, "search", queries.length);
+            const results = await Promise.all(
+              queries.map(async (query) => {
+                try {
+                  return { query, results: await searchWeb(service, query, abort.signal) };
+                } catch (e) {
+                  abort.signal.throwIfAborted();
+                  return { query, error: e instanceof Error ? e.message : String(e) };
+                }
+              }),
+            );
+            if (results.every((r) => "error" in r))
+              throw Error((results[0] as { error: string }).error);
+            output = {
+              results,
+              ...(skipped.length
+                ? {
+                    notAsked: skipped,
+                    note: "These queries were not asked: the request's search budget ran out. Work from what you found, and leave out what stays unconfirmed.",
+                  }
+                : {}),
+            };
+          } else {
+            counted(run, "open_page");
+            const { url } = openSchema.parse(args);
+            output = { url, text: await readPage(service, url, abort.signal) };
+          }
+          break;
+        }
         case "read_work": {
           const work = store.work(run.workId);
           output = forAuthor(work);
@@ -1175,12 +1324,7 @@ export class Agent {
             void d.done.then(async (r) => {
               shown[i].status = r.status;
               if (r.status === "ready") {
-                const u = (run.usage ??= {
-                  input: 0,
-                  cached: 0,
-                  output: 0,
-                  reasoning: 0,
-                });
+                const u = usageOf(run);
                 const images = (u.images ??= { count: 0, input: 0, output: 0 });
                 images.count++;
                 images.input += r.usage?.input_tokens ?? 0;

@@ -268,61 +268,160 @@ export const serviceTiers: Record<Speed, string> = {
  * default, which every channel has. */
 export const speedFor = (channel: Role["channel"], speed: Speed): Speed =>
   (speeds[channel] as readonly Speed[]).includes(speed) ? speed : "default";
+/** How a run looks things up on the web: with the drawing model's own search, with a
+ * search service the app calls for it, or not at all. A run uses exactly one. */
+export const searchModes = ["builtin", "service", "off"] as const;
+export type SearchMode = (typeof searchModes)[number];
+/** The request format a drawing model speaks: the OpenAI Responses API, Chat
+ * Completions, which most other providers (DeepSeek, Qwen, Kimi…) offer, or the Anthropic
+ * Messages API, which Claude models speak. */
+export const protocols = ["responses", "chat", "anthropic"] as const;
+export type Protocol = (typeof protocols)[number];
+/** How hard a model thinks. Providers name their own levels; each model lists the ones it
+ * accepts, and a run asks for the nearest. */
+export const efforts = ["low", "medium", "high", "xhigh", "max"] as const;
+export type Effort = (typeof efforts)[number];
+/** The level a model accepts that is nearest to the one wanted, preferring the lower. */
+export function effortFor(wanted: Effort, accepted: readonly Effort[]): Effort | undefined {
+  if (!accepted.length) return undefined;
+  const at = efforts.indexOf(wanted);
+  return [...accepted].sort(
+    (a, b) =>
+      Math.abs(efforts.indexOf(a) - at) - Math.abs(efforts.indexOf(b) - at) ||
+      efforts.indexOf(a) - efforts.indexOf(b),
+  )[0];
+}
 export interface Role {
+  channel: "api" | "oauth";
+  protocol: Protocol;
+  baseUrl: string;
+  credential: string;
+  accountId?: string;
+  model: string;
+  effort: Effort;
+  /** The reasoning levels it accepts; none means it is not asked for one. */
+  efforts: Effort[];
+  speed: Speed;
+  /** Whether it can be shown pictures: screenshots, references and library thumbnails. */
+  vision: boolean;
+  /** Whether it can call tools, without which it cannot draw at all. */
+  tools: boolean;
+  /** Whether the provider runs a web search of its own for it. */
+  builtinSearch: boolean;
+  /** How it searches unless the user picks otherwise. */
+  search: SearchMode;
+  /** The most tokens one of its answers may hold; providers reject a larger ask. */
+  maxOutput: number;
+}
+/** Only the Responses and Messages APIs with an API key offer the provider's own web
+ * search. */
+export const canSearchBuiltin = (r: Pick<Role, "channel" | "protocol" | "builtinSearch">) =>
+  r.builtinSearch && r.channel === "api" && r.protocol !== "chat";
+/** Where each format's own provider serves it, for a model newly switched to it. */
+export const protocolEndpoints: Record<Protocol, string> = {
+  responses: "https://api.openai.com/v1",
+  chat: "https://api.openai.com/v1",
+  anthropic: "https://api.anthropic.com",
+};
+/** A picture model's connection. */
+export interface ImageRole {
   channel: "api" | "oauth";
   baseUrl: string;
   credential: string;
   accountId?: string;
   model: string;
-  effort: "low" | "medium" | "high" | "xhigh";
-  speed: Speed;
 }
+/** Web search services a run can call for a model, each by its own API. */
+export const searchProviders = ["deepseek", "tavily", "brave", "searxng"] as const;
+export type SearchProvider = (typeof searchProviders)[number];
+export const searchEndpoints: Record<SearchProvider, string> = {
+  deepseek: "https://api.deepseek.com/v1/tools",
+  tavily: "https://api.tavily.com",
+  brave: "https://api.search.brave.com",
+  searxng: "http://localhost:8888",
+};
+export interface SearchService {
+  id: string;
+  name: string;
+  provider: SearchProvider;
+  baseUrl: string;
+  /** Its API key; a self-hosted SearXNG needs none. */
+  credential: string;
+}
+/** Whether a search service can answer: it has a key, or needs none. */
+export const searchReady = (s: SearchService) =>
+  s.provider === "searxng" || !!s.credential;
+/** What one run is made with: the drawing model, how it searches and the picture model,
+ * each with the name it is shown by. */
 export interface Settings {
   author: Role;
-  image: {
-    channel: "api" | "oauth";
-    baseUrl: string;
-    credential: string;
-    accountId?: string;
-    model: string;
-  };
+  authorName: string;
+  search: { mode: SearchMode; service?: SearchService };
+  image: ImageRole;
+  imageName: string;
   preferences: string;
 }
-export const defaultSettings = (): Settings => ({
-  author: {
-    channel: "api",
-    baseUrl: "https://api.openai.com/v1",
-    credential: "",
-    model: "gpt-6-astra",
-    effort: "medium",
-    speed: "default",
-  },
-  image: {
-    channel: "api",
-    baseUrl: "https://api.openai.com/v1",
-    credential: "",
-    model: "gpt-image-2.5-sunburst",
-  },
-  preferences: "",
+export const defaultRole = (): Role => ({
+  channel: "api",
+  protocol: "responses",
+  baseUrl: "https://api.openai.com/v1",
+  credential: "",
+  model: "gpt-6-astra",
+  effort: "medium",
+  efforts: ["low", "medium", "high", "xhigh"],
+  speed: "default",
+  vision: true,
+  tools: true,
+  builtinSearch: true,
+  search: "builtin",
+  maxOutput: 32768,
 });
-export const roleSchema = z.object({
+export const defaultImage = (): ImageRole => ({
+  channel: "api",
+  baseUrl: "https://api.openai.com/v1",
+  credential: "",
+  model: "gpt-image-2.5-sunburst",
+});
+const imageRoleSchema = z.object({
   channel: z.enum(["api", "oauth"]),
   baseUrl: z.url(),
   credential: z.string(),
   accountId: z.string().optional(),
   model: z.string().min(1),
-  effort: z.enum(["low", "medium", "high", "xhigh"]),
-  speed: z.enum(["flex", "default", "fast", "ultrafast"]),
 });
-export const settingsSchema = z.object({
-  // A speed the channel lacks is saved as default, which every channel has.
-  author: roleSchema.transform((r) => ({
+const roleObject = z.object({
+    channel: z.enum(["api", "oauth"]),
+    protocol: z.enum(protocols),
+    baseUrl: z.url(),
+    credential: z.string(),
+    accountId: z.string().optional(),
+    model: z.string().min(1),
+    effort: z.enum(efforts),
+    efforts: z.array(z.enum(efforts)),
+    speed: z.enum(["flex", "default", "fast", "ultrafast"]),
+    vision: z.boolean(),
+    tools: z.boolean(),
+    builtinSearch: z.boolean(),
+    search: z.enum(searchModes),
+    maxOutput: z.number().int().min(1024).max(1_000_000),
+});
+// A ChatGPT account speaks only the Responses API; a speed the channel lacks is saved
+  // as default, which every channel has; a built-in search the connection cannot offer
+  // is not claimed, and a model never defaults to one it does not have.
+const fixRole = <T extends z.infer<typeof roleObject>>(r: T): T => {
+  const protocol = r.channel === "oauth" ? ("responses" as const) : r.protocol;
+  const builtinSearch = canSearchBuiltin({ ...r, protocol });
+  return {
     ...r,
+    protocol,
+    builtinSearch,
+    search: r.search === "builtin" && !builtinSearch ? "off" : r.search,
+    // The effort kept is one the model accepts.
+    effort: effortFor(r.effort, r.efforts) ?? r.effort,
     speed: speedFor(r.channel, r.speed),
-  })),
-  image: roleSchema.omit({ effort: true, speed: true }),
-  preferences: z.string(),
-});
+  };
+};
+export const roleSchema = roleObject.transform(fixRole);
 /** A drawing model an administrator has connected, with the parameters every request to
  * it uses. People pick among them by name; only those who manage models see the rest. */
 export interface ModelOption extends Role {
@@ -330,58 +429,165 @@ export interface ModelOption extends Role {
   name: string;
   description: string;
 }
-/** The models the whole app draws and paints with, set by those who manage models. */
+/** A picture model an administrator has connected. */
+export interface ImageOption extends ImageRole {
+  id: string;
+  name: string;
+  description: string;
+}
+/** The models the whole app draws, searches and paints with, set by those who manage
+ * models. Each part is chosen on its own, so any drawing model goes with any picture
+ * model and search service. */
 export interface ModelCatalog {
   models: ModelOption[];
   /** The model used by whoever has not picked one. */
   default: string;
-  image: Settings["image"];
+  images: ImageOption[];
+  defaultImage: string;
+  searches: SearchService[];
+  /** The search service used by whoever has not picked one, if there is any. */
+  defaultSearch: string | null;
 }
-/** A drawing model as the model picker shows it. */
+/** A drawing model as the model picker shows it, with what it can do. */
 export interface ModelChoice {
   id: string;
   name: string;
   description: string;
-  /** Whether it is connected (has a credential), so it can draw. */
+  /** The model it calls, and the provider's address it calls it at. */
+  model: string;
+  host: string;
+  /** Whether it is connected (has a credential) and can call tools, so it can draw. */
+  ready: boolean;
+  vision: boolean;
+  tools: boolean;
+  builtinSearch: boolean;
+  /** How it searches for this user: their pick for it, or its default. */
+  search: SearchMode;
+}
+export interface ServiceChoice {
+  id: string;
+  name: string;
+  description: string;
+  /** What it is: the picture model, or the search provider. */
+  detail: string;
   ready: boolean;
 }
-/** What each person keeps for themselves: their standing preferences and the model they
- * picked, which falls back to the default when it is gone. */
+/** What each person keeps for themselves: their standing preferences, and the drawing
+ * model, picture model and search service they picked, each falling back to the default
+ * when it is gone; and how they want each drawing model to search. */
 export interface UserSettings {
   preferences: string;
   model: string | null;
+  image: string | null;
+  searchService: string | null;
+  searchModes: Record<string, SearchMode>;
 }
 export const userSettingsSchema = z.object({
   preferences: z.string(),
   model: z.string().nullable(),
+  image: z.string().nullable(),
+  searchService: z.string().nullable(),
+  searchModes: z.record(z.string(), z.enum(searchModes)),
 });
-export const modelOptionSchema = roleSchema
-  .extend({
-    id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
-    name: z.string().trim().min(1).max(60),
-    description: z.string().max(200),
-  })
-  .transform((r) => ({ ...r, speed: speedFor(r.channel, r.speed) }));
-export const modelCatalogSchema = z
-  .object({
-    models: z.array(modelOptionSchema).min(1),
-    default: z.string(),
-    image: settingsSchema.shape.image,
-  })
-  .refine((c) => new Set(c.models.map((m) => m.id)).size === c.models.length, {
-    message: "模型 ID 重复",
-  })
-  .refine((c) => c.models.some((m) => m.id === c.default), {
-    message: "默认模型不存在",
+const slug = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
+const naming = {
+  id: slug,
+  name: z.string().trim().min(1).max(60),
+  description: z.string().max(200),
+};
+export const modelOptionSchema = roleObject.extend(naming).transform(fixRole);
+const imageOptionSchema = imageRoleSchema.extend(naming);
+const searchServiceSchema = z.object({
+  id: slug,
+  name: naming.name,
+  provider: z.enum(searchProviders),
+  baseUrl: z.url(),
+  credential: z.string(),
+});
+const unique = (list: { id: string }[]) =>
+  new Set(list.map((m) => m.id)).size === list.length;
+/** A catalog saved before pictures and search had settings of their own: one picture
+ * model, and every model searching as its connection allowed. */
+export function normalizeCatalog(raw: any): ModelCatalog {
+  const base = defaultRole();
+  const models = (raw?.models ?? []).map((m: any) => {
+    const role = { ...base, ...m };
+    if (m.builtinSearch === undefined)
+      role.builtinSearch = canSearchBuiltin({ ...role, builtinSearch: true });
+    if (m.search === undefined) role.search = role.builtinSearch ? "builtin" : "off";
+    return role;
   });
+  const images: ImageOption[] =
+    raw?.images ??
+    [
+      {
+        id: "default",
+        name: (raw?.image ?? defaultImage()).model,
+        description: "",
+        ...defaultImage(),
+        ...raw?.image,
+      },
+    ];
+  const searches: SearchService[] = raw?.searches ?? [];
+  return {
+    models,
+    default: raw?.default ?? models[0]?.id,
+    images,
+    defaultImage: raw?.defaultImage ?? images[0].id,
+    searches,
+    defaultSearch: raw?.defaultSearch ?? searches[0]?.id ?? null,
+  };
+}
+export const modelCatalogSchema = z.preprocess(
+  normalizeCatalog,
+  z
+    .object({
+      models: z.array(modelOptionSchema).min(1),
+      default: z.string(),
+      images: z.array(imageOptionSchema).min(1),
+      defaultImage: z.string(),
+      searches: z.array(searchServiceSchema),
+      defaultSearch: z.string().nullable(),
+    })
+    .refine((c) => unique(c.models), { message: "模型 ID 重复" })
+    .refine((c) => c.models.some((m) => m.id === c.default), {
+      message: "默认模型不存在",
+    })
+    .refine((c) => unique(c.images), { message: "生图模型 ID 重复" })
+    .refine((c) => c.images.some((m) => m.id === c.defaultImage), {
+      message: "默认生图模型不存在",
+    })
+    .refine((c) => unique(c.searches), { message: "搜索服务 ID 重复" })
+    .refine(
+      (c) =>
+        c.defaultSearch === null
+          ? !c.searches.length
+          : c.searches.some((s) => s.id === c.defaultSearch),
+      { message: "默认搜索服务不存在" },
+    ),
+);
 export const defaultCatalog = (): ModelCatalog => {
-  const { author, image } = defaultSettings();
+  const author = defaultRole(),
+    image = defaultImage();
   return {
     models: [{ id: "default", name: author.model, description: "", ...author }],
     default: "default",
-    image,
+    images: [{ id: "default", name: image.model, description: "", ...image }],
+    defaultImage: "default",
+    searches: [],
+    defaultSearch: null,
   };
 };
+/** The search a run makes with a model: the one wanted if it is there, else none. */
+export function searchFor(
+  model: Pick<Role, "channel" | "protocol" | "builtinSearch">,
+  wanted: SearchMode,
+  service: SearchService | undefined,
+): SearchMode {
+  if (wanted === "builtin") return canSearchBuiltin(model) ? "builtin" : "off";
+  if (wanted === "service") return service && searchReady(service) ? "service" : "off";
+  return "off";
+}
 /** What a role may do beyond drawing: manage the models, see and use every material,
  * publish and withdraw materials, and manage accounts and their roles. */
 export const permissions = [
@@ -550,6 +756,9 @@ export interface RunUsage {
   cached: number;
   output: number;
   reasoning: number;
+  /** Web searches made and pages read, by whichever way the run searched. */
+  searches?: number;
+  pages?: number;
   /** Calls to tools the provider runs (web search and the like), by tool. */
   hosted?: Record<string, number>;
   images?: { count: number; input: number; output: number };
@@ -569,6 +778,16 @@ export interface Run {
   firstOutputMs?: number;
   firstSceneMs?: number;
   usage?: RunUsage;
+  /** Who made it: the drawing model, how it searched and the picture model, by name. */
+  services?: RunServices;
+}
+export interface RunServices {
+  author: string;
+  model: string;
+  search: SearchMode;
+  /** The search service's name, when it searched with one. */
+  searchBy?: string;
+  image: string;
 }
 export class DomainError extends Error {
   constructor(

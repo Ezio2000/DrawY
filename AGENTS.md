@@ -46,6 +46,16 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 导出：`/api/works/:id/scenes/:scene/picture`（PNG，`?format=pdf` 为一页矢量 PDF，截图服务 `render` 的 `format`），`/page` 是可离线打开的单文件交互网页（`runtime/document.ts` 的 `standaloneDocument`：内嵌 `dist/runtime/runtime.js` 和作品图片；SVG 以文本 data URL 内嵌，`scene.ts` 在它上面替换 `currentColor` 完成着色；详情 HTML 和画法代码里写成地址的 `/materials/files|thumbs/…` 也连同查询串整个换成 data URL（`color` 交给素材库着色、`size` 定缩略图大小，HTML 里的 `&amp;` 也认），SVG 的引号和括号一并转义；以 `/` 开头的 fetch 改到导出时的站点，`/materials/geo` 因此带 `Access-Control-Allow-Origin: *`）。JPG、社交卡片、复制和系统分享在前端由 PNG 生成（`Export.tsx`）。剪贴板和系统分享要在点击的临时授权内调用，截图可能要好几秒：复制在点击时立即 `clipboard.write`，传入图片的 Promise；分享不能等，所以菜单一打开就开始截图，图好之前分享项显示准备中，点击时直接 `share`。
 
+## 创作、搜索与生图的组合
+
+`ModelCatalog` 里三样东西分开配置、分开选择：`models`（绘制模型，`default`）、`searches`（独立搜索服务，`defaultSearch`）、`images`（生图模型，`defaultImage`）。旧库里只有一个 `image` 的目录由 `normalizeCatalog` 读成新形状（`Storage.models()` 和 `modelCatalogSchema` 都经过它），旧模型按连接补上 `protocol: "responses"`、`builtinSearch`（API Key 才有）、`search`。`UserSettings` 记 `model`、`image`、`searchService` 和每个模型各自的 `searchModes`；`UserStore.settings()` 合成 `Settings`：`author`/`authorName`、`search: { mode, service? }`、`image`/`imageName`。搜索方式经 `searchFor` 落定：要的方式不可用（模型没有内置搜索、服务没有 Key）就是 `off`。
+
+绘制模型的 `Role` 带 `protocol`（`responses`、`chat` 或 `anthropic`，ChatGPT OAuth 只能是第一种）、`vision`、`tools`、`builtinSearch`（只有 API Key + Responses 或 Anthropic 才可能为真，`roleSchema` 会改正）、`search`（默认搜索方式）、`efforts`（服务方接受的思考档位，`effortFor` 取最近的；`efforts` 里有 `max`）、`maxOutput`。`models/index.ts` 的 `generate` 对外只说 Responses 的格式：`protocol: "chat"` 时由 `chat()` 把 Responses 项转成 Chat Completions 消息（`toMessages`：同一轮的函数调用合成一条 assistant 消息，夹在调用结果之间的图片消息挪到结果之后，`configuration_update`、托管调用和加密推理丢掉），再把流式块转成同样的事件和项（`reasoning_content` 存成 `{ type: "reasoning", reasoning_content }`，Responses 请求会滤掉它）；不能看图的模型由 `blind` 把图片换成文字。Chat 请求没有 `prompt_cache_key` 和 `tool_choice`，思考强度按请求传 `reasoning_effort`，所以 `deliberate` 对 chat 模型直接返回这一轮要的档位（决定作品的轮次取它接受的最高档），不插 `configuration_update`。
+
+`protocol: "anthropic"` 由 `models/anthropic.ts` 的 `messages()` 用官方 `@anthropic-ai/sdk` 调 Messages 接口（`baseUrl` 是 `https://api.anthropic.com`，末尾的 `/v1` 会去掉；SDK 不重试，重试交给 agent，错误转成 `模型请求 <状态>` 的说法）。`toAnthropic` 把 Responses 项转成消息：同一轮的模型项合成一条 assistant 消息，调用结果放在下一条 user 消息最前面，结果之间的图片和 `configuration_update` 挪到结果之后；没有工具的请求（压缩摘要）把调用和结果写成文字。Claude 返回的每个项都在 `anthropic` 字段里留着原始内容块（签名的 thinking、带 citations 的 text、tool_use、`server_tool_use` 加搜索结果），下次原样发回，因为较新的模型会校验 thinking 所在的对话前缀；`forResponses` 在发给 Responses 时去掉这些块、Claude 的 thinking 和它自己的搜索，`toMessages` 本来就忽略它们，估算上下文时 `anthropic` 也不计。请求固定带 adaptive thinking（`display: "summarized"`，摘要作为思考步骤显示）、`output_config.effort`、系统提示词和最后一个工具上的 `cache_control` 以及顶层自动缓存，函数工具带 `eager_input_streaming` 让画布边流边画。按模型版本（`claudeVersion`）加 beta：`perTurnEffort`（Opus ≥ 5、Sonnet/Haiku ≥ 5.5、Fable/Mythos ≥ 5.1）时 `configuration_update` 变成只带 `output_config.effort` 的 system 消息，`deliberate` 对它们像 GPT-6 一样插入（决定作品的轮次取接受的最高档），其他 Claude 模型保持设置的强度，因为改请求级强度会让缓存失效；thinking 与对话绑定的模型带 `block_binding: drop_block`，`withoutOldPictures` 之类改写历史时只丢掉失效的 thinking；不带 `fallbacks`：被拒答的轮次不换模型续写，运行以“模型拒绝了这一轮的内容”失败（不重试），已保存的版本保留。内置搜索是 `web_search_20260209`（4.6 以前的模型用 `web_search_20250305`），每次请求 `max_uses` 8 次，`server_tool_use` 和结果合成 `web_search_call` 项，所以步骤、计数和 trace 与 OpenAI 的一样；Messages 没有不改工具列表就收窄工具的办法，`steering` 对它返回空，画出第一稿后的搜索预算只对独立搜索生效。`pause_turn` 在适配层里接着请求；`max_tokens`、`refusal` 和中途断开都按失败处理。
+
+一次运行只有一种搜索：`toolsFor(settings)` 在 `builtin` 时加托管 `web_search`，`service` 时加 `tools.ts` 的 `searchTools`（函数 `web_search {queries}` 和 `open_page {url}`，由 `modules/search` 调服务商：DeepSeek 的 `/search`、`/fetch`，Tavily 的 `/search`、`/extract`，Brave 和 SearXNG 只搜索、网页由 DrawY 直接读取并去掉标签），`off` 时都不加。两种搜索都记成 `web_search` 步骤（`open_page` 的 `action` 是 `open_page`），所以 `searchesLeft`、`research` 不分来源；独立搜索的预算在执行时检查，按查询计（`cost`：服务商每个查询收一次费，一次调用带几个查询就算几次；读网页和托管搜索按调用算一次），剩下的不够时只问前面几个查询、结果里用 `notAsked` 列出没问的，预算已用完就去掉这一步并回报搜索已关闭（`research` 对独立搜索给 `searchQueriesLeft`，托管搜索给 `searchCallsLeft`），Responses 协议下用完后还会带 `allowed_tools`（排除两个搜索函数）。`run.usage.searches/pages` 计搜索和读网页次数（托管搜索按 `action` 分，独立搜索的 `searches` 按实际问过的查询数），`run.services` 记下这次的创作模型、搜索方式和服务、生图模型的名字；前端 `Studio.tsx` 的 `spentBy` 对旧运行从步骤里数，`WorkUsage` 显示作品累计。
+
 上下文达到 20 万 token 时 `compact` 把对话换成摘要。大小取上一轮 `usage.input_tokens`（记在 `Context.measured`）加之后新增项的估算，估算不计 `encrypted_content` 和图片 base64；摘要用 low 推理强度、16k 输出上限，并去掉对话里的 `configuration_update`；摘要失败时只把较早的截图换成文字占位，运行继续。
 
 ## 账号、角色与模型
@@ -56,7 +66,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 作品标题：用户重命名（`store.rename`）会在作品上记 `named: true`，之后作者运行里的 `write_work.title` 和第一次简报都不再改标题（`writeWork` 返回 `keptTitle`，工具结果里告诉作者），撤销、恢复也保留它。这条规则只出现在工具结果里，不写进系统提示词或工具说明，保持缓存前缀不变。生成图和上传图的 ID 先截断再去首尾连字符；`take` 的 `ID`/`QUOTED` 正则接受 `--`，兼容以前生成的 ID。服务端用 `app.ts` 的 `allowed(c, 权限)` 拦截，管理接口都在 `/api/admin/*`；前端用 `account.tsx` 的 `useCan()` 决定显示什么，但它只是界面，权限以服务端为准。新加权限时要补 `permissions`、`i18n.tsx` 的 `settings.permissions/permissionHints` 中英文，以及服务端拦截。
 
-模型配置全站共用：`ModelCatalog`（`models` 若干绘制模型，每个是带 `id/name/description` 的 `Role`；`default`；`image`）存在 `system` 表，只有 `models.manage` 能读写（`/api/admin/models`）。每个用户自己只存 `UserSettings`（长期偏好和所选模型 `model`），`/api/models` 只给出名称、说明和是否已接入，不给凭证。`UserStore.settings()` 把这两者合成运行要用的 `Settings`（所选模型不存在时用默认），`agent` 和 `images` 只读这个结果。旧库升级时，最早账号原来的 `author/image` 连接成为第一份 `ModelCatalog`（`Storage.firstCatalog`）。
+模型配置全站共用：`ModelCatalog`（`models` 若干绘制模型，每个是带 `id/name/description` 的 `Role`；`images` 若干生图模型；`searches` 若干搜索服务；各自的默认）存在 `system` 表，只有 `models.manage` 能读写（`/api/admin/models`）。每个用户自己只存 `UserSettings`（长期偏好、所选绘制模型、生图模型、搜索服务和每个模型的搜索方式），`/api/models` 只给出名称、说明、能力（看图、工具、内置搜索）、落定的搜索方式和是否已接入，不给凭证。`UserStore.settings()` 把这两者合成运行要用的 `Settings`（所选的不存在时用默认），`agent` 和 `images` 只读这个结果。旧库升级时，最早账号原来的 `author/image` 连接成为第一份 `ModelCatalog`（`Storage.firstCatalog`）。
 
 ## 手动编辑如何流动
 
@@ -75,12 +85,13 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 - `editing`：把手动操作变成 `WorkEdit` 的纯函数、面板控件的推断（`fieldsOf`），以及两个版本之间的差别（`changesBetween`）。前后端都用，不依赖存储和素材库。
 - `runtime`：画法执行环境。画法接收 `api`（`svg/html/mermaid/material/materials/draw/effect/emit`，连线另有 `from/to/fromSide/toSide`），交互脚本使用 `on/set/move/openScene/openDetail/animate/cleanup`。打包入口是 `browser.ts`，`scene.ts` 负责场景，`fixture.ts` 供测试使用。
 - `agent`：运行循环与重试（`index.ts`）、工具 schema（`tools.ts`）、系统提示词与素材目录（`prompts.ts`），以及解析流式到达的工具参数（`partial.ts`）。
-- API Key 创作轮次在自定义工具旁提供 OpenAI 内置 `web_search`（`search_context_size: "low"`）；搜索由 OpenAI 执行，`web_search_call` 随其他输出原样进入后续上下文和 trace，不走本地工具执行器。运行步骤记录搜索查询或页面 URL；消息保留 `url_citation` 的位置、标题和链接，前端在原文位置显示可点击来源。OAuth 和上下文压缩不添加搜索工具。
-- `models`：用 OpenAI Responses 格式调用创作模型和生图模型，支持 API Key 和 ChatGPT OAuth 两种方式，并负责缓存键。
+- 搜索方式为 `builtin` 的创作轮次在自定义工具旁提供 OpenAI 内置 `web_search`（`search_context_size: "low"`）；搜索由 OpenAI 执行，`web_search_call` 随其他输出原样进入后续上下文和 trace，不走本地工具执行器。运行步骤记录搜索查询或页面 URL；消息保留 `url_citation` 的位置、标题和链接，前端在原文位置显示可点击来源。OAuth、Chat Completions 和上下文压缩不添加内置搜索工具；Anthropic 接口的内置搜索由 Claude 执行，见上文。
+- `models`：用 OpenAI Responses 格式调用创作模型和生图模型，支持 API Key 和 ChatGPT OAuth 两种方式，并负责缓存键；`protocol: "chat"` 的模型在这里转成 Chat Completions，`protocol: "anthropic"` 的在 `anthropic.ts` 转成 Messages。
+- `search`：独立搜索服务的客户端（`searchWeb`、`readPage`）。
 - `observation`：截图服务的客户端。`capture.ts` 在截图容器里运行，运行时测试也直接调用它。
 - `images`：按作品风格生成图片，并把结果回报给作者。风格参考图由 `styleReferences` 选出，记在素材的 `origin.styleReferences`；生成图一律是该用户的私人素材。
 - `materials`：主程序访问素材服务的一层，只经 `@drawy/materials/client` 访问，不直接读素材库的数据库。
-- `canvas`：前端画布，负责视角、选择（含多选）、移动、缩放、编辑模式和起稿动画（`ink.ts`）。
+- `canvas`：前端画布，负责视角、选择（含多选）、移动、缩放、编辑模式和起稿动画（`ink.ts`）。第一次挂载（打开作品、进入子场景）不播放落笔动画，只有之后 `update` 换上的新版本才落笔。
 - `storage`、`identity`：按用户隔离的 `data/drawy.sqlite`，以及账号、角色权限和全站模型配置。`UserStore.viewer`（`{ id, all }`，`all` 来自 `materials.all`）是访问素材库读接口时代表用户的身份，读素材一律传它；写入（预留、显影、上传、记录使用）仍传 `userId`。
 - `trace`：基于 AsyncLocalStorage 嵌套记录，任何模块都可以直接调用 `tracer`，不需要层层传参。
 - `ui`：共享的 React 组件和品牌素材。
