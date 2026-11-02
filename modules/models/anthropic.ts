@@ -11,9 +11,9 @@ type Block = Record<string, any>;
 type Message = { role: "user" | "assistant" | "system"; content: Block[]; output_config?: Item };
 
 /** The family and version a Claude model ID names (`claude-sonnet-5-5` → sonnet 5.5),
- * also behind a provider prefix (`anthropic.claude-opus-5-5`) or a date suffix. */
+ * also with dotted versions (`anthropic/claude-sonnet-5.5`), a provider prefix or a date suffix. */
 export function claudeVersion(model: string): { family: string; version: number } | undefined {
-  const m = /claude-([a-z]+)-(\d+)(?:-(\d{1,2})(?!\d))?/.exec(model);
+  const m = /claude-([a-z]+)-(\d+)(?:[.-](\d{1,2})(?!\d))?/.exec(model);
   if (!m) return undefined;
   return { family: m[1], version: Number(m[2]) + (m[3] ? Number(m[3]) / 10 : 0) };
 }

@@ -1079,6 +1079,7 @@ export class Agent {
         });
         continue;
       }
+      let writeError: string | undefined;
       for (const call of calls) {
         abort.signal.throwIfAborted();
         const outcome = await tracer.span(
@@ -1091,9 +1092,10 @@ export class Agent {
               run,
               ctx,
               call,
-              calls.length,
+              calls,
               abort,
               start,
+              writeError,
             );
             span.set({
               output: r.output,
@@ -1106,6 +1108,7 @@ export class Agent {
           },
         );
         if (outcome.done) return;
+        if (call.name === "write_work" && outcome.error) writeError = outcome.error;
         if (call.name === "view_canvas" && !outcome.error) deciding = true;
         ctx.input.push({
           type: "function_call_output",
@@ -1126,9 +1129,10 @@ export class Agent {
     run: Run,
     ctx: Context,
     call: Item,
-    batch: number,
+    batch: Item[],
     abort: AbortController,
     start: number,
+    writeError?: string,
   ): Promise<{
     done: boolean;
     output: unknown;
@@ -1156,11 +1160,20 @@ export class Agent {
         }
         this.emit(store, run);
       }
-      if (
-        ["ask_user", "view_canvas", "finish"].includes(call.name) &&
-        batch !== 1
-      )
+      if (["ask_user", "finish"].includes(call.name) && batch.length !== 1)
         throw Error(`${call.name} must be the only tool call`);
+      if (call.name === "view_canvas") {
+        if (
+          batch.length !== 1 &&
+          !(
+            batch.at(-1) === call &&
+            batch.slice(0, -1).every((c) => c.name === "write_work")
+          )
+        )
+          throw Error("view_canvas must be called alone or after write_work calls");
+        if (writeError)
+          throw Error(`view_canvas was skipped because write_work failed: ${writeError}`);
+      }
       switch (call.name) {
         case "web_search":
         case "open_page": {

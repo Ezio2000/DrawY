@@ -116,7 +116,7 @@ export const tools = [
   ),
   fn(
     "view_canvas",
-    "See current saved scenes as images in this conversation. Includes overview, declared interaction checks and geometry. Optionally focus a world-coordinate region, annotate object IDs/bounds, or perform a sequence of CSS-selector clicks in one scene. Waits for developing pictures first. Call alone.",
+    "See current saved scenes as images in this conversation. Includes overview, declared interaction checks and geometry. Optionally focus a world-coordinate region, annotate object IDs/bounds, or perform a sequence of CSS-selector clicks in one scene. Waits for developing pictures first. Call alone or last after write_work calls: saves run in order before the screenshot, and a failed save skips it so you do not judge an older version.",
     schema(viewSchema),
   ),
   fn(

@@ -10,9 +10,6 @@ import {
   Shapes,
   PencilLine,
   ChevronDown,
-  Eye,
-  EyeOff,
-  Wrench,
   Globe,
   Image as ImageIcon,
 } from "lucide-react";
@@ -233,7 +230,7 @@ export function chosen(m: Models, change: Pick<Partial<UserSettings>, Choice>): 
   };
 }
 /** Who draws, who searches and who paints: their names beside the send button, and a
- * menu to pick each on its own, with what each drawing model can do. */
+ * menu to pick each on its own by display name. */
 function ModelPicker({
   models,
   pick,
@@ -296,30 +293,7 @@ function ModelPicker({
               disabled={!m.ready}
               onClick={() => pick({ model: m.id })}
             >
-              <span>
-                <b>{m.name}</b>
-                <small>
-                  {m.ready
-                    ? m.description || `${m.model} · ${m.host}`
-                    : m.tools
-                      ? w.modelUnconnected
-                      : w.noTools}
-                </small>
-                <span className={cx("abilities")}>
-                  <em data-on={m.vision || undefined}>
-                    {m.vision ? <Eye size={11} /> : <EyeOff size={11} />}
-                    {m.vision ? w.canSee : w.cannotSee}
-                  </em>
-                  <em data-on={m.tools || undefined}>
-                    <Wrench size={11} />
-                    {m.tools ? w.canTools : w.cannotTools}
-                  </em>
-                  <em data-on={m.builtinSearch || undefined}>
-                    <Globe size={11} />
-                    {m.builtinSearch ? w.canSearch : w.cannotSearch}
-                  </em>
-                </span>
-              </span>
+              <span>{m.name}</span>
               {m.id === chosen.id && <Check size={15} />}
             </button>
           ))}
@@ -330,10 +304,7 @@ function ModelPicker({
             disabled={!chosen.builtinSearch}
             onClick={() => mode("builtin")}
           >
-            <span>
-              <b>{w.searchBuiltin}</b>
-              <small>{chosen.builtinSearch ? w.searchBuiltinHint(chosen.name) : w.searchBuiltinMissing}</small>
-            </span>
+            <span>{w.searchBuiltin}</span>
             {chosen.search === "builtin" && <Check size={15} />}
           </button>
           {models.searches.length ? (
@@ -347,20 +318,14 @@ function ModelPicker({
                   disabled={!s.ready}
                   onClick={() => mode("service", s.id)}
                 >
-                  <span>
-                    <b>{w.searchService(s.name)}</b>
-                    <small>{s.ready ? w.searchServiceHint : w.modelUnconnected}</small>
-                  </span>
+                  <span>{s.name}</span>
                   {on && <Check size={15} />}
                 </button>
               );
             })
           ) : (
             <button role="menuitemradio" aria-checked={false} disabled>
-              <span>
-                <b>{w.searchServiceNone}</b>
-                <small>{w.searchServiceMissing}</small>
-              </span>
+              <span>{w.searchServiceNone}</span>
             </button>
           )}
           <button
@@ -368,10 +333,7 @@ function ModelPicker({
             aria-checked={chosen.search === "off"}
             onClick={() => mode("off")}
           >
-            <span>
-              <b>{w.searchOff}</b>
-              <small>{w.searchOffHint}</small>
-            </span>
+            <span>{w.searchOff}</span>
             {chosen.search === "off" && <Check size={15} />}
           </button>
           <p className={cx("models-head")}>{w.imageSection}</p>
@@ -383,10 +345,7 @@ function ModelPicker({
               disabled={!m.ready}
               onClick={() => pick({ image: m.id })}
             >
-              <span>
-                <b>{m.name}</b>
-                <small>{m.ready ? m.description || m.detail : w.modelUnconnected}</small>
-              </span>
+              <span>{m.name}</span>
               {m.id === image?.id && <Check size={15} />}
             </button>
           ))}

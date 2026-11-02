@@ -1038,26 +1038,14 @@ h2:has(> .title) {
 }
 
 .models-menu > button {
-  min-height: 48px;
+  min-height: 36px;
   padding: 7px 10px;
   white-space: normal;
 }
 
 .models-menu > button > span {
-  display: grid;
-  gap: 2px;
   flex: 1;
   min-width: 0;
-}
-
-.models-menu b {
-  font-weight: 500;
-}
-
-.models-menu small {
-  font-size: 12.5px;
-  line-height: 1.4;
-  color: var(--text-3);
 }
 
 .models-menu > button > svg:last-child {
@@ -1074,11 +1062,6 @@ h2:has(> .title) {
   background: none;
 }
 
-.models-menu {
-  width: 320px;
-  max-height: min(560px, 70vh);
-}
-
 .models-head {
   margin: 8px 10px 2px;
   font-size: 11.5px;
@@ -1089,33 +1072,6 @@ h2:has(> .title) {
 
 .models-head:first-child {
   margin-top: 4px;
-}
-
-.abilities {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 3px;
-}
-
-.abilities em {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-style: normal;
-  color: var(--text-3);
-  background: var(--fill);
-  text-decoration: line-through;
-  text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
-}
-
-.abilities em[data-on] {
-  color: var(--ai-deep);
-  background: color-mix(in srgb, var(--ai-deep) 10%, transparent);
-  text-decoration: none;
 }
 
 .model-button:has(.model-part) {
