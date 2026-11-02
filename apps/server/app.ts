@@ -15,7 +15,7 @@ import {
 import {
   DomainError,
   modelCatalogSchema,
-  userSettingsSchema,
+  settingsChangeSchema,
   pickWith,
   workEditSchema,
   type Account,
@@ -153,7 +153,7 @@ export function createApp(storage: Storage) {
   // Any setting alone may change: the picker saves only what it picked.
   app.put("/api/settings", async (c) => {
     const store = c.get("store"),
-      change = userSettingsSchema.partial().parse(await c.req.json());
+      change = settingsChangeSchema.parse(await c.req.json());
     store.saveOwnSettings(pickWith(storage.models(), store.ownSettings(), change));
     return c.json({ ok: true });
   });

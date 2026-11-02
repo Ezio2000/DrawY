@@ -515,13 +515,10 @@ export interface Tuning {
 /** What each person keeps for themselves: their standing preferences, and each of the
  * five picks beside the composer, each falling back to the default when it is not set,
  * gone or not offered by the model picked. Effort and speed are kept for each drawing
- * model in `tunings`, so picking one model's effort leaves the others' as they were;
- * `effort`/`speed` are the last picked, for a model never tuned. */
+ * model in `tunings`, so picking one model's effort leaves the others' as they were. */
 export interface UserSettings {
   preferences: string;
   writer: string | null;
-  effort: Effort | null;
-  speed: Speed | null;
   tunings: Record<string, Tuning>;
   web: Web | null;
   image: string | null;
@@ -530,17 +527,19 @@ const tuningSchema = z.object({ effort: z.enum(efforts).optional(), speed: z.enu
 export const userSettingsSchema = z.object({
   preferences: z.string(),
   writer: z.string().nullable(),
-  effort: z.enum(efforts).nullable(),
-  speed: z.enum(speeds).nullable(),
   tunings: z.record(z.string(), tuningSchema),
   web: z.string().nullable(),
   image: z.string().nullable(),
 });
+/** Picker commands carry effort and speed for the selected model, not global defaults. */
+export const settingsChangeSchema = userSettingsSchema.partial().extend({
+  effort: z.enum(efforts).optional(),
+  speed: z.enum(speeds).optional(),
+});
+export type SettingsChange = z.infer<typeof settingsChangeSchema>;
 export const emptySettings = (): UserSettings => ({
   preferences: "",
   writer: null,
-  effort: null,
-  speed: null,
   tunings: {},
   web: null,
   image: null,
@@ -580,25 +579,34 @@ export function picked(catalog: ModelCatalog, own: UserSettings) {
   return { writer: w, effort, speed, wanted, search, painter: p };
 }
 
-/** The effort and speed a drawing model runs at for a person: what they last picked for
- * it, else what they last picked at all, settled against what it offers. */
+/** Initial user choices, named by API model rather than administrator-assigned ids.
+ * Claude's direct and OpenRouter names differ only in their provider prefix and dots. */
+const tuningPresets: Record<string, Tuning> = {
+  "gpt-6-1-terra": { effort: "high", speed: "fast" },
+  "claude-sonnet-5-5": { effort: "medium" },
+  "claude-opus-5-5": { effort: "medium" },
+  "deepseek-flash": { effort: "high" },
+};
+/** A model keeps its user's choices, else its user preset, else its configured defaults. */
 export function tuningOf(m: WriterModel, own: UserSettings): { effort: Effort; speed: Speed } {
   const t = own.tunings[m.id] ?? {};
-  const effort = effortFor(t.effort ?? own.effort ?? m.effort, m.efforts) ?? m.effort;
-  const wanted = t.speed ?? own.speed;
+  const preset = tuningPresets[m.model.split("/").at(-1)!.replaceAll(".", "-")] ?? {};
+  const effort = effortFor(t.effort ?? preset.effort ?? m.effort, m.efforts) ?? m.effort;
+  const wanted = t.speed ?? preset.speed;
   const speed = wanted && m.speeds.includes(wanted) ? wanted : m.speed;
   return { effort, speed };
 }
 /** A person's settings after a change from the picker: an effort or speed picked is kept
  * for the drawing model it was picked with, so the other models keep their own. */
-export function pickWith(catalog: ModelCatalog, own: UserSettings, change: Partial<UserSettings>): UserSettings {
-  const next = { ...own, ...change, tunings: { ...own.tunings, ...change.tunings } };
-  if (change.effort || change.speed) {
-    const id = picked(catalog, next).writer.model.id;
-    next.tunings[id] = {
-      ...next.tunings[id],
-      ...(change.effort ? { effort: change.effort } : {}),
-      ...(change.speed ? { speed: change.speed } : {}),
+export function pickWith(catalog: ModelCatalog, own: UserSettings, change: SettingsChange): UserSettings {
+  const { effort, speed, ...patch } = change;
+  const next = { ...own, ...patch, tunings: { ...own.tunings, ...patch.tunings } };
+  if (effort || speed) {
+    const model = picked(catalog, next).writer.model;
+    next.tunings[model.id] = {
+      ...tuningOf(model, next),
+      ...(effort ? { effort } : {}),
+      ...(speed ? { speed } : {}),
     };
   }
   return next;

@@ -10,7 +10,7 @@ import {
   Shapes,
   PencilLine,
 } from "lucide-react";
-import { effortFor, type UserSettings } from "../../../modules/contracts/index.ts";
+import { effortFor, type SettingsChange } from "../../../modules/contracts/index.ts";
 import { Spinner, useLocale } from "@drawy/ui";
 import type { StyleMaterial } from "@drawy/materials/schema";
 import { api, type Models } from "./api.ts";
@@ -86,7 +86,7 @@ export function Composer({
   /** What draws, searches and paints, and picking each, under the box; absent while the
    * author works. */
   models?: Models;
-  choose: (change: Partial<UserSettings>) => void;
+  choose: (change: SettingsChange) => void;
 }) {
   const t = useT();
   const picker = useRef<HTMLInputElement>(null);
@@ -215,7 +215,7 @@ export function Composer({
 }
 
 /** The picks a change makes, shown at once while it is saved. */
-export function chosen(m: Models, change: Partial<UserSettings>): Models {
+export function chosen(m: Models, change: SettingsChange): Models {
   const writer = m.writers.find(
     (x) => x.id === (change.writer ?? m.chosen.writer),
   );
@@ -341,7 +341,7 @@ export function ModelBar({
   pick,
 }: {
   models: Models;
-  pick: (change: Partial<UserSettings>) => void;
+  pick: (change: SettingsChange) => void;
 }) {
   const t = useT(),
     w = t.composer,
@@ -359,7 +359,7 @@ export function ModelBar({
         ? service.name
         : w.searchOff;
   const providers = [...new Set(models.writers.map((m) => m.provider))];
-  const choose = (change: Partial<UserSettings>, close: () => void) => {
+  const choose = (change: SettingsChange, close: () => void) => {
     close();
     pick(change);
   };
