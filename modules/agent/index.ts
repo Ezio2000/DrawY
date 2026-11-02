@@ -265,7 +265,7 @@ async function compact(
   signal: AbortSignal,
 ) {
   const size = contextSize(ctx);
-  if (size < 128000) return;
+  if (size < 200000) return;
   await tracer.span("compact", "context", { size }, async (span) => {
     const author = store.settings().author;
     let result: Awaited<ReturnType<typeof generate>>;
