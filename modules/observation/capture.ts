@@ -217,7 +217,13 @@ export async function capture(
  * pixel density, with the longest side at most 4800 pixels. */
 export async function render(
   browser: Browser,
-  request: { url: string; cookie: string; origin: string },
+  request: {
+    url: string;
+    cookie: string;
+    origin: string;
+    /** A PNG at twice the size, or a one-page PDF that keeps the drawing as vectors. */
+    format?: "png" | "pdf";
+  },
 ): Promise<Buffer> {
   const context = await browser.newContext({ deviceScaleFactor: 2 });
   await context.addInitScript({ content: "globalThis.__name = (f) => f;" });
@@ -245,6 +251,17 @@ export async function render(
       window.drawyView.element.style.backgroundImage = "none";
     });
     await ready(page);
+    if (request.format === "pdf") {
+      // Printed as the screen shows it, on one page the size of the view.
+      await page.emulateMedia({ media: "screen" });
+      const size = page.viewportSize()!;
+      return await page.pdf({
+        width: size.width + "px",
+        height: size.height + 1 + "px",
+        printBackground: true,
+        pageRanges: "1",
+      });
+    }
     return await page.screenshot({ type: "png" });
   } finally {
     await context.close();

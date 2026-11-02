@@ -8,6 +8,8 @@ declare global {
     drawyReady: boolean;
     drawyErrors: string[];
     drawyView: Canvas;
+    /** Opens a scene of the work, for a page around the drawing to move between them. */
+    drawyOpen: (sceneId: string) => void;
   }
 }
 window.drawyErrors = [];
@@ -26,7 +28,10 @@ function open(target: Target) {
       /[^/]+$/,
       encodeURIComponent(target.id),
     );
-    history.replaceState(null, "", url);
+    // A page opened from a file cannot change its address; the scene still opens.
+    try {
+      history.replaceState(null, "", url);
+    } catch {}
     render(target.id);
   } else {
     const detail = detailElement(work.details[target.id], () =>
@@ -50,6 +55,7 @@ function open(target: Target) {
 }
 function render(sceneId: string) {
   window.drawyData.sceneId = sceneId;
+  dispatchEvent(new CustomEvent("drawy:scene", { detail: sceneId }));
   window.drawyReady = false;
   window.drawyView = new Canvas(stage, work, work.scenes[sceneId], {
     open,
@@ -62,4 +68,9 @@ function render(sceneId: string) {
       window.drawyReady = true;
     });
 }
+window.drawyOpen = (id) => {
+  if (!work.scenes[id] || id === window.drawyData.sceneId) return;
+  window.drawyView.dispose();
+  render(id);
+};
 render(window.drawyData.sceneId);

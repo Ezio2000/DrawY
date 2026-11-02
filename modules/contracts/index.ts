@@ -460,7 +460,18 @@ export interface Citation {
   title: string;
 }
 export type ToolActivity =
-  | { name: "web_search"; queries: string[]; urls: string[] }
+  | {
+      name: "web_search";
+      queries: string[];
+      urls: string[];
+      /** What the search did: ran queries, opened a page or looked for words in one. */
+      action?: "search" | "open_page" | "find_in_page";
+      /** The words looked for in a page. */
+      pattern?: string;
+    }
+  /** A tool the model provider runs itself that the app has no special view for, named
+   * by its output item's type without `_call` (e.g. `code_interpreter`). */
+  | { name: "hosted"; tool: string; detail?: string }
   | { name: "read_work"; revision?: number }
   | {
       name: "set_brief";
@@ -522,6 +533,17 @@ export type Step =
       status: "running" | "done" | "failed";
       error?: string;
     } & ToolActivity);
+/** What a run has spent so far: the author's tokens over every model turn, and what the
+ * pictures it generated cost the picture model. */
+export interface RunUsage {
+  input: number;
+  cached: number;
+  output: number;
+  reasoning: number;
+  /** Calls to tools the provider runs (web search and the like), by tool. */
+  hosted?: Record<string, number>;
+  images?: { count: number; input: number; output: number };
+}
 export interface Run {
   id: string;
   workId: string;
@@ -536,6 +558,7 @@ export interface Run {
   elapsedMs?: number;
   firstOutputMs?: number;
   firstSceneMs?: number;
+  usage?: RunUsage;
 }
 export class DomainError extends Error {
   constructor(

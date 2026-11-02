@@ -40,7 +40,11 @@ docker compose up -d --build                      # 完整部署，访问 http:/
    - `read_work` 读取作品，`write_work` 修改作品，`view_canvas` 截图查看。
 4. `write_work` 交给 `modules/workspace` 原子提交。提交时校验 `baseRevision`，不一致时返回 409；把作品新提到的素材从素材库取进作品的 `materials` 快照，不再提到的移出去，已有的库画法和质感换成库里的当前版本（作者的素材目录描述的就是当前版本）；再校验整个作品，最后由 `modules/storage` 写成一个新版本，记下 `Cause`。
 5. `view_canvas` 经 `modules/observation` 请求截图服务。截图服务用 `modules/runtime/document.ts` 生成页面，加载 `/runtime/runtime.js` 渲染场景，截下图片，连同几何信息一起作为图片消息送回同一段对话。
-6. 运行过程中的每个变化，都以 `run` 事件经 SSE（`/api/events`）推给前端。前端由 `modules/canvas` 把过程画成铅笔起稿和图片显影的动画。整个过程同时由 `modules/trace` 记入 `trace.sqlite`。
+6. 运行过程中的每个变化，都以 `run` 事件经 SSE（`/api/events`）推给前端。前端由 `modules/canvas` 把过程画成铅笔起稿和图片显影的动画。整个过程同时由 `modules/trace` 记入 `trace.sqlite`。前端右侧的画室（`apps/web/src/Studio.tsx`）把每次运行的步骤按工具分别呈现（每种 `ToolActivity` 一个视图，未知的托管工具走 `hosted`），版本（`write_work`/`set_brief` 的 `revision` 和历史里的手动编辑、恢复）就地可预览、恢复，输入框在画室底部；作者开始运行时画室自动打开。回复用 `Markdown.tsx` 渲染，`tidy` 去掉模型留下的 `\ue200…\ue201` 引用记号并移动引用位置。
+
+托管工具（模型服务方自己执行、输出项类型以 `_call` 结尾的，如 `web_search_call`）在 `agent/index.ts` 里统一处理：成为运行步骤（`web_search` 有专门的活动，其余是 `{ name: "hosted", tool, detail }`），按 `run.usage.hosted` 计数，并用 `tracer.record` 记成所在轮次下的 `tool` 记录（`attrs.hosted`、`args` 是动作、`output` 是原始项）。`trace` 的 `meters` 按 `attrs.meter`、工具名或种类汇总次数、耗时和 token，所以新增工具不用改 trace。`run.usage` 累计每轮和压缩的 token、托管工具次数与生图用量（`images` 从图片接口返回的 `usage` 取）。搜索是否合理由 `prompts.ts` 的 `# Research` 一节约束，`set_brief` 和 `view_canvas` 的结果在本次运行搜索过时附上 `research`（次数、打开过的网页），提醒作者按已有来源判断。硬预算在 `steering`：每次请求 `SEARCH_LIMIT` 次、第一稿保存后 `SEARCH_AFTER_DRAFT` 次，预算内的轮次带 `max_tool_calls`，用完后带 `tool_choice: allowed_tools`（只列函数工具）；两者都不改 `tools`，所以不破坏缓存前缀，不要改成增删 `tools` 的做法。轮次的 trace 在 `request.steer` 里记下这次的限制。
+
+导出：`/api/works/:id/scenes/:scene/picture`（PNG，`?format=pdf` 为一页矢量 PDF，截图服务 `render` 的 `format`），`/page` 是可离线打开的单文件交互网页（`runtime/document.ts` 的 `standaloneDocument`：内嵌 `dist/runtime/runtime.js` 和作品图片；SVG 以文本 data URL 内嵌，`scene.ts` 在它上面替换 `currentColor` 完成着色；详情 HTML 和画法代码里写成地址的 `/materials/files|thumbs/…` 也连同查询串整个换成 data URL（`color` 交给素材库着色、`size` 定缩略图大小，HTML 里的 `&amp;` 也认），SVG 的引号和括号一并转义；以 `/` 开头的 fetch 改到导出时的站点，`/materials/geo` 因此带 `Access-Control-Allow-Origin: *`）。JPG、社交卡片、复制和系统分享在前端由 PNG 生成（`Export.tsx`）。剪贴板和系统分享要在点击的临时授权内调用，截图可能要好几秒：复制在点击时立即 `clipboard.write`，传入图片的 Promise；分享不能等，所以菜单一打开就开始截图，图好之前分享项显示准备中，点击时直接 `share`。
 
 上下文达到 20 万 token 时 `compact` 把对话换成摘要。大小取上一轮 `usage.input_tokens`（记在 `Context.measured`）加之后新增项的估算，估算不计 `encrypted_content` 和图片 base64；摘要用 low 推理强度、16k 输出上限，并去掉对话里的 `configuration_update`；摘要失败时只把较早的截图换成文字占位，运行继续。
 

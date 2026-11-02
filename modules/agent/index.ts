@@ -43,13 +43,109 @@ import { tracer } from "../trace/index.ts";
 import type { MessageLocale } from "../contracts/messages.ts";
 const toolsFor = (channel: Role["channel"]) =>
   channel === "api" ? [...tools, { type: "web_search", search_context_size: "low" }] : tools;
-function searchActivity(item: Item): ToolActivity & { name: "web_search" } {
+/** Whether an output item is a call to a tool the provider runs itself, such as its web
+ * search: those arrive finished in the model's output and are never answered here. */
+const hosted = (item: Item) =>
+  typeof item?.type === "string" &&
+  item.type.endsWith("_call") &&
+  item.type !== "function_call";
+/** The words a hosted call carries (its query, code, URL…), however it nests them. */
+function wordsOf(value: unknown, depth = 0): string[] {
+  if (typeof value === "string") return value ? [value] : [];
+  if (depth > 2 || !value || typeof value !== "object") return [];
+  if (Array.isArray(value)) return value.flatMap((v) => wordsOf(v, depth + 1));
+  return Object.entries(value)
+    .filter(([k]) => !["type", "id", "status", "call_id"].includes(k))
+    .flatMap(([, v]) => wordsOf(v, depth + 1));
+}
+/** A hosted call as a step: web search has a view of its own, any other tool shows by its
+ * name and what it was asked. */
+function hostedActivity(item: Item): ToolActivity {
   const action = item.action || {};
+  if (item.type === "web_search_call")
+    return {
+      name: "web_search",
+      queries: action.queries || (action.query ? [action.query] : []),
+      urls: action.url ? [action.url] : [],
+      ...(["search", "open_page", "find_in_page"].includes(action.type)
+        ? { action: action.type }
+        : {}),
+      ...(typeof action.pattern === "string" ? { pattern: action.pattern } : {}),
+    };
+  const detail = wordsOf(item.action ?? item.arguments ?? item.code ?? item.queries)
+    .join(" · ")
+    .slice(0, 160);
   return {
-    name: "web_search",
-    queries: action.queries || (action.query ? [action.query] : []),
-    urls: action.url ? [action.url] : [],
+    name: "hosted",
+    tool: item.type.replace(/_call$/, ""),
+    ...(detail ? { detail } : {}),
   };
+}
+/** Web search calls a request may make in all, and once its first draft is saved: the
+ * research belongs before the drawing, and a look needs at most one targeted follow-up. */
+export const SEARCH_LIMIT = 8,
+  SEARCH_AFTER_DRAFT = 2;
+/** The web search calls this request may still make. */
+function searchesLeft(run: Run) {
+  const drafted = run.steps.findIndex(
+    (s) => s.kind === "tool" && s.name === "write_work" && s.status === "done",
+  );
+  const searched = (from: number) =>
+    run.steps.filter((s, i) => i > from && s.kind === "tool" && s.name === "web_search").length;
+  return Math.max(
+    0,
+    Math.min(
+      SEARCH_LIMIT - searched(-1),
+      drafted < 0 ? Infinity : SEARCH_AFTER_DRAFT - searched(drafted),
+    ),
+  );
+}
+/** Keeps a turn within the request's search budget. The tools stay listed, so the cached
+ * prefix holds: within budget the turn may make only the calls left, and past it the turn
+ * may call the drawing tools only. */
+export function steering(run: Run, tools: Item[]): Item {
+  if (!tools.some((t) => t.type === "web_search")) return {};
+  const left = searchesLeft(run);
+  if (left === Infinity) return {};
+  if (left > 0) return { max_tool_calls: left };
+  return {
+    tool_choice: {
+      type: "allowed_tools",
+      mode: "auto",
+      tools: tools
+        .filter((t) => t.type === "function")
+        .map((t) => ({ type: "function", name: t.name })),
+    },
+  };
+}
+/** What this request has searched so far, told to the author beside its brief and each
+ * look, so it judges against what it already found rather than searching again. */
+function research(run: Run) {
+  const searches = run.steps.filter(
+    (s): s is Extract<Step, { kind: "tool"; name: "web_search" }> =>
+      s.kind === "tool" && s.name === "web_search",
+  );
+  if (!searches.length) return undefined;
+  const pages = [...new Set(searches.flatMap((s) => s.urls))];
+  const asked = [...new Set(searches.flatMap((s) => s.queries))];
+  const left = searchesLeft(run);
+  return {
+    calls: searches.length,
+    ...(asked.length ? { queriesAsked: asked } : {}),
+    ...(pages.length ? { pagesOpened: pages } : {}),
+    ...(left !== Infinity ? { searchCallsLeft: left } : {}),
+    note: left
+      ? "What these found is above. Judge the figure against it; asking these again in other words returns the same results. Search again only for a fact the figure states that none of it covers, and leave out what stays unconfirmed."
+      : "Web search is closed for the rest of this request. Work from what is above, and leave out what stays unconfirmed.",
+  };
+}
+/** Adds to what a run has spent. */
+function spend(run: Run, usage: Item) {
+  const u = (run.usage ??= { input: 0, cached: 0, output: 0, reasoning: 0 });
+  u.input += usage.input_tokens ?? 0;
+  u.cached += usage.input_tokens_details?.cached_tokens ?? 0;
+  u.output += usage.output_tokens ?? 0;
+  u.reasoning += usage.output_tokens_details?.reasoning_tokens ?? 0;
 }
 type ToolStep = Extract<Step, { kind: "tool" }>;
 const pictures = (shots: { name: string; url: string }[]) =>
@@ -326,6 +422,7 @@ async function compact(
     ];
     ctx.measured = undefined;
     store.context(run.id, ctx);
+    spend(run, result.usage);
     // The next turn starts from this summary alone.
     span.set({
       summary: textOf(result.items),
@@ -690,6 +787,7 @@ export class Agent {
       const effort = deliberate(ctx.input, settings.author, deciding);
       deciding = false;
       const turnStart = Date.now();
+      const steer = steering(run, availableTools);
       let firstOutput: number | undefined;
       const result = await tracer.span(
         "turn",
@@ -707,12 +805,15 @@ export class Agent {
               ],
             instructionsChars: instructions.length,
             tools: availableTools.length,
+            ...(Object.keys(steer).length ? { steer } : {}),
           },
         },
         async (span) => {
           // A dropped stream, a rate limit or a server error is tried again from the
           // same input; what the broken attempt had shown is taken back first.
           const mark = run.steps.length;
+          // When each hosted call began, to time its span once it is done.
+          const began = new Map<string, number>();
           let result!: Awaited<ReturnType<typeof generate>>;
           for (const wait of [2000, 8000, 0]) {
             try {
@@ -759,12 +860,13 @@ export class Agent {
                         said = { kind: "message", role: "assistant", text: "" };
                         run.steps.push(said);
                       }
-                      if (type === "web_search_call") {
+                      if (hosted(event.item)) {
+                        began.set(item, Date.now());
                         run.steps.push({
                           kind: "tool",
                           id: item,
                           status: "running",
-                          ...searchActivity(event.item),
+                          ...hostedActivity(event.item),
                         });
                         this.emit(store, run);
                       }
@@ -791,18 +893,39 @@ export class Agent {
                     }
                     case "response.output_item.done": {
                       drafts.delete(event.item.id);
-                      if (event.item.type === "web_search_call") {
+                      if (hosted(event.item)) {
+                        const call = event.item,
+                          failed = call.status === "failed",
+                          tool = call.type.replace(/_call$/, "");
                         const step = run.steps.find(
                           (s): s is ToolStep =>
-                            s.kind === "tool" && s.id === event.item.id,
+                            s.kind === "tool" && s.id === call.id,
                         );
                         if (step)
-                          Object.assign(step, searchActivity(event.item), {
-                            status:
-                              event.item.status === "failed"
-                                ? "failed"
-                                : "done",
+                          Object.assign(step, hostedActivity(call), {
+                            status: failed ? "failed" : "done",
                           });
+                        const used = ((run.usage ??= {
+                          input: 0,
+                          cached: 0,
+                          output: 0,
+                          reasoning: 0,
+                        }).hosted ??= {});
+                        used[tool] = (used[tool] ?? 0) + 1;
+                        // Recorded like any tool call, under the turn that made it.
+                        tracer.record(
+                          "tool",
+                          tool,
+                          {
+                            hosted: true,
+                            args: call.action ?? call.arguments ?? null,
+                            output: call,
+                          },
+                          {
+                            startedAt: began.get(call.id) ?? Date.now(),
+                            ...(failed ? { error: `${tool} failed` } : {}),
+                          },
+                        );
                         this.emit(store, run);
                       }
                       break;
@@ -813,6 +936,7 @@ export class Agent {
                 // One key for all of a user's works: every request begins with the same
                 // instructions and tools, and a work's turns extend its earlier ones.
                 store.userId,
+                steer,
               );
               break;
             } catch (e) {
@@ -840,6 +964,7 @@ export class Agent {
         },
       );
       drafts.clear();
+      spend(run, result.usage);
       ctx.input.push(...result.items);
       seen = ctx.input.length;
       if (result.usage.input_tokens)
@@ -1012,6 +1137,7 @@ export class Agent {
               effects: effects.map((e) => ({ id: e.id, about: e.about })),
             },
             ...(cast ? { cast: cast.output } : {}),
+            ...(research(run) ? { research: research(run) } : {}),
           };
           images = cast?.images ?? [];
           Object.assign(step!, {
@@ -1048,6 +1174,18 @@ export class Agent {
           for (const [i, d] of made.entries())
             void d.done.then(async (r) => {
               shown[i].status = r.status;
+              if (r.status === "ready") {
+                const u = (run.usage ??= {
+                  input: 0,
+                  cached: 0,
+                  output: 0,
+                  reasoning: 0,
+                });
+                const images = (u.images ??= { count: 0, input: 0, output: 0 });
+                images.count++;
+                images.input += r.usage?.input_tokens ?? 0;
+                images.output += r.usage?.output_tokens ?? 0;
+              }
               this.emit(store, run);
               // An open canvas redraws the picture with its measured content.
               const work = store.works().find((w) => w.id === run.workId);
@@ -1120,7 +1258,10 @@ export class Agent {
             }
             if (!result) throw new Unavailable("画布查看服务不可用");
             run.observations.push(result.observation);
-            output = result.observation;
+            const searched = research(run);
+            output = searched
+              ? { ...result.observation, research: searched }
+              : result.observation;
             images.push(...result.content);
             Object.assign(step!, {
               waiting: undefined,

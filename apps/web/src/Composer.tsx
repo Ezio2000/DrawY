@@ -61,7 +61,7 @@ export function Composer({
   models,
   chooseModel,
 }: {
-  place: "home" | "dock";
+  place: "home" | "dock" | "panel";
   value: string;
   set: (value: string) => void;
   attachments: Attachment[];

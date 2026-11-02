@@ -33,6 +33,9 @@ export async function generate(
    * their cached prefix; the ChatGPT backend routes by the `session_id` header, so it
    * carries the key there too. */
   cacheKey?: string,
+  /** Request fields that steer this turn without changing its cached prefix, such as
+   * which of the tools it may call. */
+  steer: Item = {},
 ) {
   if (!role.credential) throw Error("请先配置模型凭证");
   const r = await fetch(role.baseUrl.replace(/\/$/, "") + "/responses", {
@@ -52,6 +55,7 @@ export async function generate(
       service_tier: serviceTiers[speedFor(role.channel, role.speed)],
       ...(cacheKey ? { prompt_cache_key: cacheKey } : {}),
       ...(role.channel === "api" ? { max_output_tokens: budget } : {}),
+      ...steer,
     }),
     signal,
   });

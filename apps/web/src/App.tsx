@@ -1,5 +1,6 @@
 import { SceneView, DetailView } from "./SceneView.tsx";
-import { Activity, Now, live } from "./Activity.tsx";
+import { Studio, Now, live } from "./Studio.tsx";
+import { ExportMenu } from "./Export.tsx";
 import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -7,11 +8,8 @@ import {
   Redo2,
   ChevronDown,
   X,
-  History,
   MessagesSquare,
-  PanelRightClose,
   ImagePlus,
-  Download,
   PencilLine,
 } from "lucide-react";
 import { Lantern } from "@drawy/ui/brand";
@@ -28,7 +26,6 @@ import {
 import { api, type Models, type Summary, type User } from "./api.ts";
 import { AccountContext } from "./account.tsx";
 import { cx } from "./cx.ts";
-import { Versions } from "./Versions.tsx";
 import { Rail, Rename } from "./Rail.tsx";
 import { Auth } from "./Auth.tsx";
 import { Composer, type Attachment } from "./Composer.tsx";
@@ -86,9 +83,12 @@ const sceneOf = (path: string) => {
   const id = path.match(/^\/a\/[^/]+\/([^/]+)/)?.[1];
   return id && decodeURIComponent(id);
 };
-/** What the panel beside the canvas shows; while it shows the editor, the work is being
- * edited by hand. */
-type Panel = "" | "journal" | "history" | "edit";
+/** What the panel beside the canvas shows: the studio (the conversation with the author,
+ * its process and the revisions, with the composer under them) or the editor, while the
+ * work is edited by hand. */
+type Panel = "" | "journal" | "edit";
+/** Whether the panel can sit beside the canvas; on narrower screens it covers it. */
+const roomy = () => innerWidth > 1080;
 /** How a library material rides along with a message. */
 const attachmentOf = (m: Material, locale: Locale): Attachment => ({
   id: m.id,
@@ -116,7 +116,8 @@ export function App() {
     // The drawing models to pick from; until the chosen one is connected, nothing can
     // be drawn.
     [models, setModels] = useState<Models>(),
-    [exporting, setExporting] = useState(false),
+    // Something that went well, said briefly.
+    [notice, setNotice] = useState(""),
     [runs, R] = useState<Run[]>([]),
     [prompt, Q] = useState(""),
     [attachments, A] = useState<Attachment[]>([]),
@@ -206,6 +207,16 @@ export function App() {
     M(false);
     setRetyping(undefined);
   }, [sceneId]);
+  // While the author draws, the studio shows how it goes about it, unless the person is
+  // editing by hand or the panel would cover the canvas.
+  useEffect(() => {
+    if (working && roomy()) setPanel((p) => (p === "edit" ? p : "journal"));
+  }, [run?.id, working]);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(""), 2400);
+    return () => clearTimeout(t);
+  }, [notice]);
   const undoable =
     !!work && stepBefore(history, work.revision) !== undefined;
   const canRedo = !!work && redoable?.at === work.revision;
@@ -726,28 +737,6 @@ export function App() {
       work: await api<Work>(`/works/${work!.id}/revisions/${revision}`),
     });
   }
-  /** Saves the scene as a picture, drawn whole at full resolution. */
-  async function download() {
-    setExporting(true);
-    try {
-      const r = await fetch(
-        `/api/works/${work!.id}/scenes/${encodeURIComponent(sceneId)}/picture`,
-        { headers: { "x-drawy-locale": locale } },
-      );
-      if (!r.ok) throw Error((await r.json()).error);
-      const name = decodeURIComponent(
-        r.headers.get("content-disposition")?.match(/filename\*=UTF-8''(.+)$/)?.[1] ||
-          "drawy.png",
-      );
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(await r.blob());
-      a.download = name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    } finally {
-      setExporting(false);
-    }
-  }
   /** Stopping hands what was asked back to the composer, to change and send again. */
   async function stop() {
     const asked = run!.steps.findLast(
@@ -842,7 +831,10 @@ export function App() {
       <span className={cx("now-line")}>{handed}</span>
     </div>
   );
-  const composer = (place: "home" | "dock") => (
+  // With the studio open the composer sits under the conversation; otherwise it floats
+  // under the canvas.
+  const docked = !journal;
+  const composer = (place: "home" | "dock" | "panel") => (
     <Composer
       place={place}
       value={prompt}
@@ -851,7 +843,7 @@ export function App() {
       detach={(id) => A((old) => old.filter((a) => a.id !== id))}
       uploading={uploading}
       quote={
-        place === "dock" && selected.length
+        place !== "home" && selected.length
           ? selected.map((s) => s.label || s.moduleId).join(t.now.list)
           : undefined
       }
@@ -868,7 +860,7 @@ export function App() {
                 ? t.composer.working
                 : t.composer.continue
       }
-      status={unconnected || (place === "dock" ? note || status : undefined)}
+      status={unconnected || (place !== "home" ? note || status : undefined)}
       style={place === "home" ? style : undefined}
       setStyle={place === "home" ? setStyle : undefined}
       working={working}
@@ -1127,7 +1119,12 @@ export function App() {
                       </button>
                     </div>
                   )}
-                  {composer("dock")}
+                  {notice && (
+                    <div className={cx("toast-error")} data-tone="ok" role="status">
+                      <span>{notice}</span>
+                    </div>
+                  )}
+                  {docked && composer("dock")}
                 </div>
                 {detailId && work.details[detailId] && (
                   <DetailView
@@ -1164,14 +1161,6 @@ export function App() {
                     <PencilLine size={17} />
                   </button>
                   <button
-                    aria-label={t.work.history}
-                    data-tip={t.work.history}
-                    aria-pressed={panel === "history"}
-                    onClick={() => toggle("history")}
-                  >
-                    <History size={17} />
-                  </button>
-                  <button
                     aria-label={t.work.journal}
                     data-tip={t.work.journal}
                     aria-pressed={journal}
@@ -1180,39 +1169,19 @@ export function App() {
                   >
                     <MessagesSquare size={17} />
                   </button>
-                  <button
-                    aria-label={t.work.download}
-                    data-tip={t.work.download}
-                    disabled={!active?.modules.length || exporting}
-                    onClick={() => void attempt(download)}
-                  >
-                    {exporting ? <Spinner size={15} /> : <Download size={17} />}
-                  </button>
+                  <ExportMenu
+                    work={work}
+                    sceneId={sceneId}
+                    disabled={!active?.modules.length}
+                    fail={(e) => E(e instanceof Error ? e.message : String(e))}
+                    done={setNotice}
+                  />
                 </nav>
                 <div className={cx("side-panel")} data-kind={panel || undefined} inert={!panel}>
                   <header>
                     <h2>
-                      <Title
-                        name={
-                          panel === "history"
-                            ? "history"
-                            : editing
-                              ? "edit"
-                              : "journal"
-                        }
-                        size="section"
-                      />
+                      <Title name={editing ? "edit" : "journal"} size="section" />
                     </h2>
-                    <button
-                      aria-label={t.collapse}
-                      data-tip={t.collapse}
-                      onClick={() => {
-                        setPanel("");
-                        setPreview(undefined);
-                      }}
-                    >
-                      <PanelRightClose size={17} />
-                    </button>
                   </header>
                   <section
                     className={cx("side-body")}
@@ -1248,22 +1217,24 @@ export function App() {
                         pickPicture={(chosen) => setChoosing(() => chosen)}
                         ask={() => ask()}
                       />
-                    ) : panel === "history" ? (
-                      <Versions
+                    ) : (
+                      <Studio
+                        runs={runs}
+                        work={work}
                         history={history}
-                        current={work.revision}
                         previewing={preview?.revision}
                         look={(r) => void attempt(() => look(r))}
                         restore={(r) => void attempt(() => restore(r))}
-                      />
-                    ) : (
-                      <Activity
-                        runs={runs}
-                        work={work}
+                        resume={() =>
+                          void attempt(() =>
+                            send(t.now.resumeMessage, run?.sceneId ?? sceneId, ""),
+                          )
+                        }
                         openTrace={(id) => go("/traces/" + id)}
                       />
                     )}
                   </section>
+                  {journal && <footer className={cx("side-composer")}>{composer("panel")}</footer>}
                 </div>
               </aside>
             </div>

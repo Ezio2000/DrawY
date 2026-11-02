@@ -36,10 +36,46 @@ export interface Trace {
   startedAt: number;
   updatedAt: number;
 }
+/** What one kind of work in a run used: how often it ran, how long it took and the tokens
+ * it spent. Spans are metered by `attrs.meter` when they name one, otherwise a tool call
+ * by its tool's name and anything else by its kind, so a new tool shows up on its own. */
+export interface Meter {
+  key: string;
+  kind: Span["kind"];
+  calls: number;
+  errors: number;
+  ms: number;
+  input: number;
+  cached: number;
+  output: number;
+  reasoning: number;
+}
 export interface TraceSummary extends Trace {
   durationMs: number;
   tokens: { input: number; output: number; reasoning: number; cached: number };
   counts: Record<Span["kind"] | "errors", number>;
+  meters: Meter[];
+}
+/** The meter a span counts towards; executions and notes are not work of their own. */
+export const meterOf = (s: Span) =>
+  s.kind === "execution" || s.kind === "note"
+    ? undefined
+    : typeof s.attrs.meter === "string"
+      ? s.attrs.meter
+      : s.kind === "tool"
+        ? s.name
+        : s.kind === "turn"
+          ? "model"
+          : s.kind;
+/** Token counts in the shape every OpenAI endpoint reports them. */
+export function tokensOf(usage: unknown) {
+  const u = (usage || {}) as Record<string, any>;
+  return {
+    input: u.input_tokens ?? 0,
+    cached: u.input_tokens_details?.cached_tokens ?? 0,
+    output: u.output_tokens ?? 0,
+    reasoning: u.output_tokens_details?.reasoning_tokens ?? 0,
+  };
 }
 interface Scope {
   traceId: string;
@@ -215,6 +251,29 @@ export class Tracer {
       this.persist(span);
     }
   }
+  /** Records a span that already happened, or is happening elsewhere, under the current
+   * one: work the model provider did itself, timed by when its output arrived. */
+  record(
+    kind: Span["kind"],
+    name: string,
+    attrs: Record<string, unknown>,
+    time: { startedAt: number; endedAt?: number; error?: string },
+  ) {
+    const parent = scope.getStore();
+    if (!this.db || !parent) return;
+    this.persist({
+      id: id(),
+      traceId: parent.traceId,
+      parentId: parent.spanId,
+      kind,
+      name,
+      startedAt: time.startedAt,
+      endedAt: time.endedAt ?? Date.now(),
+      status: time.error ? "error" : "ok",
+      ...(time.error ? { error: time.error } : {}),
+      attrs: this.clean(attrs),
+    });
+  }
   /** Records something that happened at one moment. */
   note(name: string, attrs: Record<string, unknown>, error?: string) {
     const parent = scope.getStore();
@@ -255,23 +314,40 @@ export class Tracer {
       note: 0,
       errors: 0,
     };
+    const meters = new Map<string, Meter>();
     for (const s of spans) {
       counts[s.kind]++;
       if (s.status === "error") counts.errors++;
-      const u = s.attrs.usage as Record<string, any> | undefined;
-      if (s.kind === "turn" && u) {
-        tokens.input += u.input_tokens ?? 0;
-        tokens.output += u.output_tokens ?? 0;
-        tokens.reasoning += u.output_tokens_details?.reasoning_tokens ?? 0;
-        tokens.cached += u.input_tokens_details?.cached_tokens ?? 0;
-      }
+      const used = tokensOf(s.attrs.usage);
+      if (s.kind === "turn")
+        for (const k of ["input", "output", "reasoning", "cached"] as const)
+          tokens[k] += used[k];
+      const key = meterOf(s);
+      if (!key) continue;
+      const m = meters.get(key) ?? {
+        key,
+        kind: s.kind,
+        calls: 0,
+        errors: 0,
+        ms: 0,
+        input: 0,
+        cached: 0,
+        output: 0,
+        reasoning: 0,
+      };
+      m.calls++;
+      if (s.status === "error") m.errors++;
+      m.ms += (s.endedAt ?? Date.now()) - s.startedAt;
+      for (const k of ["input", "output", "reasoning", "cached"] as const)
+        m[k] += used[k];
+      meters.set(key, m);
     }
     const executions = spans.filter((s) => s.kind === "execution");
     const durationMs = executions.reduce(
       (n, s) => n + ((s.endedAt ?? Date.now()) - s.startedAt),
       0,
     );
-    return { ...trace, durationMs, tokens, counts };
+    return { ...trace, durationMs, tokens, counts, meters: [...meters.values()] };
   }
   list(userId: string, limit = 60): TraceSummary[] {
     return (

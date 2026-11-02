@@ -31,7 +31,12 @@ const sizes = {
 export interface Development {
   id: string;
   name: string;
-  done: Promise<{ status: "ready" | "failed"; error?: string }>;
+  done: Promise<{
+    status: "ready" | "failed";
+    error?: string;
+    /** The picture model's token counts, when it reports them. */
+    usage?: { input_tokens?: number; output_tokens?: number };
+  }>;
   settled?: { status: "ready" | "failed"; error?: string; at: number };
 }
 
@@ -198,8 +203,14 @@ async function paint(
     r = await send("auto");
   }
   if (!r.ok) throw Error(`生图失败 ${r.status}: ${await r.text()}`);
-  const data = (await r.json()) as { data: { b64_json: string }[] };
-  return Buffer.from(data.data[0].b64_json, "base64");
+  const data = (await r.json()) as {
+    data: { b64_json: string }[];
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
+  return {
+    bytes: Buffer.from(data.data[0].b64_json, "base64"),
+    usage: data.usage,
+  };
 }
 
 /** Reserves each picture in the library and develops it in the background, in the work's
@@ -301,7 +312,7 @@ export async function develop(
                       Buffer.from(b).toString("base64"),
                   ),
                 });
-              const bytes = await paint(
+              const { bytes, usage } = await paint(
                 store,
                 prompt,
                 `${width}x${height}`,
@@ -317,8 +328,9 @@ export async function develop(
               span.set({
                 bytes: bytes.length,
                 url: made.kind === "picture" ? made.file.url : undefined,
+                ...(usage ? { usage } : {}),
               });
-              return { status: "ready" as const };
+              return { status: "ready" as const, ...(usage ? { usage } : {}) };
             },
           )
           .catch(async (e) => {

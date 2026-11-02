@@ -123,10 +123,11 @@ export class MaterialsClient {
       body: JSON.stringify({ ids, work }),
     });
   }
-  async file(id: string, user?: Viewer, wait = 240) {
+  /** A picture's file, inked in `color` when it is a recolourable one. */
+  async file(id: string, user?: Viewer, wait = 240, color?: string) {
     return new Uint8Array(
       await this.call<ArrayBuffer>(
-        `/files/${encodeURIComponent(id)}?wait=${wait}`,
+        `/files/${encodeURIComponent(id)}?wait=${wait}${color ? "&color=" + encodeURIComponent(color) : ""}`,
         user,
       ),
     );
