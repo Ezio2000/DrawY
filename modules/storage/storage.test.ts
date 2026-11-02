@@ -239,6 +239,16 @@ describe("user owned works", () => {
       store.revision(work.id, 1).scenes,
     );
     expect(() => undo(store, work.id)).toThrow("撤销");
+    // Once the user names the work, the author's later titles leave it as the user wrote it.
+    store.rename(work.id, "【high】我的标题");
+    const { work: kept, keptTitle } = await writeWork(
+      store,
+      work.id,
+      { baseRevision: 7, title: "作者的标题" },
+      run("r3"),
+    );
+    expect([kept.title, kept.named, keptTitle]).toEqual(["【high】我的标题", true, true]);
+    expect(undo(store, work.id)).toMatchObject({ title: "【high】我的标题", named: true });
   });
   it("validates composition references together and permits atomic deletion", async () => {
     const store = db.scoped(register(db, "a", "abcdef").id);
@@ -529,12 +539,50 @@ describe("user owned works", () => {
       { kind: "edit" },
     );
     expect(plotted.materials.waves).toMatchObject({ kind: "drawing" });
+    // A picture generated before ids were cut first may carry "--"; data naming it keeps it.
+    await client.reserve(
+      {
+        id: "g-old-name--ab12",
+        role: "object",
+        name: { zh: "旧图", en: "old" },
+        about: "",
+        tags: [],
+        category: "",
+        style: null,
+        width: 64,
+        height: 64,
+        origin: { kind: "generated", prompt: "", model: "test" },
+      },
+      a.userId,
+    );
+    const { added: old } = await writeWork(
+      a,
+      work.id,
+      {
+        baseRevision: plotted.revision,
+        scenes: [
+          {
+            ...content.scenes.root,
+            modules: [
+              module,
+              { ...module, id: "wave", drawingId: "waves", data: {} },
+              { ...module, id: "old", data: { picture: "g-old-name--ab12" } },
+            ],
+            links: [],
+            checks: [],
+            interactionId: null,
+          },
+        ],
+      },
+      { kind: "edit" },
+    );
+    expect(old).toEqual(["g-old-name--ab12"]);
     await expect(
       writeWork(
         a,
         work.id,
         {
-          baseRevision: plotted.revision,
+          baseRevision: plotted.revision + 1,
           scenes: [
             {
               ...content.scenes.root,

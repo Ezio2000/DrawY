@@ -278,7 +278,7 @@ export class UserStore {
   }
   /** Names the work, without making a new revision of its drawing. */
   rename(workId: string, title: string) {
-    const work = { ...this.work(workId), title };
+    const work = { ...this.work(workId), title, named: true };
     this.storage.db
       .prepare("UPDATE works SET data=? WHERE user_id=? AND id=?")
       .run(JSON.stringify(work), this.userId, workId);

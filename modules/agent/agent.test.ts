@@ -416,15 +416,22 @@ it("compacts at the budget with original references and closes interrupted tool 
     };
     store.saveRun(run);
     const ctx = {
-      input: [{ role: "user", content: "x".repeat(384001) }] as any[],
+      input: [
+        { role: "user", content: "x".repeat(384001) },
+        { type: "configuration_update", reasoning: { effort: "max" } },
+      ] as any[],
       generations: 0,
     };
     let turn = 0;
     const agent = new Agent(() => {});
     vi.mocked(generate).mockImplementation(
-      async (_role, _instructions, input, tools) => {
+      async (role, _instructions, input, tools, _signal, _event, budget) => {
         if (turn++ === 0) {
           expect(tools).toEqual([]);
+          // A summary is made with little reasoning and room to finish.
+          expect(role.effort).toBe("low");
+          expect(budget).toBe(16384);
+          expect(input.some((i: any) => i.type === "configuration_update")).toBe(false);
           return {
             items: [
               {
@@ -461,6 +468,82 @@ it("compacts at the budget with original references and closes interrupted tool 
         .input.filter((i: any) => i.type === "function_call_output")
         .map((i: any) => i.call_id),
     ).toEqual(["one", "two"]);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("goes on without old pictures when a summary fails, and sizes the context by reported usage", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    const run: Run = {
+      id: "fallback",
+      workId: work.id,
+      sceneId: "root",
+      status: "running",
+      steps: [{ kind: "message", role: "user", text: "Go" }],
+      observations: [],
+      startedAt: Date.now(),
+    };
+    store.saveRun(run);
+    const shot = (n: number) => ({
+      role: "user",
+      content: [
+        { type: "input_text", text: "look " + n },
+        { type: "input_image", image_url: "data:image/webp;base64,AAAA" },
+      ],
+    });
+    const ctx = {
+      input: [
+        { role: "user", content: "x".repeat(384001) },
+        shot(1),
+        shot(2),
+        shot(3),
+      ] as any[],
+      generations: 0,
+    };
+    const agent = new Agent(() => {});
+    const seen: any[][] = [];
+    let summaries = 0;
+    vi.mocked(generate).mockImplementation(async (_role, _i, input, tools) => {
+      if (!tools.length) {
+        summaries++;
+        throw Error("模型输出被截断");
+      }
+      seen.push(input);
+      if (seen.length === 1)
+        return {
+          items: [
+            {
+              type: "reasoning",
+              // Encrypted reasoning reads as far more text than it costs.
+              encrypted_content: "e".repeat(600000),
+            },
+            { type: "function_call", name: "read_work", arguments: "{}", call_id: "r" },
+          ],
+          usage: { input_tokens: 50000, output_tokens: 100 },
+          response: {},
+        };
+      agent.cancel(store, run.id);
+      return { items: [], usage: {}, response: {} };
+    });
+    await agent.execute(store, run, ctx, "request");
+    // The failed summary left the run going, with only the latest two pictures.
+    expect(seen.length).toBe(2);
+    const pictures = seen[0].filter(
+      (i: any) =>
+        Array.isArray(i.content) &&
+        i.content.some((c: any) => c.type === "input_image"),
+    );
+    expect(pictures.map((i: any) => i.content[0].text)).toEqual(["look 2", "look 3"]);
+    // The second turn did not summarize again: the reported 50k tokens are under budget.
+    expect(summaries).toBe(1);
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
@@ -572,7 +655,8 @@ it("settles a brief only on the user's own words, then applies its style and sho
           "set_brief",
           {
             ...brief,
-            basis: { subject: "苹果", intent: "结构", register: "教科书" },
+            // Quotes set end to end are checked one by one.
+            basis: { subject: "苹果", intent: "“苹果”“结构”", register: "教科书" },
           },
         ],
         [

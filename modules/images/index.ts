@@ -220,8 +220,9 @@ export async function develop(
         r.name.en
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "")
-          .slice(0, 28) || "picture"
+          // Cut first: a cut that lands on a hyphen would leave "--" before the suffix.
+          .slice(0, 28)
+          .replace(/^-+|-+$/g, "") || "picture"
       }-${crypto.randomUUID().slice(0, 4)}`,
   );
   const keyed = new Map(

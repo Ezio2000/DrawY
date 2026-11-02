@@ -364,6 +364,11 @@ const zh = {
   now: {
     offline: "连接中断，正在重连…",
     unfinished: "这次没有画完",
+    saved: (n: number) => ` 画面已保存到第 ${n} 稿，可以接着画。`,
+    unchecked: (n: number) => ` 第 ${n} 稿还没检查完，可能有问题。`,
+    restore: (n: number) => `恢复第 ${n} 稿`,
+    resume: "继续完成",
+    resumeMessage: "继续",
     stopped: "已停止",
     open: "查看创作过程",
     dismiss: "收起（Esc）",
@@ -1031,6 +1036,11 @@ const en: Words = {
   now: {
     offline: "Connection lost, reconnecting…",
     unfinished: "This drawing didn't finish",
+    saved: (n: number) => ` The drawing is saved as draft ${n}; you can go on from there.`,
+    unchecked: (n: number) => ` Draft ${n} wasn't checked yet and may have problems.`,
+    restore: (n: number) => `Restore draft ${n}`,
+    resume: "Finish it",
+    resumeMessage: "Continue",
     stopped: "Stopped",
     open: "Show process",
     dismiss: "Dismiss (Esc)",

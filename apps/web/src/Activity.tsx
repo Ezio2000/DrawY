@@ -70,6 +70,26 @@ function between(steps: Step[], t: Words) {
       return t.now.composing;
   }
 }
+/** Where a failed run left the work: the last revision it saved, and, when that one was
+ * not seen whole without errors and the work is still as the run left it, the latest one
+ * that was. */
+export function stopped(run: Run, work: Work) {
+  const saved = run.steps.findLast(
+    (s): s is ToolStep & { name: "write_work" | "set_brief" } =>
+      s.kind === "tool" &&
+      (s.name === "write_work" || s.name === "set_brief") &&
+      s.status === "done" &&
+      !!s.revision,
+  )?.revision;
+  if (saved === undefined) return {};
+  const clean = (r: number) =>
+    run.observations.some((o) => o.revision === r && o.overview && !o.errors.length);
+  if (work.revision !== saved || clean(saved)) return { saved };
+  const earlier = run.observations
+    .filter((o) => o.revision < saved && o.overview && clean(o.revision))
+    .map((o) => o.revision);
+  return { saved, clean: earlier.length ? Math.max(...earlier) : undefined };
+}
 /** The pictures a step brings: the best candidates per subject, or what it generated. */
 export const picturesOf = (step: Step): Picture[] =>
   step.kind !== "tool"
@@ -97,6 +117,8 @@ export function Now({
   cancel,
   reveal,
   dismiss,
+  resume,
+  restore,
 }: {
   run?: Run;
   work: Work;
@@ -108,6 +130,9 @@ export function Now({
   cancel: () => void;
   reveal: () => void;
   dismiss: () => void;
+  /** Asks the author to go on from where a failed run stopped. */
+  resume: () => void;
+  restore: (revision: number) => void;
 }) {
   const t = useT(),
     locale = useLocale();
@@ -140,11 +165,29 @@ export function Now({
           ? (run.error && localize(run.error, locale)) || t.now.unfinished
           : t.now.stopped;
     if (!text) return null;
+    const ended = run.status === "failed" ? stopped(run, work) : undefined;
     return (
       <div className={cx("now")} data-tone={run.status}>
         <button className={cx("now-reply")} data-tip={t.now.open} onClick={reveal}>
           {text}
+          {ended?.saved !== undefined && (
+            <span className={cx("now-saved")}>
+              {ended.clean === undefined
+                ? t.now.saved(ended.saved)
+                : t.now.unchecked(ended.saved)}
+            </span>
+          )}
         </button>
+        {ended?.clean !== undefined && (
+          <button className={cx("now-action")} onClick={() => restore(ended.clean!)}>
+            {t.now.restore(ended.clean)}
+          </button>
+        )}
+        {ended && (
+          <button className={cx("primary small")} onClick={resume}>
+            {t.now.resume}
+          </button>
+        )}
         <button
           className={cx("now-close")}
           aria-label={t.collapse}

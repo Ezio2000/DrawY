@@ -51,6 +51,7 @@ for (const channel of ["api", "oauth"] as const)
       },
     ]);
     expect(made.id).toMatch(/^g-microscope-/);
+
     expect(await made.done).toEqual({ status: "ready" });
     expect(made.settled?.status).toBe("ready");
     const m = await library.library.ready(made.id, store.userId, 0);
@@ -85,6 +86,27 @@ for (const channel of ["api", "oauth"] as const)
         })),
       });
   });
+it("cuts a long name before trimming its hyphens, so no id carries \"--\"", async () => {
+  const store = db.scoped(register(db, "author", "abcdef").id);
+  store.storage.saveModels({
+    ...store.storage.models(),
+    image: { ...store.settings().image, credential: "test", baseUrl: "https://example.invalid" },
+  });
+  const png = await picture();
+  library.route(async () =>
+    Response.json({ data: [{ b64_json: png.toString("base64") }] }),
+  );
+  // Cut at 28 characters this name ends on a hyphen, which the work's references would not read.
+  const [cut] = await develop(store, fixture(), [
+    {
+      name: { zh: "塑料瓶和铝罐", en: "plastic bottle and aluminum can" },
+      role: "object",
+      depicts: "a plastic bottle and an aluminum can",
+    },
+  ]);
+  expect(cut.id).toMatch(/^g-plastic-bottle-and-aluminum-[0-9a-f]{4}$/);
+  await cut.done;
+});
 it("retries a dropped connection or a busy server before giving up", async () => {
   const store = db.scoped(register(db, "author", "abcdef").id);
   const settings = store.settings();

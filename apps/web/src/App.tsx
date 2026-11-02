@@ -177,6 +177,23 @@ export function App() {
     "/a/" +
     work!.id +
     (id === work!.rootSceneId ? "" : "/" + encodeURIComponent(id));
+  // A run that ends having drawn only in other scenes takes the viewer to the last one it
+  // drew: left on the scene they asked from, people took the new subscene for nothing done.
+  const watched = useRef<{ id: string; live: boolean }>(undefined);
+  useEffect(() => {
+    const was = watched.current;
+    watched.current = run && { id: run.id, live: working };
+    if (!run || !work || run.status !== "completed" || was?.id !== run.id || !was.live)
+      return;
+    const written = run.steps.flatMap((s) =>
+      s.kind === "tool" && s.name === "write_work" && s.status === "done"
+        ? s.scenes.map((x) => x.id)
+        : [],
+    );
+    if (!written.length || written.includes(sceneId)) return;
+    const target = written.findLast((id) => work.scenes[id]?.modules.length);
+    if (target) go(sceneAddress(target));
+  }, [run?.id, run?.status]);
   useEffect(() => {
     // An address naming a scene the work no longer has falls back to its root.
     if (work && addressed && !work.scenes[addressed])
@@ -802,6 +819,8 @@ export function App() {
         }
         reveal={() => J(true)}
         dismiss={() => setDismissed(run?.id || "")}
+        resume={() => void attempt(() => send(t.now.resumeMessage, run?.sceneId ?? sceneId, ""))}
+        restore={(r) => void attempt(() => restore(r))}
       />
     );
   // Until a drawing model is connected, the composer says so: those who manage models
