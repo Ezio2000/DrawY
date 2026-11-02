@@ -1,4 +1,5 @@
-import type { Citation } from "../../../modules/contracts/index.ts";
+import type { Citation, RunCost, RunServices } from "../../../modules/contracts/index.ts";
+import { money } from "./money.ts";
 import { CitedText } from "./CitedText.tsx";
 import { citationsOf } from "../../../modules/models/index.ts";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -33,13 +34,6 @@ const meterName = (key: string) =>
 /** Tool calls and pictures before model turns and the rest. */
 const order = (m: Meter) =>
   m.kind === "tool" ? 0 : m.kind === "generation" ? 1 : m.kind === "turn" ? 2 : 3;
-/** A run's tools and pictures in a few words, for the list of runs. */
-const brief = (meters: Meter[] = []) =>
-  meters
-    .filter((m) => m.kind === "tool" || m.kind === "generation")
-    .sort((a, b) => order(a) - order(b) || b.calls - a.calls)
-    .map((m) => `${meterName(m.key)} ${m.calls}`)
-    .join(" · ");
 function Status({ value }: { value: string }) {
   return (
     <i className={cx("status")} data-status={value}>
@@ -47,22 +41,24 @@ function Status({ value }: { value: string }) {
     </i>
   );
 }
+/** A trace with what its run cost and was made with, as the server adds them. */
+type Costed = TraceSummary & { cost?: RunCost; services?: RunServices };
 
 /** Every run of the user's works, and for one run each model turn, tool call, search,
  * generation and capture in time order, with what went in and came out. */
 export function TraceView() {
   // Undefined until the first list arrives, so an empty list is never shown while loading.
-  const [list, setList] = useState<TraceSummary[]>();
+  const [list, setList] = useState<Costed[]>();
   const [selected, setSelected] = useState<string | undefined>(
     location.pathname.match(/^\/traces\/([^/]+)/)?.[1],
   );
   const [detail, setDetail] = useState<{
-    trace: TraceSummary;
+    trace: Costed;
     spans: Span[];
   }>();
   const [error, setError] = useState("");
   const refresh = () =>
-    api<TraceSummary[]>("/traces")
+    api<Costed[]>("/traces")
       .then((l) => {
         setList(l);
         if (!selected && l[0]) setSelected(l[0].id);
@@ -74,7 +70,7 @@ export function TraceView() {
     history.replaceState(null, "", "/traces/" + selected);
     let timer: ReturnType<typeof setTimeout>;
     const load = () =>
-      api<{ trace: TraceSummary; spans: Span[] }>("/traces/" + selected)
+      api<{ trace: Costed; spans: Span[] }>("/traces/" + selected)
         .then((d) => {
           setDetail(d);
           if (live(d.trace.status)) timer = setTimeout(load, 2500);
@@ -105,16 +101,17 @@ export function TraceView() {
                 aria-current={t.id === selected || undefined}
                 onClick={() => setSelected(t.id)}
               >
-                <b>{t.title}</b>
+                <span className={cx("trace-row")}>
+                  <b>{t.title}</b>
+                  {t.cost && <em className={cx("trace-cost")}>{money(t.cost.total)}</em>}
+                </span>
                 <span className={cx("trace-prompt")}>{t.prompt}</span>
                 <small>
                   <Status value={t.status} />
-                  {ago(t.startedAt)} · {seconds(t.durationMs)}
-                  {t.counts.errors ? (
-                    <em>{w().errors(t.counts.errors)}</em>
-                  ) : null}
+                  <span>{ago(t.startedAt)}</span>
+                  <span>{seconds(t.durationMs)}</span>
+                  {!!t.counts.errors && <em>{w().errorCount(t.counts.errors)}</em>}
                 </small>
-                {brief(t.meters) && <span className={cx("trace-meters")}>{brief(t.meters)}</span>}
               </button>
             </li>
           ))}
@@ -131,7 +128,26 @@ export function TraceView() {
     </div>
   );
 }
-function Timeline({ trace, spans }: { trace: TraceSummary; spans: Span[] }) {
+/** One figure at the top of a run: what it measures, the number, and what makes it up. */
+function Stat({ label, value, parts }: { label: string; value: ReactNode; parts?: ReactNode[] }) {
+  const shown = (parts ?? []).filter(Boolean);
+  return (
+    <div className={cx("stat")}>
+      <dt>{label}</dt>
+      <dd>
+        <b>{value}</b>
+        {!!shown.length && (
+          <span>
+            {shown.map((p, i) => (
+              <small key={i}>{p}</small>
+            ))}
+          </span>
+        )}
+      </dd>
+    </div>
+  );
+}
+function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
   const [open, setOpen] = useState<string>();
   const [kinds, setKinds] = useState<Set<Span["kind"]>>(new Set());
   const rows = useMemo(() => {
@@ -155,100 +171,131 @@ function Timeline({ trace, spans }: { trace: TraceSummary; spans: Span[] }) {
   const t1 = Math.max(...spans.map((s) => s.endedAt ?? Date.now()), t0 + 1);
   const shown = rows.filter((r) => !kinds.size || kinds.has(r.span.kind));
   const contexts = useMemo(() => inputs(spans), [spans]);
+  const c = trace.cost,
+    v = trace.services,
+    tk = trace.tokens;
+  const made = (
+    v
+      ? [
+          v.author,
+          v.effort && `${w().thinkingEffort} ${v.effort}`,
+          v.speed && v.speed !== "default" && v.speed,
+          v.search === "off" ? w().noSearch : v.search === "builtin" ? w().builtinSearch : v.searchBy,
+          v.image,
+        ]
+      : []
+  ).filter(Boolean) as string[];
   return (
     <>
       <header className={cx("trace-head")}>
-        <h2>{trace.title}</h2>
-        <p>{trace.prompt}</p>
-        <dl>
-          <div>
-            <dt>{w().status}</dt>
-            <dd>
-              <Status value={trace.status} />
-            </dd>
-          </div>
-          <div>
-            <dt>{w().duration}</dt>
-            <dd>{seconds(trace.durationMs)}</dd>
-          </div>
-          <div>
-            <dt>{w().turns}</dt>
-            <dd>{trace.counts.turn}</dd>
-          </div>
-          <div>
-            <dt>{w().tools}</dt>
-            <dd>{trace.counts.tool}</dd>
-          </div>
-          <div>
-            <dt>{w().inputTokens}</dt>
-            <dd title={`${w().cached} ${trace.tokens.cached.toLocaleString()}`}>
-              {thousands(trace.tokens.input)}
-              <small> {w().cached} {thousands(trace.tokens.cached)}</small>
-            </dd>
-          </div>
-          <div>
-            <dt>{w().outputTokens}</dt>
-            <dd title={`${w().reasoning} ${trace.tokens.reasoning.toLocaleString()}`}>
-              {thousands(trace.tokens.output)}
-              <small> {w().reasoning} {thousands(trace.tokens.reasoning)}</small>
-            </dd>
-          </div>
-        </dl>
-        <nav>
-          {(Object.keys(w().kinds) as Span["kind"][])
-            .filter((k) => trace.counts[k])
-            .map((k) => (
-              <button
-                key={k}
-                aria-pressed={kinds.has(k)}
-                onClick={() => {
-                  const next = new Set(kinds);
-                  if (next.has(k)) next.delete(k);
-                  else next.add(k);
-                  setKinds(next);
-                }}
-              >
-                {w().kinds[k]} {trace.counts[k]}
-              </button>
+        <div className={cx("trace-title")}>
+          <h2>{trace.title}</h2>
+          <Status value={trace.status} />
+        </div>
+        {trace.prompt && <blockquote>{trace.prompt}</blockquote>}
+        {!!made.length && (
+          <ul className={cx("trace-made")}>
+            {made.map((m, i) => (
+              <li key={i}>{m}</li>
             ))}
-        </nav>
+          </ul>
+        )}
+        <dl className={cx("stats")}>
+          <Stat
+            label={w().cost}
+            value={c ? money(c.total) : "—"}
+            parts={
+              c
+                ? [
+                    `${w().costAuthor} ${money(c.author)}`,
+                    `${w().costSearch} ${money(c.search)}`,
+                    `${w().costImage} ${money(c.image)}`,
+                  ]
+                : [w().unpriced]
+            }
+          />
+          <Stat
+            label={w().duration}
+            value={seconds(trace.durationMs)}
+            parts={[w().turnsCount(trace.counts.turn), w().toolsCount(trace.counts.tool)]}
+          />
+          <Stat
+            label={w().inputTokens}
+            value={thousands(tk.input)}
+            parts={[
+              `${w().cached} ${thousands(tk.cached)}`,
+              tk.input ? `${w().hit} ${Math.round((tk.cached / tk.input) * 100)}%` : "",
+            ]}
+          />
+          <Stat
+            label={w().outputTokens}
+            value={thousands(tk.output)}
+            parts={[`${w().reasoning} ${thousands(tk.reasoning)}`]}
+          />
+          {!!trace.counts.errors && (
+            <Stat
+              label={w().error}
+              value={<span className={cx("stat-bad")}>{trace.counts.errors}</span>}
+            />
+          )}
+        </dl>
       </header>
       {!!trace.meters?.length && <Meters meters={trace.meters} />}
-      <ol className={cx("spans")}>
-        {shown.map(({ span: s, depth }) => {
-          const end = s.endedAt ?? Date.now();
-          return (
-            <li key={s.id} data-kind={s.kind} data-status={s.status}>
-              <button
-                aria-expanded={open === s.id}
-                onClick={() => setOpen(open === s.id ? undefined : s.id)}
-              >
-                <span
-                  className={cx("span-name")}
-                  style={{ paddingLeft: depth * 14 }}
+      <section className={cx("trace-card")}>
+        <header>
+          <h3>{w().timeline}</h3>
+          <nav className={cx("trace-filter")}>
+            {(Object.keys(w().kinds) as Span["kind"][])
+              .filter((k) => trace.counts[k])
+              .map((k) => (
+                <button
+                  key={k}
+                  data-kind={k}
+                  aria-pressed={kinds.has(k)}
+                  onClick={() => {
+                    const next = new Set(kinds);
+                    if (next.has(k)) next.delete(k);
+                    else next.add(k);
+                    setKinds(next);
+                  }}
                 >
-                  <i>{w().kinds[s.kind]}</i>
-                  {s.name}
-                  {metric(s) && <small>{metric(s)}</small>}
-                  {s.error && <em>{s.error.slice(0, 80)}</em>}
-                </span>
-                <span className={cx("span-bar")}>
-                  <i
-                    style={{
-                      left: `${((s.startedAt - t0) / (t1 - t0)) * 100}%`,
-                      width: `max(2px, ${((end - s.startedAt) / (t1 - t0)) * 100}%)`,
-                    }}
-                  />
-                </span>
-                <small>{s.endedAt ? seconds(end - s.startedAt) : "…"}</small>
-              </button>
-              {open === s.id && (
-                <Attributes span={s} context={contexts.get(s.id)} />
-              )}
-            </li>
-          );
-        })}
-      </ol>
+                  {w().kinds[k]}
+                  <small>{trace.counts[k]}</small>
+                </button>
+              ))}
+          </nav>
+        </header>
+        <ol className={cx("spans")}>
+          {shown.map(({ span: s, depth }) => {
+            const end = s.endedAt ?? Date.now();
+            return (
+              <li key={s.id} data-kind={s.kind} data-status={s.status}>
+                <button
+                  aria-expanded={open === s.id}
+                  onClick={() => setOpen(open === s.id ? undefined : s.id)}
+                >
+                  <span className={cx("span-name")} style={{ paddingLeft: depth * 16 }}>
+                    <i className={cx("span-kind")}>{w().kinds[s.kind]}</i>
+                    <b>{s.name}</b>
+                    {metric(s) && <small>{metric(s)}</small>}
+                    {s.error && <em>{s.error.slice(0, 80)}</em>}
+                  </span>
+                  <span className={cx("span-bar")}>
+                    <i
+                      style={{
+                        left: `${((s.startedAt - t0) / (t1 - t0)) * 100}%`,
+                        width: `max(3px, ${((end - s.startedAt) / (t1 - t0)) * 100}%)`,
+                      }}
+                    />
+                  </span>
+                  <small>{s.endedAt ? seconds(end - s.startedAt) : "…"}</small>
+                </button>
+                {open === s.id && <Attributes span={s} context={contexts.get(s.id)} />}
+              </li>
+            );
+          })}
+        </ol>
+      </section>
     </>
   );
 }
@@ -257,9 +304,11 @@ function Timeline({ trace, spans }: { trace: TraceSummary; spans: Span[] }) {
 function Meters({ meters }: { meters: Meter[] }) {
   const rows = [...meters].sort((a, b) => order(a) - order(b) || b.calls - a.calls);
   return (
-    <details className={cx("meters")} open>
-      <summary>{w().meterTitle}</summary>
-      <table>
+    <section className={cx("trace-card")}>
+      <header>
+        <h3>{w().meterTitle}</h3>
+      </header>
+      <table className={cx("meters")}>
         <thead>
           <tr>
             <th>{w().meterName}</th>
@@ -273,24 +322,29 @@ function Meters({ meters }: { meters: Meter[] }) {
           {rows.map((m) => (
             <tr key={m.key} data-kind={m.kind}>
               <td>
-                <i>{w().kinds[m.kind]}</i>
+                <i className={cx("span-kind")}>{w().kinds[m.kind]}</i>
                 {meterName(m.key)}
               </td>
               <td>
                 {m.calls}
-                {!!m.errors && <em> {w().errors(m.errors).replace(/^ · /, "")}</em>}
+                {!!m.errors && <em> {w().errorCount(m.errors)}</em>}
               </td>
               <td>{seconds(m.ms)}</td>
               <td title={m.cached ? `${w().cached} ${m.cached.toLocaleString()}` : undefined}>
                 {m.input ? thousands(m.input) : "—"}
-                {!!m.cached && <small> {w().cached} {thousands(m.cached)}</small>}
+                {!!m.cached && (
+                  <small>
+                    {" "}
+                    {w().cached} {thousands(m.cached)}
+                  </small>
+                )}
               </td>
               <td>{m.output ? thousands(m.output) : "—"}</td>
             </tr>
           ))}
         </tbody>
       </table>
-    </details>
+    </section>
   );
 }
 type Item = Record<string, any>;

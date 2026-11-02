@@ -3,7 +3,6 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { ZoomOut, ZoomIn, Scan, Lightbulb } from "lucide-react";
 import { reducedMotion, useLocale } from "@drawy/ui";
-import { Pen } from "@drawy/ui/brand";
 import { Canvas, type Pointed } from "../../../modules/canvas/index.ts";
 import type { Camera } from "../../../modules/contracts/geometry.ts";
 import type {
@@ -101,7 +100,6 @@ export function SceneView({
       cameraChanged: (c) => cameras.current.set(key, c),
       error: setError,
     });
-    view.pen.className = cx("pen");
     setCanvas(view);
     callbacks.current.view(view);
     let mounted = true;
@@ -150,9 +148,8 @@ export function SceneView({
       ?.scenes.find((s) => s.id === sceneId)?.modules || [];
   const done = write?.drawings || [],
     writing = write?.status === "running" ? write.writing : undefined;
-  // Each update of the run gives the pen its next pass while a drawing is being written.
+  // Each update of the run gives the sketch its next pass while a drawing is being written.
   useEffect(() => canvas?.sketch(draft, { done, writing }), [canvas, run]);
-  useEffect(() => canvas?.attend(!!run), [canvas, !!run]);
   const gaze = steps.findLast(
     (s): s is Extract<ToolStep, { name: "view_canvas" }> =>
       s.kind === "tool" &&
@@ -234,7 +231,6 @@ export function SceneView({
           </>,
           canvas.layer,
         )}
-      {canvas && createPortal(<Pen size={30} />, canvas.pen)}
       {gaze && !gaze.region && <div className={cx("viewfinder")} data-screen />}
       {empty && !run && (
         <p className={cx("blank")}>{editing ? t.edit.blank : t.work.blank}</p>

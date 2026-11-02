@@ -273,7 +273,7 @@ async function generate(
   const conversation: Item[] = toAnthropic(input, list.length > 0, role.model);
   const turn = crypto.randomUUID().slice(0, 8);
   const content: Block[] = [];
-  const usage = { input: 0, cached: 0, output: 0 };
+  const usage = { input: 0, cached: 0, written: 0, output: 0 };
   let model = role.model,
     id = "",
     stop: string | null | undefined;
@@ -362,6 +362,7 @@ async function generate(
       const cachedNow = u.cache_read_input_tokens ?? 0;
       usage.input += (u.input_tokens ?? 0) + cachedNow + (u.cache_creation_input_tokens ?? 0);
       usage.cached += cachedNow;
+      usage.written += u.cache_creation_input_tokens ?? 0;
       usage.output += u.output_tokens ?? 0;
       stop = final.stop_reason ?? stop;
       model = final.model ?? model;
@@ -384,7 +385,7 @@ async function generate(
     items,
     usage: {
       input_tokens: usage.input,
-      input_tokens_details: { cached_tokens: usage.cached },
+      input_tokens_details: { cached_tokens: usage.cached, cache_write_tokens: usage.written },
       output_tokens: usage.output,
       // Messages reports thinking within the output tokens, not apart from it.
       output_tokens_details: { reasoning_tokens: 0 },

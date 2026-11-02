@@ -9,11 +9,11 @@ import {
   ImageUp,
   Shapes,
   PencilLine,
-  ChevronDown,
   Globe,
   Image as ImageIcon,
+  Gauge,
 } from "lucide-react";
-import type { SearchMode, UserSettings } from "../../../modules/contracts/index.ts";
+import type { UserSettings } from "../../../modules/contracts/index.ts";
 import { Spinner, useLocale } from "@drawy/ui";
 import type { StyleMaterial } from "@drawy/materials/schema";
 import { api, type Models } from "./api.ts";
@@ -86,9 +86,10 @@ export function Composer({
   pick: () => void;
   /** What the author is doing, its question or its reply, shown in the box. */
   status?: ReactNode;
-  /** What draws, searches and paints, and picking each. */
+  /** What draws, searches and paints, and picking each, under the box; absent while the
+   * author works. */
   models?: Models;
-  choose: (change: Pick<Partial<UserSettings>, Choice>) => void;
+  choose: (change: Partial<UserSettings>) => void;
 }) {
   const t = useT();
   const picker = useRef<HTMLInputElement>(null);
@@ -97,259 +98,384 @@ export function Composer({
     if (place === "home") field.current?.focus();
   }, [place]);
   return (
-    <div
-      className={cx("composer")}
-      data-place={place}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        e.preventDefault();
-        attach(e.dataTransfer.files);
-      }}
-    >
-      <input
-        ref={picker}
-        type="file"
-        accept="image/*"
-        multiple
-        hidden
-        onChange={(e) => {
-          if (e.target.files) attach(e.target.files);
-          e.target.value = "";
+    <div className={cx("composer-wrap")} data-place={place}>
+      <div
+        className={cx("composer")}
+        data-place={place}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          attach(e.dataTransfer.files);
         }}
-      />
-      {status}
-      {(!!quote || !!attachments.length || !!uploading) && (
-        <div className={cx("composer-extras")}>
-          {quote && (
-            <span className={cx("quote")}>
-              <span>{quote.slice(0, 80)}</span>
-              <button onClick={unquote} aria-label={t.composer.clearQuote}>
-                <X size={12} />
-              </button>
-            </span>
-          )}
-          {quote && edit && (
-            <button className={cx("quote-edit")} onClick={edit}>
-              <PencilLine size={13} />
-              {t.composer.editByHand}
-            </button>
-          )}
-          {attachments.map((a) => (
-            <span
-              className={cx("attached")}
-              data-kind={a.kind}
-              key={a.id}
-              title={a.name}
-            >
-              {a.url ? <img src={a.url} alt={a.name} /> : <b>{a.name}</b>}
-              <button aria-label={t.composer.detach(a.name)} onClick={() => detach(a.id)}>
-                <X size={11} />
-              </button>
-            </span>
-          ))}
-          {Array.from({ length: uploading }, (_, i) => (
-            <span className={cx("attached")} data-uploading key={"u" + i}>
-              <Spinner size={16} />
-            </span>
-          ))}
-        </div>
-      )}
-      <div className={cx("composer-field")}>
-        <textarea
-          ref={field}
-          aria-label={t.composer.describe}
-          placeholder={placeholder}
-          value={value}
-          rows={1}
-          onChange={(e) => set(e.target.value)}
-          onPaste={(e) => {
-            if (e.clipboardData.files.length) {
-              e.preventDefault();
-              attach(e.clipboardData.files);
-            }
-          }}
-          onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              !e.shiftKey &&
-              !e.nativeEvent.isComposing
-            ) {
-              e.preventDefault();
-              send();
-            }
+      >
+        <input
+          ref={picker}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(e) => {
+            if (e.target.files) attach(e.target.files);
+            e.target.value = "";
           }}
         />
-        <div className={cx("composer-tools")}>
-          <AddMenu
-            upload={() => picker.current?.click()}
-            pick={pick}
-          />
-          {setStyle && <StylePicker style={style} pick={setStyle} />}
-          <span className={cx("composer-gap")} />
-          {!!models?.models.length && (
-            <ModelPicker models={models} pick={choose} />
-          )}
-          {working ? (
-            <button
-              className={cx("composer-stop")}
-              aria-label={t.composer.stop}
-              data-tip={t.composer.stop}
-              onClick={stop}
-            >
-              <Square size={12} fill="currentColor" />
-            </button>
-          ) : (
-            <button
-              className={cx("composer-send")}
-              aria-label={t.composer.send}
-              disabled={
-                busy || !!uploading || !(value.trim() || attachments.length)
+        {status}
+        {(!!quote || !!attachments.length || !!uploading) && (
+          <div className={cx("composer-extras")}>
+            {quote && (
+              <span className={cx("quote")}>
+                <span>{quote.slice(0, 80)}</span>
+                <button onClick={unquote} aria-label={t.composer.clearQuote}>
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+            {quote && edit && (
+              <button className={cx("quote-edit")} onClick={edit}>
+                <PencilLine size={13} />
+                {t.composer.editByHand}
+              </button>
+            )}
+            {attachments.map((a) => (
+              <span
+                className={cx("attached")}
+                data-kind={a.kind}
+                key={a.id}
+                title={a.name}
+              >
+                {a.url ? <img src={a.url} alt={a.name} /> : <b>{a.name}</b>}
+                <button aria-label={t.composer.detach(a.name)} onClick={() => detach(a.id)}>
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+            {Array.from({ length: uploading }, (_, i) => (
+              <span className={cx("attached")} data-uploading key={"u" + i}>
+                <Spinner size={16} />
+              </span>
+            ))}
+          </div>
+        )}
+        <div className={cx("composer-field")}>
+          <textarea
+            ref={field}
+            aria-label={t.composer.describe}
+            placeholder={placeholder}
+            value={value}
+            rows={1}
+            onChange={(e) => set(e.target.value)}
+            onPaste={(e) => {
+              if (e.clipboardData.files.length) {
+                e.preventDefault();
+                attach(e.clipboardData.files);
               }
-              onClick={send}
-            >
-              {busy ? <Spinner size={15} /> : <ArrowUp size={18} />}
-            </button>
-          )}
+            }}
+            onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
+                e.preventDefault();
+                send();
+              }
+            }}
+          />
+          <div className={cx("composer-tools")}>
+            <AddMenu
+              upload={() => picker.current?.click()}
+              pick={pick}
+            />
+            {setStyle && <StylePicker style={style} pick={setStyle} />}
+            <span className={cx("composer-gap")} />
+            {working ? (
+              <button
+                className={cx("composer-stop")}
+                aria-label={t.composer.stop}
+                data-tip={t.composer.stop}
+                onClick={stop}
+              >
+                <Square size={12} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                className={cx("composer-send")}
+                aria-label={t.composer.send}
+                disabled={
+                  busy || !!uploading || !(value.trim() || attachments.length)
+                }
+                onClick={send}
+              >
+                {busy ? <Spinner size={15} /> : <ArrowUp size={18} />}
+              </button>
+            )}
+          </div>
         </div>
       </div>
+      {!!models?.writers.length && <ModelBar models={models} pick={choose} />}
     </div>
   );
 }
 
-type Choice = "model" | "image" | "searchService" | "searchModes";
 /** The picks a change makes, shown at once while it is saved. */
-export function chosen(m: Models, change: Pick<Partial<UserSettings>, Choice>): Models {
+export function chosen(m: Models, change: Partial<UserSettings>): Models {
+  const writer = m.writers.find(
+    (x) => x.id === (change.writer ?? m.chosen.writer),
+  );
+  const effort = change.effort ?? m.chosen.effort,
+    speed = change.speed ?? m.chosen.speed,
+    web = change.web ?? m.chosen.web;
   return {
     ...m,
-    chosen: change.model ?? m.chosen,
-    image: change.image ?? m.image,
-    search: change.searchService ?? m.search,
-    models: m.models.map((x) =>
-      change.searchModes?.[x.id] ? { ...x, search: change.searchModes[x.id] } : x,
-    ),
+    chosen: {
+      writer: writer?.id ?? m.chosen.writer,
+      ...(writer?.efforts.length
+        ? {
+            effort:
+              effort && writer.efforts.includes(effort)
+                ? effort
+                : writer.efforts[0],
+          }
+        : {}),
+      ...(writer && writer.speeds.length > 1
+        ? {
+            speed:
+              speed && writer.speeds.includes(speed) ? speed : writer.speeds[0],
+          }
+        : {}),
+      web,
+      search:
+        web === "off"
+          ? "off"
+          : web === "builtin"
+            ? writer?.builtinSearch
+              ? "builtin"
+              : "off"
+            : "service",
+      image: change.image ?? m.chosen.image,
+    },
   };
 }
-/** Who draws, who searches and who paints: their names beside the send button, and a
- * menu to pick each on its own by display name. */
-function ModelPicker({
-  models,
-  pick,
+
+/** One pick beside the composer: what is picked, and a menu of the rest. */
+function Pick({
+  label,
+  icon,
+  value,
+  off,
+  long,
+  children,
 }: {
-  models: Models;
-  pick: (change: Pick<Partial<UserSettings>, Choice>) => void;
+  label: string;
+  icon?: ReactNode;
+  value: string;
+  /** Whether what is wanted is not what will happen (a search the model lacks). */
+  off?: boolean;
+  /** Whether its name may be long, and so give way where room is short. */
+  long?: boolean;
+  children: (close: () => void) => ReactNode;
 }) {
-  const t = useT(),
-    w = t.composer;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useDismiss(open, () => setOpen(false), ref);
-  const chosen =
-    models.models.find((m) => m.id === models.chosen) ?? models.models[0];
-  const image = models.images.find((m) => m.id === models.image) ?? models.images[0];
-  const service = models.searches.find((s) => s.id === models.search);
-  const searchName = (mode: SearchMode) =>
-    mode === "builtin"
-      ? w.searchBuiltinBy(chosen.name)
-      : mode === "service" && service
-        ? service.name
-        : w.searchNone;
-  const summary = w.services(chosen.name, searchName(chosen.search), image?.name ?? "");
-  const mode = (search: SearchMode, searchService?: string) =>
-    pick({
-      searchModes: { [chosen.id]: search },
-      ...(searchService ? { searchService } : {}),
-    });
   return (
-    <div className={cx("model-picker")} ref={ref}>
+    <div className={cx("pick")} data-long={long || undefined} ref={ref}>
       <button
-        className={cx("model-button")}
-        aria-label={summary}
-        data-tip={open ? undefined : summary}
+        className={cx("pick-button")}
+        aria-label={`${label}: ${value}`}
+        data-tip={open ? undefined : label}
+        data-off={off || undefined}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <span>{chosen.name}</span>
-        <span className={cx("model-part")} data-off={chosen.search === "off" || undefined}>
-          <Globe size={12} />
-          <span>{searchName(chosen.search)}</span>
-        </span>
-        {image && (
-          <span className={cx("model-part")}>
-            <ImageIcon size={12} />
-            <span>{image.name}</span>
-          </span>
-        )}
-        <ChevronDown size={14} />
+        {icon}
+        <span>{value}</span>
       </button>
       {open && (
         <div className={cx("popover models-menu")} role="menu">
-          <p className={cx("models-head")}>{w.authorSection}</p>
-          {models.models.map((m) => (
-            <button
-              key={m.id}
-              role="menuitemradio"
-              aria-checked={m.id === chosen.id}
-              disabled={!m.ready}
-              onClick={() => pick({ model: m.id })}
-            >
-              <span>{m.name}</span>
-              {m.id === chosen.id && <Check size={15} />}
-            </button>
-          ))}
-          <p className={cx("models-head")}>{w.searchSection(chosen.name)}</p>
-          <button
-            role="menuitemradio"
-            aria-checked={chosen.search === "builtin"}
-            disabled={!chosen.builtinSearch}
-            onClick={() => mode("builtin")}
-          >
-            <span>{w.searchBuiltin}</span>
-            {chosen.search === "builtin" && <Check size={15} />}
-          </button>
-          {models.searches.length ? (
-            models.searches.map((s) => {
-              const on = chosen.search === "service" && models.search === s.id;
-              return (
-                <button
-                  key={s.id}
-                  role="menuitemradio"
-                  aria-checked={on}
-                  disabled={!s.ready}
-                  onClick={() => mode("service", s.id)}
-                >
-                  <span>{s.name}</span>
-                  {on && <Check size={15} />}
-                </button>
-              );
-            })
-          ) : (
-            <button role="menuitemradio" aria-checked={false} disabled>
-              <span>{w.searchServiceNone}</span>
-            </button>
-          )}
-          <button
-            role="menuitemradio"
-            aria-checked={chosen.search === "off"}
-            onClick={() => mode("off")}
-          >
-            <span>{w.searchOff}</span>
-            {chosen.search === "off" && <Check size={15} />}
-          </button>
-          <p className={cx("models-head")}>{w.imageSection}</p>
-          {models.images.map((m) => (
-            <button
-              key={m.id}
-              role="menuitemradio"
-              aria-checked={m.id === image?.id}
-              disabled={!m.ready}
-              onClick={() => pick({ image: m.id })}
-            >
-              <span>{m.name}</span>
-              {m.id === image?.id && <Check size={15} />}
-            </button>
-          ))}
+          <p className={cx("models-head")}>{label}</p>
+          {children(() => setOpen(false))}
         </div>
+      )}
+    </div>
+  );
+}
+/** One entry in a pick's menu. */
+function Option({
+  on,
+  disabled,
+  pick,
+  children,
+  note,
+}: {
+  on: boolean;
+  disabled?: boolean;
+  pick: () => void;
+  children: ReactNode;
+  note?: string;
+}) {
+  return (
+    <button
+      role="menuitemradio"
+      aria-checked={on}
+      disabled={disabled}
+      onClick={pick}
+    >
+      <span>
+        {children}
+        {note && <small>{note}</small>}
+      </span>
+      {on && <Check size={15} />}
+    </button>
+  );
+}
+
+/** The five picks a run is made with, each on its own: the drawing model, how hard it
+ * thinks, how fast it is served, how it searches the web and which model paints. Effort
+ * and speed show only where the model offers a choice. */
+export function ModelBar({
+  models,
+  pick,
+}: {
+  models: Models;
+  pick: (change: Partial<UserSettings>) => void;
+}) {
+  const t = useT(),
+    w = t.composer,
+    names = t.settings;
+  const c = models.chosen;
+  const writer =
+    models.writers.find((m) => m.id === c.writer) ?? models.writers[0];
+  const image = models.images.find((m) => m.id === c.image) ?? models.images[0];
+  const service = models.searches.find((s) => s.id === c.web);
+  if (!writer) return null;
+  const webName =
+    c.web === "builtin"
+      ? w.searchBuiltin
+      : service
+        ? service.name
+        : w.searchOff;
+  const providers = [...new Set(models.writers.map((m) => m.provider))];
+  const choose = (change: Partial<UserSettings>, close: () => void) => {
+    close();
+    pick(change);
+  };
+  return (
+    <div className={cx("model-bar")}>
+      <Pick label={w.authorSection} value={writer.name} long>
+        {(close) =>
+          providers.map((p) => (
+            <div key={p} className={cx("models-group")}>
+              {providers.length > 1 && <p className={cx("models-sub")}>{p}</p>}
+              {models.writers
+                .filter((m) => m.provider === p)
+                .map((m) => (
+                  <Option
+                    key={m.id}
+                    on={m.id === writer.id}
+                    disabled={!m.ready}
+                    note={m.ready ? m.description : w.modelUnconnected}
+                    pick={() => choose({ writer: m.id }, close)}
+                  >
+                    {m.name}
+                  </Option>
+                ))}
+            </div>
+          ))
+        }
+      </Pick>
+      {c.effort && writer.efforts.length > 1 && (
+        <Pick label={names.effort} value={names.efforts[c.effort]}>
+          {(close) =>
+            writer.efforts.map((e) => (
+              <Option
+                key={e}
+                on={e === c.effort}
+                pick={() => choose({ effort: e }, close)}
+              >
+                {names.efforts[e]}
+              </Option>
+            ))
+          }
+        </Pick>
+      )}
+      {c.speed && (
+        <Pick label={names.speed} icon={<Gauge size={13} />} value={names.speeds[c.speed]}>
+          {(close) =>
+            writer.speeds.map((s) => (
+              <Option
+                key={s}
+                on={s === c.speed}
+                note={names.speedHints[s]}
+                pick={() => choose({ speed: s }, close)}
+              >
+                {names.speeds[s]}
+              </Option>
+            ))
+          }
+        </Pick>
+      )}
+      <Pick
+        label={w.searchSection}
+        icon={<Globe size={13} />}
+        value={webName}
+        off={c.web !== "off" && c.search === "off"}
+        long
+      >
+        {(close) => (
+          <>
+            <Option
+              on={c.web === "off"}
+              pick={() => choose({ web: "off" }, close)}
+            >
+              {w.searchOff}
+            </Option>
+            <Option
+              on={c.web === "builtin"}
+              note={
+                writer.builtinSearch
+                  ? w.searchBuiltinBy(writer.name)
+                  : w.searchBuiltinNone(writer.name)
+              }
+              pick={() => choose({ web: "builtin" }, close)}
+            >
+              {w.searchBuiltin}
+            </Option>
+            {models.searches.map((s) => (
+              <Option
+                key={s.id}
+                on={c.web === s.id}
+                disabled={!s.ready}
+                pick={() => choose({ web: s.id }, close)}
+              >
+                {s.name}
+              </Option>
+            ))}
+          </>
+        )}
+      </Pick>
+      {image && (
+        <Pick
+          label={w.imageSection}
+          icon={<ImageIcon size={13} />}
+          value={image.name}
+          long
+        >
+          {(close) =>
+            models.images.map((m) => (
+              <Option
+                key={m.id}
+                on={m.id === image.id}
+                disabled={!m.ready}
+                note={m.ready ? m.description : w.modelUnconnected}
+                pick={() => choose({ image: m.id }, close)}
+              >
+                {m.name}
+              </Option>
+            ))
+          }
+        </Pick>
       )}
     </div>
   );

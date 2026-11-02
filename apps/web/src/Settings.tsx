@@ -29,10 +29,10 @@ import { useT, dictionaries } from "./i18n.tsx";
 import { AccountContext, useCan } from "./account.tsx";
 import { ago } from "./time.ts";
 import { Badge, Entry, Group, Head, Row } from "./SettingsParts.tsx";
-import { CatalogSection } from "./ModelSettings.tsx";
+import { ImageSection, SearchSection, WriterSection } from "./ModelSettings.tsx";
 
-/** The catalog part each model tab edits. */
-const sections = { author: "models", search: "searches", image: "images" } as const;
+/** The section each model tab shows. */
+const sections = { author: WriterSection, search: SearchSection, image: ImageSection } as const;
 /** Settings changed and not yet saved, which leaving the page would lose. */
 let unsaved = false;
 /** Whether the page may be left: always, unless settings are unsaved and the user would
@@ -160,21 +160,21 @@ export function Settings() {
             </Group>
           </section>
         )}
-        {(["author", "search", "image"] as const).map(
-          (k) =>
+        {(["author", "search", "image"] as const).map((k) => {
+          const Section = sections[k];
+          return (
             tab === k &&
             catalog && (
-              <CatalogSection
+              <Section
                 key={k}
-                part={sections[k]}
-                title={t.titles[k]}
                 catalog={catalog}
                 change={change}
                 editing={editing}
                 setEditing={setEditing}
               />
-            ),
-        )}
+            )
+          );
+        })}
         {tab === "accounts" && <Accounts />}
         {tab === "invites" && <Invites />}
         {tab === "roles" && <Roles />}

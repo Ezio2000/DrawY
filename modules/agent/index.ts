@@ -184,6 +184,8 @@ function spend(run: Run, usage: Item) {
   const u = (run.usage ??= { input: 0, cached: 0, output: 0, reasoning: 0 });
   u.input += usage.input_tokens ?? 0;
   u.cached += usage.input_tokens_details?.cached_tokens ?? 0;
+  const written = usage.input_tokens_details?.cache_write_tokens ?? 0;
+  if (written) u.cacheWrite = (u.cacheWrite ?? 0) + written;
   u.output += usage.output_tokens ?? 0;
   u.reasoning += usage.output_tokens_details?.reasoning_tokens ?? 0;
 }
@@ -737,10 +739,13 @@ export class Agent {
     run.services = {
       author: settings.authorName,
       model: settings.author.model,
+      effort: settings.author.effort,
+      speed: settings.author.speed,
       search: settings.search.mode,
       ...(settings.search.service ? { searchBy: settings.search.service.name } : {}),
       image: settings.imageName,
     };
+    run.prices = settings.prices;
     await tracer.within(run.id, () =>
       tracer
         .span(

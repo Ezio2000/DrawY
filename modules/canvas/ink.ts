@@ -1,12 +1,5 @@
 import type { Point } from "../contracts/index.ts";
 
-/** A stretch of drawing the pen follows, timed in ms from when the drawing begins. */
-export interface Mark {
-  start: number;
-  duration: number;
-  /** The pen's tip in client coordinates, part way through the stroke. */
-  tip: (progress: number) => Point | null;
-}
 interface Line {
   el: SVGGeometryElement;
   length: number;
@@ -120,37 +113,12 @@ export function plan(host: HTMLElement): Plan {
     ),
   };
 }
-function across(el: Element, kind: Sweep["kind"]) {
-  return (p: number) => {
-    const b = el.getBoundingClientRect();
-    if (!b.width && !b.height) return null;
-    return {
-      x: b.left + b.width * p,
-      y:
-        kind === "word"
-          ? b.top + b.height * 0.78
-          : b.top + b.height * (0.5 + 0.28 * Math.sin(p * Math.PI * 3)),
-    };
-  };
-}
-/** Follows a path from its start to its end. */
-export function along(el: SVGGeometryElement) {
-  const length = el.getTotalLength();
-  return (p: number) => {
-    const m = el.getScreenCTM();
-    if (!m) return null;
-    const q = el.getPointAtLength(p * length);
-    const r = new DOMPoint(q.x, q.y).matrixTransform(m);
-    return { x: r.x, y: r.y };
-  };
-}
 /** Puts a planned drawing on paper starting `start` ms from now, every duration scaled by
- * `pace`, and returns the marks for the pen to follow. */
-export function play(p: Plan, start: number, pace: number): Mark[] {
-  const marks: Mark[] = [];
+ * `pace`. */
+export function play(p: Plan, start: number, pace: number) {
   const at = (ms: number) => start + ms * pace,
     span = (ms: number) => Math.max(60, ms * pace);
-  // Whatever the plan cannot see stays hidden until the pen reaches this drawing.
+  // Whatever the plan cannot see stays hidden until this drawing's turn comes.
   p.host.animate([{ opacity: 0 }, { opacity: 1 }], {
     duration: 160,
     delay: start,
@@ -180,14 +148,10 @@ export function play(p: Plan, start: number, pace: number): Mark[] {
       ],
       { duration: span(p.time), delay: start, easing: ease, fill: "backwards" },
     );
-    marks.push({ start, duration: span(p.time), tip: across(p.host, "wash") });
-    return marks;
+    return;
   }
   let t = 0;
   for (const group of p.lines) {
-    const longest = group.reduce((a, b) =>
-      a.length * a.pixels > b.length * b.pixels ? a : b,
-    );
     const duration = Math.max(...group.map(line));
     for (const l of group) {
       const own = line(l),
@@ -216,11 +180,6 @@ export function play(p: Plan, start: number, pace: number): Mark[] {
           fill: "backwards",
         });
     }
-    marks.push({
-      start: at(t),
-      duration: span(duration),
-      tip: along(longest.el),
-    });
     t += duration;
   }
   let s = t * 0.55;
@@ -248,15 +207,8 @@ export function play(p: Plan, start: number, pace: number): Mark[] {
         fill: "backwards",
       },
     );
-    if (sweep.kind !== "wash" || sweep.el.getBoundingClientRect().width > 40)
-      marks.push({
-        start: at(s),
-        duration: span(duration),
-        tip: across(sweep.el, sweep.kind),
-      });
     s += gap;
   }
-  return marks;
 }
 
 /** A loose pencil outline for a module still being laid out: an oval around compact
