@@ -342,17 +342,21 @@ export function createApp(storage: Storage) {
     // Pictures named by address in detail pages and drawing code come along too: from a
     // file, a site-relative address would point at the reader's own disk.
     const files = new Map<string, Promise<string | undefined>>();
-    const address = /\/materials\/(files|thumbs)\/([\w.-]+)(?:\?size=(\d+))?/g;
+    // The whole address is replaced, its query (a size, a colour) with it.
+    const address = /\/materials\/(files|thumbs)\/([\w.-]+)(\?[^"'\s()<>`\\]*)?/g;
     const inline = async (text: string) => {
-      for (const [whole, route, id, size] of text.matchAll(address))
-        if (!files.has(whole))
+      for (const [whole, route, id, query = ""] of text.matchAll(address))
+        if (!files.has(whole)) {
+          // An address in HTML may carry its & as an entity.
+          const params = new URLSearchParams(query.slice(1).replaceAll("&amp;", "&"));
           files.set(
             whole,
             (route === "thumbs"
-              ? library.thumb(id, store.viewer, Number(size) || 256)
-              : library.file(id, store.viewer, 0)
+              ? library.thumb(id, store.viewer, Number(params.get("size")) || 256)
+              : library.file(id, store.viewer, 0, params.get("color") ?? undefined)
             ).then(dataUrl, () => undefined),
           );
+        }
       const found = new Map(
         await Promise.all([...files].map(async ([k, v]) => [k, await v] as const)),
       );

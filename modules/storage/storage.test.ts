@@ -846,3 +846,54 @@ describe("roles and shared models", () => {
     expect(ids(await shelf(alice.cookie, "mine"))).toEqual([mine.id]);
   });
 });
+describe("exported pages", () => {
+  it("carries detail pictures inside the file, inked in the colour their address asks for", async () => {
+    const { app } = createApp(db);
+    const r = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "exporter", password: "abcdef" }),
+    });
+    const cookie = r.headers.get("set-cookie")!.split(";")[0];
+    const store = db.scoped(((await r.json()) as { id: string }).id),
+      work = createWork(store, "export"),
+      content = fixture();
+    store.commit({ ...store.work(work.id), brief: content.brief }, 1, { kind: "edit" });
+    await writeWork(
+      store,
+      work.id,
+      {
+        baseRevision: 2,
+        drawings: Object.values(content.drawings),
+        scenes: Object.values(content.scenes),
+        interactions: Object.values(content.interactions),
+        details: [
+          ...Object.values(content.details),
+          {
+            id: "icons",
+            title: "icons",
+            html: `<img src="/materials/files/line-activity"><img src="/materials/files/line-activity?color=%23ff0000"><img src="/materials/files/line-activity?wait=0&amp;color=%2300aa00">`,
+          },
+        ],
+      },
+      { kind: "edit" },
+    );
+    const page = await (
+      await app.request(`/api/works/${work.id}/scenes/root/page`, { headers: { cookie } })
+    ).text();
+    const data = JSON.parse(page.match(/window\.drawyData=(\{.*?\});\n/)![1]);
+    const sources = [...(data.work.details.icons.html as string).matchAll(/src="([^"]+)"/g)].map(
+      (m) => m[1],
+    );
+    expect(sources).toHaveLength(3);
+    // Each is a whole SVG with nothing after it, inked as its address asked.
+    const svgs = sources.map((s) => {
+      expect(s).toMatch(/^data:image\/svg\+xml;charset=utf-8,/);
+      return decodeURIComponent(s.slice(s.indexOf(",") + 1));
+    });
+    for (const svg of svgs) expect(svg.trimEnd()).toMatch(/<\/svg>$/);
+    expect(svgs[0]).toContain("currentColor");
+    expect(svgs[1]).toContain("#ff0000");
+    expect(svgs[2]).toContain("#00aa00");
+  });
+});
