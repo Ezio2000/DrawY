@@ -1,4 +1,9 @@
-import { serviceTiers, speedFor, type Role } from "../contracts/index.ts";
+import {
+  serviceTiers,
+  speedFor,
+  type Role,
+  type Citation,
+} from "../contracts/index.ts";
 export type Item = Record<string, any>;
 export function headers(role: {
   credential: string;
@@ -88,4 +93,23 @@ export function textOf(items: Item[]) {
     .flatMap((i) => i.content || [])
     .map((c) => c.text || "")
     .join("");
+}
+
+/** Citation offsets follow the same concatenation as textOf. */
+export function citationsOf(items: Item[]): Citation[] {
+  const citations: Citation[] = [];
+  let offset = 0;
+  for (const item of items.filter((i) => i.type === "message"))
+    for (const part of item.content || []) {
+      for (const a of part.annotations || [])
+        if (a.type === "url_citation")
+          citations.push({
+            start: offset + a.start_index,
+            end: offset + a.end_index,
+            url: a.url,
+            title: a.title,
+          });
+      offset += (part.text || "").length;
+    }
+  return citations;
 }

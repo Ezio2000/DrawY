@@ -144,3 +144,16 @@ it("keeps requests that extend one another on their cached prefix", async () => 
   expect((oauth.headers as Record<string, string>).session_id).toBe("work-1");
   expect((api.headers as Record<string, string>).session_id).toBeUndefined();
 });
+
+it("preserves hosted search output and citation offsets for continuation", async () => {
+  const search = { type: "web_search_call", id: "ws", status: "completed", action: { type: "search", query: "OpenAI" } };
+  const message = { type: "message", content: [{ type: "output_text", text: "A[1]", annotations: [{ type: "url_citation", start_index: 1, end_index: 4, url: "https://openai.com/", title: "OpenAI" }] }] };
+  const items = [search, message];
+  const events = [...items.map(item => ({ type: "response.output_item.done", item })), { type: "response.completed", response: { usage: {} } }];
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(events.map(e => "data: " + JSON.stringify(e) + "\n\n").join(""))));
+  const result = await generate({ ...role, channel: "api" }, "", [], [{ type: "web_search" }], new AbortController().signal);
+  expect(result.items).toEqual(items);
+  expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).tools).toEqual([{ type: "web_search" }]);
+  const { citationsOf } = await import("./index.ts");
+  expect(citationsOf([{ type: "message", content: [{ text: "前言" }] }, ...result.items])).toEqual([{ start: 3, end: 6, url: "https://openai.com/", title: "OpenAI" }]);
+});

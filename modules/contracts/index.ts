@@ -453,7 +453,14 @@ export interface Sketch {
   /** The drawing it uses, once that much of the module has streamed. */
   drawingId?: string;
 }
+export interface Citation {
+  start: number;
+  end: number;
+  url: string;
+  title: string;
+}
 export type ToolActivity =
+  | { name: "web_search"; queries: string[]; urls: string[] }
   | { name: "read_work"; revision?: number }
   | {
       name: "set_brief";
@@ -502,6 +509,7 @@ export type Step =
       kind: "message";
       role: "user" | "assistant";
       text: string;
+      citations?: Citation[];
       /** Pictures attached to the message, as material ids. */
       materials?: string[];
       /** The author's questions, waiting for the user's answer. */

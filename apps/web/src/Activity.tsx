@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { CitedText } from "./CitedText.tsx";
 import { Questions } from "./Questions.tsx";
 import { X } from "lucide-react";
 import { cx } from "./cx.ts";
@@ -32,6 +33,8 @@ function thought(text: string) {
 function doing(step: ToolStep, t: Words) {
   const w = t.now;
   switch (step.name) {
+    case "web_search":
+      return [w.searching, step.queries.join(w.list) || step.urls.join(w.list)].filter(Boolean).join(" · ");
     case "read_work":
       return w.reading;
     case "set_brief":
@@ -434,7 +437,7 @@ function Trace({
   const t = useT(),
     locale = useLocale();
   if (step.kind === "message")
-    return <li className={cx("trace-note")}>{step.text}</li>;
+    return <li className={cx("trace-note")}><CitedText text={step.text} citations={step.citations} /></li>;
   if (step.kind === "thinking") {
     const [title, body] = thought(step.text);
     return (

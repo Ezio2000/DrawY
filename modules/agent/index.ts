@@ -30,7 +30,7 @@ import {
 import { develop, type Development } from "../images/index.ts";
 import { observe, requireObserved, Unavailable } from "../observation/index.ts";
 import { AUTHOR, catalogue } from "./prompts.ts";
-import { generate, textOf, type Item } from "../models/index.ts";
+import { generate, textOf, citationsOf, type Item } from "../models/index.ts";
 import {
   tools,
   askSchema,
@@ -41,6 +41,16 @@ import {
 import { partialJson } from "./partial.ts";
 import { tracer } from "../trace/index.ts";
 import type { MessageLocale } from "../contracts/messages.ts";
+const toolsFor = (channel: Role["channel"]) =>
+  channel === "api" ? [...tools, { type: "web_search" }] : tools;
+function searchActivity(item: Item): ToolActivity & { name: "web_search" } {
+  const action = item.action || {};
+  return {
+    name: "web_search",
+    queries: action.queries || (action.query ? [action.query] : []),
+    urls: action.url ? [action.url] : [],
+  };
+}
 type ToolStep = Extract<Step, { kind: "tool" }>;
 const pictures = (shots: { name: string; url: string }[]) =>
   shots.map(({ name, url }) => ({ name, url }));
@@ -588,7 +598,9 @@ export class Agent {
               execution.set({
                 instructions,
                 context: ctx.input,
-                tools: tools.map((t) => t.name),
+                tools: toolsFor(settings.author.channel).map((t) =>
+                  "name" in t ? t.name : t.type,
+                ),
               });
               await this.loop(
                 store,
@@ -647,6 +659,7 @@ export class Agent {
     flushing: (f: ReturnType<typeof setTimeout> | undefined) => void,
   ) {
     const settings = store.settings();
+    const availableTools = toolsFor(settings.author.channel);
     // Tool arguments stream in; each flush shows what has been laid out so far.
     const drafts = new Map<
       string,
@@ -693,7 +706,7 @@ export class Agent {
                 speedFor(settings.author.channel, settings.author.speed)
               ],
             instructionsChars: instructions.length,
-            tools: tools.length,
+            tools: availableTools.length,
           },
         },
         async (span) => {
@@ -707,7 +720,7 @@ export class Agent {
                 settings.author,
                 instructions,
                 ctx.input,
-                tools,
+                availableTools,
                 abort.signal,
                 (event) => {
                   if (
@@ -746,6 +759,15 @@ export class Agent {
                         said = { kind: "message", role: "assistant", text: "" };
                         run.steps.push(said);
                       }
+                      if (type === "web_search_call") {
+                        run.steps.push({
+                          kind: "tool",
+                          id: item,
+                          status: "running",
+                          ...searchActivity(event.item),
+                        });
+                        this.emit(store, run);
+                      }
                       if (type === "function_call" && !silent.has(name)) {
                         const step: ToolStep = {
                           kind: "tool",
@@ -767,8 +789,24 @@ export class Agent {
                       }
                       break;
                     }
-                    case "response.output_item.done":
+                    case "response.output_item.done": {
                       drafts.delete(event.item.id);
+                      if (event.item.type === "web_search_call") {
+                        const step = run.steps.find(
+                          (s): s is ToolStep =>
+                            s.kind === "tool" && s.id === event.item.id,
+                        );
+                        if (step)
+                          Object.assign(step, searchActivity(event.item), {
+                            status:
+                              event.item.status === "failed"
+                                ? "failed"
+                                : "done",
+                          });
+                        this.emit(store, run);
+                      }
+                      break;
+                    }
                   }
                 },
                 undefined,
@@ -810,11 +848,13 @@ export class Agent {
           items: ctx.input.length,
         };
       const text = textOf(result.items);
+      const citations = citationsOf(result.items);
       if (said) {
         said.text = text;
+        if (citations.length) said.citations = citations;
         if (!text) run.steps.splice(run.steps.indexOf(said), 1);
       } else if (text)
-        run.steps.push({ kind: "message", role: "assistant", text });
+        run.steps.push({ kind: "message", role: "assistant", text, ...(citations.length ? { citations } : {}) });
       this.emit(store, run);
       const calls = result.items.filter((i) => i.type === "function_call");
       if (!calls.length) {
