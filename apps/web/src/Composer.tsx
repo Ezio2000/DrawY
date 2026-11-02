@@ -10,7 +10,7 @@ import {
   Shapes,
   PencilLine,
 } from "lucide-react";
-import type { UserSettings } from "../../../modules/contracts/index.ts";
+import { effortFor, type SettingsChange } from "../../../modules/contracts/index.ts";
 import { Spinner, useLocale } from "@drawy/ui";
 import type { StyleMaterial } from "@drawy/materials/schema";
 import { api, type Models } from "./api.ts";
@@ -86,7 +86,7 @@ export function Composer({
   /** What draws, searches and paints, and picking each, under the box; absent while the
    * author works. */
   models?: Models;
-  choose: (change: Partial<UserSettings>) => void;
+  choose: (change: SettingsChange) => void;
 }) {
   const t = useT();
   const picker = useRef<HTMLInputElement>(null);
@@ -215,12 +215,14 @@ export function Composer({
 }
 
 /** The picks a change makes, shown at once while it is saved. */
-export function chosen(m: Models, change: Partial<UserSettings>): Models {
+export function chosen(m: Models, change: SettingsChange): Models {
   const writer = m.writers.find(
     (x) => x.id === (change.writer ?? m.chosen.writer),
   );
-  const effort = change.effort ?? m.chosen.effort,
-    speed = change.speed ?? m.chosen.speed,
+  // A model switched to comes with the effort and speed last picked for it.
+  const switched = !!writer && writer.id !== m.chosen.writer;
+  const effort = change.effort ?? (switched ? writer.effort : m.chosen.effort),
+    speed = change.speed ?? (switched ? writer.speed : m.chosen.speed),
     web = change.web ?? m.chosen.web;
   return {
     ...m,
@@ -228,16 +230,13 @@ export function chosen(m: Models, change: Partial<UserSettings>): Models {
       writer: writer?.id ?? m.chosen.writer,
       ...(writer?.efforts.length
         ? {
-            effort:
-              effort && writer.efforts.includes(effort)
-                ? effort
-                : writer.efforts[0],
+            effort: effortFor(effort ?? writer.effort, writer.efforts) ?? writer.effort,
           }
         : {}),
       ...(writer && writer.speeds.length > 1
         ? {
             speed:
-              speed && writer.speeds.includes(speed) ? speed : writer.speeds[0],
+              speed && writer.speeds.includes(speed) ? speed : writer.speed,
           }
         : {}),
       web,
@@ -342,7 +341,7 @@ export function ModelBar({
   pick,
 }: {
   models: Models;
-  pick: (change: Partial<UserSettings>) => void;
+  pick: (change: SettingsChange) => void;
 }) {
   const t = useT(),
     w = t.composer,
@@ -360,7 +359,7 @@ export function ModelBar({
         ? service.name
         : w.searchOff;
   const providers = [...new Set(models.writers.map((m) => m.provider))];
-  const choose = (change: Partial<UserSettings>, close: () => void) => {
+  const choose = (change: SettingsChange, close: () => void) => {
     close();
     pick(change);
   };

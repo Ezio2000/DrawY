@@ -6,6 +6,7 @@ import {
   defaultWriter,
   emptySettings,
   menuFor,
+  pickWith,
   modelCatalogSchema,
   reconnect,
   endpointFor,
@@ -115,23 +116,23 @@ it("refuses a catalog whose defaults or ids do not hold", () => {
 
 it("picks each of the five on its own, settled against what the model offers", () => {
   const c = catalog();
-  // The defaults: the default model at its own effort and speed, its own search.
+  // The initial user preset is independent of the administrator's model defaults.
   expect(settingsFor(c, emptySettings())).toMatchObject({
-    author: { model: "gpt-6.1-terra", effort: "medium", speed: "default", credential: "k" },
+    author: { model: "gpt-6.1-terra", effort: "high", speed: "fast", credential: "k" },
     authorName: "gpt-6.1-terra[api]",
     search: { mode: "builtin" },
   });
   // A pick of each.
-  const mine = { ...emptySettings(), writer: "terra", effort: "max" as const, speed: "fast" as const, web: "s" };
+  const mine = pickWith(c, emptySettings(), { writer: "terra", effort: "max", speed: "fast", web: "s" });
   expect(settingsFor(c, mine)).toMatchObject({
     author: { effort: "max", speed: "fast" },
     search: { mode: "service", service: { id: "s" } },
   });
-  // The same picks on a model that offers less: the nearest effort, its own speed, and its
-  // missing search means none, while the wanted search is kept for the next model.
+  // Another model keeps its own tuning; an unavailable search means none, while the
+  // wanted search is kept for the next model.
   const opus = { ...mine, writer: "opus", web: "builtin" };
   expect(settingsFor(c, opus)).toMatchObject({
-    author: { protocol: "chat", effort: "xhigh", speed: "default", provider: "anthropic" },
+    author: { protocol: "chat", effort: "medium", speed: "default", provider: "anthropic" },
     search: { mode: "off" },
   });
   expect(menuFor(c, opus).chosen).toMatchObject({ writer: "opus", web: "builtin", search: "off" });
@@ -151,9 +152,54 @@ it("picks each of the five on its own, settled against what the model offers", (
   expect(searchReady({ provider: "tavily", credential: "" })).toBe(false);
 });
 
+it("keeps each drawing model's effort and speed for itself", () => {
+  const c = catalog();
+  let own = pickWith(c, emptySettings(), { writer: "opus" });
+  own = pickWith(c, own, { effort: "high" });
+  own = pickWith(c, own, { writer: "terra" });
+  own = pickWith(c, own, { effort: "max", speed: "fast" });
+  // Picking terra's effort leaves opus at the one picked for it.
+  own = pickWith(c, own, { writer: "opus" });
+  expect(settingsFor(c, own).author).toMatchObject({ model: "claude-opus-5-5", effort: "high" });
+  const menu = menuFor(c, own);
+  expect(menu.chosen).toMatchObject({ writer: "opus", effort: "high" });
+  expect(menu.writers.find((m) => m.id === "terra")).toMatchObject({ effort: "max", speed: "fast" });
+  own = pickWith(c, own, { writer: "terra" });
+  expect(settingsFor(c, own).author).toMatchObject({ effort: "max", speed: "fast" });
+});
+
+it("uses model presets for new users and keeps both fields when only one is changed", () => {
+  const c = defaultCatalog();
+  const models = [
+    ["gpt-6.1-terra", "high", "fast"],
+    ["anthropic/claude-sonnet-5.5", "medium", "default"],
+    ["claude-opus-5-5", "medium", "default"],
+    ["deepseek-flash", "high", "default"],
+  ] as const;
+  c.writers[0].models = models.map(([model], i) => ({
+    ...defaultWriter(), id: `custom-${i}`, model, effort: "low", speed: "default",
+  }));
+  c.defaults.writer = "custom-0";
+  for (const [i, [_, effort, speed]] of models.entries())
+    expect(settingsFor(c, { ...emptySettings(), writer: `custom-${i}` }).author).toMatchObject({ effort, speed });
+
+  let own = pickWith(c, emptySettings(), { speed: "flex" });
+  expect(own.tunings["custom-0"]).toEqual({ effort: "high", speed: "flex" });
+  own = pickWith(c, own, { writer: "custom-1", effort: "max" });
+  own = pickWith(c, own, { writer: "custom-0" });
+  expect(settingsFor(c, own).author).toMatchObject({ effort: "high", speed: "flex" });
+
+  own = pickWith(c, own, { writer: "custom-2", effort: "low" });
+  own = pickWith(c, own, { writer: "custom-1", speed: "fast" });
+  own = pickWith(c, own, { writer: "custom-2" });
+  expect(settingsFor(c, own).author).toMatchObject({ effort: "low", speed: "default" });
+  expect(own).not.toHaveProperty("effort");
+  expect(own).not.toHaveProperty("speed");
+});
+
 it("prices a run at the speed it picked, the way it searched and the pictures it painted", () => {
   const c = catalog();
-  const fast = settingsFor(c, { ...emptySettings(), speed: "fast", web: "s" });
+  const fast = settingsFor(c, pickWith(c, emptySettings(), { speed: "fast", web: "s" }));
   expect(fast.prices).toEqual({
     author: { input: 4, cached: 1, cacheWrite: 0, output: 20 },
     search: 0.002,
