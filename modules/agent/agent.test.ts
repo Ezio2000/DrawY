@@ -611,6 +611,46 @@ it("gives the turns that decide the work the most thought and the others the con
     rmSync(dir, { recursive: true });
   }
 });
+it("gives a Claude model's deciding turns the most effort it accepts, as a change in the conversation", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "claude", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const catalog = db.models();
+    Object.assign(catalog.models[0], {
+      protocol: "anthropic",
+      baseUrl: "https://api.anthropic.com",
+      model: "claude-sonnet-5-5",
+      effort: "high",
+      efforts: ["low", "medium", "high", "xhigh"],
+    });
+    db.saveModels(catalog);
+    const seen: any[][] = [];
+    script(
+      [
+        ["write_work", { baseRevision: 1, title: "edited" }],
+        ["view_canvas", {}],
+        ["finish", { message: "done" }],
+      ],
+      seen,
+    );
+    const run = await new Agent(() => {}).start(store, work.id, "root", "画");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    const effort = (input: any[]) =>
+      input.findLast((i) => i.type === "configuration_update")?.reasoning.effort;
+    expect(seen.map(effort)).toEqual(["xhigh", "high", "xhigh"]);
+    expect(vi.mocked(generate).mock.lastCall![0]).toMatchObject({ protocol: "anthropic", effort: "high" });
+    // The request's own effort is left alone.
+    expect(vi.mocked(generate).mock.lastCall![9]).toBeUndefined();
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
 it("settles a brief only on the user's own words, then applies its style and shows the cast", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
@@ -1253,4 +1293,5 @@ it("steers the service's search like the provider's own, except over Chat Comple
   expect(steering(run(search(2)), listed)).toEqual({});
   expect(steering(run(search(SEARCH_LIMIT)), listed)).toEqual({ tool_choice: { type: "allowed_tools", mode: "auto", tools: [{ type: "function", name: "write_work" }] } });
   expect(steering(run(search(SEARCH_LIMIT)), listed, "chat")).toEqual({});
+  expect(steering(run(search(SEARCH_LIMIT)), listed, "anthropic")).toEqual({});
 });

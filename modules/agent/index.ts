@@ -35,6 +35,7 @@ import { develop, type Development } from "../images/index.ts";
 import { observe, requireObserved, Unavailable } from "../observation/index.ts";
 import { AUTHOR, catalogue } from "./prompts.ts";
 import { generate, textOf, citationsOf, type Item } from "../models/index.ts";
+import { perTurnEffort } from "../models/anthropic.ts";
 import {
   tools,
   askSchema,
@@ -133,9 +134,10 @@ export function steering(
 ): Item {
   const hosted = tools.some((t) => t.type === "web_search"),
     service = tools.some((t) => t.type === "function" && searching.has(t.name));
-  // Chat Completions has no way to narrow the tools without changing them; the search
-  // service's own calls are refused past the budget instead.
-  if ((!hosted && !service) || protocol === "chat") return {};
+  // Chat Completions and Messages have no way to narrow the tools without changing them;
+  // the search service's own calls are refused past the budget instead, and Claude's own
+  // search is held to a number per request in its tool.
+  if ((!hosted && !service) || protocol !== "responses") return {};
   const left = searchesLeft(run);
   if (left === Infinity) return {};
   // max_tool_calls counts only the provider's own tools; the service's calls are counted here.
@@ -370,13 +372,14 @@ function ownChanges(store: UserStore, work: Work) {
 /** Characters of JSON, a third of a token each. Pictures count as a fixed size and
  * encrypted reasoning not at all: both are base64 that reads as far more text than the
  * tokens they cost, so counting them as characters started compaction at under half the
- * real limit. */
+ * real limit. The blocks kept for Claude repeat what their item says, with signed
+ * thinking, and are not counted either. */
 function estimate(items: Item[]): number {
   return Math.ceil(
     JSON.stringify(items, (key, value) =>
       key === "image_url"
         ? " ".repeat(6400)
-        : key === "encrypted_content"
+        : key === "encrypted_content" || key === "anthropic"
           ? ""
           : value,
     ).length / 3,
@@ -486,7 +489,7 @@ async function compact(
  * the turns that carry decisions out keep the configured effort. A configuration_update
  * item changes the effort mid-conversation and lasts until the next one, while the
  * request's own effort stays as configured so the cached prefix holds. GPT-6 models take
- * these items. */
+ * these items, and so do the newer Claude models, as an effort-only system message. */
 function deliberate(input: Item[], role: Role, deciding: boolean): Effort {
   // Chat Completions asks for its effort on each request, which leaves the cached prefix
   // alone: the deciding turns ask for the most the model accepts.
@@ -494,8 +497,15 @@ function deliberate(input: Item[], role: Role, deciding: boolean): Effort {
     return deciding && role.efforts.length
       ? role.efforts.reduce((a, b) => (efforts.indexOf(b) > efforts.indexOf(a) ? b : a))
       : role.effort;
-  if (!/^gpt-(?:[6-9]|\d{2,})/.test(role.model)) return role.effort;
-  const effort = deciding ? "max" : role.effort;
+  // Claude models that take an effort change as a message ask for the most they accept;
+  // the others keep the configured effort, since changing it would restart the cache.
+  const claude = role.protocol === "anthropic";
+  if (claude ? !perTurnEffort(role.model) : !/^gpt-(?:[6-9]|\d{2,})/.test(role.model))
+    return role.effort;
+  const top = role.efforts.length
+    ? role.efforts.reduce((a, b) => (efforts.indexOf(b) > efforts.indexOf(a) ? b : a))
+    : role.effort;
+  const effort = deciding ? (claude ? top : "max") : role.effort;
   const current =
     input.findLast((i) => i.type === "configuration_update")?.reasoning
       ?.effort ?? role.effort;

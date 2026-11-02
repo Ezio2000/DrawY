@@ -22,6 +22,7 @@ import {
   efforts,
   effortFor,
   protocols,
+  protocolEndpoints,
   searchModes,
   searchProviders,
   searchEndpoints,
@@ -240,6 +241,14 @@ export function Settings() {
         if (m.id !== id) return m;
         const next = { ...m, ...patch };
         if (next.channel === "oauth") next.protocol = "responses";
+        // A model moved to another format follows it to that provider, unless its address
+        // was set by hand.
+        if (
+          next.protocol !== m.protocol &&
+          Object.values(protocolEndpoints).includes(m.baseUrl) &&
+          !patch.baseUrl
+        )
+          next.baseUrl = protocolEndpoints[next.protocol];
         if (!canSearchBuiltin({ ...next, builtinSearch: true })) next.builtinSearch = false;
         if (next.search === "builtin" && !next.builtinSearch) next.search = "off";
         next.effort = effortFor(next.effort, next.efforts) ?? next.effort;
@@ -539,7 +548,7 @@ export function Settings() {
                         ))}
                       </Segmented>
                     </Row>
-{/* Speeds are the Responses API's service tiers; Chat Completions has none. */}
+{/* Speeds are the Responses API's service tiers; the other formats have none. */}
                     {m.protocol === "responses" && (
                                         <Row label={w.speed} hint={w.speedHints[m.speed]}>
                       <Segmented label={w.speed}>

@@ -272,9 +272,10 @@ export const speedFor = (channel: Role["channel"], speed: Speed): Speed =>
  * search service the app calls for it, or not at all. A run uses exactly one. */
 export const searchModes = ["builtin", "service", "off"] as const;
 export type SearchMode = (typeof searchModes)[number];
-/** The request format a drawing model speaks: the OpenAI Responses API, or Chat
- * Completions, which most other providers (DeepSeek, Qwen, Kimi…) offer. */
-export const protocols = ["responses", "chat"] as const;
+/** The request format a drawing model speaks: the OpenAI Responses API, Chat
+ * Completions, which most other providers (DeepSeek, Qwen, Kimi…) offer, or the Anthropic
+ * Messages API, which Claude models speak. */
+export const protocols = ["responses", "chat", "anthropic"] as const;
 export type Protocol = (typeof protocols)[number];
 /** How hard a model thinks. Providers name their own levels; each model lists the ones it
  * accepts, and a run asks for the nearest. */
@@ -312,9 +313,16 @@ export interface Role {
   /** The most tokens one of its answers may hold; providers reject a larger ask. */
   maxOutput: number;
 }
-/** Only the Responses API with an API key offers the provider's own web search. */
+/** Only the Responses and Messages APIs with an API key offer the provider's own web
+ * search. */
 export const canSearchBuiltin = (r: Pick<Role, "channel" | "protocol" | "builtinSearch">) =>
-  r.builtinSearch && r.channel === "api" && r.protocol === "responses";
+  r.builtinSearch && r.channel === "api" && r.protocol !== "chat";
+/** Where each format's own provider serves it, for a model newly switched to it. */
+export const protocolEndpoints: Record<Protocol, string> = {
+  responses: "https://api.openai.com/v1",
+  chat: "https://api.openai.com/v1",
+  anthropic: "https://api.anthropic.com",
+};
 /** A picture model's connection. */
 export interface ImageRole {
   channel: "api" | "oauth";

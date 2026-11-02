@@ -6,6 +6,7 @@ import {
   type Effort,
   type Citation,
 } from "../contracts/index.ts";
+import { messages } from "./anthropic.ts";
 export type Item = Record<string, any>;
 export function headers(role: {
   credential: string;
@@ -47,8 +48,9 @@ export async function generate(
   budget = Math.min(budget, role.maxOutput);
   if (role.protocol === "chat")
     return chat(role, instructions, input, tools, signal, onEvent, budget, effort);
-  // Reasoning a Chat Completions model wrote earlier in the conversation is its own.
-  input = input.filter((i) => !(i.type === "reasoning" && "reasoning_content" in i));
+  if (role.protocol === "anthropic")
+    return messages(role, instructions, input, tools, signal, onEvent, budget);
+  input = forResponses(input);
   const r = await fetch(role.baseUrl.replace(/\/$/, "") + "/responses", {
     method: "POST",
     headers: {
@@ -101,6 +103,22 @@ export async function generate(
   }
   if (!complete) throw Error("模型连接在完成前中断");
   return { items, usage, response };
+}
+/** The conversation as the Responses API reads it. Reasoning a Chat Completions or Claude
+ * model wrote earlier is its own, and so are the searches Claude ran; the words and calls
+ * of a Claude turn stay, without the blocks kept for Claude. */
+export function forResponses(input: Item[]): Item[] {
+  return input
+    .filter(
+      (i) =>
+        !(i.type === "reasoning" && ("reasoning_content" in i || "anthropic" in i)) &&
+        !(i.anthropic && typeof i.type === "string" && i.type.endsWith("_call") && i.type !== "function_call"),
+    )
+    .map((i) => {
+      if (!("anthropic" in i)) return i;
+      const { anthropic: _, ...rest } = i;
+      return rest;
+    });
 }
 export function textOf(items: Item[]) {
   return items
