@@ -301,6 +301,8 @@ export interface Role {
   /** Optional OpenRouter provider slug; when set, only this provider may serve requests. */
   provider?: string;
   effort: Effort;
+  /** Use the configured effort on deciding turns instead of automatically raising it. */
+  decisionUsesSetting: boolean;
   /** The reasoning levels it accepts; none means it is not asked for one. */
   efforts: Effort[];
   speed: Speed;
@@ -370,6 +372,7 @@ export const defaultRole = (): Role => ({
   credential: "",
   model: "gpt-6-astra",
   effort: "medium",
+  decisionUsesSetting: false,
   efforts: ["low", "medium", "high", "xhigh"],
   speed: "default",
   vision: true,
@@ -400,6 +403,7 @@ const roleObject = z.object({
     model: z.string().min(1),
     provider: z.string().trim().min(1).optional(),
     effort: z.enum(efforts),
+    decisionUsesSetting: z.boolean().default(false),
     efforts: z.array(z.enum(efforts)),
     speed: z.enum(["flex", "default", "fast", "ultrafast"]),
     vision: z.boolean(),

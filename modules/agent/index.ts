@@ -507,6 +507,8 @@ async function compact(
  * request's own effort stays as configured so the cached prefix holds. GPT-6 models take
  * these items, and so do the newer Claude models, as an effort-only system message. */
 function deliberate(input: Item[], role: Role, deciding: boolean): Effort {
+  // Keeping the configured level also restores it when earlier history raised the effort.
+  deciding &&= !role.decisionUsesSetting;
   // Chat Completions asks for its effort on each request, which leaves the cached prefix
   // alone: the deciding turns ask for the most the model accepts.
   if (role.protocol === "chat")

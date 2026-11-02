@@ -558,6 +558,12 @@ export function Settings() {
                         ))}
                       </Segmented>
                     </Row>
+                    <Row label={w.decisionUsesSetting} hint={w.decisionUsesSettingHint}>
+                      <Switch
+                        checked={m.decisionUsesSetting}
+                        onChange={(on) => model(m.id, { decisionUsesSetting: on })}
+                      />
+                    </Row>
 {/* Speeds are the Responses API's service tiers; the other formats have none. */}
                     {m.protocol === "responses" && (
                                         <Row label={w.speed} hint={w.speedHints[m.speed]}>
