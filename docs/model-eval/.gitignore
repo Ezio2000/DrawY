@@ -1,0 +1,4 @@
+# Raw frames and full traces stay local; the report keeps WebP picks under img/.
+runs/**/frame-*.png
+runs/**/final.png
+runs/**/trace.json

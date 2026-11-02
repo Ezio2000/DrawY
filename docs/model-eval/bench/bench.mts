@@ -16,6 +16,7 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { chromium, type Browser } from "playwright";
 import { costOf } from "../../../modules/contracts/index.ts";
 import type { ModelCatalog, WriterProvider } from "../../../modules/contracts/index.ts";
 import { PROMPTS } from "./prompts.mts";
@@ -28,6 +29,9 @@ const { values: opt } = parseArgs({
     out: { type: "string", default: "docs/model-eval/runs" },
     parallel: { type: "string", default: "4" },
     patch: { type: "string" },
+    // Watch each run in a browser as its user and keep what they saw every 12 seconds.
+    watch: { type: "boolean", default: true },
+    "no-watch": { type: "boolean", default: false },
     "dry-run": { type: "boolean", default: false },
   },
 });
@@ -177,6 +181,50 @@ async function account(name: string, invite?: string) {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const ANSWER = "你来决定，按你觉得最合适的方式画就行。";
 
+/* What the user sees: the work page, opened as its owner before the run starts, so the
+ * studio opens and the canvas sketches as the run streams in. A frame every 12 seconds,
+ * then the finished page once the last animation has settled. */
+let browser: Promise<Browser> | undefined;
+async function watch(user: Client, workId: string, dir: string) {
+  browser ??= chromium.launch({ headless: true, args: ["--no-sandbox"] });
+  const context = await (await browser).newContext({
+    viewport: { width: 1440, height: 900 },
+    locale: "zh-CN",
+  });
+  const [name, ...value] = user.cookie.split("=");
+  await context.addCookies([{ name, value: value.join("="), url: BASE }]);
+  const page = await context.newPage();
+  // The event stream stays open, so the page never goes network-idle.
+  await page.goto(`${BASE}/a/${workId}`, { waitUntil: "load" });
+  await sleep(3000);
+  await page.screenshot({ path: join(dir, "frame-0000.png") });
+  const began = Date.now();
+  const frames: { at: number; file: string }[] = [{ at: 0, file: "frame-0000.png" }];
+  let stop = false;
+  const taking = (async () => {
+    while (!stop) {
+      await sleep(12000);
+      if (stop) break;
+      const at = Math.round((Date.now() - began) / 1000);
+      const file = `frame-${String(at).padStart(4, "0")}.png`;
+      await page.screenshot({ path: join(dir, file) }).then(
+        () => frames.push({ at, file }),
+        () => {},
+      );
+    }
+  })();
+  return {
+    frames,
+    async done() {
+      stop = true;
+      await taking;
+      await sleep(5000);
+      await page.screenshot({ path: join(dir, "final.png") }).catch(() => {});
+      await context.close();
+    },
+  };
+}
+
 interface Job {
   model: string;
   prompt: string;
@@ -198,6 +246,10 @@ async function runJob(admin: Client, job: Job, out: string) {
   const menu = await user.call("GET", "/api/models");
   const prompt = PROMPTS[job.prompt];
   const work = await user.call("POST", "/api/works", { title: prompt.title });
+  const watcher = opt.watch && !opt["no-watch"] ? await watch(user, work.id, dir).catch((e) => {
+    console.error(job, "watch failed", String(e));
+    return undefined;
+  }) : undefined;
   const began = Date.now();
   let run = await user.call("POST", `/api/works/${work.id}/runs`, { prompt: prompt.text, sceneId: "root" });
   const answers: { questions: unknown; answer: string; at: number }[] = [];
@@ -217,6 +269,7 @@ async function runJob(admin: Client, job: Job, out: string) {
     if (!["running", "viewing"].includes(run.status)) break;
   }
   const wall = Date.now() - began;
+  await watcher?.done();
   const final = await user.call("GET", `/api/works/${work.id}`);
   const scenes = Object.values(final.scenes as Record<string, { id: string; modules: unknown[] }>).filter(
     (s) => s.modules.length,
@@ -266,6 +319,12 @@ async function runJob(admin: Client, job: Job, out: string) {
     title: final.title,
     lastMessage: run.steps.filter((s: any) => s.kind === "message" && s.role === "assistant").at(-1)?.text,
     pictures,
+    frames: watcher?.frames ?? [],
+    // What the author said and decided along the way, for the report's case sections.
+    said: run.steps
+      .filter((s: any) => s.kind === "message" && s.role === "assistant")
+      .map((s: any) => s.text),
+    tools: run.steps.filter((s: any) => s.kind === "tool").map((s: any) => s.name),
   };
   writeFileSync(join(dir, "result.json"), JSON.stringify(result, null, 1));
   writeFileSync(join(dir, "run.json"), JSON.stringify(run, null, 1));
@@ -306,5 +365,6 @@ async function main() {
   const before = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : [];
   const keep = before.filter((r: any) => !results.some((x) => x.model === r.model && x.prompt === r.prompt));
   writeFileSync(file, JSON.stringify([...keep, ...results], null, 1));
+  if (browser) await (await browser).close();
 }
 await main();
