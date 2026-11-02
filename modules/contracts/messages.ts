@@ -66,7 +66,6 @@ const exact: Record<string, string> = {
 };
 
 const patterns: [RegExp, (...m: string[]) => string][] = [
-  [/^PlantUML 渲染失败: ([\s\S]*)$/, (d) => "PlantUML rendering failed: " + d],
   [/^画布查看服务不可用([\s\S]*)$/, (d) => "The canvas capture service is unavailable" + d],
   [/^生图失败 (\d+): ([\s\S]*)$/, (s, d) => `Image generation failed (${s}): ${d}`],
   [/^模型请求 (\d+): ([\s\S]*)$/, (s, d) => `Model request failed (${s}): ${d}`],

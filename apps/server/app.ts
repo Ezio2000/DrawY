@@ -38,7 +38,6 @@ import { kindSchema, shelfSchema } from "@drawy/materials/schema";
 import { Agent } from "../../modules/agent/index.ts";
 import { tracer } from "../../modules/trace/index.ts";
 import { picture } from "../../modules/observation/index.ts";
-import encoder from "plantuml-encoder";
 import { localize, requestLocale } from "../../modules/contracts/messages.ts";
 type Env = {
   Variables: { store: UserStore; user: Account };
@@ -431,18 +430,6 @@ export function createApp(storage: Storage) {
     const trace = tracer.get(c.get("user").id, c.req.param("id"));
     if (!trace) throw new DomainError("没有这次运行的记录", 404);
     return c.json(trace);
-  });
-  app.post("/api/plantuml", async (c) => {
-    const { source } = z
-      .object({ source: z.string() })
-      .parse(await c.req.json());
-    const r = await fetch(
-      (process.env.DRAWY_PLANTUML_URL || "http://localhost:8092") +
-        "/svg/" +
-        encoder.encode(source),
-    );
-    if (!r.ok) throw new DomainError("PlantUML 渲染失败: " + (await r.text()));
-    return c.body(await r.text(), 200, { "Content-Type": "image/svg+xml" });
   });
   app.get("/api/events", (c) =>
     streamSSE(c, async (stream) => {

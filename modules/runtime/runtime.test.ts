@@ -115,11 +115,6 @@ beforeAll(async () => {
           ),
         ),
       );
-    } else if (url.pathname === "/api/plantuml") {
-      res.setHeader("content-type", "image/svg+xml");
-      res.end(
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><text x="10" y="30">Alice → Bob</text></svg>',
-      );
     } else {
       res.setHeader("content-type", "text/html");
       res.end(documentFor(work, url.pathname.split("/").at(-1)!));
@@ -209,9 +204,6 @@ it("awaits async scene events, opens separate details and renders structured dia
   await page.waitForURL("**/child?revision=1");
   await page.waitForFunction(() => window.drawyReady);
   expect(await page.locator('[data-module-id="mermaid"] svg').count()).toBe(1);
-  expect(
-    await page.locator('[data-module-id="uml"] svg').textContent(),
-  ).toContain("Alice");
   expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
 });
 it("moves groups, resizes an isolated module and recomputes connected anchors", async () => {

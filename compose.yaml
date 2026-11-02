@@ -24,9 +24,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-  plantuml:
-    image: plantuml/plantuml-server:jetty
-    restart: unless-stopped
   capture:
     build:
       context: .
@@ -54,10 +51,9 @@ services:
       NODE_USE_ENV_PROXY: "1"
       HTTP_PROXY: ${DRAWY_OUTBOUND_PROXY:-}
       HTTPS_PROXY: ${DRAWY_OUTBOUND_PROXY:-}
-      NO_PROXY: localhost,127.0.0.1,drawy-app,materials,capture,plantuml
+      NO_PROXY: localhost,127.0.0.1,drawy-app,materials,capture
       DRAWY_MATERIALS_URL: http://materials:8090
       DRAWY_CAPTURE_URL: http://capture:8091
-      DRAWY_PLANTUML_URL: http://plantuml:8080
       DRAWY_INTERNAL_URL: http://drawy-app:8080
     networks:
       default:
@@ -71,8 +67,6 @@ services:
         condition: service_healthy
       capture:
         condition: service_healthy
-      plantuml:
-        condition: service_started
     healthcheck:
       test:
         [

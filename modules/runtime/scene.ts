@@ -40,7 +40,6 @@ export interface DrawingAPI {
   svg: (source: string) => SVGElement;
   html: (source: string) => HTMLElement;
   mermaid: (source: string) => Promise<Element>;
-  plantuml: (source: string) => Promise<Element>;
   material: (id: string, options?: PictureOptions) => HTMLElement;
   materials: Record<string, PictureInfo>;
   draw: (
@@ -106,15 +105,6 @@ async function mermaid(source: string) {
   });
   mermaidQueue = job.catch(() => {});
   return job;
-}
-async function plantuml(source: string) {
-  const r = await fetch("/api/plantuml", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source }),
-  });
-  if (!r.ok) throw Error(await r.text());
-  return svg(await r.text());
 }
 
 export class SceneRenderer {
@@ -397,7 +387,6 @@ export class SceneRenderer {
           svg,
           html,
           mermaid,
-          plantuml,
           material: (id, options) => this.picture(id, size, options),
           materials: this.pictures,
           draw: (id, data = {}, at = size) => {

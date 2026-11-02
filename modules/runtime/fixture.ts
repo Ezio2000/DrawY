@@ -77,12 +77,6 @@ return root;`,
         source:
           "return await api.mermaid('flowchart LR\\nA[需求] --> B[行动]');",
       },
-      uml: {
-        id: "uml",
-        name: "时序",
-        source:
-          "return await api.plantuml('@startuml\\nAlice -> Bob: hello\\n@enduml');",
-      },
       connector: {
         id: "connector",
         name: "连接",
@@ -106,7 +100,7 @@ return root;`,
         id: "child",
         title: "需求与行动",
         parentId: "root",
-        modules: ["mermaid", "uml"].map((drawingId, i) => ({
+        modules: ["mermaid"].map((drawingId, i) => ({
           id: drawingId,
           drawingId,
           label: drawingId,
