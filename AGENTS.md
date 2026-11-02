@@ -68,6 +68,8 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 输入框的模型选择菜单按绘制、搜索、生图分组，每项只显示配置中的名称和选中标记；地址、模型 ID、说明和能力只在设置中显示。
 
+绘制模型的可选 `provider` 保存 OpenRouter 提供商标识。设置页的“固定提供商”留空时自动路由，填写后 Responses、Chat Completions 和 Messages 都传 `provider: { only: [标识], allow_fallbacks: false }`；不能切到其他提供商，渠道不可用时返回错误。轮次的 `request.provider` 同样记录这个限制。
+
 模型配置全站共用：`ModelCatalog`（`models` 若干绘制模型，每个是带 `id/name/description` 的 `Role`；`images` 若干生图模型；`searches` 若干搜索服务；各自的默认）存在 `system` 表，只有 `models.manage` 能读写（`/api/admin/models`）。每个用户自己只存 `UserSettings`（长期偏好、所选绘制模型、生图模型、搜索服务和每个模型的搜索方式），`/api/models` 只给出名称、说明、能力（看图、工具、内置搜索）、落定的搜索方式和是否已接入，不给凭证。`UserStore.settings()` 把这两者合成运行要用的 `Settings`（所选的不存在时用默认），`agent` 和 `images` 只读这个结果。旧库升级时，最早账号原来的 `author/image` 连接成为第一份 `ModelCatalog`（`Storage.firstCatalog`）。
 
 ## 手动编辑如何流动

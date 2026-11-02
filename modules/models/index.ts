@@ -59,6 +59,9 @@ export async function generate(
     },
     body: JSON.stringify({
       model: role.model,
+      ...(role.provider && role.channel === "api"
+        ? { provider: { only: [role.provider], allow_fallbacks: false } }
+        : {}),
       instructions,
       input,
       tools,
@@ -285,6 +288,7 @@ async function chat(
     headers: headers(role),
     body: JSON.stringify({
       model: role.model,
+      ...(role.provider ? { provider: { only: [role.provider], allow_fallbacks: false } } : {}),
       messages: toMessages(instructions, input),
       ...(functions.length ? { tools: functions } : {}),
       stream: true,

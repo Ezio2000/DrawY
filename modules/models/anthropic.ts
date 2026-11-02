@@ -288,6 +288,7 @@ export async function messages(
   for (let round = 0; round < 6; round++) {
     const params: Item = {
       model: role.model,
+      ...(role.provider ? { provider: { only: [role.provider], allow_fallbacks: false } } : {}),
       max_tokens: budget,
       system: [{ type: "text", text: instructions, cache_control: { type: "ephemeral" } }],
       messages: round ? [...conversation, { role: "assistant", content: [...content] }] : conversation,

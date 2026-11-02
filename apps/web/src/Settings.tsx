@@ -471,6 +471,16 @@ export function Settings() {
                         </Segmented>
                       </Row>
                     )}
+                    {m.channel === "api" && (
+                      <Row label={w.pinnedProvider} hint={w.pinnedProviderHint}>
+                        <input
+                          value={m.provider ?? ""}
+                          placeholder="anthropic"
+                          spellCheck={false}
+                          onChange={(e) => model(m.id, { provider: e.target.value || undefined })}
+                        />
+                      </Row>
+                    )}
                   </Group>
                   <Group title={w.abilities}>
                     <Row label={w.vision} hint={w.visionHint}>

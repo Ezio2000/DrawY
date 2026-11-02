@@ -890,6 +890,9 @@ export class Agent {
           estimatedTokens: contextSize(ctx),
           request: {
             model: settings.author.model,
+            ...(settings.author.provider
+              ? { provider: { only: [settings.author.provider], allow_fallbacks: false } }
+              : {}),
             effort,
             serviceTier:
               serviceTiers[

@@ -298,6 +298,8 @@ export interface Role {
   credential: string;
   accountId?: string;
   model: string;
+  /** Optional OpenRouter provider slug; when set, only this provider may serve requests. */
+  provider?: string;
   effort: Effort;
   /** The reasoning levels it accepts; none means it is not asked for one. */
   efforts: Effort[];
@@ -396,6 +398,7 @@ const roleObject = z.object({
     credential: z.string(),
     accountId: z.string().optional(),
     model: z.string().min(1),
+    provider: z.string().trim().min(1).optional(),
     effort: z.enum(efforts),
     efforts: z.array(z.enum(efforts)),
     speed: z.enum(["flex", "default", "fast", "ultrafast"]),

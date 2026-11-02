@@ -97,6 +97,7 @@ const zh = {
     connect: "去设置",
     unconnectedMember: "管理员还没有接入可用的绘制模型",
     model: (name: string) => "绘制模型：" + name,
+    modelUnconnected: "尚未接入",
     services: (author: string, search: string, image: string) =>
       `创作：${author} · 搜索：${search} · 生图：${image}`,
     authorSection: "创作模型",
@@ -592,6 +593,8 @@ const zh = {
     },
     apiKey: "API Key",
     protocol: "接口格式",
+    pinnedProvider: "固定提供商（可选）",
+    pinnedProviderHint: "OpenRouter 的提供商标识，例如 anthropic；填写后只走该提供商，不回退到其他渠道，留空则自动分配",
     protocols: { responses: "Responses", chat: "Chat Completions", anthropic: "Anthropic" },
     protocolHints: {
       responses: "OpenAI 的 Responses 接口，支持内置搜索",
@@ -922,6 +925,7 @@ const en: Words = {
     connect: "Settings",
     unconnectedMember: "An administrator hasn't connected a drawing model yet",
     model: (name) => "Drawing model: " + name,
+    modelUnconnected: "Not connected yet",
     services: (author, search, image) =>
       `Drawing: ${author} · Search: ${search} · Pictures: ${image}`,
     authorSection: "Drawing model",
@@ -1413,6 +1417,8 @@ const en: Words = {
     },
     apiKey: "API Key",
     protocol: "API format",
+    pinnedProvider: "Pinned provider (optional)",
+    pinnedProviderHint: "OpenRouter provider slug, such as anthropic. Uses only that provider, without fallback; leave blank for automatic routing.",
     protocols: { responses: "Responses", chat: "Chat Completions", anthropic: "Anthropic" },
     protocolHints: {
       responses: "OpenAI's Responses API, which offers built-in search",
