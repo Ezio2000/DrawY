@@ -16,6 +16,7 @@ import {
   DomainError,
   modelCatalogSchema,
   userSettingsSchema,
+  pickWith,
   workEditSchema,
   type Account,
   type Work,
@@ -153,7 +154,7 @@ export function createApp(storage: Storage) {
   app.put("/api/settings", async (c) => {
     const store = c.get("store"),
       change = userSettingsSchema.partial().parse(await c.req.json());
-    store.saveOwnSettings({ ...store.ownSettings(), ...change });
+    store.saveOwnSettings(pickWith(storage.models(), store.ownSettings(), change));
     return c.json({ ok: true });
   });
   // The drawing models, picture models and search services anyone may pick, by name and

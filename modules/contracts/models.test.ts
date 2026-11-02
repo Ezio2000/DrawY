@@ -6,6 +6,7 @@ import {
   defaultWriter,
   emptySettings,
   menuFor,
+  pickWith,
   modelCatalogSchema,
   reconnect,
   endpointFor,
@@ -149,6 +150,22 @@ it("picks each of the five on its own, settled against what the model offers", (
   // A self-hosted SearXNG needs no key; the others do.
   expect(searchReady({ provider: "searxng", credential: "" })).toBe(true);
   expect(searchReady({ provider: "tavily", credential: "" })).toBe(false);
+});
+
+it("keeps each drawing model's effort and speed for itself", () => {
+  const c = catalog();
+  let own = pickWith(c, emptySettings(), { writer: "opus" });
+  own = pickWith(c, own, { effort: "high" });
+  own = pickWith(c, own, { writer: "terra" });
+  own = pickWith(c, own, { effort: "max", speed: "fast" });
+  // Picking terra's effort leaves opus at the one picked for it.
+  own = pickWith(c, own, { writer: "opus" });
+  expect(settingsFor(c, own).author).toMatchObject({ model: "claude-opus-5-5", effort: "high" });
+  const menu = menuFor(c, own);
+  expect(menu.chosen).toMatchObject({ writer: "opus", effort: "high" });
+  expect(menu.writers.find((m) => m.id === "terra")).toMatchObject({ effort: "max", speed: "fast" });
+  own = pickWith(c, own, { writer: "terra" });
+  expect(settingsFor(c, own).author).toMatchObject({ effort: "max", speed: "fast" });
 });
 
 it("prices a run at the speed it picked, the way it searched and the pictures it painted", () => {

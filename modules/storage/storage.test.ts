@@ -685,6 +685,8 @@ describe("roles and shared models", () => {
           vision: true,
           efforts: ["low", "medium", "high", "xhigh"],
           speeds: ["flex", "default", "fast"],
+          effort: "medium",
+          speed: "default",
           builtinSearch: true,
         },
       ],

@@ -10,7 +10,7 @@ import {
   Shapes,
   PencilLine,
 } from "lucide-react";
-import type { UserSettings } from "../../../modules/contracts/index.ts";
+import { effortFor, type UserSettings } from "../../../modules/contracts/index.ts";
 import { Spinner, useLocale } from "@drawy/ui";
 import type { StyleMaterial } from "@drawy/materials/schema";
 import { api, type Models } from "./api.ts";
@@ -219,8 +219,10 @@ export function chosen(m: Models, change: Partial<UserSettings>): Models {
   const writer = m.writers.find(
     (x) => x.id === (change.writer ?? m.chosen.writer),
   );
-  const effort = change.effort ?? m.chosen.effort,
-    speed = change.speed ?? m.chosen.speed,
+  // A model switched to comes with the effort and speed last picked for it.
+  const switched = !!writer && writer.id !== m.chosen.writer;
+  const effort = change.effort ?? (switched ? writer.effort : m.chosen.effort),
+    speed = change.speed ?? (switched ? writer.speed : m.chosen.speed),
     web = change.web ?? m.chosen.web;
   return {
     ...m,
@@ -228,16 +230,13 @@ export function chosen(m: Models, change: Partial<UserSettings>): Models {
       writer: writer?.id ?? m.chosen.writer,
       ...(writer?.efforts.length
         ? {
-            effort:
-              effort && writer.efforts.includes(effort)
-                ? effort
-                : writer.efforts[0],
+            effort: effortFor(effort ?? writer.effort, writer.efforts) ?? writer.effort,
           }
         : {}),
       ...(writer && writer.speeds.length > 1
         ? {
             speed:
-              speed && writer.speeds.includes(speed) ? speed : writer.speeds[0],
+              speed && writer.speeds.includes(speed) ? speed : writer.speed,
           }
         : {}),
       web,

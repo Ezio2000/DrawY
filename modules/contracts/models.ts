@@ -507,22 +507,32 @@ export const defaultCatalog = (): ModelCatalog => {
 
 // ---- What each person picks
 
+/** The effort and speed a person last picked for one drawing model. */
+export interface Tuning {
+  effort?: Effort;
+  speed?: Speed;
+}
 /** What each person keeps for themselves: their standing preferences, and each of the
  * five picks beside the composer, each falling back to the default when it is not set,
- * gone or not offered by the model picked. */
+ * gone or not offered by the model picked. Effort and speed are kept for each drawing
+ * model in `tunings`, so picking one model's effort leaves the others' as they were;
+ * `effort`/`speed` are the last picked, for a model never tuned. */
 export interface UserSettings {
   preferences: string;
   writer: string | null;
   effort: Effort | null;
   speed: Speed | null;
+  tunings: Record<string, Tuning>;
   web: Web | null;
   image: string | null;
 }
+const tuningSchema = z.object({ effort: z.enum(efforts).optional(), speed: z.enum(speeds).optional() });
 export const userSettingsSchema = z.object({
   preferences: z.string(),
   writer: z.string().nullable(),
   effort: z.enum(efforts).nullable(),
   speed: z.enum(speeds).nullable(),
+  tunings: z.record(z.string(), tuningSchema),
   web: z.string().nullable(),
   image: z.string().nullable(),
 });
@@ -531,6 +541,7 @@ export const emptySettings = (): UserSettings => ({
   writer: null,
   effort: null,
   speed: null,
+  tunings: {},
   web: null,
   image: null,
 });
@@ -560,14 +571,37 @@ export function picked(catalog: ModelCatalog, own: UserSettings) {
     painters.find((x) => x.model.id === own.image) ??
     painters.find((x) => x.model.id === catalog.defaults.image) ??
     painters[0];
+  const { effort, speed } = tuningOf(w.model, own);
   const m = w.model;
-  const effort = effortFor(own.effort ?? m.effort, m.efforts) ?? m.effort;
-  const speed = own.speed && m.speeds.includes(own.speed) ? own.speed : m.speed;
   const known = (web: Web | null) =>
     web === OFF || web === BUILTIN || catalog.searches.some((s) => s.id === web);
   const wanted = own.web !== null && known(own.web) ? own.web : catalog.defaults.web;
   const search = webFor({ channel: w.provider.channel, ...m }, wanted, catalog.searches);
   return { writer: w, effort, speed, wanted, search, painter: p };
+}
+
+/** The effort and speed a drawing model runs at for a person: what they last picked for
+ * it, else what they last picked at all, settled against what it offers. */
+export function tuningOf(m: WriterModel, own: UserSettings): { effort: Effort; speed: Speed } {
+  const t = own.tunings[m.id] ?? {};
+  const effort = effortFor(t.effort ?? own.effort ?? m.effort, m.efforts) ?? m.effort;
+  const wanted = t.speed ?? own.speed;
+  const speed = wanted && m.speeds.includes(wanted) ? wanted : m.speed;
+  return { effort, speed };
+}
+/** A person's settings after a change from the picker: an effort or speed picked is kept
+ * for the drawing model it was picked with, so the other models keep their own. */
+export function pickWith(catalog: ModelCatalog, own: UserSettings, change: Partial<UserSettings>): UserSettings {
+  const next = { ...own, ...change, tunings: { ...own.tunings, ...change.tunings } };
+  if (change.effort || change.speed) {
+    const id = picked(catalog, next).writer.model.id;
+    next.tunings[id] = {
+      ...next.tunings[id],
+      ...(change.effort ? { effort: change.effort } : {}),
+      ...(change.speed ? { speed: change.speed } : {}),
+    };
+  }
+  return next;
 }
 
 /** What a run's spending is priced at, fixed when it starts: the drawing model's tokens at
@@ -681,6 +715,9 @@ export interface WriterChoice {
   vision: boolean;
   efforts: Effort[];
   speeds: Speed[];
+  /** The effort and speed it would run at for this person, so switching to it shows them. */
+  effort: Effort;
+  speed: Speed;
   /** Whether it offers its own web search. */
   builtinSearch: boolean;
 }
@@ -719,6 +756,7 @@ export function menuFor(catalog: ModelCatalog, own: UserSettings): ModelMenu {
       vision: m.vision,
       efforts: m.efforts,
       speeds: m.speeds,
+      ...tuningOf(m, own),
       builtinSearch: m.builtinSearch && offersBuiltinSearch({ channel: p.channel, protocol: m.protocol }),
     })),
     images: entries(catalog.painters).map(({ provider: p, model: m }) => ({
