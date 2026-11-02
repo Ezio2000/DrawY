@@ -2,7 +2,7 @@ import { detailElement } from "../../../modules/runtime/detail.ts";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { ZoomOut, ZoomIn, Scan, Lightbulb } from "lucide-react";
-import { reducedMotion, useLocale } from "@drawy/ui";
+import { reducedMotion, Spinner, useLocale } from "@drawy/ui";
 import { Canvas, type Pointed } from "../../../modules/canvas/index.ts";
 import type { Camera } from "../../../modules/contracts/geometry.ts";
 import type {
@@ -67,12 +67,16 @@ export function SceneView({
     cameras = useRef(new Map<string, Camera>()),
     drawn = useRef(work),
     [canvas, setCanvas] = useState<Canvas>(),
+    // Until the scene is drawn the page keeps showing that it is loading, so opening a
+    // work goes from the spinner straight to the picture, without a blank page between.
+    [shown, setShown] = useState(false),
     [error, setError] = useState("");
   const callbacks = useRef({ open, select, commit, point, view, quiet });
   const picked = useRef<{ key: string; ids: string[] } | null>(null);
   callbacks.current = { open, select, commit, point, view, quiet };
   useEffect(() => {
     setError("");
+    setShown(false);
     const key = work.id + ":" + sceneId;
     drawn.current = work;
     const view = new Canvas(host.current!, work, work.scenes[sceneId], {
@@ -108,7 +112,8 @@ export function SceneView({
         if (!mounted) return;
         view.select(picked.current?.key === key ? picked.current.ids : []);
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(String(e)))
+      .finally(() => mounted && setShown(true));
     return () => {
       mounted = false;
       callbacks.current.view(undefined);
@@ -232,7 +237,12 @@ export function SceneView({
           canvas.layer,
         )}
       {gaze && !gaze.region && <div className={cx("viewfinder")} data-screen />}
-      {empty && !run && (
+      {!shown && (
+        <div className={cx("canvas-loading")} aria-busy>
+          <Spinner />
+        </div>
+      )}
+      {empty && !run && shown && (
         <p className={cx("blank")}>{editing ? t.edit.blank : t.work.blank}</p>
       )}
       {empty && run && (!!references.length || note) && (

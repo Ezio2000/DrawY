@@ -646,6 +646,14 @@ function writerGroups(
         <Row label={w.tools} hint={w.toolsHint}>
           <Switch checked={m.tools} onChange={(on) => patch({ tools: on })} />
         </Row>
+        {m.protocol === "responses" && (
+          <Row label={w.toolLimits} hint={w.toolLimitsHint}>
+            <Switch
+              checked={m.toolLimits}
+              onChange={(on) => patch({ toolLimits: on })}
+            />
+          </Row>
+        )}
         <Row label={w.maxOutput} hint={w.maxOutputHint}>
           <NumberField
             value={m.maxOutput}

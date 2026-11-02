@@ -38,7 +38,7 @@ function open(target: Target) {
       detail.remove(),
     );
     detail.style.cssText =
-      "position:fixed;inset:0;overflow:auto;background:#faf9f5;padding:48px max(24px,calc((100vw - 760px)/2));box-sizing:border-box;z-index:10";
+      "position:fixed;inset:0;overflow:auto;background:#fff;padding:48px max(24px,calc((100vw - 760px)/2));box-sizing:border-box;z-index:10";
     document.body.append(detail);
     window.drawyReady = false;
     void Promise.all([

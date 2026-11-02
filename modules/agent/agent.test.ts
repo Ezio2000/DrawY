@@ -1314,16 +1314,67 @@ it("searches through the search service for a model without its own, counting ea
     expect(costOf(run.usage, run.prices)!.search).toBeCloseTo(3 * 0.01 + 0.02);
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+it("keeps a Responses model without tool limits to the search budget by refusing calls, at any address", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-limitless-")), db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "limitless", "abcdef").id), work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const catalog = db.models();
+    // DeepSeek's Responses behind a proxy of the administrator's own.
+    catalog.writers[0].baseUrl = "https://llm-proxy.invalid/v1";
+    Object.assign(catalog.writers[0].models[0], { protocol: "responses", model: "deepseek-flash", builtinSearch: false, toolLimits: false });
+    catalog.searches = [{ id: "web", name: "DeepSeek Search", provider: "deepseek", baseUrl: "https://search.invalid/v1/tools", credential: "k", prices: { query: 0.01, page: 0.02 } }];
+    catalog.defaults.web = "web";
+    db.saveModels(modelCatalogSchema.parse(catalog));
+    const earlier = Array.from({ length: SEARCH_LIMIT }, (_, i) => ({ kind: "tool" as const, id: "old" + i, status: "done" as const, name: "web_search" as const, queries: ["q"], urls: [] }));
+    const run: Run = { id: "limitless-run", workId: work.id, sceneId: "root", status: "running", steps: [...earlier], observations: [], startedAt: Date.now() };
+    store.saveRun(run);
+    const asked: string[] = [];
+    library.route(async (url) => {
+      asked.push(String(url));
+      return Response.json({ results: [] });
+    });
+    const script = [
+      ["web_search", { queries: ["over budget"] }],
+      ["view_canvas", {}],
+      ["finish", { message: "done" }],
+    ] as const;
+    const steers: unknown[] = [], outputs: any[] = [];
+    let turn = 0;
+    vi.mocked(generate).mockImplementation(async (role, { input, steer }) => {
+      expect(role).toMatchObject({ protocol: "responses", toolLimits: false });
+      steers.push(steer);
+      const last = input.findLast((i) => i.type === "function_call_output");
+      if (last) outputs.push(JSON.parse(last.output));
+      const [name, args] = script[turn++];
+      return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(args) }], usage: {}, response: {} };
+    });
+    await new Agent(() => {}).execute(store, run, { input: [], generations: 0 }, "request");
+    // The request never carries fields the service rejects, and drawing carries on.
+    expect(run.status).toBe("completed");
+    for (const steer of steers) expect(steer ?? {}).toEqual({});
+    // The call past the budget is refused without asking the search service.
+    expect(asked.filter((u) => u.startsWith("https://search.invalid"))).toEqual([]);
+    expect(outputs[0].error).toContain("closed");
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
+});
 it("steers the service's search like the provider's own, except over Chat Completions", () => {
   const listed = [{ type: "function", name: "write_work" }, { type: "function", name: "web_search" }, { type: "function", name: "open_page" }];
   const search = (n: number) => Array.from({ length: n }, (_, i) => ({ kind: "tool" as const, id: "ws" + i, status: "done" as const, name: "web_search" as const, queries: ["q"], urls: [] }));
   const run = (steps: Run["steps"]): Run => ({ id: "r", workId: "w", sceneId: "root", status: "running", steps, observations: [], startedAt: 0 });
   expect(steering(run(search(2)), listed)).toEqual({});
   expect(steering(run(search(SEARCH_LIMIT)), listed)).toEqual({ tool_choice: { type: "allowed_tools", mode: "auto", tools: [{ type: "function", name: "write_work" }] } });
-  expect(steering(run(search(SEARCH_LIMIT)), listed, { protocol: "chat", baseUrl: "https://example.invalid" })).toEqual({});
-  expect(steering(run(search(SEARCH_LIMIT)), listed, { protocol: "anthropic", baseUrl: "https://api.anthropic.com" })).toEqual({});
-  // DeepSeek Responses rejects allowed_tools; search execution still enforces the budget.
-  const deepseek = { protocol: "responses" as const, baseUrl: "https://api.deepseek.com" };
-  expect(steering(run(search(SEARCH_LIMIT)), listed, deepseek)).toEqual({});
-  expect(steering(run(search(2)), listed, deepseek)).toEqual({});
+  expect(steering(run(search(SEARCH_LIMIT)), listed, { protocol: "chat", toolLimits: true })).toEqual({});
+  expect(steering(run(search(SEARCH_LIMIT)), listed, { protocol: "anthropic", toolLimits: true })).toEqual({});
+  // A Responses service without allowed_tools (DeepSeek's, at any address) is said so by
+  // its model; the search service's calls are then refused past the budget instead.
+  const limitless = { protocol: "responses" as const, toolLimits: false };
+  expect(steering(run(search(SEARCH_LIMIT)), listed, limitless)).toEqual({});
+  expect(steering(run(search(2)), listed, limitless)).toEqual({});
+  // OpenAI keeps its request-level limits.
+  const hosted = [{ type: "function", name: "write_work" }, { type: "web_search" }];
+  expect(steering(run(search(2)), hosted, { protocol: "responses", toolLimits: true })).toEqual({ max_tool_calls: SEARCH_LIMIT - 2 });
+  expect(steering(run(search(2)), hosted, limitless)).toEqual({});
 });

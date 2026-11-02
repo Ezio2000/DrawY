@@ -9,7 +9,7 @@
   --rail: 56px;
   --rail-open: 272px;
   --journal: 520px;
-  --veil: rgba(250, 249, 245, 0.86);
+  --veil: rgba(255, 255, 255, 0.86);
   /* Card grounds from the Anthropic palette's oat. */
   --oat: #f0eee6;
   --oat-deep: #e8e4d9;
@@ -672,8 +672,8 @@ h2:has(> .title) {
 .composer[data-place="home"] {
   position: relative;
   z-index: 2;
-  padding: 18px 12px 10px 20px;
-  border-radius: 24px;
+  padding: 12px 8px 8px 18px;
+  border-radius: 22px;
   animation: rise 0.9s var(--ease-out) 0.1s both;
 }
 
@@ -694,7 +694,7 @@ h2:has(> .title) {
 .composer[data-place="home"] .composer-field {
   flex-direction: column;
   align-items: stretch;
-  gap: 12px;
+  gap: 4px;
 }
 
 .composer textarea {
@@ -714,9 +714,20 @@ h2:has(> .title) {
 }
 
 .composer[data-place="home"] textarea {
-  min-height: 56px;
-  padding: 0;
-  font-size: 16.5px;
+  min-height: 26px;
+  padding: 2px 10px 0 0;
+  font-size: 16px;
+}
+
+/* At home the tools sit a little in from the box's edge, the add button first. */
+.composer[data-place="home"] .composer-tools {
+  margin-left: -10px;
+}
+
+.composer[data-place="home"] .composer-send,
+.composer[data-place="home"] .composer-stop {
+  width: 32px;
+  height: 32px;
 }
 
 .composer textarea:focus,
@@ -1041,9 +1052,26 @@ h2:has(> .title) {
   color: var(--text-2);
 }
 
-.pick:first-child .pick-button {
-  color: var(--text);
+/* The drawing model's button reads as Claude's does: the model in ink, its effort and
+   speed after it in a quieter grey. */
+.pick-writer {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pick-writer b {
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 500;
+  color: var(--text);
+}
+
+.pick-writer i {
+  flex: none;
+  font-style: normal;
+  color: var(--text-3);
 }
 
 .pick-button > span {
@@ -1091,7 +1119,12 @@ h2:has(> .title) {
   transform-origin: bottom left;
 }
 
-.models-menu button {
+.models-menu[data-wide] {
+  width: 340px;
+}
+
+.models-menu > button,
+.models-group > button {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1105,11 +1138,13 @@ h2:has(> .title) {
   white-space: normal;
 }
 
-.models-menu button:hover {
+.models-menu > button:hover,
+.models-group > button:hover {
   background: var(--fill);
 }
 
-.models-menu button > span {
+.models-menu > button > span,
+.models-group > button > span {
   display: grid;
   gap: 1px;
   flex: 1;
@@ -1121,17 +1156,20 @@ h2:has(> .title) {
   color: var(--text-3);
 }
 
-.models-menu button > svg:last-child {
+.models-menu > button > svg:last-child,
+.models-group > button > svg:last-child {
   flex: none;
   color: var(--ai-deep);
 }
 
-.models-menu button:disabled {
+.models-menu > button:disabled,
+.models-group > button:disabled {
   opacity: 0.55;
   cursor: default;
 }
 
-.models-menu button:disabled:hover {
+.models-menu > button:disabled:hover,
+.models-group > button:disabled:hover {
   background: none;
 }
 
@@ -1147,6 +1185,54 @@ h2:has(> .title) {
   margin: 8px 10px 2px;
   font-family: var(--font-mono);
   font-size: 11px;
+  color: var(--text-3);
+}
+
+/* Effort and speed under the drawing models: a row of levels each. */
+.models-setting {
+  margin-top: 6px;
+  padding: 2px 4px 4px;
+  border-top: 1px solid var(--separator);
+}
+
+.models-setting .models-head {
+  margin-left: 6px;
+}
+
+.models-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--fill);
+}
+
+.models-seg > button {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.models-seg > button:hover {
+  color: var(--text);
+}
+
+.models-seg > button[aria-checked="true"] {
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: 0 0 0 0.5px var(--line-strong), 0 1px 2px rgba(60, 45, 20, 0.08);
+}
+
+.models-hint {
+  display: block;
+  margin: 6px 6px 0;
+  font-size: 12px;
   color: var(--text-3);
 }
 
@@ -1179,7 +1265,17 @@ h2:has(> .title) {
 .canvas {
   position: absolute;
   inset: 0;
-  animation: fade-in 0.6s var(--ease);
+}
+
+/* While a scene is being drawn for the first time, the same spinner the page showed while
+   the work loaded, in the same place, until the picture fades in. */
+.canvas-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
 }
 
 .canvas [data-explorable] {
@@ -1206,7 +1302,7 @@ h2:has(> .title) {
   gap: 16px;
   height: 60px;
   padding: 0 14px 0 22px;
-  background: linear-gradient(var(--veil) 40%, rgba(250, 249, 245, 0));
+  background: linear-gradient(var(--veil) 40%, rgba(255, 255, 255, 0));
   pointer-events: none;
 }
 
@@ -3604,7 +3700,7 @@ body:has(.resizer[data-dragging]) {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(250, 249, 245, 0.92);
+  background: rgba(255, 255, 255, 0.92);
   color: var(--ink);
 }
 
@@ -3910,7 +4006,12 @@ body:has(.resizer[data-dragging]) {
   box-shadow: inset 0 0 0 1px var(--oat-deep);
 }
 
+/* The picture is fitted to the box itself: as a grid item its height would follow the
+   auto row, and a large picture (the inspector shows the full file) would spill out and be
+   cut off. */
 .look > img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   padding: 12%;
@@ -4011,6 +4112,10 @@ body:has(.resizer[data-dragging]) {
 .inspector-look .look {
   flex: 1;
   border-radius: 14px;
+}
+
+.inspector-look .look > img {
+  padding: 7%;
 }
 
 .inspector-look[data-kind="drawing"] .look,
@@ -4716,7 +4821,7 @@ body:has(.resizer[data-dragging]) {
   gap: 10px;
   border: 1.5px dashed rgba(193, 95, 60, 0.6);
   border-radius: 24px;
-  background: rgba(250, 249, 245, 0.88);
+  background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(4px);
   color: var(--ai-deep);
   font-family: var(--font-serif);

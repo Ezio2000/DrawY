@@ -146,7 +146,7 @@ function searchesLeft(run: Run) {
 export function steering(
   run: Run,
   tools: Item[],
-  role: Pick<Role, "protocol" | "baseUrl"> = { protocol: "responses", baseUrl: "https://api.openai.com/v1" },
+  role: Pick<Role, "protocol" | "toolLimits"> = { protocol: "responses", toolLimits: true },
 ): Item {
   const isSearch = (t: Item) =>
     t.type === "web_search" || (t.type === "function" && searching.has(t.name));

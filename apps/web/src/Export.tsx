@@ -129,7 +129,7 @@ async function card(png: Blob, title: string, credit: string, [W, H]: readonly [
   const css = getComputedStyle(document.body);
   const serif = css.getPropertyValue("--font-serif").trim() || "Georgia, serif";
   const sans = css.getPropertyValue("--font").trim() || "system-ui, sans-serif";
-  ctx.fillStyle = "#faf9f5";
+  ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
   const pad = Math.round(Math.min(W, H) * 0.07);
   const size = Math.round(Math.min(W, H) * (W > H ? 0.05 : 0.056));
@@ -176,7 +176,7 @@ async function jpeg(png: Blob) {
   canvas.width = img.width;
   canvas.height = img.height;
   const ctx = canvas.getContext("2d")!;
-  ctx.fillStyle = "#faf9f5";
+  ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, img.width, img.height);
   ctx.drawImage(img, 0, 0);
   URL.revokeObjectURL(img.src);

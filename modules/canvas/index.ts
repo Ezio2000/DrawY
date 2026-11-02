@@ -191,6 +191,12 @@ export class Canvas {
     this.ready = first.mount().finally(() => {
       if (this.renderer !== first) return;
       first.element.style.visibility = "";
+      // What is already drawn comes in at once, with only a short fade over the paper.
+      if (this.options.motion)
+        first.element.animate([{ opacity: 0 }, { opacity: 1 }], {
+          duration: 240,
+          easing: "ease-out",
+        });
       if (this.automatic) this.fit(false);
       else this.paint();
       // Opening a work or entering a scene shows what is already drawn as it is: only

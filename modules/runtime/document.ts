@@ -2,7 +2,7 @@ import type { Work } from "../contracts/index.ts";
 const json = (v: unknown) => JSON.stringify(v).replaceAll("<", "\\u003c");
 export function documentFor(work: Work, sceneId: string) {
   const data = json({ work, sceneId });
-  return `<!doctype html><html><head><meta charset="utf-8"><style>html,body,#stage{width:100%;height:100%;margin:0;overflow:hidden;background:#faf9f5}body{font-family:system-ui}</style></head><body><div id="stage"></div><script>window.drawyData=${data};</script><script src="/runtime/runtime.js"></script></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><style>html,body,#stage{width:100%;height:100%;margin:0;overflow:hidden;background:#fff}body{font-family:system-ui}</style></head><body><div id="stage"></div><script>window.drawyData=${data};</script><script src="/runtime/runtime.js"></script></body></html>`;
 }
 const escape = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -26,7 +26,7 @@ export function standaloneDocument(
     ),
   );
   return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(work.title)}</title><meta property="og:title" content="${escape(work.title)}"><style>
-html,body,#stage{width:100%;height:100%;margin:0;overflow:hidden;background:#faf9f5}
+html,body,#stage{width:100%;height:100%;margin:0;overflow:hidden;background:#fff}
 body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:#141413}
 #chrome{position:fixed;z-index:20;left:16px;top:14px;display:flex;align-items:center;gap:10px;font-size:14px}
 #chrome button{display:none;padding:6px 12px;border:0;border-radius:999px;background:rgba(20,20,19,.06);font:inherit;cursor:pointer}
