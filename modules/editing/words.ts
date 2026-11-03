@@ -62,7 +62,8 @@ function replaceAll(value: unknown, from: string, to: string): unknown {
  * module's own data is changed when it holds them; otherwise the module's drawing code,
  * when it names them exactly once. A drawing other modules share is copied for this one
  * first, so only what was pointed at changes. Null when they come from neither, such as
- * words a drawing composes or a library drawing writes itself. */
+ * words a drawing composes or a library drawing writes itself. Given a link's id, only
+ * the link's data is looked in. */
 export function replace(
   work: Work,
   sceneId: string,
@@ -74,6 +75,24 @@ export function replace(
   if (from === to) return null;
   const scene = sceneOf(work, sceneId);
   const module = scene.modules.find((m) => m.id === moduleId);
+  // A link's words and pictures are changed in its data; its drawing is left alone.
+  const link = !module && scene.links.find((l) => l.id === moduleId);
+  if (link) {
+    const r = replaceIn(link.data, from, to);
+    if (!r.done) return null;
+    return edit(
+      work,
+      [
+        {
+          ...scene,
+          links: scene.links.map((l) =>
+            l.id === link.id ? { ...l, data: r.value as Instance["data"] } : l,
+          ),
+        },
+      ],
+      kind === "picture" ? { materials: [to] } : {},
+    );
+  }
   if (!module) return null;
   const extra: Partial<WorkEdit> =
     kind === "picture" ? { materials: [to] } : {};

@@ -2,6 +2,7 @@ import type {
   Work,
   Scene,
   Instance,
+  Link,
   Point,
   Bounds,
   Target,
@@ -110,6 +111,8 @@ async function mermaid(source: string) {
 export class SceneRenderer {
   readonly element = document.createElement("div");
   readonly instances: Map<string, Instance>;
+  /** The scene's links as drawn now, which an edit may preview with other data. */
+  readonly links: Map<string, Link>;
   private views = new Map<string, View>();
   private listeners = new Map<string, Set<Listener>>();
   private jobs = new Set<Promise<unknown>>();
@@ -117,13 +120,14 @@ export class SceneRenderer {
   private disposed = false;
 
   constructor(
-    readonly work: Work,
-    readonly scene: Scene,
+    public work: Work,
+    public scene: Scene,
     readonly options: SceneOptions,
   ) {
     this.instances = new Map(
       scene.modules.map((m) => [m.id, structuredClone(m)]),
     );
+    this.links = new Map(scene.links.map((l) => [l.id, structuredClone(l)]));
     this.element.style.cssText =
       "position:absolute;inset:0;pointer-events:none";
   }
@@ -468,41 +472,74 @@ export class SceneRenderer {
   private drawModule(m: Instance) {
     return this.draw(m.id, m.drawingId, m.bounds, m.data, "module");
   }
-  private endpoint(end: { moduleId: string; anchor: string }) {
+  /** Where an end of a link meets its module, in scene units, and the side it is on. */
+  endpoint(end: { moduleId: string; anchor: string }) {
     const m = this.instances.get(end.moduleId)!,
-      a = m.anchors[end.anchor];
+      a = m.anchors[end.anchor] ?? { x: 0.5, y: 0.5 };
     return {
       x: m.bounds.x + a.x * m.bounds.width,
       y: m.bounds.y + a.y * m.bounds.height,
       side: sideOf(a),
     };
   }
-  private drawLinks() {
+  private drawLink(l: Link) {
+    const from = this.endpoint(l.from),
+      to = this.endpoint(l.to);
+    const x = Math.min(from.x, to.x) - 48,
+      y = Math.min(from.y, to.y) - 48;
+    const bounds = {
+      x,
+      y,
+      width: Math.abs(from.x - to.x) + 96,
+      height: Math.abs(from.y - to.y) + 96,
+    };
+    return this.draw(l.id, l.drawingId, bounds, l.data, "link", {
+      from: { x: from.x - x, y: from.y - y },
+      to: { x: to.x - x, y: to.y - y },
+      fromSide: from.side,
+      toSide: to.side,
+    });
+  }
+  /** Draws the links, or only those meeting some modules. */
+  private drawLinks(meeting?: Set<string>) {
     return Promise.all(
-      this.scene.links.map((l) => {
-        const from = this.endpoint(l.from),
-          to = this.endpoint(l.to);
-        const x = Math.min(from.x, to.x) - 48,
-          y = Math.min(from.y, to.y) - 48;
-        const bounds = {
-          x,
-          y,
-          width: Math.abs(from.x - to.x) + 96,
-          height: Math.abs(from.y - to.y) + 96,
-        };
-        return this.draw(l.id, l.drawingId, bounds, l.data, "link", {
-          from: { x: from.x - x, y: from.y - y },
-          to: { x: to.x - x, y: to.y - y },
-          fromSide: from.side,
-          toSide: to.side,
-        });
-      }),
+      [...this.links.values()]
+        .filter(
+          (l) =>
+            !meeting ||
+            meeting.has(l.from.moduleId) ||
+            meeting.has(l.to.moduleId),
+        )
+        .map((l) => this.drawLink(l)),
     );
+  }
+  /** Puts modules at other places and sizes at once, without drawing anything again: a
+   * resized module is stretched to its new box until `move` draws it at that size. */
+  position(moves: { id: string; bounds: Bounds }[]) {
+    for (const move of moves) {
+      const m = this.instances.get(move.id),
+        host = this.views.get("module:" + move.id)?.host;
+      if (!m || !host) continue;
+      Object.assign(host.style, {
+        left: move.bounds.x + "px",
+        top: move.bounds.y + "px",
+        width: move.bounds.width + "px",
+        height: move.bounds.height + "px",
+      });
+      if (
+        m.bounds.width === move.bounds.width &&
+        m.bounds.height === move.bounds.height
+      )
+        m.bounds = { ...move.bounds };
+    }
   }
   async move(moves: { id: string; bounds: Bounds }[]) {
     const jobs: Promise<unknown>[] = [];
+    const moved = new Set<string>();
     for (const move of moves) {
-      const m = this.instances.get(move.id)!;
+      const m = this.instances.get(move.id);
+      if (!m) continue;
+      moved.add(m.id);
       const sizeChanged =
         m.bounds.width !== move.bounds.width ||
         m.bounds.height !== move.bounds.height;
@@ -514,19 +551,109 @@ export class SceneRenderer {
           top: m.bounds.y + "px",
         });
     }
-    await Promise.all([...jobs, this.drawLinks()]);
+    // Only the links that meet a moved module follow it.
+    await Promise.all([...jobs, this.drawLinks(moved)]);
   }
   set(id: string, data: Record<string, unknown>) {
     const m = this.instances.get(id)!;
     m.data = { ...m.data, ...data };
     return this.drawModule(m);
   }
-  /** Draws a module again with other data in place of its own, as an edit is being made. */
+  /** Draws a module or a link again with other data in place of its own, as an edit is
+   * being made. */
   redraw(id: string, data: Record<string, unknown>) {
     const m = this.instances.get(id);
-    if (!m) return Promise.resolve();
-    m.data = data;
-    return this.drawModule(m);
+    if (m) {
+      m.data = data;
+      return this.drawModule(m);
+    }
+    const l = this.links.get(id);
+    if (!l) return Promise.resolve();
+    l.data = data;
+    return this.drawLink(l);
+  }
+  /** Whether another revision of the scene can be laid over this one in place: the same
+   * scene, look and script, with the materials both hold unchanged. Anything else is
+   * drawn afresh. */
+  patchable(work: Work, scene: Scene) {
+    if (this.disposed || scene.id !== this.scene.id) return false;
+    if (JSON.stringify(work.style) !== JSON.stringify(this.work.style))
+      return false;
+    const script = (w: Work, s: Scene) =>
+      s.interactionId ? (w.interactions[s.interactionId]?.source ?? "") : "";
+    if (script(work, scene) !== script(this.work, this.scene)) return false;
+    for (const [id, m] of Object.entries(work.materials)) {
+      const was = this.work.materials[id];
+      if (was && JSON.stringify(was) !== JSON.stringify(m)) return false;
+    }
+    return true;
+  }
+  /** Lays another revision of the scene over this one in place: modules whose drawing,
+   * data and size are unchanged stay as they are drawn (moved if they moved), the rest are
+   * drawn again, those gone are taken out and new ones drawn; the stacking follows the new
+   * order. For a change the person made, which should show at once. Call only when
+   * `patchable` says so. */
+  async patch(work: Work, scene: Scene) {
+    const before = this.work;
+    const look = (w: Work, m: Instance) =>
+      JSON.stringify([
+        m.drawingId,
+        m.data,
+        m.bounds.width,
+        m.bounds.height,
+        w.drawings[m.drawingId] ?? null,
+      ]);
+    const kept = new Map(scene.modules.map((m) => [m.id, m]));
+    for (const id of [...this.instances.keys()])
+      if (!kept.has(id)) this.forget("module", id);
+    const linked = new Set(scene.links.map((l) => l.id));
+    for (const id of [...this.links.keys()])
+      if (!linked.has(id)) this.forget("link", id);
+    this.work = work;
+    this.scene = scene;
+    const jobs: Promise<unknown>[] = [];
+    for (const next of scene.modules) {
+      const was = this.instances.get(next.id),
+        host = this.views.get("module:" + next.id)?.host;
+      const m = structuredClone(next);
+      this.instances.set(m.id, m);
+      if (!was || !host || look(before, was) !== look(work, m)) {
+        jobs.push(this.drawModule(m));
+        continue;
+      }
+      Object.assign(host.style, {
+        left: m.bounds.x + "px",
+        top: m.bounds.y + "px",
+      });
+      host.title = m.label;
+      host.toggleAttribute("data-explorable", !!m.target);
+    }
+    // The modules' order on the page is their stacking order.
+    const hosts = scene.modules.flatMap((m) => {
+      const host = this.views.get("module:" + m.id)?.host;
+      return host ? [host] : [];
+    });
+    const shown = [...this.element.children].filter((el) =>
+      hosts.includes(el as HTMLElement),
+    );
+    if (shown.some((el, i) => el !== hosts[i]))
+      for (const host of hosts) this.element.append(host);
+    for (const l of scene.links) this.links.set(l.id, structuredClone(l));
+    // Links are cheap and follow their modules wherever they went.
+    jobs.push(this.drawLinks());
+    await Promise.all(jobs);
+    await this.settled();
+  }
+  /** Takes a drawn module or link out. */
+  private forget(kind: "module" | "link", id: string) {
+    const view = this.views.get(kind + ":" + id);
+    if (view) {
+      for (const fn of view.cleanup.splice(0)) fn();
+      view.host.remove();
+      this.views.delete(kind + ":" + id);
+    }
+    if (kind === "module") this.instances.delete(id);
+    else this.links.delete(id);
   }
   dispose() {
     this.disposed = true;

@@ -12,6 +12,7 @@ import {
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { take, used, styleOf } from "../materials/index.ts";
+import { applied } from "../editing/apply.ts";
 export function createWork(store: UserStore, title: string) {
   return store.commit(
     {
@@ -42,7 +43,6 @@ export function createWork(store: UserStore, title: string) {
     { kind: "create" },
   );
 }
-const sections = ["drawings", "scenes", "interactions", "details"] as const;
 /** Applies an edit atomically: records are upserted or removed, the materials the work
  * now names are taken from the library, and the result must be a valid work. */
 export async function writeWork(
@@ -52,20 +52,14 @@ export async function writeWork(
   cause: Cause,
 ) {
   const edit = workEditSchema.parse(input),
-    work = structuredClone(store.work(workId));
-  if (work.revision !== edit.baseRevision)
+    current = store.work(workId);
+  if (current.revision !== edit.baseRevision)
     throw new DomainError("作品版本已更新，请重新读取", 409);
-  for (const section of sections) {
-    for (const item of edit[section] || [])
-      Object.assign(work[section], { [item.id]: item });
-    for (const key of edit.remove?.[section] || []) delete work[section][key];
-  }
-  for (const key of edit.remove?.materials || []) delete work.materials[key];
+  const work = applied(current, edit);
   // A title the user gave stays: the author retitled works the user had renamed.
   const keptTitle =
     edit.title !== undefined && !!work.named && cause.kind === "run";
   if (edit.title !== undefined && !keptTitle) work.title = edit.title;
-  if (edit.style) work.style = edit.style;
   if (!work.brief && Object.values(work.scenes).some((s) => s.modules.length))
     throw new DomainError("请先用 set_brief 确定创作简报，再绘制");
   const added = await take(work, edit.materials || [], store.viewer);

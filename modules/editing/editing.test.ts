@@ -6,6 +6,7 @@ import {
   add,
   addScene,
   align,
+  applied,
   arrange,
   changesBetween,
   connect,
@@ -38,6 +39,7 @@ import {
   setStyles,
   setTarget,
   shadowed,
+  showable,
   snap,
   ungroup,
   useDrawing,
@@ -583,6 +585,16 @@ describe("hand edits reach what the author writes", () => {
     expect(scene(moved).links[0].to.anchor).toBe("left");
     const turned = apply(moved, reverse(moved, "root", link.id));
     expect(scene(turned).links[0].from.moduleId).toBe("level-0");
+    // An end dragged onto another module goes to the side it was dropped on.
+    const elsewhere = apply(turned, reattach(turned, "root", link.id, "to", "right", "level-3"));
+    expect(scene(elsewhere).links[0].to).toEqual({ moduleId: "level-3", anchor: "right" });
+    expect(module(elsewhere, "level-3").anchors.right).toEqual({ x: 1, y: 0.5 });
+    // A link never ends at the module it starts from.
+    expect(() => reattach(turned, "root", link.id, "to", "left", "level-0")).toThrow();
+    // A link's words are changed in its data.
+    const said = apply(linked, replace(linked, "root", link.id, "text", "看", "查看"));
+    expect(scene(said).links[0].data.label).toBe("查看");
+    expect(replace(linked, "root", link.id, "text", "不在", "x")).toBeNull();
     expect(() =>
       connect(work, "root", { moduleId: "heading", side: "top" }, { moduleId: "heading", side: "left" }, { drawingId: "connector", data: {} }),
     ).toThrow();
@@ -783,5 +795,23 @@ describe("hand edits reach what the author writes", () => {
       stroke: "2",
       accent: "#f00",
     });
+  });
+
+  it("lays an edit on a work as the workspace does, to show it before it is saved", () => {
+    const work = fixture();
+    const edit = moveParts(work, "root", [
+      { id: "heading", bounds: { x: 1, y: 2, width: 300, height: 40 } },
+    ]);
+    const shown = applied(work, edit);
+    expect(module(shown, "heading").bounds).toEqual({ x: 1, y: 2, width: 300, height: 40 });
+    expect(shown.revision).toBe(work.revision);
+    // The work itself is left as it was.
+    expect(module(work, "heading").bounds.x).toBe(100);
+    expect(applied(work, setStyles(work, { ink: "#123456" })).style.ink).toBe("#123456");
+    const gone = applied(work, removeDetail(work, "explanation"));
+    expect(gone.details.explanation).toBeUndefined();
+    // An edit taking in a material the work does not hold waits for the workspace.
+    expect(showable(work, edit)).toBe(true);
+    expect(showable(work, { baseRevision: work.revision, materials: ["arrow"] })).toBe(false);
   });
 });

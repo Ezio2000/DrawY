@@ -487,6 +487,148 @@ it("edits like a drawing app: a box selects, handles resize a selection as one, 
   expect((await data("selected"))!.split(",")).toHaveLength(7);
   expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
 });
+it("selects a link by its line while editing, drags its ends onto other modules and retypes its words", async () => {
+  work.drawings.line = {
+    id: "line",
+    name: "线",
+    source:
+      'const {from:a,to:b}=api;return api.svg(`<svg width="${api.width}" height="${api.height}"><path d="M${a.x} ${a.y}L${b.x} ${b.y}" stroke="#333" stroke-width="2" fill="none"/><text x="${(a.x+b.x)/2+8}" y="${(a.y+b.y)/2}" font-size="14">${api.data.label}</text></svg>`)',
+  };
+  work.scenes.root.links.push({
+    id: "next",
+    drawingId: "line",
+    from: { moduleId: "level-0", anchor: "right" },
+    to: { moduleId: "level-1", anchor: "right" },
+    data: { label: "然后" },
+  });
+  await open();
+  await page.evaluate(() => {
+    const view = window.drawyView,
+      body = document.body.dataset;
+    view.setMovable(true);
+    view.setEditing(true);
+    view.options.select = (s) => (body.selected = s.map((x) => x.moduleId).join());
+    view.options.selectLink = (id) => (body.link = id ?? "");
+    view.options.reconnect = (id, end, to) =>
+      (body.reconnected = JSON.stringify({ id, end, to }));
+    view.options.point = (p) => (body.pointed = JSON.stringify(p));
+  });
+  const data = (key: string) =>
+    page.evaluate((k) => document.body.dataset[k], key);
+  const screen = (x: number, y: number) =>
+    page.evaluate(
+      ([x, y]) => {
+        const v = window.drawyView,
+          r = v.element.getBoundingClientRect(),
+          c = v.view;
+        return { x: r.left + c.x + x * c.scale, y: r.top + c.y + y * c.scale };
+      },
+      [x, y],
+    );
+  // A press a few pixels off the line, between the modules, takes the link in place of
+  // the selected module.
+  const first = await screen(420, 150);
+  await page.mouse.click(first.x, first.y);
+  expect(await data("selected")).toBe("level-0");
+  const between = await screen(565, 207);
+  await page.mouse.click(between.x + 3, between.y);
+  expect(await data("link")).toBe("next");
+  expect(await data("selected")).toBe("");
+  expect(await page.evaluate(() => window.drawyView.selectedLink)).toBe("next");
+  // Its end is dragged onto another module, to the side facing where it is dropped.
+  const end = (await page.locator('[data-link-end="to"]').boundingBox())!;
+  const target = await screen(160, 457);
+  await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 8 });
+  await page.mouse.up();
+  expect(JSON.parse((await data("reconnected"))!)).toEqual({
+    id: "next",
+    end: "to",
+    to: { moduleId: "level-3", side: "left" },
+  });
+  // Its words are changed where they are drawn.
+  const words = (await page.locator('[data-link-id="next"] text').boundingBox())!;
+  await page.mouse.dblclick(words.x + words.width / 2, words.y + words.height / 2);
+  expect(JSON.parse((await data("pointed"))!)).toMatchObject({
+    kind: "text",
+    moduleId: "next",
+    link: true,
+    text: "然后",
+  });
+  // Selecting a module leaves no link selected.
+  const level = await screen(420, 150);
+  await page.mouse.click(level.x, level.y);
+  expect(await data("selected")).toBe("level-0");
+  expect(await data("link")).toBe("");
+  // Enter finds the words a module draws first; a double click on the paper puts words
+  // where it lands.
+  expect(
+    await page.evaluate(() => window.drawyView.wordsIn("level-0")?.text),
+  ).toBe("自我实现");
+  await page.evaluate(() => {
+    window.drawyView.options.place = (at) =>
+      (document.body.dataset.placed = JSON.stringify(at));
+  });
+  const paper = await screen(1000, 300);
+  await page.mouse.dblclick(paper.x, paper.y);
+  const placed = JSON.parse((await data("placed"))!);
+  expect(placed.x).toBeCloseTo(1000, 0);
+  expect(placed.y).toBeCloseTo(300, 0);
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+});
+it("lays the person's own change over what is drawn, redrawing only what changed", async () => {
+  await open();
+  const result = await page.evaluate(async () => {
+    const view = window.drawyView,
+      drawn = (id: string) =>
+        document.querySelector<HTMLElement>(`[data-module-id="${id}"]`)!,
+      inner = (id: string) => drawn(id).shadowRoot!.lastElementChild;
+    const kept = { host: drawn("level-2"), inner: inner("level-2") },
+      changed = inner("level-0"),
+      moved = inner("heading");
+    const work = structuredClone(window.drawyData.work),
+      scene = work.scenes.root;
+    scene.modules = scene.modules
+      .filter((m) => m.id !== "level-4")
+      .map((m) =>
+        m.id === "level-0"
+          ? { ...m, data: { ...m.data, label: "成长" } }
+          : m.id === "heading"
+            ? { ...m, bounds: { ...m.bounds, x: m.bounds.x + 40 } }
+            : m,
+      );
+    // The heading goes to the back.
+    scene.modules.unshift(...scene.modules.splice(scene.modules.findIndex((m) => m.id === "heading"), 1));
+    const shown = new Promise<void>((resolve) => (view.options.shown = () => resolve()));
+    view.update({ ...work, revision: work.revision + 1 }, scene, true);
+    await shown;
+    const order = [...document.querySelectorAll<HTMLElement>("[data-module-id]")].map(
+      (e) => e.dataset.moduleId,
+    );
+    return {
+      sameHost: drawn("level-2") === kept.host,
+      sameDrawing: inner("level-2") === kept.inner,
+      redrawn: inner("level-0") !== changed,
+      label: drawn("level-0").shadowRoot!.textContent,
+      movedOnly: inner("heading") === moved,
+      left: drawn("heading").style.left,
+      gone: !document.querySelector('[data-module-id="level-4"]'),
+      first: order[0],
+    };
+  });
+  expect(result).toEqual({
+    sameHost: true,
+    sameDrawing: true,
+    redrawn: true,
+    label: expect.stringContaining("成长"),
+    movedOnly: true,
+    left: "140px",
+    gone: true,
+    first: "heading",
+  });
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+});
 it("passes over modules an interaction names once they are taken out of the scene", async () => {
   work.scenes.root.modules = work.scenes.root.modules.filter(
     (m) => m.id !== "level-4",

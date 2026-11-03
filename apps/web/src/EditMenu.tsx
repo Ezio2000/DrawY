@@ -1,11 +1,20 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import {
+  ArrowRightLeft,
+  BringToFront,
+  Copy,
+  Group,
   Hand,
   ImagePlus,
   MousePointer2,
+  SendToBack,
   Shapes,
+  Sparkles,
+  Trash2,
   Type,
+  Ungroup,
 } from "lucide-react";
+import type { Canvas } from "../../../modules/canvas/index.ts";
 import type { EditOps, Tool } from "./handEdits.ts";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
@@ -67,6 +76,7 @@ export function EditMenu({
   at,
   ops,
   selected,
+  link,
   grouped,
   clipped,
   close,
@@ -75,6 +85,8 @@ export function EditMenu({
   at: { x: number; y: number };
   ops: EditOps;
   selected: string[];
+  /** The link selected, when no module is. */
+  link?: string | null;
   /** Whether any selected module is in a group. */
   grouped: boolean;
   /** Whether there is something to paste. */
@@ -103,7 +115,14 @@ export function EditMenu({
     el.style.top = Math.min(at.y, innerHeight - r.height - 8) + "px";
   }, [at]);
   const some = selected.length > 0;
-  const items: Item[] = some
+  const items: Item[] = link && !some
+    ? [
+        { label: m.reverse, key: "R", run: () => ops.reverse() },
+        "-",
+        { label: m.ask, run: ask },
+        { label: m.remove, key: "Delete", run: ops.remove, danger: true },
+      ]
+    : some
     ? [
         { label: m.cut, key: "Mod+X", run: ops.cut },
         { label: m.copy, key: "Mod+C", run: () => void ops.copy() },
@@ -150,6 +169,107 @@ export function EditMenu({
           </button>
         ),
       )}
+    </div>
+  );
+}
+
+/** The selection's most used actions in a bar over it on the canvas, following it as the
+ * view moves; it steps aside while something is dragged, and sits under the selection
+ * when there is no room above. */
+export function SelectionBar({
+  canvas,
+  stage,
+  ops,
+  selected,
+  link,
+  grouped,
+  hidden,
+  ask,
+}: {
+  canvas?: Canvas;
+  stage: HTMLElement | null;
+  ops: EditOps;
+  selected: string[];
+  link: string | null;
+  /** Whether the selected modules share a group. */
+  grouped: boolean;
+  hidden: boolean;
+  ask: () => void;
+}) {
+  const t = useT(),
+    e = t.edit;
+  const ref = useRef<HTMLDivElement>(null);
+  const some = selected.length > 0;
+  useLayoutEffect(() => {
+    if (!canvas || !stage) return;
+    const place = () => {
+      const el = ref.current;
+      if (!el) return;
+      const r = canvas.selectionRect(),
+        area = stage.getBoundingClientRect();
+      if (
+        !r ||
+        canvas.dragging ||
+        r.bottom < area.top ||
+        r.top > area.bottom ||
+        r.right < area.left ||
+        r.left > area.right
+      ) {
+        el.dataset.away = "";
+        return;
+      }
+      const w = el.offsetWidth,
+        h = el.offsetHeight;
+      // Clear of the dot above a selected module, the title and the tools over the canvas.
+      let top = r.top - area.top - h - 30;
+      if (top < 108) top = r.bottom - area.top + 30;
+      const left = Math.min(
+        area.width - w - 12,
+        Math.max(12, r.left - area.left + r.width / 2 - w / 2),
+      );
+      el.style.transform = `translate(${Math.round(left)}px,${Math.round(top)}px)`;
+      delete el.dataset.away;
+    };
+    place();
+    return canvas.watch(place);
+  }, [canvas, stage, selected.join(), link, hidden]);
+  if (hidden || (!some && !link)) return null;
+  const item = (
+    label: string,
+    icon: ReactNode,
+    run: () => void,
+    o: { key?: string; danger?: boolean; off?: boolean } = {},
+  ) => (
+    <button
+      key={label}
+      aria-label={label}
+      data-tip={o.key ? `${label} · ${keys(o.key)}` : label}
+      data-tone={o.danger ? "danger" : undefined}
+      disabled={o.off}
+      onPointerDown={(ev) => ev.preventDefault()}
+      onClick={run}
+    >
+      {icon}
+    </button>
+  );
+  return (
+    <div ref={ref} className={cx("selection-bar")} role="toolbar" aria-label={e.bar} data-away="">
+      {some ? (
+        <>
+          {item(e.menu.duplicate, <Copy size={15} />, ops.duplicate, { key: "Mod+D" })}
+          {item(e.menu.front, <BringToFront size={15} />, () => ops.stack("front"), { key: "Mod+]" })}
+          {item(e.menu.back, <SendToBack size={15} />, () => ops.stack("back"), { key: "Mod+[" })}
+          {grouped
+            ? item(e.menu.ungroup, <Ungroup size={15} />, ops.ungroup, { key: "Shift+Mod+G" })
+            : selected.length > 1 &&
+              item(e.menu.group, <Group size={15} />, ops.group, { key: "Mod+G" })}
+        </>
+      ) : (
+        item(e.menu.reverse, <ArrowRightLeft size={15} />, () => ops.reverse(), { key: "R" })
+      )}
+      <i />
+      {item(e.menu.ask, <Sparkles size={15} />, ask)}
+      {item(e.menu.remove, <Trash2 size={15} />, ops.remove, { key: "Delete", danger: true })}
     </div>
   );
 }

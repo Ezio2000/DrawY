@@ -2296,7 +2296,7 @@ body:has(.resizer[data-dragging]) {
 /* ---------- Editing by hand: a panel of plain controls beside the canvas ---------- */
 
 .side-panel[data-kind="edit"] {
-  --panel: 320px;
+  --panel: var(--edit, 380px);
 }
 
 .canvas[data-editing] [data-module-id] {
@@ -2310,7 +2310,7 @@ body:has(.resizer[data-dragging]) {
 .edit {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 18px;
   padding-top: 2px;
   animation: rise 0.4s var(--ease-out) both;
 }
@@ -2338,23 +2338,83 @@ body:has(.resizer[data-dragging]) {
   color: var(--ai-deep);
 }
 
-.edit-adds {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.edit-adds .secondary {
-  min-height: 44px;
-}
-
-.edit-head {
+/* With nothing selected: what can be added, and a word on how to start. */
+.edit-start {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
+.edit-adds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.edit-adds button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px 6px 12px;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 0.5px var(--line-strong);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.edit-adds button svg {
+  color: var(--ai-deep);
+}
+
+.edit-adds button span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edit-adds button:hover {
+  background: var(--bg-2);
+}
+
+/* The selection's name and actions stay at the top while the panel scrolls. */
+.edit-head {
+  position: sticky;
+  top: 40px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: -6px -22px 0;
+  padding: 8px 22px 12px;
+  background: var(--surface);
+  box-shadow: 0 1px 0 var(--separator);
+}
+
+.edit-title {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.edit-title small {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .edit-head h3 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   margin: 0;
   font-family: var(--font-serif);
   font-size: 17px;
@@ -2364,22 +2424,47 @@ body:has(.resizer[data-dragging]) {
   overflow-wrap: anywhere;
 }
 
+.edit-head h3 svg {
+  flex: none;
+  color: var(--text-3);
+}
+
+/* The header draws the line under itself; the first section needs none of its own. */
+.edit-head + .edit-section {
+  border-top: 0;
+}
+
+.edit-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--ai-deep);
+}
+
 .edit-actions {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--field);
+}
+
+.edit-actions > i {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--line-strong);
 }
 
 .edit-actions button {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 7px 0 6px;
-  border-radius: 9px;
-  background: var(--bg);
-  box-shadow: inset 0 0 0 0.5px var(--line-strong);
-  font-size: 12px;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  height: 32px;
+  border-radius: 8px;
   color: var(--text-2);
 }
 
@@ -2394,10 +2479,10 @@ body:has(.resizer[data-dragging]) {
   color: var(--text-2);
 }
 
-.edit-actions button:hover,
+.edit-actions button:hover:not(:disabled),
 .connection-head > button:last-child:hover {
   color: var(--text);
-  background: var(--bg-2);
+  background: var(--bg);
 }
 
 .edit-actions button[data-tone="danger"]:hover,
@@ -2507,9 +2592,9 @@ body:has(.resizer[data-dragging]) {
   background: var(--field);
 }
 
+/* Choices wrap onto another row rather than run into each other. */
 .field-choice button {
-  flex: 1;
-  min-width: 0;
+  flex: 1 0 auto;
   padding: 6px 8px;
   border-radius: 7px;
   font-size: 13px;
@@ -2657,7 +2742,6 @@ body:has(.resizer[data-dragging]) {
   align-items: center;
   gap: 7px;
   align-self: flex-start;
-  margin-top: -10px;
   padding: 6px 0;
   font-size: 13.5px;
   color: var(--ai-deep);
@@ -2692,8 +2776,9 @@ body:has(.resizer[data-dragging]) {
 .edit-tabs {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
   margin-bottom: -6px;
+  box-shadow: 0 0 0 6px var(--surface);
 }
 
 .edit-tabs button small {
@@ -2706,7 +2791,7 @@ body:has(.resizer[data-dragging]) {
 .edit-section {
   border-top: 1px solid var(--separator);
   padding-top: 4px;
-  margin-top: -10px;
+  margin-top: -6px;
 }
 
 .edit-section > header {
@@ -2727,6 +2812,17 @@ body:has(.resizer[data-dragging]) {
 
 .edit-section > header > button h3 {
   margin: 0;
+}
+
+.edit-section > header > button small {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--fill);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--text-3);
 }
 
 .edit-section > header > button svg {
@@ -2759,6 +2855,7 @@ body:has(.resizer[data-dragging]) {
   width: calc(100% + 16px);
   margin: 0 -8px;
   padding: 4px 8px;
+  border: 0;
   border-radius: 8px;
   font-family: var(--font-serif);
   font-size: 17px;
@@ -2821,8 +2918,15 @@ body:has(.resizer[data-dragging]) {
   color: var(--text);
 }
 
-.edit-input[data-short] {
-  width: 132px;
+.edit-input[data-short],
+.edit-select[data-short] {
+  width: 150px;
+  flex: none;
+}
+
+.field[data-inline] .amount-typed {
+  width: 110px;
+  flex: none;
 }
 
 .edit-input:focus,
@@ -2913,9 +3017,17 @@ body:has(.resizer[data-dragging]) {
 
 .place-field span {
   flex: none;
-  min-width: 12px;
+  min-width: 14px;
+  padding: 8px 2px;
   font-size: 12px;
   color: var(--text-3);
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+.place-field span:hover {
+  color: var(--ai-deep);
 }
 
 .place-field input {
@@ -3454,6 +3566,161 @@ body:has(.resizer[data-dragging]) {
   rotate: 0deg !important;
 }
 
+/* A module's links, each a row that selects it. */
+.link-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--field);
+}
+
+.link-row > button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--text-3);
+}
+
+.link-row > button:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.link-row > button[data-tone="danger"]:hover {
+  color: var(--red-text);
+}
+
+.link-row > .link-row-main {
+  flex: 1;
+  display: flex;
+  justify-content: flex-start;
+  gap: 7px;
+  width: auto;
+  min-width: 0;
+  padding: 0 8px;
+  font-size: 13.5px;
+  color: var(--text);
+  text-align: left;
+}
+
+.link-row-main span {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-row-main small {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.link-row-main svg {
+  flex: none;
+  color: var(--text-3);
+}
+
+/* One end of the selected link: the module it meets, and on which side. */
+.link-end {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.link-end .field-choice {
+  grid-column: 2;
+}
+
+.layers-heading {
+  margin: 14px 0 4px !important;
+  padding-left: 10px;
+}
+
+.layers li > i:first-child {
+  flex: none;
+}
+
+/* Gestures, before the keys. */
+.gestures {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+/* The selection's actions, in a bar over it on the canvas. */
+.selection-bar {
+  position: absolute;
+  z-index: 11;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow:
+    0 0 0 0.5px var(--line-strong),
+    0 6px 20px rgba(60, 45, 20, 0.12);
+  transition: opacity 0.15s var(--ease);
+}
+
+.selection-bar[data-away] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.selection-bar button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 30px;
+  border-radius: 9px;
+  color: var(--text-2);
+}
+
+.selection-bar button:hover:not(:disabled) {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.selection-bar button[data-tone="danger"]:hover {
+  color: var(--red-text);
+  background: #fdf1ee;
+}
+
+.selection-bar i {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--line-strong);
+}
+
 /* The tools over the canvas while editing. */
 .edit-tools {
   position: absolute;
@@ -3478,8 +3745,8 @@ body:has(.resizer[data-dragging]) {
 .edit-tools button {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 32px;
+  width: 38px;
+  height: 36px;
   border-radius: 10px;
   color: var(--text-2);
 }

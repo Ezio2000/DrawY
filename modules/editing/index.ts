@@ -11,4 +11,5 @@ export * from "./words.ts";
 export * from "./clipboard.ts";
 export * from "./work.ts";
 export * from "./changes.ts";
+export * from "./apply.ts";
 export { compiles, syntaxError } from "./shared.ts";
