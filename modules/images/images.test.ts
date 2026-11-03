@@ -54,7 +54,13 @@ for (const channel of ["api", "oauth"] as const)
       return Response.json({ data: [{ b64_json: png.toString("base64") }] });
     });
     const work = fixture();
-    const [made] = await develop(store, work, [
+    const role = store.settings().image;
+    // A later account/catalog change must not replace the supplied run connection.
+    const changed = store.storage.models();
+    changed.painters[0].credential = "";
+    changed.painters[0].models[0].model = "other-painter";
+    store.storage.saveModels(changed);
+    const [made] = await develop(store, role, work, [
       {
         name: { zh: "显微镜", en: "microscope" },
         role: "object",
@@ -109,7 +115,7 @@ it("cuts a long name before trimming its hyphens, so no id carries \"--\"", asyn
     Response.json({ data: [{ b64_json: png.toString("base64") }] }),
   );
   // Cut at 28 characters this name ends on a hyphen, which the work's references would not read.
-  const [cut] = await develop(store, fixture(), [
+  const [cut] = await develop(store, store.settings().image, fixture(), [
     {
       name: { zh: "塑料瓶和铝罐", en: "plastic bottle and aluminum can" },
       role: "object",
@@ -141,7 +147,7 @@ it("retries a dropped connection or a busy server before giving up", async () =>
   });
   vi.useFakeTimers({ toFake: ["setTimeout"] });
   try {
-    const [made] = await develop(store, fixture(), [
+    const [made] = await develop(store, store.settings().image, fixture(), [
       { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
     ]);
     while (!made.settled) await vi.advanceTimersByTimeAsync(1000);
@@ -164,7 +170,7 @@ it("records a failed picture so the work and the author both learn of it", async
     painters: painting(store.storage.models(), settings.image),
   });
   library.route(async () => new Response("unsafe prompt", { status: 400 }));
-  const [made] = await develop(store, fixture(), [
+  const [made] = await develop(store, store.settings().image, fixture(), [
     { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
   ]);
   expect(await made.done).toMatchObject({
@@ -175,7 +181,7 @@ it("records a failed picture so the work and the author both learn of it", async
     "400",
   );
   await expect(
-    develop(store, { ...fixture(), brief: null }, [
+    develop(store, store.settings().image, { ...fixture(), brief: null }, [
       { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
     ]),
   ).rejects.toThrow("set_brief");
@@ -215,7 +221,7 @@ it("makes pictures that reference another in the same request after it, all priv
     },
     store.userId,
   );
-  const [rabbit, scene, kept] = await develop(store, fixture(), [
+  const [rabbit, scene, kept] = await develop(store, store.settings().image, fixture(), [
     {
       key: "rabbit",
       name: { zh: "兔子", en: "rabbit" },
@@ -273,7 +279,7 @@ it("paints new pictures to look like the ones the work already has in its style"
     expect(String(url)).toMatch(/\/images\/edits$/);
     return Response.json({ data: [{ b64_json: png.toString("base64") }] });
   });
-  const [earlier] = await develop(store, fixture(), [
+  const [earlier] = await develop(store, store.settings().image, fixture(), [
     { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
   ]);
   await earlier.done;
@@ -284,7 +290,7 @@ it("paints new pictures to look like the ones the work already has in its style"
   ]);
   const work = fixture();
   work.materials[earlier.id] = useOf(m)!;
-  const [later] = await develop(store, work, [
+  const [later] = await develop(store, store.settings().image, work, [
     {
       name: { zh: "海豚", en: "dolphin" },
       role: "object",

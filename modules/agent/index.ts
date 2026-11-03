@@ -319,6 +319,8 @@ function forAuthor(work: Work) {
   };
 }
 interface Context {
+  /** Resolved once for this run, including connections and prices, and persisted across answers. */
+  settings: Settings;
   input: Item[];
   generations: number;
   /** The tokens the model last reported for the first `items` items of the input. */
@@ -448,7 +450,7 @@ async function compact(
   const size = contextSize(ctx);
   if (size < 200000) return;
   await tracer.span("compact", "context", { size }, async (span) => {
-    const author = store.settings().author;
+    const author = ctx.settings.author;
     let result: Awaited<ReturnType<typeof generate>>;
     try {
       result = await generate(
@@ -540,9 +542,9 @@ const transient = (e: unknown) =>
       e.message,
     ));
 /** Everything the user has said about this work, for checking a brief's quotes. */
-function said(store: UserStore, workId: string) {
+function said(store: UserStore, workId: string, preferences: string) {
   return [
-    store.settings().preferences,
+    preferences,
     ...store
       .runs(workId)
       .flatMap((r) =>
@@ -625,6 +627,7 @@ export class Agent {
     )
       throw new DomainError("请先完成或取消当前任务", 409);
     if (!work.scenes[sceneId]) throw new DomainError("场景不存在", 404);
+    const settings = store.settings();
     const message = await userMessage(store, prompt, materials, locale);
     const run: Run = {
       id: id(),
@@ -638,6 +641,7 @@ export class Agent {
     const previous = store.runs(workId).at(-1);
     const before = previous && (store.context(previous.id) as Context);
     const ctx: Context = {
+      settings,
       input: before ? before.input : [],
       generations: 0,
       ...(before?.measured ? { measured: before.measured } : {}),
@@ -751,7 +755,7 @@ export class Agent {
     );
     const start = Date.now();
     let flush: ReturnType<typeof setTimeout> | undefined;
-    const settings = store.settings();
+    const settings = ctx.settings;
     run.services = {
       author: settings.authorName,
       model: settings.author.model,
@@ -853,7 +857,7 @@ export class Agent {
     start: number,
     flushing: (f: ReturnType<typeof setTimeout> | undefined) => void,
   ) {
-    const settings = store.settings();
+    const settings = ctx.settings;
     const availableTools = toolsFor(settings);
     // Tool arguments stream in; each flush shows what has been laid out so far.
     const drafts = new Map<
@@ -1177,7 +1181,7 @@ export class Agent {
       switch (call.name) {
         case "web_search":
         case "open_page": {
-          const service = store.settings().search.service;
+          const service = ctx.settings.search.service;
           if (!service) throw Error("This request has no search service.");
           // The call is already among the steps; the budget is what was left before it.
           const left = searchesLeft({
@@ -1273,7 +1277,7 @@ export class Agent {
             store,
             run.workId,
             brief,
-            said(store, run.workId),
+            said(store, run.workId, ctx.settings.preferences),
             causeOf(run),
           );
           this.publish(store.userId, { type: "work", work });
@@ -1322,7 +1326,7 @@ export class Agent {
         }
         case "generate_images": {
           const { images: requests } = generateSchema.parse(args);
-          const made = await develop(store, store.work(run.workId), requests);
+          const made = await develop(store, ctx.settings.image, store.work(run.workId), requests);
           const list = this.developments.get(run.id) || [];
           list.push(...made);
           this.developments.set(run.id, list);
