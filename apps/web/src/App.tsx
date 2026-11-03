@@ -861,7 +861,6 @@ export function App() {
             works={shownWorks}
             current={work?.id}
             go={go}
-            rename={(id, title) => void attempt(() => rename(id, title))}
             remove={remove}
             logout={() =>
               void attempt(async () => {

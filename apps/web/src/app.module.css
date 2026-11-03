@@ -170,8 +170,7 @@
   transition: background-color 0.15s var(--ease);
 }
 
-.rail-work:hover,
-.rail-work[data-menu] {
+.rail-work:hover {
   background: var(--fill);
 }
 
@@ -195,12 +194,7 @@
   text-overflow: ellipsis;
 }
 
-.rail-work .rename {
-  flex: 1;
-  margin: 2px;
-}
-
-.rail-work-more > button {
+.rail-work-remove {
   display: grid;
   place-items: center;
   flex: none;
@@ -212,20 +206,14 @@
   opacity: 0;
 }
 
-.rail-work:is(:hover, [data-current], [data-menu]) .rail-work-more > button,
-.rail-work-more > button:focus-visible {
+.rail-work:is(:hover, [data-current]) .rail-work-remove,
+.rail-work-remove:focus-visible {
   opacity: 1;
 }
 
-.rail-work-more > button:hover,
-.rail-work-more > button[aria-expanded="true"] {
+.rail-work-remove:hover {
   background: var(--fill-2);
-  color: var(--text);
-}
-
-.rail-work-more .popover {
-  top: calc(100% + 2px);
-  right: 0;
+  color: var(--red-text);
 }
 
 .rail-foot {
