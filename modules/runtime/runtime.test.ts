@@ -629,6 +629,39 @@ it("lays the person's own change over what is drawn, redrawing only what changed
   });
   expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
 });
+it("stops a drawing still running for a module taken out while it draws", async () => {
+  await open();
+  const ticks = await page.evaluate(async () => {
+    const view = window.drawyView,
+      work = structuredClone(window.drawyData.work),
+      scene = work.scenes.root;
+    const w = window as unknown as { ticks: number };
+    w.ticks = 0;
+    work.drawings.slow = {
+      id: "slow",
+      name: "慢",
+      source:
+        "await new Promise((r) => setTimeout(r, 200)); const t = setInterval(() => window.ticks++, 10); api.cleanup(() => clearInterval(t)); return api.svg('<svg></svg>');",
+    };
+    const slow = {
+      ...scene.modules[0],
+      id: "slow",
+      label: "慢",
+      drawingId: "slow",
+      group: null,
+      target: null,
+    };
+    view.update({ ...work, revision: 2 }, { ...scene, modules: [...scene.modules, slow] }, true);
+    view.update({ ...work, revision: 3 }, scene, true);
+    await new Promise((r) => setTimeout(r, 400));
+    const after = w.ticks;
+    await new Promise((r) => setTimeout(r, 200));
+    return { after, later: w.ticks };
+  });
+  expect(ticks.later).toBe(ticks.after);
+  expect(await page.locator('[data-module-id="slow"]').count()).toBe(0);
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+});
 it("passes over modules an interaction names once they are taken out of the scene", async () => {
   work.scenes.root.modules = work.scenes.root.modules.filter(
     (m) => m.id !== "level-4",

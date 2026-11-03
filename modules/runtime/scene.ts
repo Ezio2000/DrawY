@@ -294,7 +294,10 @@ export class SceneRenderer {
     frame.append(img);
     return frame;
   }
-  private animate(fn: (seconds: number) => void, cleanup: (() => void)[]) {
+  private animate(
+    fn: (seconds: number) => void,
+    cleanup: { push: (fn: () => void) => unknown },
+  ) {
     let frame = 0;
     const start = performance.now();
     const tick = (now: number) => {
@@ -383,6 +386,12 @@ export class SceneRenderer {
         for (const fn of view.cleanup.splice(0)) fn();
         const cleanup: (() => void)[] = [];
         view.cleanup = cleanup;
+        // A drawing superseded or taken out while it runs is not shown, and what it sets
+        // going from then on is stopped at once.
+        const stale = () => this.disposed || view.revision !== revision;
+        const keep = {
+          push: (fn: () => void) => (stale() ? fn() : cleanup.push(fn)),
+        };
         const effects = new Set<string>();
         const apiFor = (
           data: Record<string, unknown>,
@@ -410,8 +419,8 @@ export class SceneRenderer {
             return `url(#fx-${id})`;
           },
           emit: (event, value) => this.emit(id, event, value),
-          cleanup: (fn) => cleanup.push(fn),
-          animate: (fn) => this.animate(fn, cleanup),
+          cleanup: (fn) => void keep.push(fn),
+          animate: (fn) => this.animate(fn, keep),
         });
         try {
           // The work's own definition, or a library drawing used as it is.
@@ -424,7 +433,7 @@ export class SceneRenderer {
               height: bounds.height,
             }),
           );
-          if (this.disposed || view.revision !== revision) {
+          if (stale()) {
             for (const fn of cleanup.splice(0)) fn();
             return;
           }
@@ -460,7 +469,8 @@ export class SceneRenderer {
             host.toggleAttribute("data-explorable", !!m.target);
           }
         } catch (e) {
-          if (!this.disposed) {
+          if (stale()) for (const fn of cleanup.splice(0)) fn();
+          else {
             this.options.error(id + ": " + String(e));
             host.shadowRoot!.textContent = String(e);
             host.setAttribute("data-error", "");
@@ -648,6 +658,8 @@ export class SceneRenderer {
   private forget(kind: "module" | "link", id: string) {
     const view = this.views.get(kind + ":" + id);
     if (view) {
+      // A drawing still running for it sees it is gone and stops what it started.
+      view.revision++;
       for (const fn of view.cleanup.splice(0)) fn();
       view.host.remove();
       this.views.delete(kind + ":" + id);
