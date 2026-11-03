@@ -3,88 +3,91 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type CSSProperties,
 } from "react";
 import {
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignHorizontalDistributeCenter,
+  AlignStartHorizontal,
+  AlignStartVertical,
+  AlignVerticalDistributeCenter,
+  ArrowRightLeft,
   BringToFront,
   ChevronRight,
   Copy,
+  CornerDownRight,
+  Group,
   ImagePlus,
+  Lock,
   MousePointerClick,
-  RotateCcw,
   SendToBack,
+  Shapes,
   Sparkles,
   Trash2,
   Type,
+  Ungroup,
+  Unlock,
 } from "lucide-react";
-import { Switch } from "@drawy/ui";
 import type { Canvas, Pointed } from "../../../modules/canvas/index.ts";
 import {
-  fieldsOf,
-  setData,
-  setStyle,
-  type Field,
+  addScene,
+  moveParts,
+  reattach,
+  removeParts,
+  rename,
+  reverse,
+  scaled,
+  setDetail,
+  setTarget,
+  sides,
+  sideOf,
+  type Alignment,
+  type Side,
 } from "../../../modules/editing/index.ts";
+import { union } from "../../../modules/contracts/geometry.ts";
 import type {
+  Bounds,
   Instance,
   Link,
+  Target,
   Work,
   WorkEdit,
 } from "../../../modules/contracts/index.ts";
-import type { PictureMaterial } from "@drawy/materials/schema";
+import type { Material, PictureMaterial } from "@drawy/materials/schema";
+import { DrawingPanel, ModuleRecord } from "./EditCode.tsx";
+import {
+  DataEditor,
+  Fields,
+  Section,
+  type PickPicture,
+} from "./EditControls.tsx";
+import { keys } from "./EditMenu.tsx";
+import { Details, Layers, Look, SceneSettings } from "./EditWork.tsx";
+import type { Change, EditOps } from "./handEdits.ts";
 import { cx } from "./cx.ts";
-import { useT, type Words } from "./i18n.tsx";
+import { useT } from "./i18n.tsx";
 
-/** Commits a hand edit made from the latest work; resolves to whether there was one. */
-export type Change = (
-  make: (work: Work) => WorkEdit | null,
-) => Promise<boolean>;
-/** The part a field belongs to: a module, or a link drawn between two. */
-type Part = Instance | Link;
+export type { Change } from "./handEdits.ts";
 
-const COLOR = /^#[0-9a-f]{6}$/i;
-/** A colour as the colour picker takes it. */
-const hex = (value: unknown) => {
-  if (typeof value !== "string") return "#000000";
-  if (COLOR.test(value)) return value.toLowerCase();
-  if (/^#[0-9a-f]{3}$/i.test(value))
-    return ("#" + [...value.slice(1)].map((c) => c + c).join("")).toLowerCase();
-  // Any other CSS colour, as the page resolves it.
-  const probe = document.createElement("i");
-  probe.style.color = value;
-  document.body.append(probe);
-  const [r, g, b] = getComputedStyle(probe).color.match(/\d+/g)!.map(Number);
-  probe.remove();
-  return "#" + [r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("");
-};
-/** The colours a work is drawn in: its style's, then those its parts set. */
-function palette(work: Work) {
-  const tokens = ["ink", "accent", "accent2", "muted"]
-    .map((k) => work.style[k])
-    .filter((v): v is string => !!v && COLOR.test(hex(v)));
-  const used = Object.values(work.scenes).flatMap((s) =>
-    [...s.modules, ...s.links].flatMap((p) =>
-      Object.values(p.data).filter(
-        (v): v is string =>
-          typeof v === "string" && /^#[0-9a-f]{3,6}$/i.test(v),
-      ),
-    ),
-  );
-  return [...new Set([...tokens, ...used].map(hex))].slice(0, 10);
+/** Two edits of the same revision as one, so a change that makes a scene or a detail and
+ * points a module at it is one step. */
+function both(a: WorkEdit, b: WorkEdit): WorkEdit {
+  return {
+    ...a,
+    ...b,
+    scenes: [...(a.scenes ?? []), ...(b.scenes ?? [])],
+    details: [...(a.details ?? []), ...(b.details ?? [])],
+  };
 }
-/** A field's name: the author's, the app's for a common key, or the key spelled out. */
-const nameOf = (t: Words, f: Field) =>
-  f.label ??
-  (t.edit.params as Record<string, string>)[f.key] ??
-  f.key
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/^./, (c) => c.toUpperCase());
-const optionOf = (t: Words, value: string) =>
-  (t.edit.options as Record<string, string>)[value] ?? value;
+const TAB = "drawy.edit.tab";
 
-/** The editing panel beside the canvas. With nothing selected it says how editing works,
- * adds words and pictures and sets the work's colours and type; with modules selected it
- * shows what can be changed about them, in plain controls. */
+/** The editing panel beside the canvas, in two tabs. Properties shows what can be changed
+ * about the selection (its name, place and size, values and data, where it leads, its
+ * links and, for those who want it, its drawing's code and its record), or, with nothing
+ * selected, what to add and the scene's and the work's own settings. Layers lists the
+ * scene's modules in stacking order. */
 export function EditPanel({
   work,
   sceneId,
@@ -92,12 +95,10 @@ export function EditPanel({
   canvas,
   busy,
   change,
-  add,
-  duplicate,
-  remove,
-  arrange,
-  pickPicture,
+  ops,
+  pick,
   ask,
+  openScene,
 }: {
   work: Work;
   sceneId: string;
@@ -106,464 +107,435 @@ export function EditPanel({
   /** Why the work cannot be edited right now, if it cannot. */
   busy?: string;
   change: Change;
-  add: (kind: "text" | "picture") => void;
-  duplicate: () => void;
-  remove: () => void;
-  arrange: (to: "front" | "back") => void;
-  pickPicture: (chosen: (m: PictureMaterial) => void) => void;
+  ops: EditOps;
+  pick: (kind: "picture" | "drawing", chosen: (m: Material) => void) => void;
   ask: () => void;
+  openScene: (id: string) => void;
+}) {
+  const t = useT();
+  const [tab, setTab] = useState<"properties" | "layers">(() => {
+    try {
+      return localStorage.getItem(TAB) === "layers" ? "layers" : "properties";
+    } catch {
+      return "properties";
+    }
+  });
+  const choose = (next: typeof tab) => {
+    setTab(next);
+    try {
+      localStorage.setItem(TAB, next);
+    } catch {}
+  };
+  const scene = work.scenes[sceneId];
+  if (busy || !scene) return <p className={cx("edit-note")}>{busy}</p>;
+  const pickPicture: PickPicture = (chosen) =>
+    pick("picture", (m) => chosen(m as PictureMaterial));
+  const modules = selected.flatMap((id) => {
+    const m = scene.modules.find((x) => x.id === id);
+    return m ? [m] : [];
+  });
+  return (
+    <div className={cx("edit")}>
+      <span className={cx("field-choice", "edit-tabs")} role="tablist">
+        <button role="tab" aria-pressed={tab === "properties"} onClick={() => choose("properties")}>
+          {t.edit.tabs.properties}
+        </button>
+        <button role="tab" aria-pressed={tab === "layers"} onClick={() => choose("layers")}>
+          {t.edit.tabs.layers}
+          <small>{scene.modules.length}</small>
+        </button>
+      </span>
+      {tab === "layers" ? (
+        <Layers work={work} sceneId={sceneId} selected={selected} canvas={canvas} change={change} />
+      ) : modules.length ? (
+        <Selected
+          work={work}
+          sceneId={sceneId}
+          modules={modules}
+          canvas={canvas}
+          change={change}
+          ops={ops}
+          pick={pick}
+          pickPicture={pickPicture}
+          ask={ask}
+          openScene={openScene}
+        />
+      ) : (
+        <>
+          <p className={cx("edit-note")}>
+            <MousePointerClick size={15} />
+            {t.edit.howTo}
+          </p>
+          <section>
+            <h3>{t.edit.add}</h3>
+            <div className={cx("edit-adds")}>
+              <button className={cx("secondary")} onClick={() => ops.add("text")}>
+                <Type size={16} />
+                {t.edit.addText}
+              </button>
+              <button className={cx("secondary")} onClick={() => ops.add("picture")}>
+                <ImagePlus size={16} />
+                {t.edit.addPicture}
+              </button>
+              <button className={cx("secondary")} onClick={() => ops.add("drawing")}>
+                <Shapes size={16} />
+                {t.edit.addDrawing}
+              </button>
+            </div>
+          </section>
+          <Section id="scene" title={sceneId === work.rootSceneId ? t.edit.scene.rootHeading : t.edit.scene.heading}>
+            <SceneSettings work={work} sceneId={sceneId} change={change} openScene={openScene} />
+          </Section>
+          <Section id="look" title={t.edit.look}>
+            <Look work={work} change={change} />
+          </Section>
+          <Section id="details" title={t.edit.details.heading} open={false}>
+            <Details work={work} change={change} />
+          </Section>
+          <Section id="keys" title={t.edit.shortcuts.heading} open={false}>
+            <Shortcuts />
+          </Section>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** What can be changed about the selected modules. */
+function Selected({
+  work,
+  sceneId,
+  modules,
+  canvas,
+  change,
+  ops,
+  pick,
+  pickPicture,
+  ask,
+  openScene,
+}: {
+  work: Work;
+  sceneId: string;
+  modules: Instance[];
+  canvas?: Canvas;
+  change: Change;
+  ops: EditOps;
+  pick: (kind: "picture" | "drawing", chosen: (m: Material) => void) => void;
+  pickPicture: PickPicture;
+  ask: () => void;
+  openScene: (id: string) => void;
 }) {
   const t = useT();
   const scene = work.scenes[sceneId];
-  const modules = selected.flatMap((id) => {
-    const m = scene?.modules.find((x) => x.id === id);
-    return m ? [m] : [];
-  });
-  if (busy || !scene) return <p className={cx("edit-note")}>{busy}</p>;
-  if (!modules.length)
-    return (
-      <div className={cx("edit")}>
-        <p className={cx("edit-note")}>
-          <MousePointerClick size={15} />
-          {t.edit.howTo}
-        </p>
-        <section>
-          <h3>{t.edit.add}</h3>
-          <div className={cx("edit-adds")}>
-            <button className={cx("secondary")} onClick={() => add("text")}>
-              <Type size={16} />
-              {t.edit.addText}
-            </button>
-            <button className={cx("secondary")} onClick={() => add("picture")}>
-              <ImagePlus size={16} />
-              {t.edit.addPicture}
-            </button>
-          </div>
-        </section>
-        <Look work={work} change={change} />
-      </div>
-    );
   const one = modules.length === 1 ? modules[0] : undefined;
+  const grouped = modules.some((m) => m.group);
   const links = one
-    ? scene.links.filter(
-        (l) => l.from.moduleId === one.id || l.to.moduleId === one.id,
-      )
+    ? scene.links.filter((l) => l.from.moduleId === one.id || l.to.moduleId === one.id)
     : [];
   return (
-    <div className={cx("edit")}>
+    <>
       <header className={cx("edit-head")}>
-        <h3>
-          {one ? one.label || t.edit.untitled : t.edit.many(modules.length)}
-        </h3>
+        {one ? (
+          <input
+            key={one.id + ":" + one.label}
+            className={cx("edit-name")}
+            aria-label={t.edit.name}
+            placeholder={t.edit.untitled}
+            defaultValue={one.label}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") e.currentTarget.blur();
+            }}
+            onBlur={(e) =>
+              e.target.value !== one.label &&
+              void change((w) => rename(w, sceneId, one.id, e.target.value))
+            }
+          />
+        ) : (
+          <h3>{t.edit.many(modules.length)}</h3>
+        )}
         <nav className={cx("edit-actions")}>
-          <button data-tip={t.edit.duplicate} onClick={duplicate}>
+          <button data-tip={keys(t.edit.duplicate)} onClick={ops.duplicate}>
             <Copy size={15} />
             {t.edit.actions.duplicate}
           </button>
-          <button data-tip={t.edit.front} onClick={() => arrange("front")}>
+          {grouped && (modules.length === 1 || modules.every((m) => m.group === modules[0].group)) ? (
+            <button data-tip={keys(t.edit.ungroupTip)} onClick={ops.ungroup}>
+              <Ungroup size={15} />
+              {t.edit.actions.ungroup}
+            </button>
+          ) : (
+            <button data-tip={keys(t.edit.groupTip)} disabled={modules.length < 2} onClick={ops.group}>
+              <Group size={15} />
+              {t.edit.actions.group}
+            </button>
+          )}
+          <button data-tip={keys(t.edit.front)} onClick={() => ops.stack("front")}>
             <BringToFront size={15} />
             {t.edit.actions.front}
           </button>
-          <button data-tip={t.edit.back} onClick={() => arrange("back")}>
+          <button data-tip={keys(t.edit.back)} onClick={() => ops.stack("back")}>
             <SendToBack size={15} />
             {t.edit.actions.back}
           </button>
-          <button data-tip={t.edit.remove} data-tone="danger" onClick={remove}>
+          <button data-tip={t.edit.remove} data-tone="danger" onClick={ops.remove}>
             <Trash2 size={15} />
             {t.edit.actions.remove}
           </button>
         </nav>
+        {one?.group && (
+          <button
+            className={cx("edit-link")}
+            onClick={() =>
+              canvas?.select(scene.modules.filter((m) => m.group === one.group).map((m) => m.id))
+            }
+          >
+            <Group size={13} />
+            {t.edit.selectGroup}
+          </button>
+        )}
       </header>
+      <Section id="place" title={t.edit.place.heading}>
+        <Place key={modules.map((m) => m.id).join()} sceneId={sceneId} modules={modules} change={change} />
+        <Arrange count={modules.length} ops={ops} />
+      </Section>
       {one && (
-        <Fields
-          key={one.id + ":" + work.revision}
-          work={work}
-          sceneId={sceneId}
-          part={one}
-          canvas={canvas}
-          change={change}
-          pickPicture={pickPicture}
-        />
+        <Section id="content" title={t.edit.content}>
+          <Fields
+            key={one.id + ":" + work.revision}
+            work={work}
+            sceneId={sceneId}
+            part={one}
+            canvas={canvas}
+            change={change}
+            pickPicture={pickPicture}
+          />
+          <DataEditor
+            work={work}
+            sceneId={sceneId}
+            part={one}
+            canvas={canvas}
+            change={change}
+            pickPicture={pickPicture}
+          />
+        </Section>
       )}
-      {!!links.length && (
-        <section>
-          <h3>{t.edit.links}</h3>
+      <Section id="target" title={t.edit.target.heading}>
+        <Leads work={work} sceneId={sceneId} modules={modules} change={change} openScene={openScene} />
+      </Section>
+      {one && (
+        <Section id="links" title={t.edit.links}>
           {links.map((l) => (
             <Connection
               key={l.id}
               work={work}
               sceneId={sceneId}
               link={l}
-              from={one!.id}
+              from={one.id}
               change={change}
               pickPicture={pickPicture}
             />
           ))}
-        </section>
+          <p className={cx("edit-hint")}>{t.edit.linkHint}</p>
+        </Section>
+      )}
+      {one && (
+        <Section id="advanced" title={t.edit.code.heading} open={false}>
+          <p className={cx("edit-hint")}>{t.edit.code.hint}</p>
+          <DrawingPanel key={one.id} work={work} sceneId={sceneId} module={one} change={change} pick={pick} />
+          <div className={cx("field")}>
+            <span className={cx("field-name")}>{t.edit.code.record}</span>
+            <ModuleRecord key={one.id} work={work} sceneId={sceneId} module={one} change={change} />
+          </div>
+        </Section>
       )}
       <p className={cx("edit-note")}>{one ? t.edit.tipOne : t.edit.tipMany}</p>
       <button className={cx("edit-ask")} onClick={ask}>
         <Sparkles size={15} />
         {t.edit.ask}
       </button>
-    </div>
+    </>
   );
 }
 
-/** The values of one module or link, each in the control its kind takes. Changes show on
- * the canvas as they are made and are kept when they are done: words when the field is
- * left, a slider when it is let go, everything else at once. */
-function Fields({
-  work,
+const round = (n: number) => Math.round(n * 10) / 10;
+/** Where the selection is and how large, in scene units, typed in. Several modules are
+ * placed and sized as one, each keeping its share. */
+function Place({
   sceneId,
-  part,
-  canvas,
+  modules,
   change,
-  pickPicture,
 }: {
-  work: Work;
   sceneId: string;
-  part: Part;
-  canvas?: Canvas;
+  modules: Instance[];
   change: Change;
-  pickPicture: (chosen: (m: PictureMaterial) => void) => void;
 }) {
   const t = useT();
-  const fields = fieldsOf(work, part);
-  // Values changed but not yet kept, shown on the canvas meanwhile.
-  const draft = useRef<Record<string, unknown>>({});
-  const [, redraw] = useState(0);
-  const isModule = "bounds" in part;
-  const show = (key: string, value: unknown) => {
-    draft.current = { ...draft.current, [key]: value };
-    redraw((n) => n + 1);
-    if (isModule) canvas?.preview(part.id, { ...part.data, ...draft.current });
+  const [locked, setLocked] = useState(false);
+  const frame = union(modules.map((m) => m.bounds));
+  const commit = (key: keyof Bounds, value: number) => {
+    if (!Number.isFinite(value) || round(frame[key]) === round(value)) return;
+    if ((key === "width" || key === "height") && value < 1) return;
+    const next = { ...frame, [key]: value };
+    if (locked && key === "width") next.height = (value * frame.height) / frame.width;
+    if (locked && key === "height") next.width = (value * frame.width) / frame.height;
+    const moves = modules.map((m) => ({
+      id: m.id,
+      bounds: modules.length === 1 ? next : scaled(m.bounds, frame, next),
+    }));
+    void change((w) => moveParts(w, sceneId, moves));
   };
-  const keep = (patch: Record<string, unknown>, pictures: string[] = []) => {
-    const changed = Object.entries(patch).some(([k, v]) => part.data[k] !== v);
-    draft.current = {};
-    if (changed)
-      void change((w) => setData(w, sceneId, part.id, patch, pictures));
-  };
-  // Words still being typed are kept when the panel moves on to something else.
-  const pending = useRef(keep);
-  pending.current = keep;
-  useEffect(
-    () => () => {
-      const left = Object.entries(draft.current).filter(
-        ([k]) => fields.find((f) => f.key === k)?.type === "text",
-      );
-      if (left.length) pending.current(Object.fromEntries(left));
-    },
-    [],
-  );
-  if (!fields.length)
-    return <p className={cx("edit-note")}>{t.edit.nothing}</p>;
-  const value = (f: Field) =>
-    f.key in draft.current ? draft.current[f.key] : f.value;
-  return (
-    <div className={cx("fields")}>
-      {fields.map((f) => {
-        const v = value(f);
-        const reset = f.optional && f.set && (
-          <button
-            className={cx("field-reset")}
-            aria-label={t.edit.reset}
-            data-tip={t.edit.reset}
-            onClick={() => keep({ [f.key]: undefined })}
-          >
-            <RotateCcw size={13} />
-          </button>
-        );
-        const head = (
-          <span className={cx("field-name")}>
-            {nameOf(t, f)}
-            {reset}
-          </span>
-        );
-        switch (f.type) {
-          case "text":
-            return (
-              <label key={f.key} className={cx("field")}>
-                {head}
-                <Words
-                  value={String(v ?? "")}
-                  onChange={(s) => show(f.key, s)}
-                  onDone={(s) => keep({ [f.key]: s })}
-                />
-              </label>
-            );
-          case "picture": {
-            const picture =
-              typeof v === "string" ? work.materials[v] : undefined;
-            return (
-              <div key={f.key} className={cx("field")}>
-                {head}
-                <button
-                  className={cx("field-picture")}
-                  onClick={() =>
-                    pickPicture((m) => keep({ [f.key]: m.id }, [m.id]))
-                  }
-                >
-                  {picture?.kind === "picture" && (
-                    <img src={picture.url} alt={picture.name} />
-                  )}
-                  <span>{t.edit.replacePicture}</span>
-                </button>
-              </div>
-            );
-          }
-          case "choice":
-            return (
-              <div key={f.key} className={cx("field")}>
-                {head}
-                <span className={cx("field-choice")} role="group">
-                  {f.options!.map((o) => (
-                    <button
-                      key={o}
-                      aria-pressed={v === o}
-                      onClick={() => keep({ [f.key]: o })}
-                    >
-                      {optionOf(t, o)}
-                    </button>
-                  ))}
-                </span>
-              </div>
-            );
-          case "color":
-            return (
-              <div key={f.key} className={cx("field")}>
-                {head}
-                <Colors
-                  work={work}
-                  value={typeof v === "string" ? v : undefined}
-                  auto={f.optional}
-                  onChange={(c) => show(f.key, c)}
-                  onDone={(c) => keep({ [f.key]: c })}
-                />
-              </div>
-            );
-          case "number":
-            return (
-              <label key={f.key} className={cx("field")}>
-                {head}
-                <Amount
-                  field={f}
-                  value={typeof v === "number" ? v : undefined}
-                  onChange={(n) => show(f.key, n)}
-                  onDone={(n) => keep({ [f.key]: n })}
-                />
-              </label>
-            );
-          case "boolean":
-            return (
-              <div key={f.key} className={cx("field")} data-inline>
-                {head}
-                <Switch
-                  checked={!!v}
-                  onChange={(on) => keep({ [f.key]: on })}
-                />
-              </div>
-            );
-        }
-      })}
-    </div>
-  );
-}
-
-/** Words typed in place: Enter keeps them, Shift+Enter starts a new line. */
-function Words({
-  value,
-  onChange,
-  onDone,
-}: {
-  value: string;
-  onChange: (s: string) => void;
-  onDone: (s: string) => void;
-}) {
-  const [text, setText] = useState(value);
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => {
-    const el = ref.current!;
-    el.style.height = "auto";
-    el.style.height = el.scrollHeight + "px";
-  }, [text]);
-  return (
-    <textarea
-      ref={ref}
-      rows={1}
-      value={text}
-      onChange={(e) => {
-        setText(e.target.value);
-        onChange(e.target.value);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-          e.preventDefault();
-          e.currentTarget.blur();
-        }
-      }}
-      onBlur={() => onDone(text)}
-    />
-  );
-}
-
-/** A colour from the work's own palette, the style's default, or any other. */
-function Colors({
-  work,
-  value,
-  auto,
-  onChange,
-  onDone,
-}: {
-  work: Work;
-  value?: string;
-  /** Whether the drawing falls back to the work's style without a colour of its own. */
-  auto: boolean;
-  onChange: (c: string) => void;
-  onDone: (c: string | undefined) => void;
-}) {
-  const t = useT();
-  const colours = palette(work);
-  const current = value && hex(value);
-  const [custom, setCustom] = useState(current ?? colours[0] ?? "#000000");
-  return (
-    <span className={cx("swatches")}>
-      {auto && (
-        <button
-          className={cx("swatch")}
-          data-auto
-          aria-label={t.edit.auto}
-          data-tip={t.edit.auto}
-          aria-pressed={!value}
-          onClick={() => onDone(undefined)}
-        />
-      )}
-      {colours.map((c) => (
-        <button
-          key={c}
-          className={cx("swatch")}
-          style={{ "--swatch": c } as CSSProperties}
-          aria-label={c}
-          aria-pressed={current === c}
-          onClick={() => onDone(c)}
-        />
-      ))}
-      <Picker
-        label={t.edit.custom}
-        value={custom}
-        pressed={!!current && !colours.includes(current)}
-        onChange={(c) => {
-          setCustom(c);
-          onChange(c);
-        }}
-        onDone={(c) => current !== c && onDone(c)}
-      />
-    </span>
-  );
-}
-/** The system's colour picker behind a swatch: each colour tried shows at once, and the
- * one it closes on is kept. */
-function Picker({
-  label,
-  value,
-  pressed,
-  plain,
-  onChange,
-  onDone,
-}: {
-  label: string;
-  value: string;
-  pressed?: boolean;
-  /** Shows the colour alone, for a colour of the work's own rather than "another". */
-  plain?: boolean;
-  onChange?: (c: string) => void;
-  onDone: (c: string) => void;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-  const done = useRef(onDone);
-  done.current = onDone;
-  useEffect(() => {
-    const el = ref.current!;
-    const kept = () => done.current(el.value);
-    el.addEventListener("change", kept);
-    return () => el.removeEventListener("change", kept);
-  }, []);
-  return (
-    <label
-      className={cx("swatch")}
-      data-custom={!plain || undefined}
-      data-tip={label}
-      aria-pressed={pressed}
-      style={{ "--swatch": value } as CSSProperties}
-    >
+  const box = (key: keyof Bounds, label: string) => (
+    <label className={cx("place-field")}>
+      <span>{label}</span>
       <input
-        ref={ref}
-        type="color"
-        aria-label={label}
-        value={value}
-        onChange={(e) => onChange?.(e.target.value)}
+        key={frame[key]}
+        type="number"
+        step="1"
+        defaultValue={round(frame[key])}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        onBlur={(e) => commit(key, Number(e.target.value))}
       />
     </label>
   );
+  return (
+    <div className={cx("place")}>
+      {box("x", "X")}
+      {box("y", "Y")}
+      {box("width", t.edit.place.width)}
+      {box("height", t.edit.place.height)}
+      <button
+        className={cx("place-lock")}
+        aria-pressed={locked}
+        aria-label={t.edit.place.lock}
+        data-tip={t.edit.place.lock}
+        onClick={() => setLocked(!locked)}
+      >
+        {locked ? <Lock size={13} /> : <Unlock size={13} />}
+      </button>
+    </div>
+  );
 }
-
-/** A number on a slider when its range is known, otherwise typed. */
-function Amount({
-  field,
-  value,
-  onChange,
-  onDone,
-}: {
-  field: Field;
-  value?: number;
-  onChange: (n: number) => void;
-  onDone: (n: number) => void;
-}) {
+/** Lining the selection up, and spacing three or more evenly. One module lines up with
+ * the rest of the scene. */
+function Arrange({ count, ops }: { count: number; ops: EditOps }) {
   const t = useT();
-  const [n, setN] = useState(value);
-  const set = (x: number) => {
-    setN(x);
-    onChange(x);
-  };
-  const done = () => n !== undefined && n !== value && onDone(n);
-  const ranged = field.min !== undefined && field.max !== undefined;
-  const step =
-    field.step ?? (ranged && field.max! - field.min! <= 2 ? 0.01 : 1);
-  const digits = (String(step).split(".")[1] ?? "").length;
-  const shown = n === undefined ? t.edit.auto : n.toFixed(digits);
-  return ranged ? (
-    <span className={cx("amount")}>
-      <input
-        type="range"
-        min={field.min}
-        max={field.max}
-        step={step}
-        value={n ?? field.min}
-        data-auto={n === undefined || undefined}
-        onChange={(e) => set(Number(e.target.value))}
-        onPointerUp={done}
-        onKeyUp={done}
-        onBlur={done}
-      />
-      <output>{shown}</output>
-    </span>
-  ) : (
-    <input
-      className={cx("amount-typed")}
-      type="number"
-      step={step}
-      value={n ?? ""}
-      placeholder={t.edit.auto}
-      onChange={(e) => e.target.value !== "" && set(Number(e.target.value))}
-      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-      onBlur={done}
-    />
+  const a = t.edit.align;
+  const items: [Alignment, typeof AlignStartVertical, string, string][] = [
+    ["left", AlignStartVertical, a.left, "Alt+A"],
+    ["center", AlignCenterVertical, a.center, "Alt+H"],
+    ["right", AlignEndVertical, a.right, "Alt+D"],
+    ["top", AlignStartHorizontal, a.top, "Alt+W"],
+    ["middle", AlignCenterHorizontal, a.middle, "Alt+V"],
+    ["bottom", AlignEndHorizontal, a.bottom, "Alt+S"],
+  ];
+  return (
+    <div className={cx("arrange")} role="group" aria-label={a.label}>
+      {items.map(([to, Icon, label, key]) => (
+        <button key={to} aria-label={label} data-tip={`${label} · ${keys(key)}`} onClick={() => ops.align(to)}>
+          <Icon size={15} />
+        </button>
+      ))}
+      <i />
+      <button
+        aria-label={a.spreadX}
+        data-tip={`${a.spreadX} · ${keys("Alt+Shift+H")}`}
+        disabled={count < 3}
+        onClick={() => ops.distribute("x")}
+      >
+        <AlignHorizontalDistributeCenter size={15} />
+      </button>
+      <button
+        aria-label={a.spreadY}
+        data-tip={`${a.spreadY} · ${keys("Alt+Shift+V")}`}
+        disabled={count < 3}
+        onClick={() => ops.distribute("y")}
+      >
+        <AlignVerticalDistributeCenter size={15} />
+      </button>
+    </div>
   );
 }
 
-/** A link of the selected module: where it goes, what can be changed about it, and a way
- * to take it out. */
+const NEW_SCENE = "\u0000scene",
+  NEW_DETAIL = "\u0000detail";
+const keyOf = (t: Target | null) => (t ? `${t.kind}:${t.id}` : "");
+/** Where a click on the selected modules leads: nowhere, into a scene below or another
+ * scene, or to a detail; a new scene or detail can be made for it at once. */
+function Leads({
+  work,
+  sceneId,
+  modules,
+  change,
+  openScene,
+}: {
+  work: Work;
+  sceneId: string;
+  modules: Instance[];
+  change: Change;
+  openScene: (id: string) => void;
+}) {
+  const t = useT();
+  const ids = modules.map((m) => m.id);
+  const keysNow = new Set(modules.map((m) => keyOf(m.target)));
+  const current = keysNow.size === 1 ? [...keysNow][0] : "\u0000mixed";
+  const target = modules[0].target;
+  const name = modules[0].label || t.edit.untitled;
+  const set = (value: string) => {
+    if (value === NEW_SCENE)
+      return void change((w) => {
+        const s = addScene(w, sceneId, name);
+        return both(s.edit, setTarget(w, sceneId, ids, { kind: "scene", id: s.id }));
+      });
+    if (value === NEW_DETAIL)
+      return void change((w) => {
+        const d = setDetail(w, { title: name, html: `<h2>${name.replace(/[&<>]/g, "")}</h2>\n<p></p>` });
+        return both(d.edit, setTarget(w, sceneId, ids, { kind: "detail", id: d.id }));
+      });
+    const [kind, ...rest] = value.split(":");
+    void change((w) =>
+      setTarget(w, sceneId, ids, value ? { kind: kind as Target["kind"], id: rest.join(":") } : null),
+    );
+  };
+  return (
+    <div className={cx("fields")}>
+      <select className={cx("edit-select")} value={current} onChange={(e) => set(e.target.value)}>
+        {current === "\u0000mixed" && <option value="\u0000mixed">{t.edit.target.mixed}</option>}
+        <option value="">{t.edit.target.none}</option>
+        <optgroup label={t.edit.target.scenes}>
+          {Object.values(work.scenes)
+            .filter((s) => s.id !== sceneId)
+            .map((s) => (
+              <option key={s.id} value={`scene:${s.id}`}>
+                {s.id === work.rootSceneId ? work.title : s.title}
+              </option>
+            ))}
+          <option value={NEW_SCENE}>{t.edit.target.newScene}</option>
+        </optgroup>
+        <optgroup label={t.edit.target.details}>
+          {Object.values(work.details).map((d) => (
+            <option key={d.id} value={`detail:${d.id}`}>
+              {d.title}
+            </option>
+          ))}
+          <option value={NEW_DETAIL}>{t.edit.target.newDetail}</option>
+        </optgroup>
+      </select>
+      {keysNow.size === 1 && target?.kind === "scene" && work.scenes[target.id] && (
+        <button className={cx("edit-link")} onClick={() => openScene(target.id)}>
+          <CornerDownRight size={13} />
+          {t.edit.target.open(work.scenes[target.id].title)}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** A link of the selected module: where it goes, which side of each module it leaves and
+ * meets, its direction, what can be changed about it, and a way to take it out. */
 function Connection({
   work,
   sceneId,
@@ -577,7 +549,7 @@ function Connection({
   link: Link;
   from: string;
   change: Change;
-  pickPicture: (chosen: (m: PictureMaterial) => void) => void;
+  pickPicture: PickPicture;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -585,6 +557,29 @@ function Connection({
   const other = link.from.moduleId === from ? link.to : link.from;
   const name =
     scene.modules.find((m) => m.id === other.moduleId)?.label || other.moduleId;
+  const sideAt = (end: "from" | "to"): Side | "" => {
+    const m = scene.modules.find((x) => x.id === link[end].moduleId);
+    const a = m?.anchors[link[end].anchor];
+    return (a && sideOf(a)) || "";
+  };
+  const end = (which: "from" | "to") => (
+    <label className={cx("field")} data-inline>
+      <span className={cx("field-name")}>
+        {which === "from" ? t.edit.linkEnds.from : t.edit.linkEnds.to}
+      </span>
+      <span className={cx("field-choice")} role="group">
+        {sides.map((s) => (
+          <button
+            key={s}
+            aria-pressed={sideAt(which) === s}
+            onClick={() => void change((w) => reattach(w, sceneId, link.id, which, s))}
+          >
+            {t.edit.linkEnds.sides[s]}
+          </button>
+        ))}
+      </span>
+    </label>
+  );
   return (
     <div className={cx("connection")} data-open={open || undefined}>
       <div className={cx("connection-head")}>
@@ -595,119 +590,60 @@ function Connection({
           </span>
         </button>
         <button
+          aria-label={t.edit.linkEnds.reverse}
+          data-tip={t.edit.linkEnds.reverse}
+          onClick={() => void change((w) => reverse(w, sceneId, link.id))}
+        >
+          <ArrowRightLeft size={14} />
+        </button>
+        <button
           aria-label={t.edit.removeLink}
           data-tip={t.edit.removeLink}
           data-tone="danger"
-          onClick={() =>
-            void change((w) => {
-              const s = w.scenes[sceneId];
-              return {
-                baseRevision: w.revision,
-                scenes: [
-                  { ...s, links: s.links.filter((l) => l.id !== link.id) },
-                ],
-              };
-            })
-          }
+          onClick={() => void change((w) => removeParts(w, sceneId, [link.id]))}
         >
           <Trash2 size={14} />
         </button>
       </div>
       {open && (
-        <Fields
-          key={work.revision}
-          work={work}
-          sceneId={sceneId}
-          part={link}
-          change={change}
-          pickPicture={pickPicture}
-        />
+        <div className={cx("fields")} data-indent>
+          {end("from")}
+          {end("to")}
+          <Fields
+            key={work.revision}
+            work={work}
+            sceneId={sceneId}
+            part={link}
+            change={change}
+            pickPicture={pickPicture}
+          />
+          <DataEditor
+            work={work}
+            sceneId={sceneId}
+            part={link}
+            change={change}
+            pickPicture={pickPicture}
+          />
+        </div>
       )}
     </div>
   );
 }
 
-/** Families of type a work can be set in, by what they look like. */
-const faces = {
-  sans: '"PingFang SC","Noto Sans CJK SC","Source Han Sans SC","Microsoft YaHei",system-ui,sans-serif',
-  serif: '"Songti SC","Noto Serif CJK SC","Source Han Serif SC",serif',
-  kai: '"Kaiti SC","STKaiti","AR PL UKai CN","KaiTi",serif',
-} as const;
-const faceOf = (font = "") =>
-  /kai/i.test(font)
-    ? "kai"
-    : /song|serif/i.test(font) && !/sans/i.test(font)
-      ? "serif"
-      : "sans";
-/** The work's own look, which every part takes unless it sets its own: its colours and
- * its type. */
-function Look({ work, change }: { work: Work; change: Change }) {
+/** The keyboard while editing. */
+function Shortcuts() {
   const t = useT();
-  const tokens = (["ink", "accent", "accent2", "muted"] as const).filter(
-    (k) => work.style[k],
-  );
-  const face = faceOf(work.style.font);
   return (
-    <section>
-      <h3>{t.edit.look}</h3>
-      <div className={cx("fields")}>
-        {tokens.map((k) => (
-          <Token
-            key={k + work.revision}
-            work={work}
-            token={k}
-            change={change}
-          />
-        ))}
-        <div className={cx("field")}>
-          <span className={cx("field-name")}>{t.edit.font}</span>
-          <span className={cx("field-choice")} role="group">
-            {(Object.keys(faces) as (keyof typeof faces)[]).map((f) => (
-              <button
-                key={f}
-                aria-pressed={face === f}
-                style={{ fontFamily: faces[f] }}
-                onClick={() =>
-                  face !== f &&
-                  void change((w) => setStyle(w, "font", faces[f]))
-                }
-              >
-                {t.edit.faces[f]}
-              </button>
-            ))}
-          </span>
+    <dl className={cx("shortcuts")}>
+      {t.edit.shortcuts.list.map(([key, what]) => (
+        <div key={key}>
+          <dt>
+            <kbd>{keys(key)}</kbd>
+          </dt>
+          <dd>{what}</dd>
         </div>
-      </div>
-    </section>
-  );
-}
-
-/** One of the work's colours, changed for every part that takes it. */
-function Token({
-  work,
-  token,
-  change,
-}: {
-  work: Work;
-  token: "ink" | "accent" | "accent2" | "muted";
-  change: Change;
-}) {
-  const t = useT();
-  const [value, setValue] = useState(hex(work.style[token]));
-  return (
-    <div className={cx("field")} data-inline>
-      <span className={cx("field-name")}>{t.edit.tokens[token]}</span>
-      <Picker
-        plain
-        label={t.edit.tokens[token]}
-        value={value}
-        onChange={setValue}
-        onDone={(c) =>
-          c !== hex(work.style[token]) &&
-          void change((w) => setStyle(w, token, c))
-        }
-      />
-    </div>
+      ))}
+    </dl>
   );
 }
 

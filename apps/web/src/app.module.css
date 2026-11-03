@@ -2688,6 +2688,865 @@ body:has(.resizer[data-dragging]) {
   animation: pop 0.25s var(--spring) both;
 }
 
+/* The panel's two tabs, and the folding sections inside it. */
+.edit-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin-bottom: -6px;
+}
+
+.edit-tabs button small {
+  margin-left: 5px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.edit-section {
+  border-top: 1px solid var(--separator);
+  padding-top: 4px;
+  margin-top: -10px;
+}
+
+.edit-section > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.edit-section > header > button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  color: var(--text-3);
+  text-align: left;
+}
+
+.edit-section > header > button h3 {
+  margin: 0;
+}
+
+.edit-section > header > button svg {
+  flex: none;
+  transition: rotate 0.2s var(--ease);
+}
+
+.edit-section[data-open] > header > button svg {
+  rotate: 90deg;
+}
+
+.edit-section > header > button:hover,
+.edit-section > header > button:hover h3 {
+  color: var(--text);
+}
+
+.edit-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0 12px;
+}
+
+.edit-adds:has(> :nth-child(3)) {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* The selected module's name, written over in place. */
+.edit-name {
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  color: var(--text);
+  background: transparent;
+  box-shadow: none;
+}
+
+.edit-name:hover {
+  background: var(--fill);
+}
+
+.edit-name:focus {
+  outline: none;
+  background: var(--bg);
+  box-shadow:
+    inset 0 0 0 1px var(--ai),
+    0 0 0 3px var(--blue-soft);
+}
+
+.edit-actions:has(> :nth-child(5)) {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.edit-actions button:disabled {
+  opacity: 0.4;
+}
+
+.edit-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 2px 0;
+  font-size: 13px;
+  color: var(--ai-deep);
+}
+
+.edit-link:hover {
+  color: var(--blue-press);
+}
+
+.edit-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+.edit-input,
+.edit-select {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: var(--field);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.edit-input[data-short] {
+  width: 132px;
+}
+
+.edit-input:focus,
+.edit-select:focus {
+  outline: none;
+  background: var(--bg);
+  box-shadow:
+    inset 0 0 0 1px var(--ai),
+    0 0 0 3px var(--blue-soft);
+}
+
+.edit-callout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--oat);
+}
+
+.edit-callout p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.edit-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.edit-danger:hover {
+  color: var(--red-text);
+}
+
+.fields[data-indent] {
+  padding: 4px 0 16px 20px;
+}
+
+/* Position and size, typed in. */
+.place {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.place > :nth-child(1) {
+  grid-area: 1 / 1;
+}
+
+.place > :nth-child(2) {
+  grid-area: 1 / 2;
+}
+
+.place > :nth-child(3) {
+  grid-area: 2 / 1;
+}
+
+.place > :nth-child(4) {
+  grid-area: 2 / 2;
+}
+
+.place-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 4px 0 10px;
+  border-radius: 9px;
+  background: var(--field);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+}
+
+.place-field:focus-within {
+  background: var(--bg);
+  box-shadow:
+    inset 0 0 0 1px var(--ai),
+    0 0 0 3px var(--blue-soft);
+}
+
+.place-field span {
+  flex: none;
+  min-width: 12px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.place-field input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  outline: none;
+}
+
+.place-lock {
+  grid-area: 1 / 3 / span 2;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--text-3);
+}
+
+.place-lock:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.place-lock[aria-pressed="true"] {
+  color: var(--ai-deep);
+  background: var(--blue-soft);
+}
+
+/* Lining up and spacing out. */
+.arrange {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--field);
+}
+
+.arrange button {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  height: 30px;
+  border-radius: 7px;
+  color: var(--text-2);
+}
+
+.arrange button:hover:not(:disabled) {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.arrange button:disabled {
+  opacity: 0.35;
+}
+
+.arrange i {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--line-strong);
+}
+
+/* Data as a tree: lists of entries and records of fields. */
+.tree {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 10px;
+  background: var(--oat);
+}
+
+.tree-list,
+.tree-record {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tree-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px;
+  border-radius: 9px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+}
+
+.tree-item .tree-item {
+  background: var(--oat);
+}
+
+.tree-item-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tree-item-head span {
+  flex: 1;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.tree-item-head button,
+.tree-key button,
+.tree-new button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--text-3);
+}
+
+.tree-item-head button:hover:not(:disabled),
+.tree-key button:hover,
+.tree-new button:hover:not(:disabled) {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.tree-item-head button[data-tone="danger"]:hover,
+.tree-key button[data-tone="danger"]:hover {
+  color: var(--red-text);
+}
+
+.tree-item-head button:disabled,
+.tree-new button:disabled {
+  opacity: 0.3;
+}
+
+.tree-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tree-key {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.tree-key button {
+  width: 18px;
+  height: 18px;
+  opacity: 0;
+}
+
+.tree-entry:hover > .tree-key button,
+.tree-key button:focus-visible {
+  opacity: 1;
+}
+
+.tree textarea,
+.tree-value {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  resize: none;
+  overflow: hidden;
+}
+
+.tree textarea:focus,
+.tree-value:focus {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px var(--ai),
+    0 0 0 3px var(--blue-soft);
+}
+
+.tree-colour {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tree-colour code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.tree-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  padding: 3px 6px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--ai-deep);
+}
+
+.tree-add:hover {
+  background: var(--fill);
+}
+
+.tree-new {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tree-new input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 8px;
+  background: var(--field);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.tree .tree-new input {
+  background: var(--bg);
+}
+
+.tree-new input:focus {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px var(--ai),
+    0 0 0 3px var(--blue-soft);
+}
+
+.field-picture[data-small] img {
+  width: 36px;
+  height: 36px;
+}
+
+/* Code, as the author writes it. */
+.code {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.code textarea {
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: #faf9f5;
+  box-shadow: inset 0 0 0 0.5px var(--line-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre;
+  overflow: auto;
+  resize: vertical;
+  tab-size: 2;
+}
+
+.code textarea:focus {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px var(--ai),
+    0 0 0 3px var(--blue-soft);
+}
+
+.code-error {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--red-text);
+  overflow-wrap: anywhere;
+}
+
+.code-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.code-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* A library style's colours, taken at once. */
+.palettes {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.palettes button {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 9px;
+  background: var(--field);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-align: left;
+}
+
+.palettes button:hover {
+  background: var(--bg-2);
+  color: var(--text);
+}
+
+.palettes i {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-right: -4px;
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow:
+    0 0 0 1.5px var(--field),
+    inset 0 0 0 1px rgba(20, 20, 19, 0.12);
+}
+
+.palettes span {
+  margin-left: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The scenes below this one. */
+.scene-children {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scene-children > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: var(--field);
+  font-size: 13.5px;
+  color: var(--text);
+  text-align: left;
+}
+
+.scene-children > button:hover {
+  background: var(--bg-2);
+}
+
+.scene-children > button span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-children > button small {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.scene-children > button svg {
+  flex: none;
+  color: var(--text-3);
+}
+
+/* The layers of the scene, topmost first. */
+.layers {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.layers li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: var(--text);
+  cursor: default;
+  user-select: none;
+}
+
+.layers li:hover {
+  background: var(--fill);
+}
+
+.layers li[aria-selected="true"] {
+  background: var(--blue-soft);
+}
+
+.layers li[data-dragging] {
+  opacity: 0.4;
+}
+
+.layers li[data-over]::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--ai);
+}
+
+.layers li[data-over="above"]::before {
+  top: -1px;
+}
+
+.layers li[data-over="below"]::before {
+  bottom: -1px;
+}
+
+.layer-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layers small {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.layers i {
+  display: grid;
+  color: var(--text-3);
+}
+
+.layers .edit-input {
+  min-height: 28px;
+  padding: 3px 8px;
+}
+
+/* The keyboard. */
+.shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.shortcuts div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.shortcuts dt {
+  flex: none;
+  width: 118px;
+}
+
+.shortcuts dd {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.shortcuts kbd,
+.edit-menu kbd {
+  font-family: var(--font-sans, inherit);
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.shortcuts kbd {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--field);
+  box-shadow: inset 0 -1px 0 var(--line);
+  color: var(--text-2);
+}
+
+.connection-head > button:not(:first-child) {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 0.5px var(--line-strong);
+  color: var(--text-2);
+}
+
+.connection-head > button:not(:first-child):hover {
+  color: var(--text);
+  background: var(--bg-2);
+}
+
+.connection-head > button:first-child > svg + svg {
+  transition: none;
+  rotate: 0deg !important;
+}
+
+/* The tools over the canvas while editing. */
+.edit-tools {
+  position: absolute;
+  z-index: 11;
+  top: 64px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow:
+    0 0 0 1px rgba(60, 45, 20, 0.06),
+    0 6px 20px rgba(60, 45, 20, 0.08);
+  translate: -50% 0;
+  animation: rise 0.35s var(--ease-out) both;
+}
+
+.edit-tools button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--text-2);
+}
+
+.edit-tools button:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.edit-tools button[aria-pressed="true"] {
+  color: var(--ai-deep);
+  background: var(--blue-soft);
+}
+
+.edit-tools i {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--line-strong);
+}
+
+/* The menu on a right click. */
+.edit-menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 210px;
+  padding: 5px;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow:
+    0 0 0 0.5px var(--line-strong),
+    var(--shadow-float);
+  animation: pop 0.16s var(--ease-out) both;
+}
+
+.edit-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 13.5px;
+  color: var(--text);
+  text-align: left;
+}
+
+.edit-menu button:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+.edit-menu button:disabled {
+  color: var(--text-3);
+}
+
+.edit-menu button[data-tone="danger"] {
+  color: var(--red-text);
+}
+
+.edit-menu hr {
+  margin: 4px 6px;
+  border: 0;
+  border-top: 1px solid var(--separator);
+}
+
 .quote-edit {
   display: inline-flex;
   align-items: center;

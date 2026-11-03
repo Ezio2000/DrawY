@@ -354,12 +354,21 @@ function ownChanges(store: UserStore, work: Work) {
   const history = store.revisions(work.id);
   const last = history.find((r) => r.cause.kind === "run");
   if (!last || last.revision === work.revision) return "";
-  const { scenes, style } = changesBetween(
-    store.revision(work.id, last.revision),
-    work,
-  );
+  const { scenes, addedScenes, removedScenes, drawings, interactions, details, style } =
+    changesBetween(store.revision(work.id, last.revision), work);
   const list = (label: string, ids: string[]) =>
     ids.length ? [`${label} ${ids.join(", ")}`] : [];
+  const records = (
+    kind: string,
+    r: { added: string[]; changed: string[]; removed: string[] },
+  ) => {
+    const parts = [
+      ...list("changed", r.changed),
+      ...list("added", r.added),
+      ...list("removed", r.removed),
+    ];
+    return parts.length ? [`- ${kind}: ${parts.join("; ")}`] : [];
+  };
   const lines = [
     ...scenes.map(
       (s) =>
@@ -369,8 +378,14 @@ function ownChanges(store: UserStore, work: Work) {
           ...list("added", s.added),
           ...list("removed", s.removed),
           ...(s.restacked ? ["stacking order changed"] : []),
+          ...(s.retitled ? ["its title, parent or interaction changed"] : []),
         ].join("; ")}`,
     ),
+    ...list("- scenes added", addedScenes),
+    ...list("- scenes removed", removedScenes),
+    ...records("drawings", drawings),
+    ...records("interactions", interactions),
+    ...records("details", details),
     ...(style ? ["- the work's style tokens"] : []),
   ];
   return lines.length

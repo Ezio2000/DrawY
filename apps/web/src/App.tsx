@@ -36,8 +36,6 @@ import {
   stepBefore,
   type Work,
   type WorkEdit,
-  type Drawing,
-  paramTypes,
   type Run,
   type Selection,
   type Target,
@@ -45,17 +43,13 @@ import {
 } from "../../../modules/contracts/index.ts";
 import type { Canvas, Pointed } from "../../../modules/canvas/index.ts";
 import {
-  add,
-  arrange,
-  drawingFor,
-  duplicate,
   moveParts,
   removeParts,
   replace,
-  shadowed,
-  type Addition,
 } from "../../../modules/editing/index.ts";
 import { EditPanel, Retype } from "./Editor.tsx";
+import { EditMenu, EditTools } from "./EditMenu.tsx";
+import { useHandEdits } from "./handEdits.ts";
 import { listen } from "./events.ts";
 import { leaving } from "./Settings.tsx";
 import type {
@@ -153,8 +147,11 @@ export function App() {
     [selected, S] = useState<Selection[]>([]),
     // Words being changed where they are drawn.
     [retyping, setRetyping] = useState<Extract<Pointed, { kind: "text" }>>(),
-    // A picture being chosen from the library, and what it is for.
-    [choosing, setChoosing] = useState<(m: PictureMaterial) => void>(),
+    // A picture or a drawing being chosen from the library, and what it is for.
+    [choosing, setChoosing] = useState<{
+      kind: "picture" | "drawing";
+      chosen: (m: Material) => void;
+    }>(),
     [detailId, setDetail] = useState<string>(),
     [panel, setPanel] = useState<Panel>(""),
     [widths, setWidths] = useState(() => ({
@@ -279,6 +276,28 @@ export function App() {
       E(e instanceof Error ? e.message : String(e));
     }
   };
+  /** Asks for a material of one kind from the library, for what it is chosen for. */
+  const pickFrom = (kind: "picture" | "drawing", chosen: (m: Material) => void) =>
+    setChoosing({ kind, chosen });
+  const hand = useHandEdits({
+    work,
+    sceneId,
+    selected: ids,
+    editing,
+    editless,
+    canvas,
+    change,
+    attempt,
+    pick: pickFrom,
+    retype: setRetyping,
+    upload: (file) => {
+      const data = new FormData();
+      data.append("file", file);
+      return api<Material>("/materials", "POST", data);
+    },
+    t,
+    locale,
+  });
   const go = (to: string) => {
     if (to === location.pathname) return;
     if (!leaving()) return;
@@ -431,58 +450,6 @@ export function App() {
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
   }, [work, undoable, canRedo, working, preview]);
-  // While editing: Delete takes the selection out, Cmd/Ctrl+D copies it, Cmd/Ctrl+] and
-  // [ bring it to the front or send it to the back, the arrow keys nudge it (ten times as
-  // far with Shift) and Escape lets it go.
-  // Nudges are kept together once the keys rest, where the modules then are.
-  const nudged = useRef<{ timer?: ReturnType<typeof setTimeout>; ids: Set<string> }>({
-    ids: new Set(),
-  });
-  useEffect(() => {
-    if (!editing || !work) return;
-    const key = (e: KeyboardEvent) => {
-      if (
-        (e.target as Element).closest("input,textarea,select,[contenteditable]") ||
-        e.defaultPrevented
-      )
-        return;
-      const ids = selected.map((s) => s.moduleId);
-      const step = (e.shiftKey ? 10 : 1) / (canvas.current?.scale || 1);
-      const arrow = {
-        ArrowLeft: [-step, 0],
-        ArrowRight: [step, 0],
-        ArrowUp: [0, -step],
-        ArrowDown: [0, step],
-      }[e.key];
-      if (e.key === "Escape" && ids.length) canvas.current?.select([]);
-      else if (!ids.length || editless) return;
-      else if (e.key === "Delete" || e.key === "Backspace") removeSelected();
-      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d")
-        duplicateSelected();
-      else if ((e.metaKey || e.ctrlKey) && (e.key === "]" || e.key === "["))
-        void attempt(() =>
-          change((w) => arrange(w, sceneId, ids, e.key === "]" ? "front" : "back")),
-        );
-      else if (arrow && canvas.current) {
-        for (const m of canvas.current.nudge(ids, arrow[0], arrow[1]))
-          nudged.current.ids.add(m.id);
-        clearTimeout(nudged.current.timer);
-        nudged.current.timer = setTimeout(() => {
-          const view = canvas.current;
-          const moves = [...nudged.current.ids].flatMap((id) => {
-            const m = view?.renderer.instances.get(id);
-            return m ? [{ id, bounds: { ...m.bounds } }] : [];
-          });
-          nudged.current.ids.clear();
-          if (moves.length)
-            void attempt(() => change((w) => moveParts(w, sceneId, moves)));
-        }, 450);
-      } else return;
-      e.preventDefault();
-    };
-    addEventListener("keydown", key);
-    return () => removeEventListener("keydown", key);
-  }, [editing, editless, work, selected, sceneId]);
   useEffect(() => {
     if (!preview) return;
     const key = (e: KeyboardEvent) => e.key === "Escape" && setPreview(undefined);
@@ -631,74 +598,6 @@ export function App() {
     edits.current = job.catch(() => {});
     return job;
   }
-  function removeSelected() {
-    const gone = ids;
-    void attempt(() => change((w) => removeParts(w, sceneId, gone)));
-  }
-  function duplicateSelected() {
-    const from = ids;
-    void attempt(async () => {
-      let copies: string[] = [];
-      await change((w) => {
-        const r = duplicate(w, sceneId, from, 24 / (canvas.current?.scale || 1));
-        copies = r.ids;
-        return r.edit;
-      });
-      await canvas.current?.ready;
-      canvas.current?.select(copies);
-    });
-  }
-  /** Adds words or a picture in the middle of the view, selected, the words ready to type. */
-  function addPart(kind: "text" | "picture") {
-    const view = canvas.current;
-    if (!view) return;
-    const at = view.center(),
-      scale = view.scale;
-    const place = (what: Addition) =>
-      attempt(async () => {
-        let id = "";
-        // A work whose own drawing uses the library drawing's id gets a copy of it.
-        const copy = shadowed(work!, what.kind)
-          ? copyOf(await api<Material>("/materials/" + drawingFor(what.kind)))
-          : undefined;
-        await change((w) => {
-          const r = add(w, sceneId, at, what, copy);
-          id = r.id;
-          return r.edit;
-        });
-        // The new module is on the canvas once the quiet update has drawn it.
-        await new Promise((r) => setTimeout(r, 60));
-        canvas.current?.select([id]);
-        const view = canvas.current;
-        if (what.kind === "text" && view?.rectOf(id))
-          setRetyping({
-            kind: "text",
-            moduleId: id,
-            text: what.text,
-            place: () => ({
-              rect: view.rectOf(id) ?? new DOMRect(),
-              size: what.size * view.scale,
-            }),
-          });
-      });
-    if (kind === "text")
-      void place({
-        kind: "text",
-        text: t.edit.newText,
-        size: Math.round(Math.min(96, Math.max(14, 22 / scale))),
-      });
-    else
-      setChoosing(() => (m: PictureMaterial) => {
-        const c = m.form.content;
-        void place({
-          kind: "picture",
-          material: m.id,
-          name: m.name[locale],
-          aspect: (m.form.height * c.height) / (m.form.width * c.width),
-          width: Math.round(240 / scale),
-        });
-      });
-  }
   /** Words or a picture pointed at on the canvas: words are changed where they are, a
    * picture is swapped for one from the library. What the work cannot change by itself is
    * written up for the author to do. */
@@ -706,7 +605,7 @@ export function App() {
     if (editless) return;
     if (!editing) setPanel("edit");
     if (p.kind === "text") return setRetyping(p);
-    setChoosing(() => (m: PictureMaterial) =>
+    pickFrom("picture", (m) =>
       void attempt(async () => {
         const done = await change((w) =>
           replace(w, sceneId, p.moduleId, "picture", p.material, m.id),
@@ -722,37 +621,12 @@ export function App() {
     const p = retyping!;
     setRetyping(undefined);
     if (text === null || text === p.text) return;
-    if (!text.trim()) return removeSelected();
+    if (!text.trim())
+      return void attempt(() => change((w) => removeParts(w, sceneId, [p.moduleId])));
     void attempt(async () => {
       if (!(await change((w) => replace(w, sceneId, p.moduleId, "text", p.text, text))))
         ask(t.edit.askText(nameOf(p.moduleId), p.text, text), t.edit.handedText);
     });
-  }
-  /** A library drawing as a drawing of the work's own, its values named in the app's words. */
-  function copyOf(m: Material): Omit<Drawing, "id"> {
-    if (m.kind !== "drawing") throw Error(m.id);
-    const named = t.edit.params as Record<string, string>;
-    return {
-      name: m.name[locale],
-      params: Object.fromEntries(
-        Object.entries(m.params).flatMap(([k, { type, options, min, max, step }]) =>
-          (paramTypes as readonly string[]).includes(type)
-            ? [
-                [
-                  k,
-                  {
-                    label: named[k] ?? k,
-                    type: type as (typeof paramTypes)[number],
-                    ...(options ? { options } : {}),
-                    ...(min !== undefined ? { min, max, step } : {}),
-                  },
-                ],
-              ]
-            : [],
-        ),
-      ),
-      source: m.source,
-    };
   }
   const nameOf = (moduleId: string) =>
     active?.modules.find((m) => m.id === moduleId)?.label || moduleId;
@@ -1129,7 +1003,29 @@ export function App() {
                     })
                   }
                   point={point}
+                  connect={hand.ops.connect}
+                  menu={hand.setMenu}
+                  place={(at) => {
+                    hand.setTool("select");
+                    hand.ops.add("text", at);
+                  }}
                 />
+                {editing && !editless && (
+                  <EditTools tool={hand.tool} setTool={hand.setTool} ops={hand.ops} />
+                )}
+                {hand.menu && editing && !editless && (
+                  <EditMenu
+                    at={hand.menu}
+                    ops={hand.ops}
+                    selected={ids}
+                    grouped={selected.some(
+                      (s) => active?.modules.find((m) => m.id === s.moduleId)?.group,
+                    )}
+                    clipped={hand.clipped}
+                    close={() => hand.setMenu(undefined)}
+                    ask={() => ask()}
+                  />
+                )}
                 {retyping && stage.current && (
                   <Retype
                     key={retyping.moduleId + ":" + retyping.text}
@@ -1273,15 +1169,9 @@ export function App() {
                             : undefined
                         }
                         change={(make) => attempt(() => change(make)).then(() => true)}
-                        add={addPart}
-                        duplicate={duplicateSelected}
-                        remove={removeSelected}
-                        arrange={(to) =>
-                          void attempt(() =>
-                            change((w) => arrange(w, sceneId, ids, to)),
-                          )
-                        }
-                        pickPicture={(chosen) => setChoosing(() => chosen)}
+                        ops={hand.ops}
+                        pick={pickFrom}
+                        openScene={(id) => void attempt(() => enter(id))}
                         ask={() => ask()}
                       />
                     ) : drafting ? (
@@ -1341,17 +1231,23 @@ export function App() {
         )}
         {choosing && (
           <Dialog
-            title={t.titles.choosePicture}
-            heading={<Title name="choosePicture" size="section" />}
+            title={choosing.kind === "picture" ? t.titles.choosePicture : t.titles.chooseDrawing}
+            heading={
+              <Title
+                name={choosing.kind === "picture" ? "choosePicture" : "chooseDrawing"}
+                size="section"
+              />
+            }
             wide
             onClose={() => setChoosing(undefined)}
           >
             <Library
-              kinds={["picture"]}
-              action={t.edit.usePicture}
+              kinds={[choosing.kind]}
+              action={choosing.kind === "picture" ? t.edit.usePicture : t.edit.useDrawing}
               use={(m) => {
                 setChoosing(undefined);
-                if (m.kind === "picture") choosing(m);
+                if (m.kind === choosing.kind)
+                  void attempt(async () => choosing.chosen(m));
               }}
             />
           </Dialog>

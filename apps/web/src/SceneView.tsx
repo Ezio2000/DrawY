@@ -3,7 +3,11 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { ZoomOut, ZoomIn, Scan, Lightbulb } from "lucide-react";
 import { reducedMotion, Spinner, useLocale } from "@drawy/ui";
-import { Canvas, type Pointed } from "../../../modules/canvas/index.ts";
+import {
+  Canvas,
+  type CanvasOptions,
+  type Pointed,
+} from "../../../modules/canvas/index.ts";
 import type { Camera } from "../../../modules/contracts/geometry.ts";
 import type {
   Work,
@@ -40,6 +44,9 @@ export function SceneView({
   select,
   commit,
   point,
+  connect,
+  menu,
+  place: placeAt,
   disabled,
   editing,
   quiet,
@@ -58,6 +65,12 @@ export function SceneView({
   select: (value: Selection[]) => void;
   commit: (moves: { id: string; bounds: Bounds }[]) => void;
   point: (pointed: Pointed) => void;
+  /** A link drawn while editing, from one module's side to another's. */
+  connect?: CanvasOptions["connect"];
+  /** A right click while editing, for the menu. */
+  menu?: CanvasOptions["menu"];
+  /** A press with the placing tool, at a point in the scene. */
+  place?: CanvasOptions["place"];
   /** Receives the canvas the scene is drawn on, for the editor to work with. */
   view: (canvas: Canvas | undefined) => void;
 }) {
@@ -71,9 +84,9 @@ export function SceneView({
     // work goes from the spinner straight to the picture, without a blank page between.
     [shown, setShown] = useState(false),
     [error, setError] = useState("");
-  const callbacks = useRef({ open, select, commit, point, view, quiet });
+  const callbacks = useRef({ open, select, commit, point, connect, menu, place: placeAt, view, quiet });
   const picked = useRef<{ key: string; ids: string[] } | null>(null);
-  callbacks.current = { open, select, commit, point, view, quiet };
+  callbacks.current = { open, select, commit, point, connect, menu, place: placeAt, view, quiet };
   useEffect(() => {
     setError("");
     setShown(false);
@@ -101,6 +114,9 @@ export function SceneView({
       },
       commit: (m) => callbacks.current.commit(m),
       point: (p) => callbacks.current.point(p),
+      connect: (from, to) => callbacks.current.connect?.(from, to),
+      menu: (at) => callbacks.current.menu?.(at),
+      place: (at) => callbacks.current.place?.(at),
       cameraChanged: (c) => cameras.current.set(key, c),
       error: setError,
     });

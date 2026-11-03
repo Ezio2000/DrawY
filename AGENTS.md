@@ -31,7 +31,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 ## 一次运行如何流动
 
 1. 用户在某个场景发出请求。`apps/server/app.ts` 收到 `POST /api/works/:id/runs`，调用 `modules/agent` 的 `Agent.start`。
-2. 同一作品的对话上下文会延续：新一次运行沿用上一次运行保存的 `input`，再追加用户消息和作品当前的状态。用户在两次运行之间自己改过作品（手动编辑、撤销或恢复）时，状态前面会列出作者上次保存之后哪些模块被改、移动、添加或删除（`editing.changesBetween`），提示词要求作者保留这些修改。
+2. 同一作品的对话上下文会延续：新一次运行沿用上一次运行保存的 `input`，再追加用户消息和作品当前的状态。用户在两次运行之间自己改过作品（手动编辑、撤销或恢复）时，状态前面会列出作者上次保存之后哪些模块被改、移动、添加或删除，以及哪些场景、画法、交互脚本和详情被增删改（`editing.changesBetween`），提示词要求作者保留这些修改。
 3. 作者按 `modules/agent/tools.ts` 里定义的工具工作：
    - `ask_user` 暂停运行，状态变为 `waiting`，用户回答后由 `resume` 继续。
    - `set_brief` 定下简报。
@@ -82,11 +82,17 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 ## 手动编辑如何流动
 
-用户在绘图页点铅笔（或双击画上的文字）进入编辑模式，右侧面板换成 `apps/web/src/Editor.tsx`。编辑模式下 `Canvas.setEditing(true)`：画布在捕获阶段接住点击，画法里的按钮和模块的跳转目标都不响应；单击选中，Shift 多选，任何模块按下即可拖动；双击按坐标找到模块影子 DOM 里的文字或图片，交给 `options.point`。
+原则：手动编辑的能力等于作者 `write_work` 的能力，不多也不少。每个手动操作都算出一份 `WorkEdit`，经 `POST /api/works/:id/edits` 交给 `writeWork`，和作者的写入走同一套校验（`validateWork`、素材 `take`、`baseRevision`）。所以协议里没有的东西（旋转、透明度、锁定之类）手动编辑也不能有；要加这类能力，得先改协议，让作者同时拥有。反过来，作者能写的（模块的名字、位置、编组、跳转目标、锚点和数据，连线，场景，详情，交互脚本，作品画法的代码与参数，共享样式，取用素材），手动编辑都有入口。`set_brief`、`generate_images` 和 `view_canvas` 是作者的创作工具，不是对作品的修改，不进编辑器。
 
-每个操作都是 `modules/editing` 里的纯函数，从当前作品算出一份 `WorkEdit`：`setData`、`setStyle`、`moveParts`、`removeParts`（连带删掉相关连线和检查）、`duplicate`（复制品自成一组，并复制它们之间的连线）、`arrange`、`add`、`replace`。`replace` 先在模块数据里找要改的字或图片 ID（改的若是某一项的 `name`，数据里所有与它完全相同的字串一起改，比如地图的路线、区域、`highlights` 按地点名引用它，只改一处路线就会丢掉这个点）；找不到时，如果它在画法代码里只出现一次，就按所在位置转义后替换，画法被别的模块共用时先为这个模块复制一份，替换后代码必须还能解析；都不行就返回 `null`，前端把修改要求写进输入框交给作者。`fieldsOf` 决定面板显示哪些控件：先是画法 `params` 声明的（作品画法自带名字，库画法的名字来自 `i18n.tsx` 的 `edit.params`），再是数据里其余的文字、颜色、数字和开关；小写的英文单词当作代码里的状态，不显示。
+用户在绘图页点铅笔（或双击画上的文字）进入编辑模式，右侧面板换成 `apps/web/src/Editor.tsx`，画布上方出现工具条（`EditMenu.tsx` 的 `EditTools`：选择 V、平移 H、文字 T，以及添加图片和库画法）。面板分“属性”和“图层”两页：属性页选中时依次是名称、操作（复制、编组/解组、置顶、置底、删除）、位置与大小（X/Y/宽/高，可锁比例，多选按整体换算）和对齐分布、内容（`EditControls.tsx` 的 `Fields` 加 `DataEditor`）、点击后（不跳转、某个场景或详情，或当场新建子场景/详情）、连线（端点所在边、调转、删除、连线自己的数据）和折叠的“画法与代码”（`EditCode.tsx`：换画法、库画法复制为作品画法、共用画法只改这一个、画法代码与参数、整条模块记录的 JSON）；没选中时是添加、场景（标题、子场景、交互脚本、删除场景）、作品外观（所有样式 token，加套用库风格的配色）、详情页和快捷键（`EditWork.tsx`）。图层页按上下层列出模块，可点选、Shift 加选、双击改名、拖动改层级。代码类输入（`Code`）在保存前用 `syntaxError` 检查语法，记录类输入用 `contracts` 的 schema 校验。
 
-前端的 `change()` 把这些修改排成队，依次从上一次结果出发，经 `POST /api/works/:id/edits` 交给 `writeWork`，原因记为 `{ kind: "edit" }`，作者运行期间返回 409。用户自己造成的版本（手动编辑、撤销、重做）在画布上安静替换，不播放起稿动画。重做只在撤销后作品没有别的变动时可用，记录在前端。
+画布（`modules/canvas`）在 `Canvas.setEditing(true)` 时于捕获阶段接住点击，画法里的按钮和模块的跳转目标都不响应。编辑模式下：单击选中，Shift 加选，拖空白处框选（触到即选）；任何模块按下即可拖动，编组的模块带着整组走（Alt 只动自己），Shift 锁定水平或垂直；拖动和自由缩放时边缘与中线吸附到其他模块（`editing` 的 `snap`，屏幕上 6px 内，红色参考线，按住 ⌘/Ctrl 不吸附）；选区外框有 8 个手柄（`resized`：Shift 保持比例、Alt 从中心），多选时按 `scaled` 整体缩放；单选时四边外各有一个圆点，拖到另一个模块上调用 `options.connect`，由 `facing` 定终点的边；右键先让选区跟上再调用 `options.menu`（前端的 `EditMenu`）；按住空格、中键或平移工具拖动平移，放置工具调用 `options.place`；双击按坐标找到模块影子 DOM 里的文字或图片，交给 `options.point`。
+
+`apps/web/src/handEdits.ts` 的 `useHandEdits` 是前端唯一的操作集合 `ops`：面板、右键菜单、工具条和键盘都调用它。剪贴板走系统的 `copy`/`cut`/`paste` 事件：拷贝时写入 `application/x-drawy+json` 的 `Clip`（`editing` 的 `copy`：模块、它们之间的连线、用到的作品画法和库画法，以及素材 ID），同时存进 `localStorage`，所以能粘贴到别的场景、作品或标签页；粘贴回原处时每次错开一步，粘到别处时放在视图中央；剪贴板里是图片就上传后作为图片模块放进来，是文字就作为文字模块。快捷键：⌘A 全选、Tab 轮选、⌘D 复制、⌘G/⇧⌘G 编组/解组、⌘]/⌘[ 置顶/置底（加 Alt 为一层）、Alt+A/D/W/S/H/V 对齐、Alt+Shift+H/V 等距分布、方向键微调、Delete 删除、Esc 取消。
+
+每个操作都是 `modules/editing` 里的纯函数（按职责分文件：`fields`、`parts`、`layout`、`links`、`words`、`clipboard`、`work`、`changes`），从当前作品算出一份 `WorkEdit`：`setData`、`moveParts`、`rename`、`removeParts`（连带删掉相关连线和检查）、`duplicate`（复制品自成一组，并复制它们之间的连线）、`arrange`（置顶、置底、上移或下移一层：越过下一个与它重叠的模块）、`restack`、`group`/`ungroup`、`setTarget`、`useDrawing`、`setModule`、`add`（文字、图片或库画法，库画法带它的示例数据和尺寸）、`align`/`distribute`、`connect`（在两个模块的边中点上找已有锚点或新建以边命名的锚点；新连线沿用场景里最近一条连线的画法和数据，`linkLook`，没有时用库里的 `arrow`）、`reattach`/`reverse`、`replace`、`paste`（新 ID；同 ID 而代码不同的作品画法换新 ID；剪贴板也带着用到的库画法，目标作品有同 ID 的自带画法时，库画法以新 ID 作为作品画法放进去，并把它的默认值写进元素数据，因为只有库画法才会自动补默认值；目标作品没有的跳转目标置空）、`setStyle`/`setStyles`、`addScene`/`renameScene`/`removeScene`（连同下面的子场景，指向它们的模块不再跳转）、`setDetail`/`removeDetail`、`setInteraction`、`setDrawing`、`fork`。`replace` 先在模块数据里找要改的字或图片 ID（改的若是某一项的 `name`，数据里所有与它完全相同的字串一起改，比如地图的路线、区域、`highlights` 按地点名引用它，只改一处路线就会丢掉这个点）；找不到时，如果它在画法代码里只出现一次，就按所在位置转义后替换，画法被别的模块共用时先为这个模块复制一份，替换后代码必须还能解析；都不行就返回 `null`，前端把修改要求写进输入框交给作者。`fieldsOf` 决定面板显示哪些普通控件：先是画法 `params` 声明的（作品画法自带名字，库画法的名字来自 `i18n.tsx` 的 `edit.params`），再是数据里其余的文字、颜色、数字和开关；小写的英文单词当作代码里的状态，不显示。其余的数据（列表、记录、状态词，`restOf`）进数据编辑器：列表可增删、上下移动（新增一项是复制最后一项），记录可增删字段。
+
+前端的 `change()` 把这些修改排成队，依次从上一次结果出发，原因记为 `{ kind: "edit" }`，作者运行期间返回 409。用户自己造成的版本（手动编辑、撤销、重做）在画布上安静替换，不播放起稿动画。重做只在撤销后作品没有别的变动时可用，记录在前端。下次作者运行时，`changesBetween` 列出的不只是场景里模块的增删改移和层级，还有场景本身的标题、父场景、交互，整个新增或删除的场景，以及画法、交互脚本、详情的增删改，提示词要求作者保留。
 
 ## 模块职责
 
@@ -94,7 +100,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 - `contracts`：作品协议（`Work`、`Scene`、`Instance`、`Link`、`Drawing`、`Brief`、`WorkEdit`）、运行记录（`Run`、`Step`、`ToolActivity`）和设置。前后端、运行时和作者工具共用这一份 schema，它是协议的唯一来源。
 - `workspace`：`createWork`、`writeWork`、`setBrief`、`restore`、`undo`，以及 `validateWork`。
-- `editing`：把手动操作变成 `WorkEdit` 的纯函数、面板控件的推断（`fieldsOf`），以及两个版本之间的差别（`changesBetween`）。前后端都用，不依赖存储和素材库。
+- `editing`：把手动操作变成 `WorkEdit` 的纯函数、面板控件的推断（`fieldsOf`/`restOf`）、拖动与缩放的几何（`snap`、`resized`、`scaled`）、剪贴板（`copy`/`paste`），以及两个版本之间的差别（`changesBetween`）。前后端和画布都用，不依赖存储和素材库。
 - `runtime`：画法执行环境。画法接收 `api`（`svg/html/mermaid/material/materials/draw/effect/emit`，连线另有 `from/to/fromSide/toSide`），交互脚本使用 `on/set/move/openScene/openDetail/animate/cleanup`。打包入口是 `browser.ts`，`scene.ts` 负责场景，`fixture.ts` 供测试使用。
 - `agent`：运行循环与重试（`index.ts`）、工具 schema（`tools.ts`）、系统提示词与素材目录（`prompts.ts`），以及解析流式到达的工具参数（`partial.ts`）。
 - 搜索方式为 `builtin` 的创作轮次在自定义工具旁提供 OpenAI 内置 `web_search`（`search_context_size: "low"`）；搜索由 OpenAI 执行，`web_search_call` 随其他输出原样进入后续上下文和 trace，不走本地工具执行器。运行步骤记录搜索查询或页面 URL；消息保留 `url_citation` 的位置、标题和链接，前端在原文位置显示可点击来源。OAuth、Chat Completions 和上下文压缩不添加内置搜索工具；Anthropic 接口的内置搜索由 Claude 执行，见上文。

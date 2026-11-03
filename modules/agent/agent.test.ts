@@ -629,6 +629,11 @@ it("gives a Claude model's deciding turns the most effort it accepts, as a chang
       efforts: ["low", "medium", "high", "xhigh"],
     });
     db.saveModels(catalog);
+    // A user's explicit choice overrides Sonnet's initial medium preset.
+    store.saveOwnSettings({
+      ...store.ownSettings(),
+      tunings: { [catalog.writers[0].models[0].id]: { effort: "high" } },
+    });
     const seen: any[][] = [];
     script(
       [
@@ -1308,7 +1313,7 @@ it("searches through the search service for a model without its own, counting ea
     expect(run.steps).toContainEqual({ kind: "tool", id: "c1", status: "done", name: "web_search", queries: ["release date", "launch city"], urls: [], action: "search" });
     expect(run.steps).toContainEqual({ kind: "tool", id: "c2", status: "done", name: "web_search", queries: [], urls: ["https://news.invalid/a"], action: "open_page" });
     expect(run.usage).toMatchObject({ searches: 3, pages: 1 });
-    expect(run.services).toEqual({ author: "DeepSeek", model: "deepseek-flash", effort: "medium", speed: "default", search: "service", searchBy: "DeepSeek Search", image: "gpt-image-2.5-sunburst[api]" });
+    expect(run.services).toEqual({ author: "DeepSeek", model: "deepseek-flash", effort: "high", speed: "default", search: "service", searchBy: "DeepSeek Search", image: "gpt-image-2.5-sunburst[api]" });
     // Each query asked and the page read are priced at the service's prices.
     expect(run.prices).toMatchObject({ search: 0.01, page: 0.02 });
     expect(costOf(run.usage, run.prices)!.search).toBeCloseTo(3 * 0.01 + 0.02);
