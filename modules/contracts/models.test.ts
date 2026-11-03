@@ -175,6 +175,9 @@ it("uses model presets for new users and keeps both fields when only one is chan
     ["anthropic/claude-sonnet-5.5", "medium", "default"],
     ["claude-opus-5-5", "medium", "default"],
     ["deepseek-flash", "high", "default"],
+    ["gpt-6-astra", "medium", "default"],
+    ["gpt-6.1-sol", "medium", "default"],
+    ["gpt-6-luna", "high", "fast"],
   ] as const;
   c.writers[0].models = models.map(([model], i) => ({
     ...defaultWriter(), id: `custom-${i}`, model, effort: "low", speed: "default",

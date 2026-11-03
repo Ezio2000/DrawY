@@ -34,6 +34,6 @@ pnpm test
 
 有些服务实现了 Responses 接口却不接受 `tool_choice: allowed_tools` 和 `max_tool_calls`（例如 DeepSeek）：在绘制模型上关闭“支持工具调用限制”（只在 Responses 格式下出现，默认开启），请求就不发送这两项，无论经官方地址还是自定义地址、代理接入；独立搜索仍在 DrawY 执行时按预算拒绝超额调用，工具列表保持不变。
 
-输入框会分别记住每个绘制模型的强度和速度。首次使用的用户预设为 Terra high/fast、Sonnet 5.5 medium、Opus 5.5 medium、DeepSeek Flash high；手动修改后只影响对应模型，切换回来会恢复它自己的设置。
+输入框会分别记住每个绘制模型的强度和速度。首次使用的用户预设为 Astra medium/default、Sol medium/default、Terra high/fast、Luna high/fast、Sonnet 5.5 medium、Opus 5.5 medium、DeepSeek Flash high；手动修改后只影响对应模型，切换回来会恢复它自己的设置。
 
 每次创作任务会固定开始时的绘制模型、强度、速度、搜索、生图及价格设置。回答作者追问时沿用这份设置；在其他作品或标签页切换模型、调整价格，不会改变已开始的任务和它的计费。新的创作请求使用最新设置。
