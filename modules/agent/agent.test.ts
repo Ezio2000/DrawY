@@ -60,7 +60,7 @@ it("feeds canvas images into the author conversation and requires another look a
       startedAt: Date.now(),
     };
     store.saveRun(run);
-    const ctx = { input: [] as any[], generations: 0 };
+    const ctx = { input: [] as any[], settings: store.settings(), generations: 0 };
     const calls = [
       ["finish", { message: "premature" }],
       ["view_canvas", {}],
@@ -254,7 +254,7 @@ it("lays out streamed modules on the write step before the write is saved", asyn
         laid.push(step.scenes[0]?.modules.length);
         written.push(step.writing);
       }
-    }).execute(store, run, { input: [], generations: 0 }, "request");
+    }).execute(store, run, { input: [], settings: store.settings(), generations: 0 }, "request");
     expect(run.status).toBe("completed");
     expect(laid).toContain(3);
     expect(written).toContain(writing.id);
@@ -277,6 +277,79 @@ it("lays out streamed modules on the write step before the write is saved", asyn
         },
       ],
     });
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("pins settings and billing across answers, other works and a storage restart", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-run-settings-"));
+  let db = new Storage(dir);
+  try {
+    const user = register(db, "author", "abcdef").id;
+    let store = db.scoped(user);
+    const catalog = db.models();
+    const first = catalog.writers[0].models[0];
+    first.model = "writer-a";
+    first.prices = { input: 2, cached: 0.2, cacheWrite: 2.5, output: 10, search: 0.01 };
+    catalog.writers[0].models.push({ ...structuredClone(first), id: "writer-b", model: "writer-b" });
+    db.saveModels(modelCatalogSchema.parse(catalog));
+    const work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    const original = store.settings();
+    vi.mocked(generate).mockReset();
+    vi.mocked(generate).mockImplementation(async () => ({
+      items: [{ type: "function_call", name: "ask_user", call_id: crypto.randomUUID(),
+        arguments: JSON.stringify({ questions: [{ id: "focus", text: "Which focus?", options: [{ label: "Orbits" }, { label: "Scale" }] }] }) }],
+      usage: { input_tokens: 1000, input_tokens_details: { cached_tokens: 200, cache_write_tokens: 100 }, output_tokens: 100 },
+      response: {},
+    }));
+    let agent = new Agent(() => {});
+    const run = await agent.start(store, work.id, "root", "Solar system");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
+    const before = store.run(run.id);
+    const cost = costOf(before.usage, before.prices)!.total;
+
+    // A selection elsewhere and an administrator's price/connection edits must not
+    // change the model, tools or prices of the task already waiting for an answer.
+    store.saveOwnSettings({ ...store.ownSettings(), writer: "writer-b", web: "off", preferences: "New preference" });
+    catalog.writers[0].credential = "new-credential";
+    for (const model of catalog.writers[0].models) model.prices.output = 99;
+    catalog.painters[0].models[0].model = "new-painter";
+    db.saveModels(modelCatalogSchema.parse(catalog));
+    const current = store.settings();
+    expect(current.author.model).toBe("writer-b");
+    expect(current).not.toEqual(original);
+    const other = { ...fixture(), id: "other-work", revision: 0 };
+    store.commit(other, 0, { kind: "edit" });
+    const otherRun = await agent.start(store, other.id, "root", "Another picture");
+    await vi.waitFor(() => expect(store.run(otherRun.id).status).toBe("waiting"));
+    expect(vi.mocked(generate).mock.calls.at(-1)![0]).toEqual(current.author);
+
+    db.close();
+    db = new Storage(dir);
+    store = db.scoped(user);
+    agent = new Agent(() => {});
+    await agent.resume(store, run.id, "Orbits");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
+    expect(vi.mocked(generate).mock.calls.at(-1)![0]).toEqual(original.author);
+    expect(store.context(run.id).settings).toEqual(original);
+    const resumed = store.run(run.id);
+    expect(resumed.services).toEqual(before.services);
+    expect(resumed.prices).toEqual(before.prices);
+    expect(resumed.usage!.input).toBe(2000);
+    expect(costOf(resumed.usage, resumed.prices)!.total).toBeCloseTo(cost * 2);
+    expect(resumed).not.toHaveProperty("settings");
+
+    // New requests on the same work use today's selection, not the previous snapshot.
+    agent.cancel(store, run.id);
+    const next = await agent.start(store, work.id, "root", "Continue");
+    await vi.waitFor(() => expect(store.run(next.id).status).toBe("waiting"));
+    expect(vi.mocked(generate).mock.calls.at(-1)![0]).toEqual(current.author);
+    expect(store.context(next.id).settings).toEqual(current);
+    expect(store.run(next.id).prices).toEqual(current.prices);
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
@@ -421,7 +494,7 @@ it("compacts at the budget with original references and closes interrupted tool 
         { role: "user", content: "x".repeat(600001) },
         { type: "configuration_update", reasoning: { effort: "max" } },
       ] as any[],
-      generations: 0,
+      settings: store.settings(), generations: 0,
     };
     let turn = 0;
     const agent = new Agent(() => {});
@@ -507,7 +580,7 @@ it("goes on without old pictures when a summary fails, and sizes the context by 
         shot(2),
         shot(3),
       ] as any[],
-      generations: 0,
+      settings: store.settings(), generations: 0,
     };
     const agent = new Agent(() => {});
     const seen: any[][] = [];
@@ -862,7 +935,7 @@ it("develops pictures while the author composes and holds finish until they were
     const done = agent.execute(
       store,
       run,
-      { input: [], generations: 0 },
+      { input: [], settings: store.settings(), generations: 0 },
       "request",
     );
     await vi.waitFor(() => expect(seen.length).toBeGreaterThanOrEqual(2));
@@ -947,7 +1020,7 @@ it("stops the run when the canvas cannot be looked at, instead of spending turns
     await new Agent(() => {}).execute(
       store,
       run,
-      { input: [], generations: 0 },
+      { input: [], settings: store.settings(), generations: 0 },
       "request",
     );
     expect(seen).toHaveLength(1);
@@ -1020,7 +1093,7 @@ it("tries a turn again when the model's stream breaks, without the broken attemp
     await new Agent(() => {}).execute(
       store,
       run,
-      { input: [], generations: 0 },
+      { input: [], settings: store.settings(), generations: 0 },
       "request",
     );
     expect(calls).toBe(3);
@@ -1179,7 +1252,7 @@ it.each(["api", "oauth"] as const)("keeps hosted searches in the %s conversation
     await new Agent((_user, event: any) => {
       const step = event.run?.steps.find((s: any) => s.name === "web_search");
       if (step) states.push(step.status);
-    }).execute(store, run, { input: [], generations: 0 }, "request");
+    }).execute(store, run, { input: [], settings: store.settings(), generations: 0 }, "request");
     expect(run.status).toBe("completed");
     expect(states).toContain("running");
     expect(states).toContain("done");
@@ -1214,7 +1287,7 @@ it("shows any hosted tool as a step, records it under its turn and adds up what 
       const name = turn === 2 ? "view_canvas" : "finish";
       return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(name === "finish" ? { message: "done" } : {}) }], usage: usage(200), response: {} };
     });
-    await tracer.within(run.id, () => new Agent(() => {}).execute(store, run, { input: [], generations: 0 }, "request"));
+    await tracer.within(run.id, () => new Agent(() => {}).execute(store, run, { input: [], settings: store.settings(), generations: 0 }, "request"));
     expect(run.status).toBe("completed");
     expect(run.steps).toContainEqual({ kind: "tool", id: "ci_1", status: "done", name: "hosted", tool: "code_interpreter", detail: "print(6 * 7)" });
     expect(run.steps).toContainEqual({ kind: "tool", id: "ws_1", status: "done", name: "web_search", queries: [], urls: ["https://example.com/a"], action: "open_page" });
@@ -1293,7 +1366,9 @@ it("searches through the search service for a model without its own, counting ea
       const [name, args] = script[turn++];
       return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(args) }], usage: {}, response: {} };
     });
-    await new Agent(() => {}).execute(store, run, { input: [], generations: 0 }, "request");
+    const ctx = { input: [], settings: store.settings(), generations: 0 };
+    store.saveOwnSettings({ ...store.ownSettings(), web: "off" });
+    await new Agent(() => {}).execute(store, run, ctx, "request");
     expect(run.status).toBe("completed");
     expect(asked).toEqual([
       { url: "https://search.invalid/v1/tools/search", body: { query: "release date" } },
@@ -1356,7 +1431,7 @@ it("keeps a Responses model without tool limits to the search budget by refusing
       const [name, args] = script[turn++];
       return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(args) }], usage: {}, response: {} };
     });
-    await new Agent(() => {}).execute(store, run, { input: [], generations: 0 }, "request");
+    await new Agent(() => {}).execute(store, run, { input: [], settings: store.settings(), generations: 0 }, "request");
     // The request never carries fields the service rejects, and drawing carries on.
     expect(run.status).toBe("completed");
     for (const steer of steers) expect(steer ?? {}).toEqual({});

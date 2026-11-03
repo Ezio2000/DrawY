@@ -33,7 +33,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 1. 用户在某个场景发出请求。`apps/server/app.ts` 收到 `POST /api/works/:id/runs`，调用 `modules/agent` 的 `Agent.start`。
 2. 同一作品的对话上下文会延续：新一次运行沿用上一次运行保存的 `input`，再追加用户消息和作品当前的状态。用户在两次运行之间自己改过作品（手动编辑、撤销或恢复）时，状态前面会列出作者上次保存之后哪些模块被改、移动、添加或删除，以及哪些场景、画法、交互脚本和详情被增删改（`editing.changesBetween`），提示词要求作者保留这些修改。
 3. 作者按 `modules/agent/tools.ts` 里定义的工具工作：
-   - `ask_user` 暂停运行，状态变为 `waiting`，用户回答后由 `resume` 继续。
+   - `ask_user` 暂停运行，状态变为 `waiting`，用户回答后由 `resume` 继续。`start` 在首次异步操作前读取完整 `Settings`，存入服务端持久化的 `Context.settings`；恢复、绘制循环、压缩、搜索、生图与简报偏好校验都使用此快照，不重读账号设置。`run.services` 和 `run.prices` 从此快照生成，跨作品选择或管理员改价不会影响已有运行；新运行单独读取最新设置，只继承旧运行的对话，不继承配置。完整快照含连接凭证，只存在服务端 context，不放入公开 Run 或 trace。
    - `set_brief` 定下简报。
    - `find_materials` 检索素材库。
    - `generate_images` 在后台生成图片（`modules/images`）。这些图片先在素材库里预留 ID，作者马上就能引用。每张图除了作者给的内容参考图，还会带上作品里已有的同风格图片和风格样张作为风格参考图（`styleReferences`），保持画风一致。

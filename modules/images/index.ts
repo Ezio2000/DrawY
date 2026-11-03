@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { headers } from "../models/index.ts";
 import type { UserStore } from "../storage/index.ts";
-import { DomainError, type Work } from "../contracts/index.ts";
+import { DomainError, type Work, type ImageRole } from "../contracts/index.ts";
 import type { Material, StyleMaterial } from "@drawy/materials/schema";
 import { library, styleOf } from "../materials/index.ts";
 import { tracer } from "../trace/index.ts";
@@ -120,13 +120,12 @@ function promptFor(
 
 /** Calls the picture model and returns the bytes of one picture. */
 async function paint(
-  store: UserStore,
+  role: ImageRole,
   prompt: string,
   size: string,
   transparent: boolean,
   references: Uint8Array[],
 ) {
-  const role = store.settings().image;
   if (!role.credential) throw Error("请在模型设置中配置生图凭证");
   const attempt = async (background: string) => {
     const params = {
@@ -225,6 +224,7 @@ async function paint(
  * style. The ids are usable at once; each development settles on its own. */
 export async function develop(
   store: UserStore,
+  role: ImageRole,
   work: Work,
   input: PictureRequest[],
 ): Promise<Development[]> {
@@ -232,7 +232,7 @@ export async function develop(
     throw new DomainError("请先用 set_brief 确定风格，再生成图片");
   const requests = input.map((r) => pictureRequestSchema.parse(r));
   const style = await styleOf(work.brief.style);
-  const model = store.settings().image.model;
+  const model = role.model;
   const ids = requests.map(
     (r) =>
       `g-${
@@ -321,7 +321,7 @@ export async function develop(
                   ),
                 });
               const { bytes, usage } = await paint(
-                store,
+                role,
                 prompt,
                 `${width}x${height}`,
                 transparent,
