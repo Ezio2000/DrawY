@@ -170,7 +170,6 @@ function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
   const t0 = Math.min(...spans.map((s) => s.startedAt), trace.startedAt);
   const t1 = Math.max(...spans.map((s) => s.endedAt ?? Date.now()), t0 + 1);
   const shown = rows.filter((r) => !kinds.size || kinds.has(r.span.kind));
-  const contexts = useMemo(() => inputs(spans), [spans]);
   const c = trace.cost,
     v = trace.services,
     tk = trace.tokens;
@@ -290,7 +289,7 @@ function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
                   </span>
                   <small>{s.endedAt ? seconds(end - s.startedAt) : "…"}</small>
                 </button>
-                {open === s.id && <Attributes span={s} context={contexts.get(s.id)} />}
+                {open === s.id && <Opened traceId={trace.id} brief={s} />}
               </li>
             );
           })}
@@ -374,53 +373,12 @@ function metric(s: Span) {
       .filter(Boolean)
       .join(" · ");
   // A tool call shows what it was asked: a query, a URL, a subject.
-  if (s.kind === "tool")
-    return [a.hosted && a.args?.type, ...words(a.args)].filter(Boolean).join(" · ").slice(0, 90);
+  if (s.kind === "tool") return a.asked ?? "";
   if (s.kind === "search")
     return (a.subjects as string[] | undefined)?.join(", ");
-  if (s.kind === "capture") return w().shots((a.shots || []).length);
+  if (s.kind === "capture") return w().shots(a.shots ?? 0);
   if (s.kind === "note" && a.status) return `HTTP ${a.status} · ${a.ms}ms`;
   return "";
-}
-/** The words in a tool's arguments, however they are nested or encoded. */
-function words(v: unknown, depth = 0): string[] {
-  if (typeof v === "string") {
-    if (!depth && /^[\[{]/.test(v.trim()))
-      try {
-        return words(JSON.parse(v), 1);
-      } catch {}
-    return v && v.length < 200 ? [v] : [];
-  }
-  if (depth > 3 || !v || typeof v !== "object") return [];
-  return (Array.isArray(v) ? v : Object.entries(v).filter(([k]) => k !== "type").map(([, x]) => x)).flatMap(
-    (x) => words(x, depth + 1),
-  );
-}
-/** The whole input each model turn was sent: where its execution started, then every
- * turn's additions and outputs in order; a compaction starts it afresh. */
-function inputs(spans: Span[]) {
-  const out = new Map<string, { items: Item[]; complete: boolean }>();
-  for (const e of spans.filter((s) => s.kind === "execution")) {
-    const base = (e.attrs as Item).context as Item[] | undefined;
-    let items: Item[] = base ?? [],
-      complete = !!base,
-      pending: Item[] = [],
-      fresh = false;
-    for (const s of spans.filter((x) => x.parentId === e.id)) {
-      if (s.kind === "compact" && (s.attrs as Item).replaced) {
-        fresh = true;
-        complete = true;
-      }
-      if (s.kind !== "turn") continue;
-      const a = s.attrs as Item,
-        added = (a.input || []) as Item[];
-      items = fresh ? [...added] : [...items, ...pending, ...added];
-      fresh = false;
-      out.set(s.id, { items, complete });
-      pending = (a.output || []) as Item[];
-    }
-  }
-  return out;
 }
 function Copy({ value }: { value: unknown }) {
   const [done, setDone] = useState(false);
@@ -557,6 +515,25 @@ function Conversation({ items }: { items: Item[] }) {
       })}
     </ol>
   );
+}
+type Whole = { span: Span; context?: { items: Item[]; complete: boolean } };
+/** A span opened in the timeline: the timeline has only its brief, so the whole record
+ * is fetched when it is opened, and again while it is still running when it changes. */
+function Opened({ traceId, brief }: { traceId: string; brief: Span }) {
+  const [whole, setWhole] = useState<Whole>();
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let current = true;
+    api<Whole>(`/traces/${traceId}/spans/${brief.id}`)
+      .then((d) => current && setWhole(d))
+      .catch((e) => current && setError(e.message));
+    return () => {
+      current = false;
+    };
+  }, [traceId, brief.id, brief.status, brief.endedAt]);
+  if (error) return <p className={cx("error")}>{error}</p>;
+  if (!whole) return <Spinner />;
+  return <Attributes key={whole.span.id} span={whole.span} context={whole.context} />;
 }
 /** What a span took in and gave out, laid out for its kind; the raw record is always one
  * click away. */

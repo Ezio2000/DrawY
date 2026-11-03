@@ -325,13 +325,17 @@ export function App() {
   }
   const refreshList = () => api<Summary[]>("/works").then(L);
   async function load(id: string) {
-    const [w, r] = await Promise.all([
-      api<Work>("/works/" + id),
-      api<Run[]>("/works/" + id + "/runs"),
-    ]);
+    // The work shows as soon as it arrives; its runs, which can be long, follow.
+    const runs = api<Run[]>("/works/" + id + "/runs");
+    runs.catch(() => {});
+    const w = await api<Work>("/works/" + id);
     W(w);
     setDetail(undefined);
     S([]);
+    R([]);
+    const r = await runs;
+    // A work left while its runs were on the way keeps out of the next one.
+    if (workIdOf(location.pathname) !== id) return;
     R(r);
     // A reply from an earlier visit stays in the journal, not under the canvas; one still
     // to come shows when it arrives.
