@@ -251,9 +251,9 @@ export function SceneView({
       {canvas &&
         createPortal(
           <>
-            {gaze?.region && (
-              <div className={cx("viewfinder")} style={place(gaze.region)} />
-            )}
+            {gaze?.regions?.map((region, i) => (
+              <div key={i} className={cx("viewfinder")} style={place(region)} />
+            ))}
             {gaze?.focus === "annotate" &&
               work.scenes[sceneId].modules.map((m, i) => (
                 <div
@@ -265,7 +265,7 @@ export function SceneView({
           </>,
           canvas.layer,
         )}
-      {gaze && !gaze.region && <div className={cx("viewfinder")} data-screen />}
+      {gaze && !gaze.regions?.length && <div className={cx("viewfinder")} data-screen />}
       {!shown && (
         <div className={cx("canvas-loading")} aria-busy>
           <Spinner />

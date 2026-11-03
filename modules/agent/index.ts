@@ -1,12 +1,16 @@
 import {
   id,
   DomainError,
-  boundsSchema,
+  authorWriteSchema,
+  boundsOf,
+  boxOf,
+  boxSchema,
   type Run,
   type Step,
   type ToolActivity,
   type GuideTopic,
   guideTopics,
+  type Sketch,
   type Work,
   type Picture,
   type Question,
@@ -20,7 +24,7 @@ import {
   effortFor,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
-import { writeWork, setBrief } from "../workspace/index.ts";
+import { fromAuthor, writeWork, setBrief } from "../workspace/index.ts";
 import { changesBetween } from "../editing/index.ts";
 import {
   attached,
@@ -34,7 +38,12 @@ import {
   freshen,
 } from "../materials/index.ts";
 import { develop, type Development } from "../images/index.ts";
-import { observe, requireObserved, Unavailable } from "../observation/index.ts";
+import {
+  observe,
+  requireObserved,
+  Unavailable,
+  type Reported,
+} from "../observation/index.ts";
 import { AUTHOR, catalogue } from "./prompts.ts";
 import { guidesRead, readGuides } from "./guides.ts";
 import {
@@ -187,6 +196,48 @@ function research(run: Run) {
       : "Web search is closed for the rest of this request. Work from what is above, and leave out what stays unconfirmed.",
   };
 }
+/** Adds a model attempt that failed to what the run has spent. A stream that broke off
+ * reports its input but not its output, which is then told from what had arrived. */
+function spendFailed(
+  run: Run,
+  attempt: { usage?: Item; ms: number; chars?: number },
+) {
+  const f = failedOf(run);
+  const reported = attempt.usage?.output_tokens ?? 0;
+  const estimated = reported ? 0 : Math.ceil((attempt.chars ?? 0) / 3);
+  f.attempts++;
+  f.ms += attempt.ms;
+  f.input += attempt.usage?.input_tokens ?? 0;
+  f.cached += attempt.usage?.input_tokens_details?.cached_tokens ?? 0;
+  f.cacheWrite += attempt.usage?.input_tokens_details?.cache_write_tokens ?? 0;
+  f.output += reported + estimated;
+  f.estimated += estimated;
+  return { usage: attempt.usage ?? {}, output: reported + estimated, estimated };
+}
+const failedOf = (run: Run) =>
+  (usageOf(run).failed ??= {
+    attempts: 0,
+    ms: 0,
+    input: 0,
+    cached: 0,
+    cacheWrite: 0,
+    output: 0,
+    estimated: 0,
+    invalidCalls: 0,
+    images: 0,
+  });
+/** A tool call's arguments. Input the model wrote broken is its to correct, as it can see
+ * what it wrote: the call fails like any other, without another pass over the whole turn. */
+function parsedArguments(run: Run, text: string) {
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    failedOf(run).invalidCalls++;
+    throw Error(
+      `工具参数不是有效的 JSON（${e instanceof Error ? e.message : e}），没有保存。请改正后把完整参数重发`,
+    );
+  }
+}
 /** Adds to what a run has spent. */
 function spend(run: Run, usage: Item) {
   const u = (run.usage ??= { input: 0, cached: 0, output: 0, reasoning: 0 });
@@ -202,7 +253,16 @@ const pictures = (shots: { name: string; url: string }[]) =>
   shots.map(({ name, url }) => ({ name, url }));
 /** Tools that run alone and are not shown as steps of their own. */
 const silent = new Set(["ask_user", "finish"]);
-function activity(name: string, args: any): ToolActivity {
+/** A box the author wrote, if enough of it has arrived to show. */
+const boxed = (box: unknown) => {
+  const parsed = boxSchema.safeParse(box);
+  return parsed.success ? boundsOf(parsed.data) : undefined;
+};
+const records = (list: unknown): any[] =>
+  Array.isArray(list) ? list.filter((r) => r?.id) : [];
+/** What a tool call is doing, as far as its arguments have arrived. Parts a write does not
+ * place in a scene belong to the current one. */
+function activity(name: string, args: any, sceneId: string): ToolActivity {
   switch (name) {
     case "read_work":
       return { name };
@@ -264,7 +324,32 @@ function activity(name: string, args: any): ToolActivity {
           .filter((i: any) => i?.name?.zh)
           .map((i: any) => ({ name: i.name.zh, url: "" })),
       };
-    case "write_work":
+    case "write_work": {
+      const modules = records(args.modules),
+        links = records(args.links),
+        named = records(args.scenes);
+      const scenes = new Map<string, { id: string; title: string; modules: Sketch[] }>();
+      const touched = (id: string) => {
+        if (!scenes.has(id)) scenes.set(id, { id, title: "", modules: [] });
+        return scenes.get(id)!;
+      };
+      for (const s of named) touched(s.id).title = s.title ?? "";
+      for (const m of modules) {
+        const scene = touched(m.scene ?? sceneId),
+          bounds = boxed(m.bounds);
+        if (bounds)
+          scene.modules.push({
+            id: m.id,
+            label: m.label ?? "",
+            bounds,
+            ...(m.drawingId ? { drawingId: m.drawingId } : {}),
+          });
+      }
+      for (const l of links) touched(l.scene ?? sceneId);
+      const changed =
+        modules.filter((m) => !m.bounds).length +
+        links.filter((l) => !l.from && !l.to).length +
+        named.filter((s) => s.order?.length).length;
       return {
         name,
         drawings: (args.drawings || [])
@@ -273,36 +358,23 @@ function activity(name: string, args: any): ToolActivity {
         writing: (args.drawings || []).findLast(
           (d: any) => d?.id && typeof d.source !== "string",
         )?.id,
-        scenes: (args.scenes || [])
-          .filter((s: any) => s?.id)
-          .map((s: any) => ({
-            id: s.id,
-            title: s.title ?? "",
-            modules: (s.modules || []).flatMap((m: any) =>
-              m?.id && boundsSchema.safeParse(m.bounds).success
-                ? [
-                    {
-                      id: m.id,
-                      label: m.label ?? "",
-                      bounds: m.bounds,
-                      ...(m.drawingId ? { drawingId: m.drawingId } : {}),
-                    },
-                  ]
-                : [],
-            ),
-          })),
+        scenes: [...scenes.values()],
+        ...(changed ? { changed } : {}),
         details: (args.details || []).map((d: any) => d.title),
         materials: [],
         removed: Object.values(args.remove || {}).flat().length,
       };
+    }
     case "view_canvas":
       return {
         name,
         sceneId: args.sceneId,
-        region: boundsSchema.safeParse(args.region).data,
+        regions: (Array.isArray(args.regions) ? args.regions : []).flatMap(
+          (r: unknown) => boxed(r) ?? [],
+        ),
         focus: args.actions?.length
           ? "actions"
-          : args.region
+          : args.regions?.length
             ? "region"
             : args.annotate
               ? "annotate"
@@ -326,11 +398,27 @@ function cardsUnread(work: Work, input: Item[]) {
       }
     : {};
 }
-/** The work as the author reads it: library code and effect definitions are named, not
+/** The work as the author reads it, in the terms it writes: boxes in their short form,
+ * what a part has by default left out, and library code and effect definitions named, not
  * repeated. */
 function forAuthor(work: Work) {
   return {
     ...work,
+    scenes: Object.fromEntries(
+      Object.values(work.scenes).map((scene) => [
+        scene.id,
+        {
+          ...scene,
+          modules: scene.modules.map(({ bounds, group, target, anchors, ...m }) => ({
+            ...m,
+            bounds: boxOf(bounds),
+            ...(group ? { group } : {}),
+            ...(target ? { target } : {}),
+            ...(Object.keys(anchors).length ? { anchors } : {}),
+          })),
+        },
+      ]),
+    ),
     materials: Object.fromEntries(
       Object.values(work.materials).map((m) => [
         m.id,
@@ -356,6 +444,8 @@ interface Context {
   generations: number;
   /** The tokens the model last reported for the first `items` items of the input. */
   measured?: { tokens: number; items: number };
+  /** The module geometry the conversation holds, so a look repeats only what changed. */
+  reported?: Reported;
 }
 async function userMessage(
   store: UserStore,
@@ -482,6 +572,7 @@ async function compact(
   if (size < 200000) return;
   await tracer.span("compact", "context", { size }, async (span) => {
     const author = ctx.settings.author;
+    const began = Date.now();
     let result: Awaited<ReturnType<typeof generate>>;
     try {
       result = await generate(
@@ -502,6 +593,7 @@ async function compact(
         },
       );
     } catch (e) {
+      spendFailed(run, { ms: Date.now() - began });
       if (signal.aborted) throw e;
       // Without a summary the run goes on with less to read rather than stopping.
       ctx.input = withoutOldPictures(ctx.input);
@@ -532,6 +624,7 @@ async function compact(
       workMessage(run.sceneId, store.work(run.workId)),
     ];
     ctx.measured = undefined;
+    ctx.reported = undefined;
     store.context(run.id, ctx);
     spend(run, result.usage);
     // The next turn starts from this summary alone.
@@ -673,6 +766,7 @@ export class Agent {
       input: before ? before.input : [],
       generations: 0,
       ...(before?.measured ? { measured: before.measured } : {}),
+      ...(before?.reported ? { reported: before.reported } : {}),
     };
     ctx.input.push(
       message,
@@ -898,7 +992,7 @@ export class Agent {
         flush = undefined;
         flushing(undefined);
         for (const d of drafts.values())
-          Object.assign(d.step, activity(d.name, partialJson(d.text) ?? {}));
+          Object.assign(d.step, activity(d.name, partialJson(d.text) ?? {}, run.sceneId));
         this.emit(store, run);
       }, 250);
       flushing(flush);
@@ -942,6 +1036,9 @@ export class Agent {
           let lessened = false;
           for (let attempt = 0, waits = [2000, 8000, 0]; attempt < waits.length; attempt++) {
             const wait = waits[attempt];
+            const tried = Date.now();
+            let reported: Item | undefined,
+              chars = 0;
             try {
               result = await generate(asked.role, {
                 instructions,
@@ -954,6 +1051,12 @@ export class Agent {
                 steer,
                 effort: asked.effort,
                 onEvent: (event) => {
+                  if (event.type === "response.usage") {
+                    reported = event.usage;
+                    return;
+                  }
+                  if (event.type.endsWith(".delta") && typeof event.delta === "string")
+                    chars += event.delta.length;
                   if (
                     firstOutput === undefined &&
                     event.type.endsWith(".delta")
@@ -1005,7 +1108,7 @@ export class Agent {
                           kind: "tool",
                           id: call_id,
                           status: "running",
-                          ...activity(name, {}),
+                          ...activity(name, {}, run.sceneId),
                         };
                         run.steps.push(step);
                         drafts.set(item, { step, name, text: "" });
@@ -1061,9 +1164,26 @@ export class Agent {
               });
               break;
             } catch (e) {
+              // Spent whatever becomes of the run, and told apart from what it paid for.
+              const spent = spendFailed(run, {
+                usage: e instanceof CutOff ? e.usage : reported,
+                ms: Date.now() - tried,
+                chars,
+              });
+              tracer.record(
+                "turn",
+                `turn ${ctx.generations} failed attempt`,
+                {
+                  failed: true,
+                  inputItems: ctx.input.length,
+                  estimatedTokens: contextSize(ctx),
+                  usage: { ...spent.usage, output_tokens: spent.output },
+                  ...(spent.estimated ? { estimatedOutput: spent.estimated } : {}),
+                },
+                { startedAt: tried, error: e instanceof Error ? e.message : String(e) },
+              );
               if (e instanceof CutOff) {
-                spend(run, e.usage);
-                span.set({ usage: e.usage, incomplete: e.reason ?? "unknown" });
+                span.set({ incomplete: e.reason ?? "unknown" });
                 const less =
                   e.thoughtOnly && !lessened && !abort.signal.aborted
                     ? withLessThought(ctx.input, settings.author, asked.effort)
@@ -1093,6 +1213,7 @@ export class Agent {
               thinking = said = undefined;
               firstOutput = undefined;
               drafts.clear();
+              failedOf(run).ms += wait;
               this.emit(store, run);
               await new Promise((resolve) => setTimeout(resolve, wait));
             }
@@ -1126,6 +1247,14 @@ export class Agent {
       this.emit(store, run);
       const calls = result.items.filter((i) => i.type === "function_call");
       if (!calls.length) {
+        // Words saying the work is done, when it is: that is what finish would say, and
+        // asking for the call only pays for the same message twice.
+        if (text && this.done(store, run) === undefined) {
+          run.status = "completed";
+          store.context(run.id, ctx);
+          this.developments.delete(run.id);
+          return;
+        }
         ctx.input.push({
           role: "user",
           content:
@@ -1180,6 +1309,31 @@ export class Agent {
     }
     throw Error("已达到本轮 24 次生成上限");
   }
+  /** What still stands in the way of finishing: every picture developed and the latest
+   * revision seen since, whole and without errors. */
+  private done(store: UserStore, run: Run): string | undefined {
+    const work = store.work(run.workId);
+    const developments = this.developments.get(run.id) || [];
+    const pending = developments.filter((d) => !d.settled);
+    if (pending.length)
+      return `图片仍在生成：${pending.map((d) => d.id).join(", ")}。用 view_canvas 等它们显影后再看一次`;
+    try {
+      requireObserved(work, run.observations);
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+    const looked = Math.max(
+      ...run.observations
+        .filter((o) => o.revision === work.revision)
+        .map((o) => o.at),
+    );
+    const unseen = developments.filter(
+      (d) => work.materials[d.id] && d.settled!.at > looked,
+    );
+    return unseen.length
+      ? `图片 ${unseen.map((d) => d.id).join(", ")} 在最后一次查看之后才显影，请再看一次画布`
+      : undefined;
+  }
   /** Runs one tool call. `done` ends this execution: the run finished or waits for the user. */
   private async call(
     store: UserStore,
@@ -1198,20 +1352,20 @@ export class Agent {
   }> {
     let output: unknown;
     let images: Item[] = [];
-    let step: ToolStep | undefined;
+    // A call that streamed already has its step, which has to end however the call does.
+    let step = run.steps.find(
+      (s): s is ToolStep => s.kind === "tool" && s.id === call.call_id,
+    );
     try {
-      const args = JSON.parse(call.arguments);
+      const args = parsedArguments(run, call.arguments);
       if (!silent.has(call.name)) {
-        step = run.steps.find(
-          (s): s is ToolStep => s.kind === "tool" && s.id === call.call_id,
-        );
-        if (step) Object.assign(step, activity(call.name, args));
+        if (step) Object.assign(step, activity(call.name, args, run.sceneId));
         else {
           step = {
             kind: "tool",
             id: call.call_id,
             status: "running",
-            ...activity(call.name, args),
+            ...activity(call.name, args, run.sceneId),
           };
           run.steps.push(step);
         }
@@ -1410,7 +1564,7 @@ export class Agent {
                 images.textInput = (images.textInput ?? 0) + t.textInput;
                 images.imageInput = (images.imageInput ?? 0) + t.imageInput;
                 images.textOutput = (images.textOutput ?? 0) + t.textOutput;
-              }
+              } else failedOf(run).images++;
               this.emit(store, run);
               // An open canvas redraws the picture with its measured content.
               const work = store.works().find((w) => w.id === run.workId);
@@ -1434,7 +1588,7 @@ export class Agent {
           const { work, added, keptTitle } = await writeWork(
             store,
             run.workId,
-            args,
+            fromAuthor(store.work(run.workId), authorWriteSchema.parse(args), run.sceneId),
             causeOf(run),
           );
           run.firstSceneMs ??= Date.now() - start;
@@ -1475,7 +1629,10 @@ export class Agent {
             let result: Awaited<ReturnType<typeof observe>> | undefined;
             for (const wait of [2000, 6000, 0]) {
               try {
-                result = await observe(store, run.workId, args, abort.signal);
+                result = await observe(store, run.workId, args, abort.signal, {
+                  observations: run.observations,
+                  reported: (ctx.reported ??= {}),
+                });
                 break;
               } catch (e) {
                 if (!(e instanceof Unavailable) || !wait) throw e;
@@ -1500,26 +1657,8 @@ export class Agent {
           break;
         }
         case "finish": {
-          const work = store.work(run.workId);
-          const developments = this.developments.get(run.id) || [];
-          const pending = developments.filter((d) => !d.settled);
-          if (pending.length)
-            throw new DomainError(
-              `图片仍在生成：${pending.map((d) => d.id).join(", ")}。用 view_canvas 等它们显影后再看一次`,
-            );
-          requireObserved(work, run.observations);
-          const looked = Math.max(
-            ...run.observations
-              .filter((o) => o.revision === work.revision)
-              .map((o) => o.at),
-          );
-          const unseen = developments.filter(
-            (d) => work.materials[d.id] && d.settled!.at > looked,
-          );
-          if (unseen.length)
-            throw new DomainError(
-              `图片 ${unseen.map((d) => d.id).join(", ")} 在最后一次查看之后才显影，请再看一次画布`,
-            );
+          const blocked = this.done(store, run);
+          if (blocked) throw new DomainError(blocked);
           run.status = "completed";
           run.steps.push({
             kind: "message",

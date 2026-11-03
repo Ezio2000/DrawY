@@ -209,6 +209,7 @@ function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
                     `${w().costAuthor} ${money(c.author)}`,
                     `${w().costSearch} ${money(c.search)}`,
                     `${w().costImage} ${money(c.image)}`,
+                    ...(c.failed ? [`${w().costFailed} ${money(c.failed)}`] : []),
                   ]
                 : [w().unpriced]
             }
@@ -730,7 +731,7 @@ function Attributes({
       break;
     case "capture":
       parts.push(
-        <Part key="request" title={w().request} value={{ revision: a.revision, sceneId: a.sceneId, region: a.region, annotate: a.annotate, actions: a.actions }} />,
+        <Part key="request" title={w().request} value={{ revision: a.revision, sceneId: a.sceneId, regions: a.regions, claims: a.claims, annotate: a.annotate, actions: a.actions }} />,
         ...(a.shots || []).map((shot: Item, i: number) => (
           <Part key={"shot" + i} title={shot.view} value={shot}>
             <div className={cx("shots")}>

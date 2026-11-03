@@ -111,6 +111,18 @@
         "default": "above",
         "description": "which side of the line the label sits"
       },
+      "size": {
+        "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
+        "default": 16,
+        "description": "font size of the label"
+      },
+      "labelColor": {
+        "type": "color",
+        "description": "the label's colour; defaults to the arrow's"
+      },
       "color": {
         "type": "color",
         "description": "defaults to the ink token"
@@ -200,6 +212,10 @@
         "type": "color",
         "description": "defaults to ink"
       },
+      "noteColor": {
+        "type": "color",
+        "description": "colour of the note; defaults to muted"
+      },
       "halo": {
         "type": "boolean",
         "default": true,
@@ -272,6 +288,14 @@
       "color": {
         "type": "color",
         "description": "line colour; defaults to muted"
+      },
+      "width": {
+        "type": "number",
+        "min": 0.5,
+        "max": 6,
+        "step": 0.5,
+        "default": 1,
+        "description": "line width of the leader"
       },
       "textColor": {
         "type": "color",
@@ -743,6 +767,14 @@
         "type": "color",
         "description": "defaults to muted"
       },
+      "width": {
+        "type": "number",
+        "min": 0.5,
+        "max": 8,
+        "step": 0.1,
+        "default": 1.4,
+        "description": "line width"
+      },
       "size": {
         "type": "number",
         "min": 8,
@@ -791,6 +823,18 @@
       "label": {
         "type": "text",
         "description": "the zone's name"
+      },
+      "size": {
+        "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
+        "default": 15,
+        "description": "font size of the label"
+      },
+      "labelColor": {
+        "type": "color",
+        "description": "colour of the label; defaults to ink"
       },
       "labelAt": {
         "type": "choice",
@@ -905,6 +949,13 @@
       "color": {
         "type": "color",
         "description": "defaults to accent2"
+      },
+      "width": {
+        "type": "number",
+        "min": 0.5,
+        "max": 8,
+        "step": 0.1,
+        "description": "line width; defaults to the stroke token"
       }
     }
   },
@@ -984,6 +1035,14 @@
       "color": {
         "type": "color",
         "description": "path colour; defaults to muted"
+      },
+      "width": {
+        "type": "number",
+        "min": 0.5,
+        "max": 6,
+        "step": 0.1,
+        "default": 1.1,
+        "description": "line width of the path"
       }
     }
   },
@@ -1231,6 +1290,22 @@
         "step": 1,
         "default": 15,
         "description": "font size"
+      },
+      "weight": {
+        "type": "number",
+        "min": 100,
+        "max": 900,
+        "step": 100,
+        "default": 600,
+        "description": "font weight of the title"
+      },
+      "radius": {
+        "type": "number",
+        "min": 0,
+        "max": 40,
+        "step": 1,
+        "default": 10,
+        "description": "rounding of the corners of a rounded shape"
       },
       "effect": {
         "type": "effect",
@@ -1960,6 +2035,13 @@
         "default": 14,
         "description": "font size"
       },
+      "radius": {
+        "type": "number",
+        "min": 6,
+        "max": 60,
+        "step": 1,
+        "description": "radius of the number circles; defaults to 1.25 times the font size"
+      },
       "effect": {
         "type": "effect",
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
@@ -2401,6 +2483,17 @@
         "step": 1,
         "default": 14,
         "description": "font size"
+      },
+      "valueSize": {
+        "type": "number",
+        "min": 12,
+        "max": 160,
+        "step": 1,
+        "description": "font size of the value; defaults to 3 times size, and never overflows the module"
+      },
+      "effect": {
+        "type": "effect",
+        "description": "an effect id applied to the drawing, such as rough-edge"
       }
     }
   },
@@ -2805,6 +2898,13 @@
         "step": 1,
         "default": 15,
         "description": "font size"
+      },
+      "radius": {
+        "type": "number",
+        "min": 0,
+        "max": 60,
+        "step": 1,
+        "description": "rounding of the corners; defaults to 0.9 times the font size"
       },
       "effect": {
         "type": "effect",

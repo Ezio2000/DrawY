@@ -20,12 +20,15 @@ export const pictureRequestSchema = z.object({
     .min(1)
     .describe("What is in the frame: the subject, its state, view and details; not the style"),
   aspect: z.enum(["square", "landscape", "portrait"]).default("square"),
-  key: z.string().optional().describe("A name other pictures in the same request can refer to"),
+  key: z
+    .string()
+    .optional()
+    .describe("A name other pictures in the same request can refer to in their references"),
   references: z
     .array(z.string())
     .default([])
     .describe(
-      "Pictures to work from, to restyle, vary or keep consistent with: material ids, or keys of pictures in the same request, which are then made first",
+      "Pictures to work from, to restyle, vary or keep consistent with: material ids, or keys of pictures in the same request, which this one then waits for",
     ),
 });
 export type PictureRequest = z.input<typeof pictureRequestSchema>;
@@ -235,8 +238,46 @@ async function paint(
   };
 }
 
-/** Reserves each picture in the library and develops it in the background, in the work's
- * style. The ids are usable at once; each development settles on its own. */
+/** For each request, the requests in the same batch it works from. A circle of them could
+ * never start, and a reference that is neither would fail after pictures were paid for, so
+ * both are refused before anything is painted. */
+async function dependencies(
+  requests: { key?: string; references: string[] }[],
+  ids: string[],
+  viewer: Parameters<typeof library.get>[1],
+) {
+  const inBatch = new Map(
+    requests.flatMap((r, i) => [
+      [ids[i], i] as const,
+      ...(r.key ? [[r.key, i] as const] : []),
+    ]),
+  );
+  const outside = [
+    ...new Set(requests.flatMap((r) => r.references.filter((ref) => !inBatch.has(ref)))),
+  ];
+  if (outside.length) {
+    const found = new Set((await library.get(outside, viewer, true)).map((m) => m.id));
+    const missing = outside.filter((id) => !found.has(id));
+    if (missing.length) throw new DomainError(`参考图不存在: ${missing.join(", ")}`);
+  }
+  const needs = requests.map((r) =>
+    r.references.flatMap((ref) => (inBatch.has(ref) ? [inBatch.get(ref)!] : [])),
+  );
+  const state = new Map<number, "open" | "closed">();
+  const visit = (i: number) => {
+    if (state.get(i) === "closed") return;
+    if (state.get(i) === "open") throw new DomainError("图片之间的引用不能循环");
+    state.set(i, "open");
+    needs[i].forEach(visit);
+    state.set(i, "closed");
+  };
+  needs.forEach((_, i) => visit(i));
+  return needs;
+}
+
+/** Reserves every picture in the library at once, so the ids are usable, then develops each
+ * in the background, in the work's style: a picture that works from another in the batch
+ * starts when that one has developed, and the rest run side by side. */
 export async function develop(
   store: UserStore,
   role: ImageRole,
@@ -262,9 +303,9 @@ export async function develop(
   const keyed = new Map(
     requests.flatMap((r, i) => (r.key ? [[r.key, ids[i]] as const] : [])),
   );
-  return Promise.all(
+  const needs = await dependencies(requests, ids, store.viewer);
+  const reserved = await Promise.all(
     requests.map(async (request, i) => {
-      // A reference to a picture in this request waits for that picture to develop.
       const r = {
         ...request,
         references: request.references.map((ref) => keyed.get(ref) ?? ref),
@@ -306,12 +347,23 @@ export async function develop(
         },
         store.userId,
       );
-      const transparent = r.role !== "scene" && r.role !== "texture";
-      const development: Development = {
-        id,
-        name: r.name.zh,
-        done: tracer
-          .span(
+      return { r, id, prompt, styled, width, height };
+    }),
+  );
+  const developments = new Map<number, Development>();
+  const start = (i: number): Development => {
+    const known = developments.get(i);
+    if (known) return known;
+    const { r, id, prompt, styled, width, height } = reserved[i];
+    const transparent = r.role !== "scene" && r.role !== "texture";
+    const development: Development = {
+      id,
+      name: r.name.zh,
+      done: Promise.all(needs[i].map((n) => start(n).done))
+        .then((references) => {
+          const failed = references.findIndex((d) => d.status !== "ready");
+          if (failed >= 0) throw Error(`参考图 ${ids[needs[i][failed]]} 没有生成成功`);
+          return tracer.span(
             "generation",
             id,
             {
@@ -355,20 +407,22 @@ export async function develop(
               });
               return { status: "ready" as const, ...(usage ? { usage } : {}) };
             },
-          )
-          .catch(async (e) => {
-            const error = e instanceof Error ? e.message : String(e);
-            await library
-              .fail(id, error.slice(0, 500), store.userId)
-              .catch(() => {});
-            return { status: "failed" as const, error };
-          })
-          .then((result) => {
-            development.settled = { ...result, at: Date.now() };
-            return result;
-          }),
-      };
-      return development;
-    }),
-  );
+          );
+        })
+        .catch(async (e) => {
+          const error = e instanceof Error ? e.message : String(e);
+          await library
+            .fail(id, error.slice(0, 500), store.userId)
+            .catch(() => {});
+          return { status: "failed" as const, error };
+        })
+        .then((result) => {
+          development.settled = { ...result, at: Date.now() };
+          return result;
+        }),
+    };
+    developments.set(i, development);
+    return development;
+  };
+  return reserved.map((_, i) => start(i));
 }

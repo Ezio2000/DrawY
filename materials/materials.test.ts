@@ -294,3 +294,27 @@ it("boils a city's OpenStreetMap tile down to its water, ways and names, fetched
     rmSync(cache, { recursive: true });
   }
 });
+
+it("declares every value a library drawing reads, so its card and the hand controls can offer it", () => {
+  const seed = new URL("./seed/", import.meta.url);
+  const drawings = JSON.parse(readFileSync(new URL("drawings.json", seed), "utf8")) as {
+    id: string;
+    params: Record<string, { type: string }>;
+  }[];
+  // The app names each value a person can change, in both languages.
+  const words = readFileSync(new URL("../apps/web/src/i18n.tsx", import.meta.url), "utf8");
+  const dictionaries = [...words.matchAll(/\n    params: \{\n      text:[\s\S]*?\n    \},/g)].map(
+    ([block]) => new Set([...block.matchAll(/^\s+(\w+):/gm)].map((m) => m[1])),
+  );
+  expect(dictionaries).toHaveLength(2);
+  for (const { id, params } of drawings) {
+    const source = readFileSync(new URL(`drawings/${id}.js`, seed), "utf8");
+    expect(source, id).toMatch(/const d = api\.data/);
+    const reads = new Set([...source.matchAll(/\bd\.(\w+)/g)].map((m) => m[1]));
+    expect([...reads].filter((key) => !params[key]), id).toEqual([]);
+    for (const [key, p] of Object.entries(params))
+      if (["text", "number", "boolean", "color", "picture", "choice"].includes(p.type))
+        for (const named of dictionaries)
+          expect(named.has(key), `${id}.${key}`).toBe(true);
+  }
+});

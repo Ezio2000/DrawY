@@ -13,6 +13,7 @@ import {
 import type { UserStore } from "../storage/index.ts";
 import { take, used, styleOf } from "../materials/index.ts";
 import { applied } from "../editing/apply.ts";
+export { fromAuthor } from "./author.ts";
 export function createWork(store: UserStore, title: string) {
   return store.commit(
     {

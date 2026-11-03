@@ -622,16 +622,22 @@ export interface RunCost {
   author: number;
   search: number;
   image: number;
+  /** The drawing model's attempts that failed, apart from `author` and within `total`. */
+  failed: number;
   total: number;
 }
 /** The cost of what a run spent, at the prices it ran at. */
 export function costOf(usage: RunUsage | undefined, prices: RunPrices | undefined): RunCost | undefined {
   if (!prices) return undefined;
   const u = usage ?? { input: 0, cached: 0, output: 0, reasoning: 0 };
-  const a = prices.author,
-    write = u.cacheWrite ?? 0,
-    fresh = Math.max(0, u.input - u.cached - write);
-  const author = (fresh * a.input + u.cached * a.cached + write * a.cacheWrite + u.output * a.output) / 1e6;
+  const a = prices.author;
+  const tokens = (t: { input: number; cached: number; cacheWrite?: number; output: number }) => {
+    const write = t.cacheWrite ?? 0,
+      fresh = Math.max(0, t.input - t.cached - write);
+    return (fresh * a.input + t.cached * a.cached + write * a.cacheWrite + t.output * a.output) / 1e6;
+  };
+  const author = tokens(u);
+  const failed = u.failed ? tokens(u.failed) : 0;
   const search = (u.searches ?? 0) * prices.search + (u.pages ?? 0) * prices.page;
   const i = u.images;
   const p = prices.image;
@@ -643,7 +649,7 @@ export function costOf(usage: RunUsage | undefined, prices: RunPrices | undefine
         (i.textOutput ?? 0) * p.textOutput) /
         1e6
     : 0;
-  return { author, search, image, total: author + search + image };
+  return { author, search, image, failed, total: author + search + image + failed };
 }
 
 /** What one run is made with: the drawing model with the options picked, how it searches

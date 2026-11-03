@@ -11,14 +11,14 @@ import { guideSchema } from "./tools.ts";
 export const guides: Record<GuideTopic, { when: string; cards?: string[]; text: string }> = {
   pictures: {
     when: "before your first generate_images call, and before composing several pictured subjects into one scene",
-    text: `Asking for pictures. Generation runs in the background, so as soon as you know what is missing, request all of it in one call and keep composing with the returned ids.
+    text: `Asking for pictures. Generation runs in the background, so as soon as you know what is missing, request all of it in one call, before working out the layout, and compose with the returned ids while they develop.
 Write depicts for a picture model that knows nothing about the work: the subject, its state, the view (side, from above, cut away), pose, gaze and what it holds or touches, and the materials and details that identify it. For a person or animal say how much of the body shows ("full body, feet included"), since the model crops otherwise. Leave style out of depicts, because the style and the brief's direction are added to every picture and a second description of the look fights them.
 A picture carries no words: the prompt forbids text in the image, so names and numbers belong in your labels.
 Choose the role by how the picture will be used. object, figure and icon are cut-outs on transparency that you can place, move and label; scene is a vignette whose edges fade into paper; texture is a seamless surface. Choose the aspect that fits the thing, and size its module to that aspect.
-For one character across several pictures, give the first a key and put that key in the others' references, because a description alone drifts between pictures. Use references only for what a picture must be made from: the work's existing pictures in the style are already shown to the model as style references.
+For one character across several pictures, give the first a key and put that key in the others' references, because a description alone drifts between pictures. A picture with a reference in the same request starts only when that one has developed, so its ids are still usable at once but it takes twice as long; the others run side by side. Use references only for what a picture must be made from: the work's existing pictures in the style are already shown to the model as style references.
 A generated picture that came out wrong (wrong subject, text in it, clashing style) is replaced with a corrected one, since a label cannot rescue it.
 
-Composing pictures. Keep every picture an independent module and compose it with your own paths, labels, connections and interaction: a picture supplies a thing's appearance, and the scene's layout stays yours, so the user can move or swap each part. Do not let one generated painting hold the whole idea: paint the world as a backdrop and each subject that matters as its own picture, so the scene can point at, explain or change it. Do not add decorative pictures to purely abstract figures, where they add nothing the figure states.
+Composing pictures. Keep every picture an independent module and compose it with your own paths, labels, connections and interaction: a picture supplies a thing's appearance, and the scene's layout stays yours, so the user can move or swap each part. Do not let one generated painting hold the whole idea: paint the world as a backdrop and each subject that matters as its own picture, so the scene can point at, explain or change it. Do not add decorative pictures to purely abstract figures, or a small picture to each row of a structured one, where they add nothing the figure states.
 view_canvas reports where each picture's visible content actually is, in scene units. Place labels, leaders and neighbours by that, since a picture rarely fills its module's box.
 When an edit changes how a thing looks, update every other depiction of that thing so the work stays consistent.`,
   },
@@ -71,7 +71,7 @@ Scene interactions are JavaScript function bodies receiving api:
 - api.openScene(id) and api.openDetail(id) navigate. A module target navigates without code.
 
 These states are transient, since the saved work is what reopens, so the default state belongs in instance data. When a control changes values, keep the scales they are read against (axes, reference lines, maxima) fixed over the control's range, so a change shows as a change, with ticks on round numbers. Register async handlers as async functions so preview waits for them.
-Add scene checks [{moduleId, selector}] for important buttons: view_canvas then shows them pressed. Test a sequence with view_canvas actions in a specified scene, because an interaction you have not seen run is unverified.`,
+Give the scene's record checks [{moduleId, selector}] for important buttons: view_canvas then shows them pressed. Test a sequence with view_canvas actions in a specified scene, because an interaction you have not seen run is unverified.`,
   },
   formats: {
     when: "when the user names a medium that carries its own words and shape: a poster, flyer, social-media card, cover or slide",

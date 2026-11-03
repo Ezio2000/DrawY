@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
-  boundsSchema,
+  boundsOf,
+  boxOf,
+  boxSchema,
   DomainError,
   type Work,
   type Observation,
@@ -13,31 +15,87 @@ import { drawnWith } from "../materials/index.ts";
 import { union } from "../contracts/geometry.ts";
 export const viewSchema = z.object({
   sceneId: z.string().optional().describe("One scene; leave out to see every nonempty scene"),
-  region: boundsSchema.optional().describe("A close-up of this area, in scene units"),
+  claims: z
+    .array(z.string().min(1))
+    .max(6)
+    .optional()
+    .describe(
+      "The statements this figure makes about time, direction, proportion, cause or a number's conditions that would mislead if drawn wrong, each one specific enough to be checked against the picture",
+    ),
+  regions: z
+    .array(boxSchema)
+    .min(1)
+    .max(3)
+    .optional()
+    .describe("Close-ups of areas you have a specific doubt about, each [x, y, width, height] in scene units"),
   annotate: z.boolean().optional().describe("Mark each object's id and bounds on the image"),
   actions: z
     .array(z.object({ moduleId: z.string(), selector: z.string() }))
     .optional()
-    .describe("CSS-selector clicks to perform in order, in the scene given by sceneId"),
+    .describe("CSS-selector clicks to perform in order, in one scene"),
 });
 export type ViewOptions = z.infer<typeof viewSchema>;
 /** The capture service cannot look right now; nothing about the work is wrong. */
 export class Unavailable extends Error {}
+/** What each module looked like when the author was last told, by scene and module: a look
+ * repeats only what has changed since, as the rest is still above in the conversation. */
+export type Reported = Record<string, Record<string, string>>;
+/** A look's modules as the author reads them, leaving out what it was already told. */
+function moduleReport(work: Work, shot: Shot, reported: Reported) {
+  const known = (reported[shot.sceneId] ??= {});
+  const modules = (shot.modules ?? []).map(({ label: _, bounds, pictures, ...m }) => {
+    const uses = drawnWith(work, shot.sceneId, m.id);
+    return {
+      ...m,
+      bounds: boxOf(bounds),
+      ...(pictures
+        ? { pictures: pictures.map(({ material, ...box }) => ({ material, bounds: boxOf(box) })) }
+        : {}),
+      ...(uses.length ? { uses } : {}),
+    };
+  });
+  const changed = modules.filter((m) => known[m.id] !== JSON.stringify(m));
+  for (const m of changed) known[m.id] = JSON.stringify(m);
+  return {
+    modules: changed,
+    ...(changed.length < modules.length
+      ? { unchangedModules: modules.length - changed.length }
+      : {}),
+  };
+}
 export async function observe(
   store: UserStore,
   workId: string,
   input: ViewOptions,
   signal: AbortSignal,
+  /** This run's earlier looks, and what it has been told about the modules. */
+  earlier: { observations: Observation[]; reported: Reported } = {
+    observations: [],
+    reported: {},
+  },
 ) {
   const options = viewSchema.parse(input),
     work = store.work(workId);
-  if (options.actions?.length && !options.sceneId)
-    throw new DomainError("交互操作需要指定 sceneId");
-  const scenes = options.sceneId
-    ? [work.scenes[options.sceneId]]
-    : Object.values(work.scenes).filter((s) => s.modules.length);
+  const populated = Object.values(work.scenes).filter((s) => s.modules.length);
+  // A close-up or a click belongs to one scene; with only one drawn, that is the one.
+  const focused = options.regions?.length || options.actions?.length;
+  const sceneId =
+    options.sceneId ?? (focused && populated.length === 1 ? populated[0].id : undefined);
+  if (focused && !sceneId) throw new DomainError("局部查看和交互操作需要指定 sceneId");
+  const scenes = sceneId ? [work.scenes[sceneId]] : populated;
   if (!scenes.length || scenes.some((s) => !s))
     throw new DomainError("没有可查看的场景");
+  // A close-up of a revision already seen whole, without errors, is only that close-up.
+  const closeUpOnly =
+    !!focused &&
+    !options.annotate &&
+    earlier.observations.some(
+      (o) =>
+        o.revision === work.revision &&
+        o.overview &&
+        o.sceneIds.includes(scenes[0].id) &&
+        !o.errors.length,
+    );
   const origin = process.env.DRAWY_INTERNAL_URL || "http://127.0.0.1:8080";
   const token = store.storage.session(store.userId);
   return tracer.span(
@@ -60,7 +118,8 @@ export async function observe(
                 id: s.id,
                 url: `${origin}/api/works/${work.id}/scenes/${encodeURIComponent(s.id)}?revision=${work.revision}`,
                 checks: s.checks,
-                region: options.region,
+                overview: !closeUpOnly,
+                regions: options.regions?.map(boundsOf),
                 actions: options.actions,
               })),
             }),
@@ -95,7 +154,7 @@ export async function observe(
           at: Date.now(),
           revision: work.revision,
           sceneIds: scenes.map((s) => s.id),
-          overview: true,
+          overview: !closeUpOnly,
           screenshots,
           errors: [...new Set(shots.flatMap((s) => s.errors))],
         };
@@ -106,7 +165,12 @@ export async function observe(
             ? [
                 {
                   type: "input_text",
-                  text: `Judge this look against the brief. Intent: ${work.brief.intent} Concept: ${work.brief.concept ?? "(none set)"}`,
+                  text: [
+                    `Judge this look against the brief. Intent: ${work.brief.intent} Concept: ${work.brief.concept ?? "(none set)"}`,
+                    options.claims?.length
+                      ? `Before anything about how it looks, say whether the picture holds each claim: ${options.claims.join(" | ")}`
+                      : "Before anything about how it looks, check what the figure states about time, direction, proportion, cause and each number's conditions.",
+                  ].join("\n"),
                 },
               ]
             : []),
@@ -118,12 +182,14 @@ export async function observe(
                 sceneId: s.sceneId,
                 view: s.label,
                 camera: s.camera,
-                ...(s.overview ? { figure: figure(work, s) } : {}),
-                modules: s.modules.map((m) => ({
-                  ...m,
-                  uses: drawnWith(work, s.sceneId, m.id),
-                })),
-                errors: s.errors,
+                ...(s.overview
+                  ? {
+                      figure: figure(work, s),
+                      ...(s.text?.clipped.length ? { clippedText: s.text.clipped } : {}),
+                      ...moduleReport(work, s, earlier.reported),
+                    }
+                  : {}),
+                ...(s.errors.length ? { errors: s.errors } : {}),
               }),
             },
             {
@@ -148,6 +214,7 @@ function figure(work: Work, shot: Shot) {
   return {
     width: Math.round(box.width),
     height: Math.round(box.height),
+    ...(shot.text?.smallest ? { smallestText: shot.text.smallest } : {}),
     viewFilled:
       Math.round(
         ((box.width * scale * box.height * scale) /
@@ -198,11 +265,10 @@ export function requireObserved(work: Work, observations: Observation[]) {
   if (!work.scenes[work.rootSceneId].modules.length)
     throw new DomainError("请先完成根场景");
   const missing = scenes.filter((s) => {
-    const latest = observations.findLast(
-      (o) =>
-        o.revision === work.revision && o.overview && o.sceneIds.includes(s.id),
+    const looks = observations.filter(
+      (o) => o.revision === work.revision && o.sceneIds.includes(s.id),
     );
-    return !latest || latest.errors.length;
+    return !looks.some((o) => o.overview) || looks.at(-1)!.errors.length;
   });
   if (missing.length)
     throw new DomainError(

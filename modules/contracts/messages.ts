@@ -81,6 +81,9 @@ const exact: Record<string, string> = {
   精选素材始终公开: "Curated materials are always public",
   "请先用 set_brief 确定风格，再生成图片":
     "Settle the brief and style before generating images",
+  "局部查看和交互操作需要指定 sceneId": "Close-ups and clicks need a sceneId",
+  "宽和高必须大于 0": "Width and height must be greater than 0",
+  图片之间的引用不能循环: "Pictures in one request can't refer to each other in a circle",
 };
 
 const patterns: [RegExp, (...m: string[]) => string][] = [
@@ -94,6 +97,19 @@ const patterns: [RegExp, (...m: string[]) => string][] = [
     (d) => `The connection to the model was lost (${d}); what was saved can still be edited`,
   ],
   [/^素材不存在: (.*)$/, (id) => "Material not found: " + id],
+  [
+    /^工具参数不是有效的 JSON（([\s\S]*)），没有保存。请改正后把完整参数重发$/,
+    (d) => `The tool input wasn't valid JSON (${d}), so nothing was saved. Send the whole input again, corrected`,
+  ],
+  [/^场景 (\S+) 是新的，要给 title$/, (id) => `Scene ${id} is new and needs a title`],
+  [/^连线 (\S+) 的一端 (\S+) 不在场景 (\S+) 里$/, (id, m, scene) => `Link ${id} has an end at ${m}, which is not in scene ${scene}`],
+  [/^参考图不存在: (.*)$/, (ids) => "Reference pictures not found: " + ids],
+  [/^参考图 (\S+) 没有生成成功$/, (id) => `Reference picture ${id} did not develop`],
+  [/^场景 (\S+) 不存在：新场景写在 scenes 里$/, (id) => `Scene ${id} doesn't exist; new scenes go in scenes`],
+  [/^(模块|连线) (\S+) 是新增的，要给全 (.*)$/, (kind, id, fields) => `${kind === "模块" ? "Module" : "Link"} ${id} is new and needs all of: ${fields.replaceAll("、", ", ")}`],
+  [/^(模块|连线) (\S+) 的修改不完整，要给全 (.*)$/, (kind, id, fields) => `${kind === "模块" ? "Module" : "Link"} ${id} would be left incomplete; it needs all of: ${fields.replaceAll("、", ", ")}`],
+  [/^(模块|连线) (\S+) 的数据里没有 (.*)$/, (kind, id, path) => `${kind === "模块" ? "Module" : "Link"} ${id} has no data at ${path}`],
+  [/^order 里的模块 (\S+) 不在场景 (\S+) 里$/, (id, scene) => `Module ${id} in order is not in scene ${scene}`],
   [/^没有这份地理数据: (.*)$/, (layer) => "No geographic data named " + layer],
   [/^没有这块街道数据: (.*)$/, (tile) => "No street tile " + tile],
   [/^街道数据读取失败: ([\s\S]*)$/, (d) => "Street data could not be read: " + d],

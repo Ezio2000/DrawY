@@ -1,6 +1,6 @@
 import { it, expect, vi, afterEach } from "vitest";
 import { generate, forResponses, toMessages, citationsOf } from "./index.ts";
-import { toAnthropic, anthropicTools, claudeVersion, perTurnEffort } from "./anthropic.ts";
+import { toAnthropic, anthropicTools, claudeVersion, perTurnEffort, withTurnBreakpoint } from "./anthropic.ts";
 import { defaultWriter, defaultRole, settleWriter, type Role } from "../contracts/index.ts";
 
 const role: Role = {
@@ -78,7 +78,7 @@ it("streams a Claude turn as Responses events and items", async () => {
   );
   const events: any[] = [];
   const result = await generate(role, { instructions: "instructions", input: [{ role: "user", content: [{ type: "input_text", text: "Draw a map" }] }], tools: [{ type: "function", name: "write_work", description: "Write", parameters: { type: "object" }, strict: false }], signal: new AbortController().signal, onEvent: (e) => events.push(e) });
-  expect(events.map((e) => e.type)).toEqual([
+  expect(events.map((e) => e.type).filter((type) => type !== "response.usage")).toEqual([
     "response.reasoning_summary_part.added",
     "response.reasoning_summary_text.delta",
     "response.reasoning_summary_text.done",
@@ -269,4 +269,144 @@ it("asks a newer Claude model for its effort per turn, and never for a fallback 
   await generate({ ...role, baseUrl: "https://proxy.example/v1" }, { instructions: "", input: [{ role: "user", content: "Hi" }], tools: [], signal: new AbortController().signal });
   expect(String(vi.mocked(fetch).mock.calls[0][0])).toBe("https://proxy.example/v1/messages");
   expect(body().fallbacks).toBeUndefined();
+});
+
+it("keeps a breakpoint on the model's last turn, so a long turn still reads the conversation's cache", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => sse([start, ...end("end_turn")])));
+  const thinking = { type: "thinking", thinking: "t", signature: "s" };
+  const use = { type: "tool_use", id: "c1", name: "view_canvas", input: {} };
+  const input = [
+    { role: "user", content: "画" },
+    { type: "reasoning", summary: [], anthropic: thinking },
+    { type: "function_call", call_id: "c1", name: "view_canvas", arguments: "{}", anthropic: use },
+    { type: "function_call_output", call_id: "c1", output: "{}" },
+    // Far more than the 20 blocks a breakpoint looks back over.
+    {
+      role: "user",
+      content: Array.from({ length: 30 }, (_, i) => ({ type: "input_text", text: "看" + i })),
+    },
+  ];
+  await generate(role, {
+    instructions: "i",
+    input,
+    tools: [{ type: "function", name: "view_canvas", description: "d", parameters: { type: "object" } }],
+    signal: new AbortController().signal,
+    onEvent: () => {},
+    budget: 100,
+  } as never);
+  const sent = body();
+  const assistant = sent.messages.find((m: any) => m.role === "assistant");
+  expect(assistant.content.map((b: any) => [b.type, !!b.cache_control])).toEqual([
+    ["thinking", false],
+    ["tool_use", true],
+  ]);
+  // Tools, instructions, this turn and the automatic one at the end: no more than allowed.
+  const marked =
+    sent.tools.filter((t: any) => t.cache_control).length +
+    sent.system.filter((t: any) => t.cache_control).length +
+    sent.messages.flatMap((m: any) => m.content).filter((b: any) => b.cache_control).length +
+    (sent.cache_control ? 1 : 0);
+  expect(marked).toBe(4);
+  // What is kept for the next request is the block as it came.
+  expect(use).not.toHaveProperty("cache_control");
+});
+it("marks no turn in a request without tools, nor before the model has spoken", async () => {
+  expect(withTurnBreakpoint([{ role: "user", content: [{ type: "text", text: "画" }] }])).toEqual([
+    { role: "user", content: [{ type: "text", text: "画" }] },
+  ]);
+  vi.stubGlobal("fetch", vi.fn(async () => sse([start, ...end("end_turn")])));
+  await generate(role, {
+    instructions: "i",
+    input: [
+      { role: "user", content: "画" },
+      { role: "assistant", content: [{ type: "output_text", text: "好" }] },
+      { role: "user", content: "总结" },
+    ],
+    tools: [],
+    signal: new AbortController().signal,
+    onEvent: () => {},
+    budget: 100,
+  } as never);
+  expect(body().messages.flatMap((m: any) => m.content).some((b: any) => b.cache_control)).toBe(false);
+});
+
+it("hands tool input written broken back as it was, with everything else the answer held", async () => {
+  const broken = '{"sceneEdits":[{"id":"root"}],"links":[]}]}';
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      sse([
+        start,
+        { type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "", signature: "" } },
+        { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "想" } },
+        { type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "sig" } },
+        { type: "content_block_stop", index: 0 },
+        { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "c1", name: "write_work", input: {} } },
+        { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: broken } },
+        { type: "content_block_stop", index: 1 },
+        { type: "content_block_start", index: 2, content_block: { type: "tool_use", id: "c2", name: "view_canvas", input: {} } },
+        { type: "content_block_stop", index: 2 },
+        ...end("tool_use"),
+      ]),
+    ),
+  );
+  const seen: any[] = [];
+  const answer = await generate(role, {
+    instructions: "i",
+    input: [{ role: "user", content: "画" }],
+    tools: [{ type: "function", name: "write_work", description: "d", parameters: { type: "object" } }],
+    signal: new AbortController().signal,
+    onEvent: (e: any) => seen.push(e),
+    budget: 100,
+  } as never);
+  const calls = answer.items.filter((i) => i.type === "function_call");
+  expect(calls[0].arguments).toBe(broken);
+  expect(calls[1].arguments).toBe("{}");
+  // Messages only takes an object, so it travels wrapped; thinking stays as it was signed.
+  expect(calls[0].anthropic.input).toEqual({ INVALID_JSON: broken });
+  expect(answer.items[0].anthropic).toEqual({ type: "thinking", thinking: "想", signature: "sig" });
+  // The whole answer was read, so what it cost is known and need not be estimated.
+  expect(answer.usage).toMatchObject({ input_tokens: 100, output_tokens: 20 });
+  expect(seen.find((e) => e.type === "response.output_item.done" && e.item.call_id === "c1").item.arguments).toBe(broken);
+  // The next request can send it back as it stands.
+  const told = toAnthropic(
+    [...answer.items, { type: "function_call_output", call_id: "c1", output: "错" }, { type: "function_call_output", call_id: "c2", output: "跳过" }],
+    true,
+    role.model,
+  );
+  expect(told[0].content.find((b: any) => b.id === "c1")?.input).toEqual({ INVALID_JSON: broken });
+});
+it("keeps citations and a search's results as they streamed, to send them back", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      sse([
+        start,
+        { type: "content_block_start", index: 0, content_block: { type: "text", text: "", citations: null } },
+        { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "高" } },
+        { type: "content_block_delta", index: 0, delta: { type: "citations_delta", citation: { type: "web_search_result_location", url: "https://a", title: "A", cited_text: "x" } } },
+        { type: "content_block_stop", index: 0 },
+        { type: "content_block_start", index: 1, content_block: { type: "server_tool_use", id: "s1", name: "web_search", input: {} } },
+        { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: '{"query":"多高"}' } },
+        { type: "content_block_stop", index: 1 },
+        { type: "content_block_start", index: 2, content_block: { type: "web_search_tool_result", tool_use_id: "s1", content: [{ type: "web_search_result", url: "https://a", title: "A" }] } },
+        { type: "content_block_stop", index: 2 },
+        ...end("end_turn"),
+      ]),
+    ),
+  );
+  const answer = await generate(role, {
+    instructions: "i",
+    input: [{ role: "user", content: "多高" }],
+    tools: [{ type: "web_search", search_context_size: "low" }],
+    signal: new AbortController().signal,
+    onEvent: () => {},
+    budget: 100,
+  } as never);
+  const text = answer.items.find((i) => i.type === "message")!;
+  expect(text.anthropic.citations[0].url).toBe("https://a");
+  expect(text.content[0].annotations[0].url).toBe("https://a");
+  const search = answer.items.find((i) => i.type === "web_search_call")!;
+  expect(search.action.query).toBe("多高");
+  expect(search.anthropic[0].input).toEqual({ query: "多高" });
 });

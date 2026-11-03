@@ -1,4 +1,4 @@
-import { it, expect, vi, afterEach, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -306,4 +306,84 @@ it("paints new pictures to look like the ones the work already has in its style"
   expect(sent[1].images).toBe(2);
   expect(sent[1].prompt).toContain("Images 1–2: style references only");
   expect(sent[1].prompt).not.toContain("what to work from");
+});
+
+describe("pictures that depend on each other", () => {
+  const ready = async () => {
+    const store = db.scoped(register(db, "author", "abcdef").id);
+    const settings = store.settings();
+    settings.image = { ...settings.image, channel: "oauth", credential: "test", baseUrl: "https://example.invalid" };
+    store.storage.saveModels({
+      ...store.storage.models(),
+      painters: painting(store.storage.models(), settings.image),
+    });
+    return store;
+  };
+  const ask = (en: string, references: string[] = [], key?: string) => ({
+    name: { zh: en, en },
+    role: "figure" as const,
+    depicts: en,
+    references,
+    ...(key ? { key } : {}),
+  });
+  it("works from a picture listed later, and paints the independent ones side by side", async () => {
+    const store = await ready();
+    const png = await picture();
+    const started: string[] = [];
+    let open = 0,
+      most = 0;
+    library.route(async (_url, init) => {
+      started.push(JSON.parse(init!.body as string).prompt.split("\n")[1]);
+      most = Math.max(most, ++open);
+      await new Promise((r) => setTimeout(r, 30));
+      open--;
+      return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+    });
+    // The otter's picture came out failed: it named one reserved after its own.
+    const made = await develop(store, store.settings().image, fixture(), [
+      ask("pup on the bank", ["pups"]),
+      ask("sleeping pups", [], "pups"),
+      ask("fish"),
+    ]);
+    const results = await Promise.all(made.map((d) => d.done));
+    expect(results.map((r) => r.status)).toEqual(["ready", "ready", "ready"]);
+    expect(started.indexOf("Subject: pup on the bank")).toBeGreaterThan(
+      started.indexOf("Subject: sleeping pups"),
+    );
+    // The pups and the fish do not wait for each other.
+    expect(most).toBeGreaterThanOrEqual(2);
+  });
+  it("does not paint what depends on a failed picture, and says why", async () => {
+    const store = await ready();
+    const png = await picture();
+    let calls = 0;
+    library.route(async (_url, init) => {
+      calls++;
+      return JSON.parse(init!.body as string).prompt.includes("broken")
+        ? new Response("no", { status: 400 })
+        : Response.json({ data: [{ b64_json: png.toString("base64") }] });
+    });
+    const [dependent, broken] = await develop(store, store.settings().image, fixture(), [
+      ask("after", ["first"]),
+      ask("broken", [], "first"),
+    ]);
+    expect((await broken.done).status).toBe("failed");
+    expect(await dependent.done).toMatchObject({ status: "failed", error: expect.stringContaining(broken.id) });
+    expect(calls).toBe(1);
+  });
+  it("refuses circles and unknown references before anything is painted", async () => {
+    const store = await ready();
+    let calls = 0;
+    library.route(async () => {
+      calls++;
+      return new Response("no", { status: 400 });
+    });
+    await expect(
+      develop(store, store.settings().image, fixture(), [ask("a", ["kb"], "ka"), ask("b", ["ka"], "kb")]),
+    ).rejects.toThrow("循环");
+    await expect(
+      develop(store, store.settings().image, fixture(), [ask("a", ["no-such-picture"])]),
+    ).rejects.toThrow("参考图不存在: no-such-picture");
+    expect(calls).toBe(0);
+  });
 });

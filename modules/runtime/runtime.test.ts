@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { documentFor } from "./document.ts";
 import { fixture } from "./fixture.ts";
-import { capture } from "../observation/capture.ts";
+import { capture, readText } from "../observation/capture.ts";
 import { fit, zoom } from "../contracts/geometry.ts";
 import { useOf } from "../materials/index.ts";
 import type { DrawingMaterial, Material } from "@drawy/materials/schema";
@@ -694,7 +694,8 @@ it("captures full scenes and completed interaction states through the same runti
         id: "root",
         url: origin + "/api/works/fixture/scenes/root?revision=1",
         checks: work.scenes.root.checks,
-        region: work.scenes.root.modules[4].bounds,
+        overview: true,
+        regions: [work.scenes.root.modules[4].bounds],
         actions: [
           { moduleId: "control", selector: '[data-action="emphasize"]' },
         ],
@@ -702,13 +703,173 @@ it("captures full scenes and completed interaction states through the same runti
     ],
   });
   expect(shots).toHaveLength(5);
-  expect(shots[0].modules.map((m) => m.id)).toContain("level-4");
+  expect(shots[0].modules!.map((m) => m.id)).toContain("level-4");
+  // Only the opening view carries the scene's modules.
+  expect(shots.slice(1).every((s) => !s.modules)).toBe(true);
   expect(shots[3].camera.scale).toBeGreaterThan(shots[0].camera.scale);
+  // A close-up is framed to the area it was asked for, not to the whole screen.
+  expect(shots[3].viewport.width).toBeLessThan(1440);
   expect(shots[4].label).toContain("操作");
-  expect(shots.every((s) => s.label.startsWith("1440px"))).toBe(true);
+  expect(shots[4].viewport.width).toBe(1440);
   expect(shots.every((s) => s.errors.length === 0)).toBe(true);
   expect(shots.filter((s) => s.sceneId === "child")).toHaveLength(1);
   expect(shots[0].base64).not.toBe(shots[1].base64);
+}, 30000);
+it("keeps words uncut at large sizes and at the edges of every library drawing, and reports what is cut", async () => {
+  const drawings = seed("drawings") as DrawingMaterial[];
+  work.materials = Object.fromEntries(
+    [
+      ...drawings.map(
+        (m) =>
+          ({
+            ...m,
+            source: readFileSync(
+              new URL(`../../materials/seed/drawings/${m.id}.js`, import.meta.url),
+              "utf8",
+            ),
+          }) as Material,
+      ),
+      ...seed("pictures"),
+      ...seed("effects"),
+    ].map((m) => [m.id, useOf(m)!]),
+  );
+  const modules = (data: (m: DrawingMaterial) => Record<string, unknown>) => {
+    let y = 0;
+    return drawings
+      .filter((m) => m.id !== "geomap")
+      .map((m) => {
+        const at = {
+          id: m.id,
+          label: m.id,
+          drawingId: m.id,
+          data: data(m),
+          bounds: { x: 0, y, ...m.size },
+          anchors: {},
+          group: null,
+          target: null,
+        };
+        y += m.size.height + 60;
+        return at;
+      });
+  };
+  // Words stated large, with a plot's axis names and a marker at its far edge.
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: modules((m) => ({
+      ...m.example,
+      ...(m.params.size ? { size: 22 } : {}),
+      ...(m.id === "plot"
+        ? {
+            x: { min: 0, max: 300, label: "每天卖出的杯数" },
+            y: { min: -2000, max: 2000, label: "每天利润（元）" },
+            marker: { x: 300, label: "卖 300 杯时赚得最多" },
+            series: [{ points: [[0, -2000], [300, 2000]], label: "利润线" }],
+          }
+        : {}),
+    })),
+    links: [],
+    checks: [],
+    interactionId: null,
+  };
+  await open();
+  expect((await page.evaluate(readText)).clipped).toEqual([]);
+  // A plot's names and marker also stay within the box the author gave it.
+  const plotted = await page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>('[data-module-id="plot"]')!;
+    const box = host.getBoundingClientRect();
+    return [...host.shadowRoot!.querySelectorAll("text")].every((t) => {
+      const r = t.getBoundingClientRect();
+      return r.left >= box.left && r.right <= box.right + 1 && r.top >= box.top && r.bottom <= box.bottom + 1;
+    });
+  });
+  expect(plotted).toBe(true);
+  // An upright arrow's label sits beside its line, not across it.
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      { id: "upper", label: "upper", drawingId: "node", data: { title: "上" }, bounds: { x: 300, y: 0, width: 160, height: 60 }, anchors: { bottom: { x: 0.5, y: 1 } }, group: null, target: null },
+      { id: "lower", label: "lower", drawingId: "node", data: { title: "下" }, bounds: { x: 300, y: 400, width: 160, height: 60 }, anchors: { top: { x: 0.5, y: 0 } }, group: null, target: null },
+    ],
+    links: [
+      { id: "down", drawingId: "arrow", from: { moduleId: "upper", anchor: "bottom" }, to: { moduleId: "lower", anchor: "top" }, data: { label: "返回一个很长的值", size: 22 } },
+    ],
+  };
+  await open();
+  const crossed = await page.evaluate(() => {
+    const root = document.querySelector('[data-link-id="down"]')!.shadowRoot!;
+    const text = root.querySelector("text")!.getBoundingClientRect();
+    const line = root.querySelector("path")!.getBoundingClientRect();
+    return text.right > line.left && text.left < line.right;
+  });
+  expect(crossed).toBe(false);
+  // A drawing that keeps its words inside its svg and overruns it is reported.
+  work.drawings.tight = {
+    id: "tight",
+    name: "tight",
+    source: `return api.svg('<svg viewBox="0 0 100 40" width="100" height="40"><text x="60" y="20" font-size="30">超出外框的字</text></svg>');`,
+  };
+  work.scenes.root.modules = [
+    {
+      id: "tight",
+      label: "tight",
+      drawingId: "tight",
+      data: {},
+      bounds: { x: 0, y: 0, width: 100, height: 40 },
+      anchors: {},
+      group: null,
+      target: null,
+    },
+  ];
+  await open();
+  const report = await page.evaluate(readText);
+  expect(report.clipped[0]).toMatchObject({ moduleId: "tight" });
+  expect(report.smallest!.px).toBeGreaterThan(20);
+}, 30000);
+it("measures words as they are shown and reports those their own container cuts", async () => {
+  const module = (id: string, width: number, height: number, x = 0) => ({
+    id,
+    label: id,
+    drawingId: id,
+    data: {},
+    bounds: { x, y: 0, width, height },
+    anchors: {},
+    group: null,
+    target: null,
+  });
+  const drawn = (id: string, source: string) => {
+    work.drawings[id] = { id, name: id, source };
+  };
+  const lines = "很多行的文字".repeat(12);
+  const scene = (...modules: ReturnType<typeof module>[]) => {
+    work.scenes.root = { ...work.scenes.root, modules, links: [], checks: [], interactionId: null };
+  };
+  // Many lines of one size read as that size, whatever the height of the whole block.
+  drawn("many", `return api.html('<div style="width:120px;font-size:20px;line-height:1.5">${lines}</div>');`);
+  scene(module("many", 120, 600));
+  await open();
+  let report = await page.evaluate(readText);
+  const scale = await page.evaluate(() => window.drawyView.view.scale);
+  expect(report.smallest!.px).toBe(Math.round(20 * scale));
+  expect(report.clipped).toEqual([]);
+  // In an svg its viewBox scales the words too, and each line is measured on its own.
+  drawn(
+    "lined",
+    `return api.svg('<svg viewBox="0 0 100 100" width="200" height="200"><text x="5" y="20" font-size="10">外层<tspan x="5" dy="12">内一</tspan><tspan x="5" dy="12">内二</tspan></text></svg>');`,
+  );
+  scene(module("lined", 200, 200));
+  await open();
+  report = await page.evaluate(readText);
+  const svgScale = await page.evaluate(() => window.drawyView.view.scale);
+  expect(report.smallest!.px).toBe(Math.round(20 * svgScale));
+  // The element directly holding the words can be what cuts them off.
+  drawn("cut", `return api.html('<div style="width:120px;height:30px;overflow:hidden;font-size:20px">${lines}</div>');`);
+  drawn("ellipsis", `return api.html('<div style="width:80px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:20px">${lines}</div>');`);
+  // A line height of one fits the words though their text box passes the container.
+  drawn("tight", `return api.html('<div style="height:20px;line-height:1;overflow:hidden;font-size:20px;white-space:nowrap">刚好放下</div>');`);
+  scene(module("cut", 120, 30), module("ellipsis", 80, 30, 200), module("tight", 120, 20, 400));
+  await open();
+  report = await page.evaluate(readText);
+  expect(report.clipped.map((c) => c.moduleId).sort()).toEqual(["cut", "ellipsis"]);
 }, 30000);
 it("leaves keyboard input inside a drawing control to that control", async () => {
   work.drawings.control.source = `return api.html('<input aria-label="angle" type="text">');`;
@@ -928,10 +1089,11 @@ it("stands pictures on their box, reports where they are seen and wires library 
         id: "root",
         url: origin + "/api/works/fixture/scenes/root?revision=1",
         checks: [],
+        overview: true,
       },
     ],
   });
-  const seen = shot.modules.find((m) => m.id === "apple")!.pictures![0];
+  const seen = shot.modules!.find((m) => m.id === "apple")!.pictures![0];
   // The box is taller than the apple: the apple fills its width and rests on the bottom.
   expect(seen.material).toBe("apple");
   expect(seen.x).toBeLessThanOrEqual(2);
@@ -1030,6 +1192,8 @@ it("draws every library drawing from its example data and routes elbow arrows at
     interactionId: null,
   };
   await open();
+  // Whatever a library drawing's example says, none of it is cut off by the drawing itself.
+  expect((await page.evaluate(readText)).clipped).toEqual([]);
   const result = await page.evaluate(() => {
     const words = (id: string) =>
       document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!

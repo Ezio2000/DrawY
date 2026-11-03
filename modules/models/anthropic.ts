@@ -155,6 +155,31 @@ export function toAnthropic(input: Item[], withTools: boolean, model = ""): Mess
   return messages;
 }
 
+/** A cache entry is looked for at most 20 blocks back from a breakpoint, and one turn can
+ * add more than that (pictures arriving beside a look), which would leave the cache of the
+ * whole conversation unread and written again. So the model's last turn carries a breakpoint
+ * too: it sits right after where the previous request ended, whatever comes after it. The
+ * stored blocks stay as they came; thinking cannot carry a breakpoint. */
+export function withTurnBreakpoint(messages: Message[]): Message[] {
+  const at = messages.findLastIndex((m) => m.role === "assistant");
+  if (at < 0) return messages;
+  const content = messages[at].content;
+  const block = content.findLastIndex(
+    (b) => b.type === "tool_use" || (b.type === "text" && b.text),
+  );
+  if (block < 0) return messages;
+  return messages.map((m, i) =>
+    i === at
+      ? {
+          ...m,
+          content: content.map((b, j) =>
+            j === block ? { ...b, cache_control: { type: "ephemeral" } } : b,
+          ),
+        }
+      : m,
+  );
+}
+
 /** Tools in Messages form: function tools stream their input as it is written, so the
  * canvas can sketch a work before its call is finished; the Responses web search becomes
  * Claude's own. */
@@ -178,6 +203,22 @@ export function anthropicTools(tools: Item[], model: string): Block[] {
   return out;
 }
 
+/** Tool input as the model wrote it. Input that was not valid JSON travels wrapped, as
+ * Messages only takes an object, and comes back out as the text it was, so the run can
+ * answer the call with an error and the model can see what it wrote. */
+const inputText = (block: Block) => {
+  const input = block.input ?? {};
+  return typeof input.INVALID_JSON === "string" && Object.keys(input).length === 1
+    ? input.INVALID_JSON
+    : JSON.stringify(input);
+};
+const parsedInput = (json: string) => {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return { INVALID_JSON: json };
+  }
+};
 /** The answer's blocks as Responses items, each keeping the blocks it came from. */
 function itemsOf(content: Block[]): Item[] {
   const items: Item[] = [];
@@ -218,7 +259,7 @@ function itemsOf(content: Block[]): Item[] {
         type: "function_call",
         call_id: b.id,
         name: b.name,
-        arguments: JSON.stringify(b.input ?? {}),
+        arguments: inputText(b),
         anthropic: b,
       });
     else if (b.type === "server_tool_use") {
@@ -253,7 +294,9 @@ function hostedCall(use: Block, result?: Block): Item {
 
 /** One turn with a Claude model, streamed and reported as the Responses API would. The
  * turn's own effort is read from the conversation (see `toAnthropic`); the request keeps
- * the configured one, so the cached prefix holds. */
+ * the configured one, so the cached prefix holds. The events are read raw: tool input
+ * streams unchecked, and the SDK's own accumulator abandons the stream at the first block
+ * it cannot parse, which loses the rest of the answer and what it cost. */
 async function generate(
   role: Role,
   { instructions, input, tools, signal, onEvent, budget }: Request,
@@ -270,15 +313,29 @@ async function generate(
     ...(perTurnEffort(role.model) ? ["mid-conversation-output-config-2026-07-01"] : []),
     ...(boundThinking(role.model) ? ["thinking-binding-controls-2026-08-01"] : []),
   ];
-  const conversation: Item[] = toAnthropic(input, list.length > 0, role.model);
+  const told = toAnthropic(input, list.length > 0, role.model);
+  const conversation: Item[] = list.length ? withTurnBreakpoint(told) : told;
   const turn = crypto.randomUUID().slice(0, 8);
   const content: Block[] = [];
   const usage = { input: 0, cached: 0, written: 0, output: 0 };
+  // What the message being streamed has reported, counted in only once it has finished.
+  let current: Item = {};
+  const fresh = (u: Item) => u.input_tokens ?? 0;
+  const read = (u: Item) => u.cache_read_input_tokens ?? 0;
+  const written = (u: Item) => u.cache_creation_input_tokens ?? 0;
+  const sofar = () => ({
+    input_tokens: usage.input + fresh(current) + read(current) + written(current),
+    input_tokens_details: {
+      cached_tokens: usage.cached + read(current),
+      cache_write_tokens: usage.written + written(current),
+    },
+    output_tokens: usage.output + (current.output_tokens ?? 0),
+  });
   let model = role.model,
     id = "",
     stop: string | null | undefined;
   // Blocks by their index in the answer being streamed, and what they have said so far.
-  let open = new Map<number, { block: Block; text: string }>();
+  let open = new Map<number, { block: Block; text: string; json: string }>();
   let said = false;
   const pending = new Map<string, Block>();
   // A turn Claude paused in the middle of its own searches goes on from where it stopped.
@@ -302,16 +359,19 @@ async function generate(
       cache_control: { type: "ephemeral" },
       ...(betas.length ? { betas } : {}),
     };
-    let stream;
     try {
-      stream = client.beta.messages.stream(params as any, { signal });
-      for await (const e of stream as AsyncIterable<Item>) {
+      const stream = await client.beta.messages.create({ ...params, stream: true } as any, { signal });
+      const blocks: Block[] = [];
+      for await (const e of stream as unknown as AsyncIterable<Item>) {
         if (e.type === "message_start") {
           id ||= e.message.id;
           model = e.message.model ?? model;
+          // The input is known and paid for from here on, whatever becomes of the stream.
+          current = { ...e.message.usage, output_tokens: 0 };
+          onEvent({ type: "response.usage", usage: sofar() });
         } else if (e.type === "content_block_start") {
-          const block = e.content_block;
-          open.set(e.index, { block, text: "" });
+          const block = { ...e.content_block };
+          open.set(e.index, { block, text: "", json: "" });
           if (block.type === "thinking") onEvent({ type: "response.reasoning_summary_part.added" });
           else if (block.type === "text" && !said) {
             said = true;
@@ -329,22 +389,41 @@ async function generate(
           const o = open.get(e.index);
           const d = e.delta;
           if (d.type === "thinking_delta" && d.thinking) {
-            if (o) o.text += d.thinking;
+            if (o) {
+              o.text += d.thinking;
+              o.block.thinking = (o.block.thinking ?? "") + d.thinking;
+            }
             onEvent({ type: "response.reasoning_summary_text.delta", delta: d.thinking });
-          } else if (d.type === "text_delta" && d.text)
+          } else if (d.type === "signature_delta") {
+            if (o) o.block.signature = d.signature;
+          } else if (d.type === "text_delta" && d.text) {
+            if (o) o.block.text = (o.block.text ?? "") + d.text;
             onEvent({ type: "response.output_text.delta", item_id: `msg_${turn}`, delta: d.text });
-          else if (d.type === "input_json_delta" && d.partial_json && o?.block.type === "tool_use")
-            onEvent({ type: "response.function_call_arguments.delta", item_id: o.block.id, delta: d.partial_json });
+          } else if (d.type === "citations_delta") {
+            if (o) o.block.citations = [...(o.block.citations ?? []), d.citation];
+          } else if (d.type === "input_json_delta" && d.partial_json) {
+            if (o) o.json += d.partial_json;
+            if (o?.block.type === "tool_use")
+              onEvent({ type: "response.function_call_arguments.delta", item_id: o.block.id, delta: d.partial_json });
+          }
         } else if (e.type === "content_block_stop") {
           const o = open.get(e.index);
           if (o?.block.type === "thinking")
             onEvent({ type: "response.reasoning_summary_text.done", text: o.text });
+          if (o) {
+            if (o.json) o.block.input = parsedInput(o.json);
+            blocks.push(o.block);
+          }
         } else if (e.type === "message_delta") {
           stop = e.delta?.stop_reason ?? stop;
+          // The numbers given here replace those so far; a null says nothing.
+          current = {
+            ...current,
+            ...Object.fromEntries(Object.entries(e.usage ?? {}).filter(([, v]) => v !== null)),
+          };
+          onEvent({ type: "response.usage", usage: sofar() });
         }
       }
-      const final: Item = await stream.finalMessage();
-      const blocks: Block[] = final.content;
       content.push(...blocks);
       // Searches are reported with their results, once the query in them is whole.
       for (const b of blocks)
@@ -356,16 +435,13 @@ async function generate(
         } else if (b.type === "tool_use")
           onEvent({
             type: "response.output_item.done",
-            item: { type: "function_call", id: b.id, call_id: b.id, name: b.name, arguments: JSON.stringify(b.input ?? {}) },
+            item: { type: "function_call", id: b.id, call_id: b.id, name: b.name, arguments: inputText(b) },
           });
-      const u = final.usage ?? {};
-      const cachedNow = u.cache_read_input_tokens ?? 0;
-      usage.input += (u.input_tokens ?? 0) + cachedNow + (u.cache_creation_input_tokens ?? 0);
-      usage.cached += cachedNow;
-      usage.written += u.cache_creation_input_tokens ?? 0;
-      usage.output += u.output_tokens ?? 0;
-      stop = final.stop_reason ?? stop;
-      model = final.model ?? model;
+      usage.input += fresh(current) + read(current) + written(current);
+      usage.cached += read(current);
+      usage.written += written(current);
+      usage.output += current.output_tokens ?? 0;
+      current = {};
     } catch (e) {
       throw failure(e, signal);
     }

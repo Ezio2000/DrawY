@@ -6,22 +6,34 @@ export interface CaptureRequest {
     id: string;
     url: string;
     checks: Scene["checks"];
-    region?: Bounds;
+    /** Whether to take the opening view and try the checks; a close-up of a revision
+     * already seen whole has no need of them. */
+    overview: boolean;
+    regions?: Bounds[];
     actions?: Scene["checks"];
   }[];
   annotate?: boolean;
   cookie: string;
   origin: string;
 }
+/** What the words of a drawn scene look like on screen, measured instead of judged from
+ * a picture: the smallest text and any cut off by what holds it or by the view. */
+export interface TextReport {
+  smallest?: { moduleId: string; text: string; px: number };
+  clipped: { moduleId: string; text: string }[];
+}
 export interface Shot {
   camera: { x: number; y: number; scale: number };
-  modules: {
+  /** The scene's modules, on its opening view; other views show the same scene. */
+  modules?: {
     id: string;
     label: string;
     bounds: Bounds;
     /** Where each picture's visible content actually is, in scene units. */
     pictures?: ({ material: string } & Bounds)[];
   }[];
+  /** On the opening view. */
+  text?: TextReport;
   sceneId: string;
   label: string;
   /** The opening view of the whole scene, as the canvas first shows it. */
@@ -30,6 +42,67 @@ export interface Shot {
   viewport: { width: number; height: number };
   base64: string;
   errors: string[];
+}
+/** Runs in the page, so its helpers live inside it: reads every part's text. A size is the
+ * font's own, scaled as the camera and any viewBox or transform above it scale it. */
+export function readText(): TextReport {
+  const report: TextReport = { clipped: [] };
+  const seen = new Set<string>();
+  const view = { right: innerWidth, bottom: innerHeight };
+  const scaleOf = (element: Element) => {
+    let scale = 1;
+    for (let at: Element | undefined = element; at; at = at.parentElement ?? (at.getRootNode() as ShadowRoot).host) {
+      // The matrix down from the screen already holds everything above an svg element.
+      const matrix = at instanceof SVGGraphicsElement ? at.getScreenCTM() : new DOMMatrix(getComputedStyle(at).transform);
+      if (matrix) scale *= Math.hypot(matrix.a, matrix.b);
+      if (at instanceof SVGGraphicsElement) break;
+    }
+    return scale;
+  };
+  for (const host of document.querySelectorAll<HTMLElement>(
+    "[data-module-id],[data-link-id]",
+  )) {
+    const moduleId = host.dataset.moduleId ?? host.dataset.linkId!;
+    if (!host.shadowRoot) continue;
+    const walker = document.createTreeWalker(host.shadowRoot, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const parent = node.parentElement;
+      const text = node.textContent?.trim();
+      if (!parent || !text || parent.closest("defs,title,desc,style,script")) continue;
+      const shown = getComputedStyle(parent);
+      if (shown.visibility === "hidden" || shown.display === "none" || Number(shown.opacity) === 0)
+        continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const box = parent instanceof SVGElement ? parent.getBoundingClientRect() : range.getBoundingClientRect();
+      if (!box.width || !box.height) continue;
+      const size = parseFloat(shown.fontSize) * scaleOf(parent);
+      const px = Math.round(size);
+      if (!report.smallest || px < report.smallest.px)
+        report.smallest = { moduleId, text: text.slice(0, 30), px };
+      // A text box reaches past its glyphs, by about this much above and below, and a tight
+      // line height lets it pass its own container without cutting anything.
+      const top = box.top + size * 0.2,
+        bottom = box.bottom - size * 0.2;
+      let cut = box.left < -1 || top < -1 || box.right > view.right + 1 || bottom > view.bottom + 1;
+      for (let at: Element | null = parent; at && !cut; at = at.parentElement) {
+        const overflow = getComputedStyle(at).overflow;
+        if (overflow === "visible" || overflow === "clip visible") continue;
+        const edge = at.getBoundingClientRect();
+        cut =
+          box.left < edge.left - 1.5 ||
+          top < edge.top - 1.5 ||
+          box.right > edge.right + 1.5 ||
+          bottom > edge.bottom + 1.5;
+      }
+      const key = moduleId + text;
+      if (cut && !seen.has(key) && report.clipped.length < 8) {
+        seen.add(key);
+        report.clipped.push({ moduleId, text: text.slice(0, 30) });
+      }
+    }
+  }
+  return report;
 }
 async function ready(page: Page) {
   await page.waitForFunction(() => window.drawyReady, {}, { timeout: 30000 });
@@ -71,7 +144,11 @@ export async function capture(
           errors.push(String(e));
         }
       };
-      const shot = async (label: string, overview = false) => {
+      const shot = async (
+        label: string,
+        overview = false,
+        size = { width, height },
+      ) => {
         const geometry = await page.evaluate(() => {
           const camera = window.drawyView.view;
           const { materials } = window.drawyData.work;
@@ -136,11 +213,14 @@ export async function capture(
             document.body.append(overlay);
           }, geometry);
         shots.push({
-          ...geometry,
+          camera: geometry.camera,
+          ...(overview
+            ? { modules: geometry.modules, text: await page.evaluate(readText) }
+            : {}),
           sceneId: await page.evaluate(() => window.drawyData.sceneId),
-          label: `${width}px / ${label}`,
+          label: `${size.width}px / ${label}`,
           overview,
-          viewport: { width, height },
+          viewport: size,
           base64: (await page.screenshot()).toString("base64"),
           errors: [
             ...new Set([
@@ -154,42 +234,41 @@ export async function capture(
         );
       };
       await load();
-      await shot("全图", true);
-      const { bounds, scale } = await page.evaluate(() => ({
-        bounds: window.drawyView.renderer.bounds,
-        scale: window.drawyView.view.scale,
-      }));
-      // Large works need readable close-ups in addition to an honest overview.
-      if (scale < 0.8) {
-        for (let y = bounds.y; y < bounds.y + bounds.height; y += 740)
-          for (let x = bounds.x; x < bounds.x + bounds.width; x += 1280) {
-            await page.evaluate(
-              (region: Bounds) => window.drawyView.focus(region, 1),
-              { x, y, width: 1376, height: 836 },
+      if (scene.overview) {
+        await shot("全图", true);
+        for (const check of scene.checks) {
+          await load();
+          try {
+            const host = page.locator(
+              `[data-module-id=${JSON.stringify(check.moduleId)}]`,
             );
-            await shot(`局部 ${x},${y}`);
+            await host.locator(check.selector).click({ timeout: 5000 });
+            await ready(page);
+          } catch (e) {
+            errors.push(String(e));
           }
-      }
-      for (const check of scene.checks) {
-        await load();
-        try {
-          const host = page.locator(
-            `[data-module-id=${JSON.stringify(check.moduleId)}]`,
-          );
-          await host.locator(check.selector).click({ timeout: 5000 });
-          await ready(page);
-        } catch (e) {
-          errors.push(String(e));
+          await shot(`交互 ${check.moduleId} ${check.selector}`);
         }
-        await shot(`交互 ${check.moduleId} ${check.selector}`);
       }
-      if (scene.region) {
-        await load();
-        await page.evaluate(
-          (region) => window.drawyView.focus(region),
-          scene.region,
-        );
-        await shot("指定区域");
+      if (scene.regions?.length) {
+        if (scene.overview && scene.checks.length) await load();
+        for (const region of scene.regions) {
+          // A close-up is framed to its area, so nothing outside what was asked for is
+          // sent to be read.
+          const scale = Math.min(2, 1100 / region.width, 800 / region.height);
+          await page.setViewportSize({
+            width: Math.max(320, Math.round((region.width * scale) / 0.9)),
+            height: Math.max(240, Math.round((region.height * scale) / 0.92)),
+          });
+          await page.evaluate(
+            ({ region, scale }) => window.drawyView.focus(region, scale),
+            { region, scale },
+          );
+          await ready(page);
+          const seen = page.viewportSize()!;
+          await shot(`局部 ${Math.round(region.x)},${Math.round(region.y)}`, false, seen);
+        }
+        await page.setViewportSize({ width, height });
       }
       if (scene.actions?.length) {
         await load();
