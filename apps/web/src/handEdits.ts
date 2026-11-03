@@ -259,11 +259,14 @@ export function useHandEdits({
           w,
           sceneId,
           clip,
-          home
-            ? { offset: (24 / scale()) * pasted.current.n }
-            : view
-              ? { centre: view.center() }
-              : { centre: { x: box.x + box.width / 2, y: box.y + box.height / 2 } },
+          {
+            labels: t.edit.params as Record<string, string>,
+            ...(home
+              ? { offset: (24 / scale()) * pasted.current.n }
+              : view
+                ? { centre: view.center() }
+                : { centre: { x: box.x + box.width / 2, y: box.y + box.height / 2 } }),
+          },
         ),
       );
     },

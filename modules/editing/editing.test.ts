@@ -730,6 +730,51 @@ describe("hand edits reach what the author writes", () => {
     expect(there.edit.materials).toEqual(["apple"]);
   });
 
+  it("pastes a library drawing into a work whose own drawing has its id as a drawing of the work's own", () => {
+    const work = fixture();
+    work.materials.label = label;
+    work.scenes.root.modules.push({
+      ...module(work, "heading"),
+      id: "words",
+      drawingId: "label",
+      data: { text: "你好", size: 20 },
+    });
+    const clip = copy(work, "root", ["words"])!;
+    expect(clip.libraries!.map((d) => d.id)).toEqual(["label"]);
+    expect(clip.materials).toEqual(["label"]);
+    // A work whose own drawing is called "label" draws something else under that id.
+    const other = fixture();
+    other.id = "other";
+    other.drawings.label = { ...other.drawings.title, id: "label" };
+    const r = paste(other, "root", clip, { labels: { text: "文字" } });
+    const pasted = apply(other, r.edit);
+    const words = module(pasted, r.ids[0]);
+    expect(words.drawingId).toBe("label-2");
+    expect(pasted.drawings["label-2"]).toEqual({
+      id: "label-2",
+      name: "标签",
+      params: {
+        text: { type: "text", label: "文字" },
+        size: { type: "number", min: 8, max: 72, step: 1, label: "size" },
+        align: { type: "choice", options: ["start", "center", "end"], label: "align" },
+        color: { type: "color", label: "color" },
+      },
+      source: label.source,
+    });
+    // The library filled in its defaults; the work's own copy has them in the data.
+    expect(words.data).toEqual({ size: 20, align: "center", text: "你好" });
+    expect(r.edit.materials).toBeUndefined();
+    expect(pasted.drawings.label).toEqual(other.drawings.label);
+    // A work without such a drawing uses the library drawing as it is.
+    const plain = paste(fixture(), "root", clip, {});
+    expect(plain.edit.drawings).toBeUndefined();
+    expect(plain.edit.scenes![0].modules.at(-1)).toMatchObject({
+      drawingId: "label",
+      data: { text: "你好", size: 20 },
+    });
+    expect(plain.edit.materials).toEqual(["label"]);
+  });
+
   it("takes a style's colours, keeping tokens the style does not have", () => {
     const work = fixture();
     work.style = { ink: "#111", stroke: "2" };
