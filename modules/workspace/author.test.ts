@@ -109,6 +109,23 @@ describe("the author's flat write", () => {
     expect(next.scenes.root.links[0].from).toEqual(once.scenes.root.links[0].from);
     expect(next.scenes.root.links[0].to.moduleId).toBe("below");
   });
+  it("keeps the checks a clearing write gives, on the modules it rebuilds", () => {
+    const w = work();
+    w.scenes.root.checks = [{ moduleId: "right", selector: "button.old" }];
+    const check = { moduleId: "left", selector: "button.new" };
+    const next = written(w, {
+      scenes: [{ id: "root", clear: true, checks: [check] }],
+      modules: [{ id: "left", bounds: [0, 0, 100, 100], drawingId: drawing() }],
+    });
+    expect(next.scenes.root.modules.map((m) => m.id)).toEqual(["left"]);
+    expect(next.scenes.root.checks).toEqual([check]);
+    // Without new ones, the old checks go with what they were on.
+    const bare = written(w, {
+      scenes: [{ id: "root", clear: true }],
+      modules: [{ id: "right", bounds: [0, 0, 100, 100], drawingId: drawing() }],
+    });
+    expect(bare.scenes.root.checks).toEqual([]);
+  });
   it("makes scenes, puts parts in the one it names, and recomposes with clear", () => {
     const w = work();
     const next = written(w, {

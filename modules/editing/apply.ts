@@ -70,11 +70,13 @@ function editedScene(work: Work, edit: SceneEdit) {
   if (edit.title !== undefined) scene.title = edit.title;
   if (edit.parentId !== undefined) scene.parentId = edit.parentId;
   if (edit.interactionId !== undefined) scene.interactionId = edit.interactionId;
-  if (edit.checks) scene.checks = structuredClone(edit.checks);
   const gone = new Set(edit.removeModules ?? []);
   const cut = new Set(edit.removeLinks ?? []);
   scene.modules = scene.modules.filter((m) => !gone.has(m.id));
-  scene.checks = scene.checks.filter((c) => !gone.has(c.moduleId));
+  // Checks this edit gives are about the scene it leaves, so what it removes does not touch them.
+  scene.checks = edit.checks
+    ? structuredClone(edit.checks)
+    : scene.checks.filter((c) => !gone.has(c.moduleId));
   scene.links = scene.links.filter(
     (l) => !cut.has(l.id) && !gone.has(l.from.moduleId) && !gone.has(l.to.moduleId),
   );

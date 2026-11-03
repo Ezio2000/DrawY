@@ -825,6 +825,52 @@ it("keeps words uncut at large sizes and at the edges of every library drawing, 
   expect(report.clipped[0]).toMatchObject({ moduleId: "tight" });
   expect(report.smallest!.px).toBeGreaterThan(20);
 }, 30000);
+it("measures words as they are shown and reports those their own container cuts", async () => {
+  const module = (id: string, width: number, height: number, x = 0) => ({
+    id,
+    label: id,
+    drawingId: id,
+    data: {},
+    bounds: { x, y: 0, width, height },
+    anchors: {},
+    group: null,
+    target: null,
+  });
+  const drawn = (id: string, source: string) => {
+    work.drawings[id] = { id, name: id, source };
+  };
+  const lines = "很多行的文字".repeat(12);
+  const scene = (...modules: ReturnType<typeof module>[]) => {
+    work.scenes.root = { ...work.scenes.root, modules, links: [], checks: [], interactionId: null };
+  };
+  // Many lines of one size read as that size, whatever the height of the whole block.
+  drawn("many", `return api.html('<div style="width:120px;font-size:20px;line-height:1.5">${lines}</div>');`);
+  scene(module("many", 120, 600));
+  await open();
+  let report = await page.evaluate(readText);
+  const scale = await page.evaluate(() => window.drawyView.view.scale);
+  expect(report.smallest!.px).toBe(Math.round(20 * scale));
+  expect(report.clipped).toEqual([]);
+  // In an svg its viewBox scales the words too, and each line is measured on its own.
+  drawn(
+    "lined",
+    `return api.svg('<svg viewBox="0 0 100 100" width="200" height="200"><text x="5" y="20" font-size="10">外层<tspan x="5" dy="12">内一</tspan><tspan x="5" dy="12">内二</tspan></text></svg>');`,
+  );
+  scene(module("lined", 200, 200));
+  await open();
+  report = await page.evaluate(readText);
+  const svgScale = await page.evaluate(() => window.drawyView.view.scale);
+  expect(report.smallest!.px).toBe(Math.round(20 * svgScale));
+  // The element directly holding the words can be what cuts them off.
+  drawn("cut", `return api.html('<div style="width:120px;height:30px;overflow:hidden;font-size:20px">${lines}</div>');`);
+  drawn("ellipsis", `return api.html('<div style="width:80px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:20px">${lines}</div>');`);
+  // A line height of one fits the words though their text box passes the container.
+  drawn("tight", `return api.html('<div style="height:20px;line-height:1;overflow:hidden;font-size:20px;white-space:nowrap">刚好放下</div>');`);
+  scene(module("cut", 120, 30), module("ellipsis", 80, 30, 200), module("tight", 120, 20, 400));
+  await open();
+  report = await page.evaluate(readText);
+  expect(report.clipped.map((c) => c.moduleId).sort()).toEqual(["cut", "ellipsis"]);
+}, 30000);
 it("leaves keyboard input inside a drawing control to that control", async () => {
   work.drawings.control.source = `return api.html('<input aria-label="angle" type="text">');`;
   await open();

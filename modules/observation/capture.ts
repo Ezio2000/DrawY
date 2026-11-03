@@ -43,12 +43,22 @@ export interface Shot {
   base64: string;
   errors: string[];
 }
-/** Runs in the page: reads every part's text. A height is a line box, about 1.2 times the
- * font size. */
+/** Runs in the page, so its helpers live inside it: reads every part's text. A size is the
+ * font's own, scaled as the camera and any viewBox or transform above it scale it. */
 export function readText(): TextReport {
   const report: TextReport = { clipped: [] };
   const seen = new Set<string>();
   const view = { right: innerWidth, bottom: innerHeight };
+  const scaleOf = (element: Element) => {
+    let scale = 1;
+    for (let at: Element | undefined = element; at; at = at.parentElement ?? (at.getRootNode() as ShadowRoot).host) {
+      // The matrix down from the screen already holds everything above an svg element.
+      const matrix = at instanceof SVGGraphicsElement ? at.getScreenCTM() : new DOMMatrix(getComputedStyle(at).transform);
+      if (matrix) scale *= Math.hypot(matrix.a, matrix.b);
+      if (at instanceof SVGGraphicsElement) break;
+    }
+    return scale;
+  };
   for (const host of document.querySelectorAll<HTMLElement>(
     "[data-module-id],[data-link-id]",
   )) {
@@ -66,19 +76,24 @@ export function readText(): TextReport {
       range.selectNodeContents(node);
       const box = parent instanceof SVGElement ? parent.getBoundingClientRect() : range.getBoundingClientRect();
       if (!box.width || !box.height) continue;
-      const px = Math.round(box.height / 1.2);
+      const size = parseFloat(shown.fontSize) * scaleOf(parent);
+      const px = Math.round(size);
       if (!report.smallest || px < report.smallest.px)
         report.smallest = { moduleId, text: text.slice(0, 30), px };
-      let cut = box.left < -1 || box.top < -1 || box.right > view.right + 1 || box.bottom > view.bottom + 1;
-      for (let at = parent.parentElement; at && !cut; at = at.parentElement) {
+      // A text box reaches past its glyphs, by about this much above and below, and a tight
+      // line height lets it pass its own container without cutting anything.
+      const top = box.top + size * 0.2,
+        bottom = box.bottom - size * 0.2;
+      let cut = box.left < -1 || top < -1 || box.right > view.right + 1 || bottom > view.bottom + 1;
+      for (let at: Element | null = parent; at && !cut; at = at.parentElement) {
         const overflow = getComputedStyle(at).overflow;
         if (overflow === "visible" || overflow === "clip visible") continue;
         const edge = at.getBoundingClientRect();
         cut =
           box.left < edge.left - 1.5 ||
-          box.top < edge.top - 1.5 ||
+          top < edge.top - 1.5 ||
           box.right > edge.right + 1.5 ||
-          box.bottom > edge.bottom + 1.5;
+          bottom > edge.bottom + 1.5;
       }
       const key = moduleId + text;
       if (cut && !seen.has(key) && report.clipped.length < 8) {
