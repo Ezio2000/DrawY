@@ -2,7 +2,7 @@
  * they are, with only the items other formats wrote for themselves left out. */
 import { effortFor, speedFor, type Role, type Speed } from "../contracts/index.ts";
 import { events, post } from "./http.ts";
-import type { Adapter, Item } from "./types.ts";
+import { CutOff, type Adapter, type Item } from "./types.ts";
 
 /** The `service_tier` each speed asks for. */
 export const serviceTiers: Record<Speed, string> = {
@@ -53,11 +53,13 @@ export const responses: Adapter = {
     );
     const items: Item[] = [];
     let complete = false,
+      wrote = false,
       usage: Item = {},
       response: Item = {};
     for await (const e of events(r)) {
       onEvent(e);
       if (e.type === "response.output_item.done") items.push(e.item);
+      if (e.type === "response.output_item.added" && e.item?.type !== "reasoning") wrote = true;
       if (e.type === "response.completed") {
         complete = true;
         usage = e.response.usage;
@@ -66,8 +68,16 @@ export const responses: Adapter = {
       }
       if (e.type === "response.failed" || e.type === "error")
         throw Error(JSON.stringify(e.error || e.response?.error));
-      if (e.type === "response.incomplete")
-        throw Error("这一轮要写的内容太多，模型的输出被截断了");
+      if (e.type === "response.incomplete") {
+        const spent = e.response?.usage ?? {};
+        throw new CutOff(
+          e.response?.incomplete_details?.reason,
+          !wrote &&
+            !items.some((i) => i.type !== "reasoning") &&
+            (spent.output_tokens_details?.reasoning_tokens ?? 0) > 0,
+          spent,
+        );
+      }
     }
     if (!complete) throw Error("模型连接在完成前中断");
     return { items, usage, response };

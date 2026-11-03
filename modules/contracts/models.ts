@@ -31,6 +31,12 @@ export function effortFor(wanted: Effort, accepted: readonly Effort[]): Effort |
   )[0];
 }
 /** The highest level a model accepts, if it lists any. */
+/** The lowest level a model accepts, if it lists any. */
+export const lowestEffort = (accepted: readonly Effort[]): Effort | undefined =>
+  accepted.length
+    ? accepted.reduce((a, b) => (efforts.indexOf(b) < efforts.indexOf(a) ? b : a))
+    : undefined;
+/** The highest level a model accepts, if it lists any. */
 export const topEffort = (accepted: readonly Effort[]): Effort | undefined =>
   accepted.length
     ? accepted.reduce((a, b) => (efforts.indexOf(b) > efforts.indexOf(a) ? b : a))
@@ -95,7 +101,7 @@ export interface ChannelSpec {
 export const channelSpecs: Record<Channel, ChannelSpec> = {
   api: {
     protocols: ["responses", "chat", "anthropic"],
-    speeds: ["flex", "default", "fast"],
+    speeds: ["flex", "default", "fast", "ultrafast"],
     builtinSearch: true,
     pinProvider: true,
     accountId: false,

@@ -5,6 +5,8 @@ import {
   type Run,
   type Step,
   type ToolActivity,
+  type GuideTopic,
+  guideTopics,
   type Work,
   type Picture,
   type Question,
@@ -14,6 +16,8 @@ import {
   type Settings,
   type RunUsage,
   imageTokensOf,
+  lowestEffort,
+  effortFor,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { writeWork, setBrief } from "../workspace/index.ts";
@@ -32,12 +36,14 @@ import {
 import { develop, type Development } from "../images/index.ts";
 import { observe, requireObserved, Unavailable } from "../observation/index.ts";
 import { AUTHOR, catalogue } from "./prompts.ts";
+import { guidesRead, readGuides } from "./guides.ts";
 import {
   adapterFor,
   generate,
   requestOf,
   textOf,
   citationsOf,
+  CutOff,
   type Item,
 } from "../models/index.ts";
 import {
@@ -45,6 +51,7 @@ import {
   askSchema,
   findSchema,
   generateSchema,
+  guideSchema,
   settleSchema,
   searchTools,
   searchSchema,
@@ -199,6 +206,16 @@ function activity(name: string, args: any): ToolActivity {
   switch (name) {
     case "read_work":
       return { name };
+    case "draw_guide":
+      return {
+        name,
+        topics: (Array.isArray(args.topics) ? args.topics : []).filter((t: unknown) =>
+          guideTopics.includes(t as GuideTopic),
+        ),
+        drawings: (Array.isArray(args.drawings) ? args.drawings : []).filter(
+          (d: unknown): d is string => typeof d === "string" && !!d,
+        ),
+      };
     case "web_search":
       return {
         name,
@@ -294,6 +311,20 @@ function activity(name: string, args: any): ToolActivity {
     default:
       throw Error("Unknown tool " + name);
   }
+}
+/** Library drawings the work uses whose cards the author has not read: parameters it
+ * guessed draw something other than it meant, or nothing. */
+function cardsUnread(work: Work, input: Item[]) {
+  const { drawings } = guidesRead(input);
+  const unread = Object.values(work.materials)
+    .filter((m) => m.kind === "drawing" && !drawings.has(m.id))
+    .map((m) => m.id);
+  return unread.length
+    ? {
+        cardsUnread: unread,
+        note: "Read these drawings' cards with draw_guide before judging them: their parameters cannot be guessed.",
+      }
+    : {};
 }
 /** The work as the author reads it: library code and effect definitions are named, not
  * repeated. */
@@ -459,7 +490,7 @@ async function compact(
         { ...author, effort: "low" },
         {
           instructions:
-            "Summarize this drawing conversation for continuation. Preserve user requirements, the brief and its basis, reference-image intent, chosen and generated material ids, decisions, unfinished work and tool failures. Do not execute the task. The latest saved work and original reference images will be supplied separately.",
+            "Summarize this drawing conversation so the author can continue from your notes alone, since everything else in it is about to be dropped. Keep: what the user asked and every requirement or correction, in their words; the brief and its basis; what each reference image is for; the material ids chosen or generated and what each depicts; decisions and why they were made; facts and sources found by research; what is unfinished; tool failures still unresolved. Leave out drawing code, module lists and guide text, because the latest saved work and the original reference images are supplied separately and guides can be read again. Write only the notes; do not continue the work.",
           // Effort changes made for the author's turns would override the summary's own.
           input: ctx.input.filter((i) => i.type !== "configuration_update"),
           // Without tools the calls and results so far are told in words.
@@ -495,7 +526,7 @@ async function compact(
     ctx.input = [
       await userMessage(
         store,
-        "Conversation summary:\n" + textOf(result.items),
+        "Conversation summary. Guides and drawing cards read earlier are no longer above, so read again with draw_guide what you still need.\n" + textOf(result.items),
         references,
       ),
       workMessage(run.sceneId, store.work(run.workId)),
@@ -533,6 +564,16 @@ function deliberate(input: Item[], role: Role, deciding: boolean): Effort {
     if (effort !== current) input.push({ type: "configuration_update", reasoning: { effort } });
   }
   return effort;
+}
+/** How to ask again a turn whose whole output budget went on thinking: at the least thought
+ * the model accepts, the same way its effort changes otherwise. Undefined when it is
+ * already thinking as little as it can. */
+export function withLessThought(input: Item[], role: Role, effort: Effort) {
+  const least = lowestEffort(role.efforts);
+  if (!least || least === effortFor(effort, role.efforts)) return undefined;
+  if (adapterFor(role.protocol).effortControl(role) === "conversation")
+    input.push({ type: "configuration_update", reasoning: { effort: least } });
+  return { role: { ...role, ...(adapterFor(role.protocol).effortControl(role) === "fixed" ? { effort: least } : {}) }, effort: least };
 }
 /** A model request that failed on the way rather than on its content. */
 const transient = (e: unknown) =>
@@ -877,7 +918,7 @@ export class Agent {
     };
     let seen = ctx.input.length;
     // A request or an answer is decided on first; so is every look at the canvas.
-    let deciding = true;
+    let deciding: boolean = true;
     while (ctx.generations++ < 24) {
       let thinking: Extract<Step, { kind: "thinking" }> | undefined;
       // Progress the author writes takes its place among the steps as it streams.
@@ -887,6 +928,7 @@ export class Agent {
       await compact(store, run, ctx, abort.signal);
       if (seen > ctx.input.length) seen = 0;
       const effort = deliberate(ctx.input, settings.author, deciding);
+      const decided: boolean = deciding;
       deciding = false;
       const turnStart = Date.now();
       const steer = steering(run, availableTools, settings.author);
@@ -913,9 +955,12 @@ export class Agent {
           // When each hosted call began, to time its span once it is done.
           const began = new Map<string, number>();
           let result!: Awaited<ReturnType<typeof generate>>;
-          for (const wait of [2000, 8000, 0]) {
+          let asked = { role: settings.author, effort };
+          let lessened = false;
+          for (let attempt = 0, waits = [2000, 8000, 0]; attempt < waits.length; attempt++) {
+            const wait = waits[attempt];
             try {
-              result = await generate(settings.author, {
+              result = await generate(asked.role, {
                 instructions,
                 input: ctx.input,
                 tools: availableTools,
@@ -924,7 +969,7 @@ export class Agent {
                 // instructions and tools, and a work's turns extend its earlier ones.
                 cacheKey: store.userId,
                 steer,
-                effort,
+                effort: asked.effort,
                 onEvent: (event) => {
                   if (
                     firstOutput === undefined &&
@@ -1033,6 +1078,28 @@ export class Agent {
               });
               break;
             } catch (e) {
+              if (e instanceof CutOff) {
+                spend(run, e.usage);
+                span.set({ usage: e.usage, incomplete: e.reason ?? "unknown" });
+                const less =
+                  e.thoughtOnly && !lessened && !abort.signal.aborted
+                    ? withLessThought(ctx.input, settings.author, asked.effort)
+                    : undefined;
+                if (less) {
+                  // A turn that thinks away its budget would do so again as it is, and
+                  // this attempt is not one the connection's retries should count.
+                  asked = less;
+                  lessened = true;
+                  attempt--;
+                  tracer.note("less thought", { effort: less.effort }, e.message);
+                  run.steps.splice(mark);
+                  thinking = said = undefined;
+                  firstOutput = undefined;
+                  drafts.clear();
+                  this.emit(store, run);
+                  continue;
+                }
+              }
               if (abort.signal.aborted || !transient(e)) throw e;
               if (!wait)
                 throw Error(
@@ -1079,11 +1146,14 @@ export class Agent {
         ctx.input.push({
           role: "user",
           content:
-            "Continue the requested work using tools. Call ask_user if you need the user, or finish when the saved drawing is ready.",
+            "Your last message had no tool call, so the work did not move. Take the next step now with a tool, keeping any note to the user in the same message. Call ask_user only if nothing can move without them, and finish once you have seen the latest saved revision and it holds.",
         });
         continue;
       }
       let writeError: string | undefined;
+      // Every call's result comes before any picture: a service that checks a batch's
+      // results in order takes a message between them for a call left unanswered.
+      const shown: Item[] = [];
       for (const call of calls) {
         abort.signal.throwIfAborted();
         const outcome = await tracer.span(
@@ -1119,11 +1189,14 @@ export class Agent {
           call_id: call.call_id,
           output: JSON.stringify(outcome.output),
         });
-        if (outcome.images.length)
-          ctx.input.push({ role: "user", content: outcome.images });
+        if (outcome.images.length) shown.push({ role: "user", content: outcome.images });
         store.context(run.id, ctx);
         this.emit(store, run);
       }
+      ctx.input.push(...shown);
+      store.context(run.id, ctx);
+      // Reading a guide decides nothing, so the decision is still ahead.
+      if (calls.every((c) => c.name === "draw_guide")) deciding = decided;
     }
     throw Error("已达到本轮 24 次生成上限");
   }
@@ -1239,6 +1312,10 @@ export class Agent {
           }
           break;
         }
+        case "draw_guide": {
+          output = readGuides(guideSchema.parse(args), await kit(), guidesRead(ctx.input));
+          break;
+        }
         case "read_work": {
           const work = store.work(run.workId);
           output = forAuthor(work);
@@ -1304,6 +1381,9 @@ export class Agent {
             },
             ...(cast ? { cast: cast.output } : {}),
             ...(research(run) ? { research: research(run) } : {}),
+            ...(guidesRead(ctx.input).topics.size
+              ? {}
+              : { guides: "Read what this work needs with draw_guide before drawing: see # Guides." }),
           };
           images = cast?.images ?? [];
           Object.assign(step!, {
@@ -1385,6 +1465,7 @@ export class Agent {
             ...(keptTitle
               ? { title: `Kept the user's title "${work.title}".` }
               : {}),
+            ...cardsUnread(work, ctx.input),
           };
           Object.assign(step!, { revision: work.revision, materials: added });
           break;

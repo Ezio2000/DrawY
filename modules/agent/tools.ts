@@ -1,6 +1,6 @@
 import { viewSchema } from "../observation/index.ts";
 import { z } from "zod";
-import { briefSchema, workEditSchema } from "../contracts/index.ts";
+import { briefSchema, guideTopics, workEditSchema } from "../contracts/index.ts";
 import { pictureRequestSchema } from "../images/index.ts";
 const fn = (name: string, description: string, parameters: object) => ({
   type: "function",
@@ -15,19 +15,23 @@ export const askSchema = z.object({
     .array(
       z.object({
         id: z.string().min(1),
-        text: z.string().min(1),
+        text: z.string().min(1).describe("The question, in the user's language"),
         options: z
           .array(
             z.object({
               label: z.string().min(1),
               detail: z.string().optional(),
               /** Picture or style material ids that show what this option looks like. */
-              materials: z.array(z.string()).max(3).optional(),
+              materials: z
+                .array(z.string())
+                .max(3)
+                .optional()
+                .describe("Picture or style material ids that show what this option looks like"),
             }),
           )
           .min(2)
           .max(4),
-        multiple: z.boolean().optional(),
+        multiple: z.boolean().optional().describe("Whether the user may choose several options"),
       }),
     )
     .min(1)
@@ -37,12 +41,14 @@ export const askSchema = z.object({
  * so they are real alternatives rather than variations of the first that came to mind. */
 export const ideaKinds = {
   convention: "the figure people usually draw for this kind of subject",
-  anatomy: "the real thing seen whole, in section or cut away",
-  journey: "where things happen and how they travel through space",
-  change: "one place or thing changing over time",
-  scale: "a comparison at true size or proportion",
-  mechanism: "the forces or reason behind it, shown acting",
-  analogy: "a familiar situation with the same structure",
+  anatomy: "the real thing seen whole, in section or cut away (a volcano cut open)",
+  journey: "where things happen and how they travel through space (a letter's route across a map)",
+  change: "one place or thing changing over time (one tree through four seasons)",
+  scale: "a comparison at true size or proportion (the planets side by side)",
+  mechanism:
+    "the forces or reason behind a rule, shown acting (why an arch stands: the thrust passing stone to stone into the ground)",
+  analogy:
+    "a familiar situation with the same structure, holding at the points that matter (a computer's memory as desk, drawer and warehouse)",
   scene: "a moment with characters that makes it felt",
 };
 /** What set_brief takes: the brief, with the ideas weighed before its concept. They come
@@ -76,55 +82,86 @@ export const settleSchema = z.object({
   ...rest,
 });
 export const findSchema = z.object({
-  subjects: z.array(z.string().min(1)).min(1).max(12),
-  kinds: z.array(z.enum(["picture", "drawing", "effect", "style"])).optional(),
-  style: z.string().optional(),
+  subjects: z
+    .array(z.string().min(1))
+    .min(1)
+    .max(12)
+    .describe("One subject per entry, in Chinese or English"),
+  kinds: z
+    .array(z.enum(["picture", "drawing", "effect", "style"]))
+    .optional()
+    .describe("Leave out to search every kind"),
+  style: z.string().optional().describe("A style id to prefer; defaults to the brief's style"),
 });
 export const generateSchema = z.object({
   images: z.array(pictureRequestSchema).min(1).max(8),
 });
+export const guideSchema = z
+  .object({
+    topics: z
+      .array(z.enum(guideTopics))
+      .optional()
+      .describe("Guides to read, from the list under # Guides in your instructions"),
+    drawings: z
+      .array(z.string().min(1))
+      .max(12)
+      .optional()
+      .describe("Library drawing ids whose cards to read, from the list under # Library"),
+  })
+  .refine((g) => g.topics?.length || g.drawings?.length, "至少要指定一个指南或画法");
 export const tools = [
   fn(
     "ask_user",
-    "Ask the user what their words leave open (which sense of the subject, what aspect or purpose, how serious or personal) and wait. All open questions in one call, each with 2–4 concrete options that would lead to visibly different works. To show a look, attach the style id to the option (it shows that style's samples) or picture ids. Call alone.",
+    "Ask the user what their words leave open (which sense of the subject, what aspect or purpose, how serious or personal) and wait for the answer. Use it only for choices that would lead to visibly different works, because the run stops until they answer. Put every open question in one call, each with 2–4 concrete options; to show a look, attach a style id (it shows that style's samples) or picture ids to an option. Call it alone.",
     schema(askSchema),
   ),
   fn(
     "set_brief",
-    "Settle the work's brief before drawing, or change it when the user changes direction or the concept has to change. Each basis quotes the user's own words; the ideas and the concept chosen from them are your own and quote nothing. Returns the style's tokens, guide and effects, and library materials found for the cast, with thumbnails.",
+    "Settle the work's brief before drawing, or change it when the user changes direction or the concept has to change. Each basis quotes the user's own words verbatim, and the call fails on a quote it cannot find; the ideas and the concept chosen from them are your own and quote nothing. Returns the revision, the style's tokens, guide and effects, and library pictures found for the cast, with thumbnails.",
     schema(settleSchema),
   ),
   fn(
     "find_materials",
-    "Search the material library: pictures (objects, figures, scenes, icons), drawing code, effects and styles. One subject per entry, in Chinese or English; each gets its own ranked hits, with thumbnails of the best pictures. Pass the brief's style to prefer it.",
+    "Search the library beyond what set_brief found: pictures (objects, figures, scenes, icons), drawing code, effects and styles. Each subject gets its own ranked hits, with thumbnails of the best pictures, and says so when nothing matches directly: then generate that picture or try a synonym.",
     schema(findSchema),
   ),
   fn(
+    "draw_guide",
+    "Read instructions and library drawing cards on demand. topics returns the guides listed under # Guides in your instructions, each holding rules you do not otherwise have; drawings returns each library drawing's description, parameters, default size and example data. It changes nothing in the work. Ask for everything you expect to need in one call, alongside other calls when you can. What you read stays in the conversation, so asking again only returns a note that it is above.",
+    schema(guideSchema),
+  ),
+  fn(
     "generate_images",
-    "Have pictures made in the brief's style, in the background. Ask for every missing picture in one call. Each is painted beside the work's own pictures in that style and the style's samples, shown to the picture model as style references, so a new picture matches the ones already placed; use references only for what a picture must be made from. A picture can reference another in the same call by its key (the same character in several scenes): it is made from that picture once it exists. Returns material ids at once: use them in drawings immediately; view_canvas waits until they have developed, and you will be shown each one as it arrives.",
+    "Have pictures made in the brief's style, in the background. Ask for every missing picture in one call. Each is painted beside the work's own pictures in that style and the style's samples, shown to the picture model as style references, so a new picture matches the ones already placed. Returns material ids at once: use them in drawings immediately. view_canvas waits until they have developed, and you are shown each one as it arrives.",
     schema(generateSchema),
   ),
   fn(
     "read_work",
-    "Read the current work: brief, materials, scene compositions, drawing sources and revision.",
+    "Read the current saved work: brief, materials, scene compositions, drawing sources and revision. Each request already gives you the work as it stood, so call this when you need the source of something you have not seen, or the state after a failed write.",
     { type: "object", properties: {}, additionalProperties: false },
   ),
   fn(
     "write_work",
-    "Atomically upsert or remove scene compositions, drawing definitions, interactions, details and materials. Sections contain complete records by ID; omitted records remain. Supply the current baseRevision. Write scenes before drawings and each module's label and bounds before its data: the layout is shown to the viewer while the rest streams.",
+    "Atomically upsert or remove scene compositions, drawing definitions, interactions, details and materials, saving a new revision that the viewer sees drawn. Sections contain complete records by id; omitted records remain, while a scene you send replaces that scene whole, so modules and links left out of it are deleted. Fails without saving when baseRevision is stale or the result is invalid, and says why. Write scenes before drawings and each module's label and bounds before its data, because the layout is shown to the viewer while the rest streams.",
     schema(workEditSchema),
   ),
   fn(
     "view_canvas",
-    "See current saved scenes as images in this conversation. Includes overview, declared interaction checks and geometry. Optionally focus a world-coordinate region, annotate object IDs/bounds, or perform a sequence of CSS-selector clicks in one scene. Waits for developing pictures first. Call alone or last after write_work calls: saves run in order before the screenshot, and a failed save skips it so you do not judge an older version.",
+    "See current saved scenes as images in this conversation, with geometry: the camera, each module's bounds, the materials it uses and where a picture's visible content is, and any runtime errors. Includes the overview and declared interaction checks; optionally focus a world-coordinate region, annotate object ids and bounds, or perform a sequence of CSS-selector clicks in one scene. Waits for developing pictures first. Call it alone or last after write_work calls: saves run in order before the screenshot, and a failed save skips it so you do not judge an older version.",
     schema(viewSchema),
   ),
   fn(
     "finish",
-    "Finish after visually inspecting the latest saved revision of every populated scene, with every picture developed, and fixing concrete defects. Call alone; a write invalidates earlier observations.",
+    "End the run. It succeeds only when you have seen the latest saved revision of every populated scene with every picture developed; otherwise it says what is missing and the run goes on. A write invalidates earlier observations. Call it alone.",
     {
       type: "object",
-      properties: { message: { type: "string" } },
+      properties: {
+        message: {
+          type: "string",
+          description:
+            "What the finished work shows, for the user in their language: a few plain sentences, with any values you assumed listed so they can correct them",
+        },
+      },
       required: ["message"],
       additionalProperties: false,
     },
@@ -141,7 +178,7 @@ export const openSchema = z.object({ url: z.string().min(1) });
 export const searchTools = [
   fn(
     "web_search",
-    "Search the web through the app's search service. Put every fact the figure needs in one call, one query each; each query returns up to five results with title, URL, date and snippet. Each query counts against this request's search budget.",
+    "Search the web through the app's search service. Put every fact the figure needs in one call, one query each; each query returns up to five results with title, URL, date and snippet. Each query counts against this request's search budget, and the result says what is left.",
     schema(searchSchema),
   ),
   fn(

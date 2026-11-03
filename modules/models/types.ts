@@ -26,6 +26,27 @@ export interface Turn {
 }
 /** A turn as an adapter receives it, with every default filled in. */
 export type Request = Turn & { tools: Item[]; onEvent: (event: Item) => void; budget: number };
+/** The reasons services give for running out of room, as opposed to stopping a turn. */
+const outOfRoom = new Set(["max_output_tokens", "max_tokens", "length", "model_context_window_exceeded"]);
+/** A turn the service stopped before it finished: the tokens were still spent, in the
+ * usage it carries. `thoughtOnly` says the model spent them all thinking and wrote
+ * nothing, which less thought can cure and a smaller change cannot. */
+export class CutOff extends Error {
+  constructor(
+    readonly reason: string | undefined,
+    readonly thoughtOnly: boolean,
+    readonly usage: Item,
+  ) {
+    super(
+      reason && !outOfRoom.has(reason)
+        ? `模型服务中止了这一轮的输出：${reason}`
+        : thoughtOnly
+          ? "模型的思考用完了这一轮的输出额度，还没写出内容；可以调低思考强度再试"
+          : "这一轮要写的内容太多，模型的输出被截断了",
+    );
+  }
+}
+
 export interface Answer {
   items: Item[];
   usage: Item;

@@ -1,5 +1,6 @@
 import { MaterialsClient } from "@drawy/materials/client";
 import type {
+  DrawingMaterial,
   Material,
   Param,
   SearchRequest,
@@ -217,6 +218,12 @@ export async function styleOf(id: string) {
   return style;
 }
 
+/** A library drawing as the author reads it on demand: all it needs to use the drawing. */
+export const drawingCard = (m: DrawingMaterial) => ({
+  ...brief(m),
+  size: `${m.size.width}×${m.size.height}`,
+  example: m.example,
+});
 /** A material as the author reads it in a search result. */
 function brief(m: Material, match?: string) {
   const name = `${m.name.zh} / ${m.name.en}`;

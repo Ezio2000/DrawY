@@ -9,6 +9,7 @@ import { chat } from "./chat.ts";
 import { responses } from "./responses.ts";
 import { blind } from "./text.ts";
 import type { Adapter, Answer, Item, Turn } from "./types.ts";
+export { CutOff } from "./types.ts";
 
 export type { Adapter, Answer, EffortControl, Item, Turn } from "./types.ts";
 export { headers } from "./http.ts";

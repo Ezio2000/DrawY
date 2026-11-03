@@ -4,7 +4,7 @@
 import { effortFor, topEffort, type Role } from "../contracts/index.ts";
 import { events, post } from "./http.ts";
 import { textOf } from "./text.ts";
-import type { Adapter, Answer, Item, Request } from "./types.ts";
+import { CutOff, type Adapter, type Answer, type Item, type Request } from "./types.ts";
 
 /** The conversation as Chat Completions messages. The loop keeps it as Responses items;
  * each model turn becomes one assistant message with its tool calls, and their results
@@ -187,8 +187,20 @@ async function generate(
     }
     if (choice.finish_reason) finish = choice.finish_reason;
   }
+  const spent = () => ({
+    input_tokens: usage.prompt_tokens ?? 0,
+    input_tokens_details: {
+      cached_tokens:
+        usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0,
+    },
+    output_tokens: usage.completion_tokens ?? 0,
+    output_tokens_details: {
+      reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens ?? 0,
+    },
+  });
   if (!finish) throw Error("模型连接在完成前中断");
-  if (finish === "length") throw Error("这一轮要写的内容太多，模型的输出被截断了");
+  if (finish === "length")
+    throw new CutOff(finish, !!reasoning && !message && !calls.some(Boolean), spent());
   if (finish === "content_filter") throw Error("模型拒绝了这一轮的内容");
   const items: Item[] = [];
   if (reasoning) {
@@ -210,18 +222,9 @@ async function generate(
     onEvent({ type: "response.output_item.done", item: { ...item, id: call.id } });
     items.push(item);
   }
-  const cached =
-    usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0;
   return {
     items,
-    usage: {
-      input_tokens: usage.prompt_tokens ?? 0,
-      input_tokens_details: { cached_tokens: cached },
-      output_tokens: usage.completion_tokens ?? 0,
-      output_tokens_details: {
-        reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens ?? 0,
-      },
-    },
+    usage: spent(),
     response: { id, model, status: "completed", protocol: "chat" },
   };
 }
