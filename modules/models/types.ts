@@ -61,10 +61,8 @@ export type EffortControl = "request" | "conversation" | "fixed";
  * format is asked of its adapter; adding a format is adding one. */
 export interface Adapter {
   generate(role: Role, request: Request): Promise<Answer>;
-  /** How the run raises the effort of the turns that decide the work. */
+  /** How the run lowers the effort of a turn that thought away its output budget. */
   effortControl(role: Role): EffortControl;
-  /** The effort those turns ask for. */
-  decidingEffort(role: Role): Effort;
   /** Request fields that hold a turn to the searches left without changing the tools
    * listed, which would restart the cache; absent where the API has no such way, and the
    * run refuses calls past the budget instead. */

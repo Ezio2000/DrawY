@@ -30,16 +30,10 @@ export function effortFor(wanted: Effort, accepted: readonly Effort[]): Effort |
       efforts.indexOf(a) - efforts.indexOf(b),
   )[0];
 }
-/** The highest level a model accepts, if it lists any. */
 /** The lowest level a model accepts, if it lists any. */
 export const lowestEffort = (accepted: readonly Effort[]): Effort | undefined =>
   accepted.length
     ? accepted.reduce((a, b) => (efforts.indexOf(b) < efforts.indexOf(a) ? b : a))
-    : undefined;
-/** The highest level a model accepts, if it lists any. */
-export const topEffort = (accepted: readonly Effort[]): Effort | undefined =>
-  accepted.length
-    ? accepted.reduce((a, b) => (efforts.indexOf(b) > efforts.indexOf(a) ? b : a))
     : undefined;
 
 // ---- Search modes
@@ -199,8 +193,6 @@ export interface WriterModel {
   efforts: Effort[];
   /** The level used until someone picks another. */
   effort: Effort;
-  /** Use the picked effort on deciding turns instead of automatically raising it. */
-  decisionUsesSetting: boolean;
   /** The speeds people may pick; none where its format takes no speed. */
   speeds: Speed[];
   speed: Speed;
@@ -232,11 +224,10 @@ export interface Role extends Connection {
   model: string;
   provider?: string;
   effort: Effort;
-  decisionUsesSetting: boolean;
   /** Whether its endpoint accepts the request fields that narrow the tools (see
    * `WriterModel.toolLimits`). */
   toolLimits: boolean;
-  /** The reasoning levels it accepts; a run raises or keeps its effort among them. */
+  /** The reasoning levels it accepts. */
   efforts: Effort[];
   speed: Speed;
   vision: boolean;
@@ -289,7 +280,6 @@ export const defaultWriter = (protocol: Protocol = "responses"): WriterModel => 
   maxOutput: 32768,
   efforts: ["low", "medium", "high", "xhigh"],
   effort: "medium",
-  decisionUsesSetting: false,
   speeds: protocolSpecs[protocol].speeds ? ["flex", "default", "fast"] : [],
   speed: "default",
   builtinSearch: protocolSpecs[protocol].builtinSearch,
@@ -307,7 +297,6 @@ export const defaultRole = (): Role => {
     protocol: m.protocol,
     model: m.model,
     effort: m.effort,
-    decisionUsesSetting: m.decisionUsesSetting,
     toolLimits: m.toolLimits,
     efforts: m.efforts,
     speed: m.speed,
@@ -435,7 +424,6 @@ const writerModelObject = z.object({
   maxOutput: z.number().int().min(1024).max(1_000_000),
   efforts: z.array(z.enum(efforts)),
   effort: z.enum(efforts),
-  decisionUsesSetting: z.boolean(),
   speeds: z.array(z.enum(speeds)),
   speed: z.enum(speeds),
   builtinSearch: z.boolean(),
@@ -684,7 +672,6 @@ export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings 
       model: m.model,
       ...(m.provider ? { provider: m.provider } : {}),
       effort,
-      decisionUsesSetting: m.decisionUsesSetting,
       toolLimits: m.toolLimits,
       efforts: m.efforts,
       speed,

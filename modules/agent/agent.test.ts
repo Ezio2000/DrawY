@@ -650,7 +650,7 @@ const outputs = (input: any[]) =>
   input
     .filter((x) => x.type === "function_call_output")
     .map((x) => x.output as string);
-it("gives the turns that decide the work the most thought and the others the configured effort", async () => {
+it("thinks at the configured effort on every turn", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
   try {
@@ -659,6 +659,7 @@ it("gives the turns that decide the work the most thought and the others the con
     work.revision = 0;
     work.scenes.child.modules = [];
     store.commit(work, 0, { kind: "edit" });
+    vi.mocked(generate).mockClear();
     const seen: any[][] = [];
     script(
       [
@@ -672,59 +673,12 @@ it("gives the turns that decide the work the most thought and the others the con
     );
     const run = await new Agent(() => {}).start(store, work.id, "root", "画");
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
-    const effort = (input: any[]) =>
-      input.findLast((i) => i.type === "configuration_update")?.reasoning
-        .effort;
-    // The request and each look are decided on; writing carries the decision out.
-    expect(seen.map(effort)).toEqual(["max", "medium", "max", "medium", "max"]);
-    // The request keeps the configured effort, so its cached prefix holds.
-    expect(vi.mocked(generate).mock.lastCall![0].effort).toBe("medium");
-  } finally {
-    db.close();
-    rmSync(dir, { recursive: true });
-  }
-});
-it("gives a Claude model's deciding turns the most effort it accepts, as a change in the conversation", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
-    db = new Storage(dir);
-  try {
-    const store = db.scoped(register(db, "claude", "abcdef").id),
-      work = fixture();
-    work.revision = 0;
-    work.scenes.child.modules = [];
-    store.commit(work, 0, { kind: "edit" });
-    const catalog = db.models();
-    catalog.writers[0].baseUrl = "https://api.anthropic.com";
-    Object.assign(catalog.writers[0].models[0], {
-      protocol: "anthropic",
-      model: "claude-sonnet-5-5",
-      effort: "high",
-      efforts: ["low", "medium", "high", "xhigh"],
-    });
-    db.saveModels(catalog);
-    // A user's explicit choice overrides Sonnet's initial medium preset.
-    store.saveOwnSettings({
-      ...store.ownSettings(),
-      tunings: { [catalog.writers[0].models[0].id]: { effort: "high" } },
-    });
-    const seen: any[][] = [];
-    script(
-      [
-        ["write_work", { baseRevision: 1, title: "edited" }],
-        ["view_canvas", {}],
-        ["finish", { message: "done" }],
-      ],
-      seen,
-    );
-    const run = await new Agent(() => {}).start(store, work.id, "root", "画");
-    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
-    const effort = (input: any[]) =>
-      input.findLast((i) => i.type === "configuration_update")?.reasoning.effort;
-    expect(seen.map(effort)).toEqual(["xhigh", "high", "xhigh"]);
-    expect(vi.mocked(generate).mock.lastCall![0]).toMatchObject({ protocol: "anthropic", effort: "high" });
-    // The turn asks for the decided effort; Claude reads it from the conversation, and the
-    // request's own stays as configured (see anthropic.test.ts).
-    expect(vi.mocked(generate).mock.lastCall![1].effort).toBe("xhigh");
+    // No turn changes the effort in the conversation or asks for another one.
+    expect(seen.flat().some((i) => i.type === "configuration_update")).toBe(false);
+    for (const [role, turn] of vi.mocked(generate).mock.calls) {
+      expect(role.effort).toBe("medium");
+      expect(turn.effort).toBe("medium");
+    }
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
@@ -1548,39 +1502,6 @@ it("sends a guide again once a summary has dropped it", async () => {
   }
 });
 
-it("keeps the extra thought for the decision when the author reads a guide first", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
-    db = new Storage(dir);
-  try {
-    const store = db.scoped(register(db, "author", "abcdef").id),
-      work = fixture();
-    work.revision = 0;
-    work.scenes.child.modules = [];
-    store.commit(work, 0, { kind: "edit" });
-    const seen: any[][] = [];
-    script(
-      [
-        ["draw_guide", { topics: ["formats"] }],
-        ["write_work", { baseRevision: 1, title: "edited" }],
-        ["view_canvas", {}],
-        ["draw_guide", { topics: ["pictures"] }],
-        ["write_work", { baseRevision: 2, title: "again" }],
-        ["view_canvas", {}],
-        ["finish", { message: "done" }],
-      ],
-      seen,
-    );
-    const run = await new Agent(() => {}).start(store, work.id, "root", "画");
-    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
-    const effort = (input: any[]) =>
-      input.findLast((i) => i.type === "configuration_update")?.reasoning.effort;
-    expect(seen.map(effort)).toEqual(["max", "max", "medium", "max", "max", "medium", "max"]);
-  } finally {
-    db.close();
-    rmSync(dir, { recursive: true });
-  }
-});
-
 it("reminds the author of the guides after the brief and of unread cards after a write", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
@@ -1757,9 +1678,52 @@ it("asks once more with the least thought when a turn thinks away its whole budg
     const run = await new Agent(() => {}).start(store, work.id, "root", "画");
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("failed"));
     // Thought away again at the least: it stops rather than paying a third time.
-    expect(efforts).toEqual(["max", "low"]);
+    expect(efforts).toEqual([undefined, "low"]);
     expect(store.run(run.id).usage).toMatchObject({ output: 2000, reasoning: 2000 });
     expect(store.run(run.id).error).toContain("思考");
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("returns to the configured effort after a turn asked again with less thought", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const efforts: unknown[] = [];
+    let turn = 0;
+    vi.mocked(generate).mockClear();
+    vi.mocked(generate).mockImplementation(async (_role, { input }) => {
+      efforts.push(input.findLast((i: any) => i.type === "configuration_update")?.reasoning.effort);
+      turn++;
+      if (turn === 1)
+        throw new CutOff("max_output_tokens", true, {
+          input_tokens: 100,
+          output_tokens: 1000,
+          output_tokens_details: { reasoning_tokens: 1000 },
+        });
+      const [name, args] = (
+        turn === 2
+          ? ["write_work", { baseRevision: 1, title: "edited" }]
+          : turn === 3
+            ? ["view_canvas", {}]
+            : ["finish", { message: "done" }]
+      ) as [string, unknown];
+      return {
+        items: [{ type: "function_call", call_id: `c${turn}`, name, arguments: JSON.stringify(args) }],
+        usage: {},
+        response: {},
+      };
+    });
+    const run = await new Agent(() => {}).start(store, work.id, "root", "画");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    expect(efforts.slice(0, 3)).toEqual([undefined, "low", "medium"]);
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
