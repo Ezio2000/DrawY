@@ -51,6 +51,8 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 ## 创作、搜索与生图的组合
 
+打开作品时 `App.tsx` 先显示作品，随后合并运行历史；`runsOf` 标记历史已加载的作品，`loadingRuns` 在历史未到时禁用发送（按钮与 Enter）和手动编辑。主页新建的作品没有旧历史，创建成功即设置 `runsOf`，不等待一次多余的历史请求。
+
 模型配置的结构是“规格 + 适配器”，新增接入方式、接口格式或搜索服务商都是加条目，读它们的代码不改：
 - `contracts/models.ts`（由 `contracts/index.ts` 转出）是唯一说明“谁能做什么”的地方：`channelSpecs`（`api`/`oauth` 各自的固定地址、能说的接口格式、速度档、能否内置搜索、能否固定提供商、要不要 Account ID）、`protocolSpecs`（每种接口格式的官方地址、能否内置搜索、是否有速度档）、`searchProviderSpecs`（地址、是否必须有 Key、是否由服务商读网页）。`settleWriter`/`settleProvider` 按规格改正模型（格式不被支持时退回接入方式的第一种、内置搜索不能用就不开放、可选速度只留连接和格式提供的、默认档位取可选的），`modelCatalogSchema` 和设置页都用它；`reconnect` 在供应商换接入方式时把地址换成 `endpointFor` 给的地址。`offersBuiltinSearch`、`speedsOf`、`pinnedProvider`、`searchReady`、`protocolFor`（新模型按地址猜格式）都从规格推出。`picked`/`settingsFor`/`menuFor` 是“用户选了什么、落到哪个默认”的唯一实现，`UserStore.settings()` 和 `/api/models` 只调用它们；`costOf` 是费用的唯一算法，前端账单和运行记录都用它。
 - `modules/models` 每种格式一个适配器（`responses.ts`、`chat.ts`、`anthropic.ts`，接口见 `types.ts` 的 `Adapter`），在 `index.ts` 的 `adapters: Record<Protocol, Adapter>` 里登记。`generate(role, turn)` 收一个 `Turn` 对象（`instructions/input/tools/signal/onEvent/budget/cacheKey/steer/effort`），先做通用处理（凭证检查、`blind`、输出上限），再交给适配器。按格式不同的行为都问适配器：`effortControl`（`request` 每次请求带档位、`conversation` 在对话里插 `configuration_update`、`fixed` 不变）和 `decidingEffort` 决定 `agent` 的 `deliberate`；`narrow` 决定 `steering` 能否不改工具列表就收窄（只有 Responses 有）；`describe` 给 trace 的 `request` 补字段（Responses 的 `serviceTier`），由 `requestOf` 合成。`http.ts` 放共用的 `headers`、`post`（自动带 `pinnedProvider`）和 SSE 读取 `events`。`agent` 里不再出现按 `protocol` 分支的代码，加格式时也不要再加。

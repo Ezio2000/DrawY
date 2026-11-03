@@ -223,6 +223,7 @@ export function App() {
   );
   const run = runs.at(-1),
     working = live(run);
+  const loadingRuns = page === "work" && (!work || runsOf !== work.id);
   // While the author works or waits for an answer, the composer leaves the page for the
   // studio, without the model picks; it comes back once the run ends.
   const engaged = working || run?.status === "waiting";
@@ -281,7 +282,7 @@ export function App() {
   const canRedo = !!work && redoable?.at === work.revision;
   const ids = selected.map((s) => s.moduleId);
   // Editing waits while the author works or an earlier revision is shown.
-  const editless = working || run?.status === "waiting" || !!preview;
+  const editless = loadingRuns || working || run?.status === "waiting" || !!preview;
   const manages = !!user?.permissions.includes("models.manage");
   const connected =
     models && !!models.writers.find((m) => m.id === models.chosen.writer)?.ready;
@@ -520,7 +521,7 @@ export function App() {
     }
   }
   async function send(text = prompt, target = sceneId, picked = choices) {
-    if ((!text.trim() && !attachments.length) || working || uploading) return;
+    if ((!text.trim() && !attachments.length) || loadingRuns || busy || working || uploading) return;
     if (!connected) {
       if (manages) go("/settings");
       return;
@@ -535,6 +536,7 @@ export function App() {
           title: (text.trim() || attachments[0].name).slice(0, 36),
         });
         W(w);
+        setRunsOf(w.id);
         target = w.rootSceneId;
         go("/a/" + w.id);
       }
@@ -852,7 +854,7 @@ export function App() {
       style={place === "home" ? style : undefined}
       setStyle={place === "home" ? setStyle : undefined}
       working={working}
-      busy={busy}
+      busy={busy || loadingRuns}
       send={() => void attempt(() => send())}
       stop={() => void attempt(stop)}
       attach={(files) => void attempt(() => upload(files))}
