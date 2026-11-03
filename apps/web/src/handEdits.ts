@@ -15,7 +15,9 @@ import {
   linkLook,
   moveParts,
   paste,
+  reattach,
   removeParts,
+  reverse,
   shadowed,
   ungroup,
   type Addition,
@@ -113,6 +115,7 @@ export function useHandEdits({
   work,
   sceneId,
   selected,
+  link,
   editing,
   editless,
   canvas,
@@ -127,6 +130,8 @@ export function useHandEdits({
   work: Work | undefined;
   sceneId: string;
   selected: string[];
+  /** The link selected, when no module is. */
+  link: string | null;
   editing: boolean;
   /** Whether the work cannot be edited now: the author is at work, or an earlier
    * revision is shown. */
@@ -177,9 +182,22 @@ export function useHandEdits({
     });
 
   const ops = {
+    /** Takes out the selected modules, or the selected link. */
     remove() {
-      const gone = selected;
+      const gone = selected.length ? selected : link ? [link] : [];
       if (gone.length) run((w) => removeParts(w, sceneId, gone));
+    },
+    /** Turns the selected link round. */
+    reverse(id = link) {
+      if (id) run((w) => reverse(w, sceneId, id));
+    },
+    /** Moves an end of a link onto a side of a module. */
+    reconnect(
+      id: string,
+      end: "from" | "to",
+      to: { moduleId: string; side: Side },
+    ) {
+      run((w) => reattach(w, sceneId, id, end, to.side, to.moduleId));
     },
     duplicate() {
       const from = selected;
@@ -389,13 +407,21 @@ export function useHandEdits({
 
   // Copy, cut and paste go through the system clipboard: parts copied in one tab or work
   // paste into another, pictures paste as pictures and words as words.
-  const latest = useRef({ ops, editing, editless, selected });
-  latest.current = { ops, editing, editless, selected };
+  const latest = useRef({ ops, editing, editless, selected, link });
+  latest.current = { ops, editing, editless, selected, link };
   useEffect(() => {
     const active = (e: Event) =>
       latest.current.editing && !latest.current.editless && !typing(e.target);
     const onCopy = (e: ClipboardEvent) => {
-      if (!active(e) || !latest.current.selected.length) return;
+      if (!active(e)) return;
+      // A link is taken out by cutting it; it is copied with the modules it joins.
+      if (!latest.current.selected.length) {
+        if (e.type === "cut" && latest.current.link && !getSelection()?.toString()) {
+          e.preventDefault();
+          latest.current.ops.remove();
+        }
+        return;
+      }
       if (getSelection()?.toString()) return;
       const clip = latest.current.ops.copy();
       if (!clip) return;
@@ -458,7 +484,7 @@ export function useHandEdits({
       if (e.key === "Escape") {
         if (menu) setMenu(undefined);
         else if (tool !== "select") setTool("select");
-        else if (ids.length) canvas.current?.select([]);
+        else if (ids.length || link) canvas.current?.select([]);
         else return;
       } else if (editless) return;
       else if (!mod && !e.altKey && code === "KeyV") setTool("select");
@@ -472,8 +498,23 @@ export function useHandEdits({
           (e.target as Element).closest?.("[data-canvas]"))
       )
         ops.cycle(e.shiftKey);
-      else if (!ids.length) return;
+      else if (link && !ids.length) {
+        if (e.key === "Delete" || e.key === "Backspace") ops.remove();
+        else if (!mod && !e.altKey && code === "KeyR") ops.reverse();
+        else return;
+      } else if (!ids.length) return;
       else if (e.key === "Delete" || e.key === "Backspace") ops.remove();
+      // Enter changes the words of the one selected module where they are drawn.
+      else if (
+        e.key === "Enter" &&
+        !mod &&
+        ids.length === 1 &&
+        !(e.target as Element).closest?.("button,a")
+      ) {
+        const words = canvas.current?.wordsIn(ids[0]);
+        if (!words) return;
+        retype(words);
+      }
       else if (mod && code === "KeyD") ops.duplicate();
       else if (mod && code === "KeyG") e.shiftKey ? ops.ungroup() : ops.group();
       else if (mod && (code === "BracketRight" || code === "BracketLeft"))
@@ -508,7 +549,7 @@ export function useHandEdits({
     };
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
-  }, [editing, editless, work, selected, sceneId, tool, menu]);
+  }, [editing, editless, work, selected, link, sceneId, tool, menu]);
 
   return { ops, tool, setTool, menu, setMenu, clipped };
 }

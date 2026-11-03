@@ -76,7 +76,9 @@ export const optionOf = (t: Dictionary, value: string) =>
 
 /** The values of one module or link, each in the control its kind takes. Changes show on
  * the canvas as they are made and are kept when they are done: words when the field is
- * left, a slider when it is let go, everything else at once. */
+ * left, a slider when it is let go, everything else at once. The controls stay as they
+ * are while the work is saved under them, so typing goes on from field to field; a value
+ * changed elsewhere (an undo) shows in any control not being used. */
 export function Fields({
   work,
   sceneId,
@@ -97,11 +99,10 @@ export function Fields({
   // Values changed but not yet kept, shown on the canvas meanwhile.
   const draft = useRef<Record<string, unknown>>({});
   const [, redraw] = useState(0);
-  const isModule = "bounds" in part;
   const show = (key: string, value: unknown) => {
     draft.current = { ...draft.current, [key]: value };
     redraw((n) => n + 1);
-    if (isModule) canvas?.preview(part.id, { ...part.data, ...draft.current });
+    canvas?.preview(part.id, { ...part.data, ...draft.current });
   };
   const keep = (patch: Record<string, unknown>, pictures: string[] = []) => {
     const changed = Object.entries(patch).some(([k, v]) => part.data[k] !== v);
@@ -178,7 +179,25 @@ export function Fields({
             );
           }
           case "choice":
-            return (
+            // A few choices side by side; many in a list.
+            return f.options!.length > 5 ? (
+              <label key={f.key} className={cx("field")} data-inline>
+                {head}
+                <select
+                  className={cx("edit-select")}
+                  data-short
+                  value={String(v ?? "")}
+                  onChange={(e) => keep({ [f.key]: e.target.value })}
+                >
+                  {!f.options!.includes(String(v)) && <option value={String(v ?? "")}>{String(v ?? "—")}</option>}
+                  {f.options!.map((o) => (
+                    <option key={o} value={o}>
+                      {optionOf(t, o)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
               <div key={f.key} className={cx("field")}>
                 {head}
                 <span className={cx("field-choice")} role="group">
@@ -186,7 +205,7 @@ export function Fields({
                     <button
                       key={o}
                       aria-pressed={v === o}
-                      onClick={() => keep({ [f.key]: o })}
+                      onClick={() => v !== o && keep({ [f.key]: o })}
                     >
                       {optionOf(t, o)}
                     </button>
@@ -209,7 +228,11 @@ export function Fields({
             );
           case "number":
             return (
-              <label key={f.key} className={cx("field")}>
+              <label
+                key={f.key}
+                className={cx("field")}
+                data-inline={f.min === undefined || f.max === undefined || undefined}
+              >
                 {head}
                 <Amount
                   field={f}
@@ -247,6 +270,10 @@ export function Words({
 }) {
   const [text, setText] = useState(value);
   const ref = useRef<HTMLTextAreaElement>(null);
+  // Words changed elsewhere show here, unless they are being typed.
+  useEffect(() => {
+    if (document.activeElement !== ref.current) setText(value);
+  }, [value]);
   useLayoutEffect(() => {
     const el = ref.current!;
     el.style.height = "auto";
@@ -386,11 +413,20 @@ export function Amount({
 }) {
   const t = useT();
   const [n, setN] = useState(value);
+  const held = useRef(false);
+  // A value changed elsewhere shows here, unless this control is being used.
+  useEffect(() => {
+    if (!held.current) setN(value);
+  }, [value]);
   const set = (x: number) => {
+    held.current = true;
     setN(x);
     onChange(x);
   };
-  const done = () => n !== undefined && n !== value && onDone(n);
+  const done = () => {
+    held.current = false;
+    if (n !== undefined && n !== value) onDone(n);
+  };
   const ranged = field.min !== undefined && field.max !== undefined;
   const step =
     field.step ?? (ranged && field.max! - field.min! <= 2 ? 0.01 : 1);
@@ -404,6 +440,12 @@ export function Amount({
         max={field.max}
         step={step}
         value={n ?? field.min}
+        style={
+          {
+            "--progress":
+              (((n ?? field.min!) - field.min!) / (field.max! - field.min! || 1)) * 100 + "%",
+          } as CSSProperties
+        }
         data-auto={n === undefined || undefined}
         onChange={(e) => set(Number(e.target.value))}
         onPointerUp={done}
@@ -472,14 +514,11 @@ export function DataEditor({
     <div className={cx("fields")}>
       {keys.map((key) => (
         <DataEntry
-          key={part.id + ":" + key + ":" + work.revision}
+          key={part.id + ":" + key}
           name={nameOf(t, { key } as Field)}
           value={part.data[key]}
           work={work}
-          preview={(v) =>
-            "bounds" in part &&
-            canvas?.preview(part.id, { ...part.data, [key]: v })
-          }
+          preview={(v) => canvas?.preview(part.id, { ...part.data, [key]: v })}
           commit={(v) =>
             void change((w) => setData(w, sceneId, part.id, { [key]: v }))
           }
@@ -508,6 +547,15 @@ function DataEntry({
   const latest = useRef(value);
   // What was last kept, so leaving a value commits it only when it changed.
   const saved = useRef(initial);
+  // Each time the entry is changed elsewhere (an undo, the author), its controls start
+  // again from it; what this editor kept itself coming back changes nothing.
+  const [epoch, setEpoch] = useState(0);
+  useEffect(() => {
+    if (JSON.stringify(initial) === JSON.stringify(saved.current)) return;
+    saved.current = latest.current = initial;
+    setValue(initial);
+    setEpoch((n) => n + 1);
+  }, [initial]);
   const set = (path: Path, v: unknown, keep: boolean) => {
     const next = setAt(latest.current, path, v);
     latest.current = next;
@@ -523,6 +571,7 @@ function DataEntry({
       <span className={cx("field-name")}>{name}</span>
       <div className={cx("tree")}>
         <Node
+          key={epoch}
           value={value}
           path={[]}
           depth={0}
@@ -770,11 +819,14 @@ export function Section({
   title,
   open: initial = true,
   aside,
+  count,
   children,
 }: {
   id: string;
   title: string;
   open?: boolean;
+  /** How many things the section holds, shown beside its title. */
+  count?: number;
   /** Controls beside the heading. */
   aside?: ReactNode;
   children: ReactNode;
@@ -794,6 +846,7 @@ export function Section({
         >
           <ChevronRight size={13} />
           <h3>{title}</h3>
+          {!!count && <small>{count}</small>}
         </button>
         {aside}
       </header>

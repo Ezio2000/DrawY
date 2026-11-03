@@ -313,7 +313,7 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 4px;
-  background: linear-gradient(to right, var(--ink) var(--fill, 0%), #e3e5e9 var(--fill, 0%));
+  background: linear-gradient(to right, var(--ink) var(--progress, 0%), #e3e5e9 var(--progress, 0%));
 }
 
 input[type="range"]::-moz-range-track {

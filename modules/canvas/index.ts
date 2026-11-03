@@ -27,7 +27,9 @@ import type {
 export type Pointed =
   | {
       kind: "text";
+      /** The module the words are in, or the link with `link`. */
       moduleId: string;
+      link?: boolean;
       text: string;
       /** Where the words are on screen now, and their size there; the view may have
        * moved since they were pointed at. */
@@ -54,6 +56,15 @@ export interface CanvasOptions {
     from: { moduleId: string; side: Side },
     to: { moduleId: string; side: Side },
   ) => void;
+  /** A link selected while editing, or none. Selecting a link leaves no module selected,
+   * and selecting modules leaves no link selected. */
+  selectLink?: (id: string | null) => void;
+  /** An end of a link dragged onto a side of a module while editing. */
+  reconnect?: (
+    linkId: string,
+    end: "from" | "to",
+    to: { moduleId: string; side: Side },
+  ) => void;
   /** A right click while editing, at a point on screen, after the selection has followed
    * it; for the menu of what can be done there. */
   menu?: (at: { x: number; y: number }) => void;
@@ -72,6 +83,29 @@ const seed = (id: string) =>
     2166136261,
   );
 const GRAPHITE = "rgba(94,88,76,.5)";
+const ACCENT = "#d97757";
+/** How far from a link's line, in screen pixels, a press still takes the link. */
+const SLOP = 7;
+/** Distance from a point to a segment. */
+function distance(p: Point, a: Point, b: Point) {
+  const dx = b.x - a.x,
+    dy = b.y - a.y,
+    l = dx * dx + dy * dy;
+  const t = l ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l)) : 0;
+  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+}
+/** A control on the canvas: a large, invisible place to press around a small mark. */
+function control(data: Record<string, string>, hit: number, mark: string, label: string) {
+  const el = document.createElement("button");
+  Object.assign(el.dataset, data, { canvasControl: "" });
+  el.tabIndex = -1;
+  el.setAttribute("aria-label", label);
+  el.style.cssText = `position:absolute;width:${hit}px;height:${hit}px;margin:${-hit / 2}px 0 0 ${-hit / 2}px;padding:0;border:0;background:none;pointer-events:auto;display:grid;place-items:center`;
+  const i = document.createElement("i");
+  i.style.cssText = mark + ";pointer-events:none;box-sizing:border-box;display:block";
+  el.append(i);
+  return el;
+}
 export class Canvas {
   renderer: SceneRenderer;
   readonly element = document.createElement("div");
@@ -103,9 +137,29 @@ export class Canvas {
   private hover = document.createElement("div");
   /** The box around the selection, with its handles, and the dots links are drawn from. */
   private frame = document.createElement("div");
-  private dots = new Map<Side, HTMLButtonElement>();
+  private dots = new Map<Side, HTMLElement>();
   /** The box around the group of a selected module. */
   private groupBox = document.createElement("div");
+  /** The link selected while editing, and the one under the pointer. */
+  private link: string | null = null;
+  private hoveredLink: string | null = null;
+  /** The lines of the hovered and the selected link, traced over them. */
+  private linkMarks = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  /** The ends of the selected link, to drag onto another module or side. */
+  private ends = new Map<"from" | "to", HTMLButtonElement>();
+  /** Each drawn link's lines and words, sampled in scene units, for pressing near it. */
+  private traces = new Map<
+    string,
+    { drawn: Element | null; renderer: SceneRenderer; lines: Point[][]; boxes: Bounds[] }
+  >();
+  /** The size or place of what is being dragged, shown beside it. */
+  private readout = document.createElement("div");
+  /** Where dragged modules are now, ahead of their drawing catching up. */
+  private ghost = new Map<string, Bounds>();
+  /** Drawing dragged modules again, once a frame, with only the latest place waiting. */
+  private redrawing?: Promise<unknown>;
+  private wanted?: { id: string; bounds: Bounds }[];
+  private watchers = new Set<() => void>();
   private marquee = document.createElement("div");
   private guides: HTMLDivElement[] = [];
   private line = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -127,6 +181,8 @@ export class Canvas {
         moves: { id: string; bounds: Bounds }[];
         /** The boxes of the modules that stay, which a dragged box snaps to. */
         others: Bounds[];
+        /** Where they are now. */
+        last?: { id: string; bounds: Bounds }[];
       }
     | {
         kind: "resize";
@@ -134,9 +190,12 @@ export class Canvas {
         frame: Bounds;
         moves: { id: string; bounds: Bounds }[];
         others: Bounds[];
+        last?: { id: string; bounds: Bounds }[];
       }
     | { kind: "marquee"; start: Point; base: string[]; picked: string }
     | { kind: "connect"; from: { moduleId: string; side: Side } }
+    | { kind: "relink"; linkId: string; end: "from" | "to" }
+    | { kind: "press" }
   );
   constructor(
     host: HTMLElement,
@@ -166,28 +225,36 @@ export class Canvas {
       "position:absolute;pointer-events:none;display:none;z-index:4;box-sizing:border-box";
     this.frame.dataset.canvasControl = "";
     for (const h of handles) {
-      const handle = document.createElement("button");
-      handle.dataset.handle = h;
-      handle.dataset.canvasControl = "";
-      handle.tabIndex = -1;
-      handle.setAttribute("aria-label", english ? "Resize" : "调整大小");
       const x = h.includes("w") ? "0%" : h.includes("e") ? "100%" : "50%",
         y = h.includes("n") ? "0%" : h.includes("s") ? "100%" : "50%";
       const cursor = { nw: "nwse", se: "nwse", ne: "nesw", sw: "nesw", n: "ns", s: "ns", e: "ew", w: "ew" }[h];
-      handle.style.cssText = `position:absolute;left:${x};top:${y};width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border-radius:2px;background:#fff;border:1.5px solid #d97757;pointer-events:auto;cursor:${cursor}-resize;padding:0;box-sizing:border-box`;
+      const handle = control(
+        { handle: h },
+        18,
+        `width:10px;height:10px;border-radius:3px;background:#fff;border:1.5px solid ${ACCENT};box-shadow:0 1px 3px rgba(60,45,20,.18)`,
+        english ? "Resize" : "调整大小",
+      );
+      Object.assign(handle.style, { left: x, top: y, cursor: cursor + "-resize" });
       this.frame.append(handle);
     }
     for (const side of sides) {
-      const dot = document.createElement("button");
-      dot.dataset.connect = side;
-      dot.dataset.canvasControl = "";
-      dot.tabIndex = -1;
-      dot.setAttribute("aria-label", english ? "Draw a link" : "拖出连线");
-      dot.title = english ? "Drag to another element to link them" : "拖到另一个元素上连线";
       const at = sidePoint[side];
-      const out = 16;
-      dot.style.cssText = `position:absolute;left:calc(${at.x * 100}% + ${(at.x - 0.5) * 2 * out * (at.y === 0.5 ? 1 : 0)}px);top:calc(${at.y * 100}% + ${(at.y - 0.5) * 2 * out * (at.x === 0.5 ? 1 : 0)}px);width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;background:#d97757;box-shadow:0 0 0 2.5px #fff,0 1px 3px rgba(0,0,0,.2);pointer-events:auto;cursor:crosshair;padding:0;opacity:.75`;
-      this.dots.set(side, dot);
+      const out = 20;
+      const dot = control(
+        { connect: side },
+        22,
+        `width:12px;height:12px;border-radius:50%;background:${ACCENT};box-shadow:0 0 0 2.5px #fff,0 1px 4px rgba(0,0,0,.22);transition:transform .15s`,
+        english ? "Draw a link" : "拖出连线",
+      );
+      dot.title = english ? "Drag to another element to link them" : "拖到另一个元素上连线";
+      Object.assign(dot.style, {
+        left: `calc(${at.x * 100}% + ${(at.x - 0.5) * 2 * out * (at.y === 0.5 ? 1 : 0)}px)`,
+        top: `calc(${at.y * 100}% + ${(at.y - 0.5) * 2 * out * (at.x === 0.5 ? 1 : 0)}px)`,
+        cursor: "crosshair",
+      });
+      dot.addEventListener("pointerenter", () => ((dot.firstChild as HTMLElement).style.transform = "scale(1.3)"));
+      dot.addEventListener("pointerleave", () => ((dot.firstChild as HTMLElement).style.transform = ""));
+      this.dots.set(side, dot as HTMLButtonElement);
       this.frame.append(dot);
     }
     this.element.append(this.frame);
@@ -199,9 +266,33 @@ export class Canvas {
     this.element.append(this.marquee);
     this.line.style.cssText =
       "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none;z-index:5;overflow:visible";
-    this.line.innerHTML =
-      '<line stroke="#d97757" stroke-width="1.5" stroke-dasharray="5 4" stroke-linecap="round"/><circle r="4" fill="#d97757"/>';
+    this.line.innerHTML = `<line stroke="${ACCENT}" stroke-width="1.5" stroke-dasharray="5 4" stroke-linecap="round"/><circle r="4" fill="${ACCENT}"/><circle data-target r="7" fill="#fff" stroke="${ACCENT}" stroke-width="2.5" style="display:none"/>`;
     this.element.append(this.line);
+    this.linkMarks.style.cssText =
+      "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;overflow:visible";
+    this.linkMarks.innerHTML = `<path data-hover fill="none" stroke="${ACCENT}" stroke-opacity=".35" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path data-chosen fill="none" stroke="${ACCENT}" stroke-opacity=".45" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>`;
+    this.element.append(this.linkMarks);
+    for (const end of ["from", "to"] as const) {
+      const handle = control(
+        { linkEnd: end },
+        22,
+        `width:13px;height:13px;border-radius:50%;background:#fff;border:2.5px solid ${ACCENT};box-shadow:0 1px 4px rgba(0,0,0,.2)`,
+        english
+          ? end === "from"
+            ? "Drag where the link starts"
+            : "Drag where the link ends"
+          : end === "from"
+            ? "拖动连线起点"
+            : "拖动连线终点",
+      );
+      handle.title = handle.getAttribute("aria-label")!;
+      Object.assign(handle.style, { zIndex: "4", display: "none", cursor: "grab" });
+      this.ends.set(end, handle);
+      this.element.append(handle);
+    }
+    this.readout.style.cssText =
+      "position:absolute;z-index:6;display:none;padding:2px 7px;border-radius:6px;background:#2b2a27;color:#fff;font:500 11px/1.5 system-ui,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none;transform:translate(-50%,0)";
+    this.element.append(this.readout);
     const signal = this.abort.signal;
     // While editing, the canvas takes every press and click before the drawings do, so
     // their own buttons and links stay still and a press selects what it lands on.
@@ -249,8 +340,9 @@ export class Canvas {
       (e) => {
         if (!this.editing || !this.options.menu) return;
         e.preventDefault();
-        const m = this.moduleAt(e.clientX, e.clientY);
-        if (m && !this.selection.includes(m.id)) this.select([m.id]);
+        const { module: m, link } = this.pick(e.clientX, e.clientY);
+        if (link) this.selectLink(link);
+        else if (m && !this.selection.includes(m.id)) this.select([m.id]);
         else if (!m) this.select([]);
         this.options.menu({ x: e.clientX, y: e.clientY });
       },
@@ -291,7 +383,7 @@ export class Canvas {
           this.fit();
           e.preventDefault();
         }
-        if (e.key === "Escape" && this.selection.length) {
+        if (e.key === "Escape" && (this.selection.length || this.link)) {
           this.select([]);
           e.stopPropagation();
         }
@@ -320,6 +412,12 @@ export class Canvas {
       this.options.shown?.(scene);
     });
   }
+  /** Keeps the selection on what is still drawn, as it is now. */
+  private refresh(paint = true) {
+    if (this.selection.length) this.select(this.selection);
+    if (this.link && !this.renderer.links.has(this.link)) this.selectLink(null);
+    if (paint) this.paint();
+  }
   private renderFor(work: Work, scene: Scene) {
     return new SceneRenderer(work, scene, {
       open: (t) => this.options.open(t),
@@ -330,6 +428,20 @@ export class Canvas {
    * redrawn ones settle, moved ones glide and removed ones fade. A quiet update, for a
    * change the person made by hand, swaps it in as it is. */
   update(work: Work, scene: Scene, quiet = false) {
+    // A change the person made is laid over what is drawn, redrawing only what changed.
+    if (quiet && !this.pending && this.renderer.patchable(work, scene)) {
+      const renderer = this.renderer;
+      void renderer.patch(work, scene).then(
+        () => {
+          if (this.renderer !== renderer) return;
+          this.refresh();
+          this.options.shown?.(scene);
+        },
+        (e) => this.options.error(String(e)),
+      );
+      this.refresh();
+      return;
+    }
     this.pending?.dispose();
     const next = this.renderFor(work, scene);
     this.pending = next;
@@ -342,7 +454,7 @@ export class Canvas {
       this.renderer = next;
       next.element.style.visibility = "";
       // The selection stays on what is still there, as it is now.
-      if (this.selection.length) this.select(this.selection);
+      this.refresh(false);
       if (this.automatic && !quiet) this.fit(true);
       else this.paint();
       if (quiet) before.dispose();
@@ -689,7 +801,7 @@ export class Canvas {
       });
     const chosen = this.selection.flatMap((id) => {
       const m = this.renderer.instances.get(id);
-      return m ? [m] : [];
+      return m ? [{ ...m, bounds: this.ghost.get(id) ?? m.bounds }] : [];
     });
     while (this.outlines.length < chosen.length) {
       const outline = document.createElement("div");
@@ -717,7 +829,7 @@ export class Canvas {
         this.editing &&
         chosen.length === 1 &&
         !!this.options.connect &&
-        !this.gesture &&
+        (!this.gesture || this.gesture.kind === "press") &&
         this.tool === "select";
       for (const dot of this.dots.values())
         dot.style.display = linking ? "block" : "none";
@@ -730,7 +842,7 @@ export class Canvas {
           )
         : [];
     if (group.length > 1) {
-      const g = union(group.map((m) => m.bounds));
+      const g = union(group.map((m) => this.ghost.get(m.id) ?? m.bounds));
       box(this.groupBox, {
         x: g.x - 6 / scale,
         y: g.y - 6 / scale,
@@ -744,6 +856,175 @@ export class Canvas {
         : undefined;
     if (over) box(this.hover, over.bounds);
     else this.hover.style.display = "none";
+    this.paintLinks();
+    for (const fn of this.watchers) fn();
+  }
+  /** The hovered and the selected link traced over, and the selected link's ends. */
+  private paintLinks() {
+    const { x, y, scale } = this.camera;
+    const d = (id: string | null) => {
+      const t = id && this.editing ? this.traceOf(id) : undefined;
+      if (!t) return "";
+      const at = (p: Point) => `${(x + p.x * scale).toFixed(1)} ${(y + p.y * scale).toFixed(1)}`;
+      return [
+        ...t.lines.map((l) => "M" + l.map(at).join("L")),
+        ...t.boxes.map(
+          (b) =>
+            `M${at({ x: b.x, y: b.y })}H${(x + (b.x + b.width) * scale).toFixed(1)}V${(y + (b.y + b.height) * scale).toFixed(1)}H${(x + b.x * scale).toFixed(1)}Z`,
+        ),
+      ].join("");
+    };
+    const [hover, chosen] = this.linkMarks.querySelectorAll("path");
+    const relinking = this.gesture?.kind === "relink";
+    hover.setAttribute(
+      "d",
+      this.hoveredLink !== this.link && !this.gesture ? d(this.hoveredLink) : "",
+    );
+    chosen.setAttribute("d", relinking ? "" : d(this.link));
+    const link = this.link && this.editing ? this.renderer.links.get(this.link) : undefined;
+    for (const [end, handle] of this.ends) {
+      if (!link || relinking || !this.movable) {
+        handle.style.display = "none";
+        continue;
+      }
+      const p = this.renderer.endpoint(link[end]);
+      Object.assign(handle.style, {
+        display: "grid",
+        left: x + p.x * scale + "px",
+        top: y + p.y * scale + "px",
+      });
+    }
+  }
+  /** The lines and words a link is drawn with, sampled in scene units, kept until it is
+   * drawn again; failing those, the straight line between its ends. */
+  private traceOf(id: string) {
+    const link = this.renderer.links.get(id);
+    if (!link) return undefined;
+    const host = this.renderer.host("link", id);
+    const drawn = host?.shadowRoot?.lastElementChild ?? null;
+    const known = this.traces.get(id);
+    if (known && known.drawn === drawn && known.renderer === this.renderer && drawn)
+      return known;
+    const lines: Point[][] = [],
+      boxes: Bounds[] = [];
+    const scene = (sx: number, sy: number) => this.toScene(sx, sy);
+    if (drawn && host!.isConnected) {
+      const shapes = drawn.matches("path,line,polyline,polygon,rect,circle,ellipse")
+        ? [drawn]
+        : [...drawn.querySelectorAll("path,line,polyline,polygon,rect,circle,ellipse")];
+      for (const el of shapes) {
+        if (
+          !(el instanceof SVGGeometryElement) ||
+          el.closest("defs,clipPath,mask,pattern,marker,symbol")
+        )
+          continue;
+        try {
+          const length = el.getTotalLength(),
+            ctm = el.getScreenCTM();
+          if (!ctm || !(length > 0)) continue;
+          const n = Math.min(240, Math.max(2, Math.ceil(length / 4)));
+          const line: Point[] = [];
+          for (let i = 0; i <= n; i++) {
+            const p = el.getPointAtLength((length * i) / n);
+            const q = new DOMPoint(p.x, p.y).matrixTransform(ctm);
+            line.push(scene(q.x, q.y));
+          }
+          lines.push(line);
+        } catch {}
+      }
+      for (const words of drawn.querySelectorAll("text")) {
+        const r = words.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        const a = scene(r.left, r.top),
+          b = scene(r.right, r.bottom);
+        boxes.push({ x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y });
+      }
+    }
+    if (!lines.length && !boxes.length) {
+      const a = this.renderer.endpoint(link.from),
+        b = this.renderer.endpoint(link.to);
+      lines.push([a, b]);
+    }
+    const trace = { drawn, renderer: this.renderer, lines, boxes };
+    // A link still being drawn is traced again once it is.
+    if (drawn) this.traces.set(id, trace);
+    return trace;
+  }
+  /** The link drawn nearest a point on screen, if one passes within a few pixels of it. */
+  private linkAt(clientX: number, clientY: number) {
+    const p = this.toScene(clientX, clientY),
+      slop = SLOP / this.camera.scale;
+    let best: string | null = null,
+      nearest = slop;
+    for (const id of this.renderer.links.keys()) {
+      const t = this.traceOf(id);
+      if (!t) continue;
+      for (const b of t.boxes)
+        if (
+          p.x >= b.x - slop / 2 &&
+          p.x <= b.x + b.width + slop / 2 &&
+          p.y >= b.y - slop / 2 &&
+          p.y <= b.y + b.height + slop / 2
+        )
+          return id;
+      for (const line of t.lines)
+        for (let i = 1; i < line.length; i++) {
+          const dist = distance(p, line[i - 1], line[i]);
+          if (dist < nearest) {
+            nearest = dist;
+            best = id;
+          }
+        }
+    }
+    return best;
+  }
+  /** What a press at a point lands on while editing: a module that draws there, else a
+   * link passing near, else the smallest module whose box holds it. */
+  private pick(x: number, y: number): { module?: Instance; link?: string } {
+    const drawn = this.moduleAt(x, y, false);
+    if (drawn) return { module: drawn };
+    const link = this.editing ? this.linkAt(x, y) : null;
+    if (link) return { link };
+    const module = this.moduleAt(x, y);
+    return module ? { module } : {};
+  }
+  /** Calls `fn` whenever the view, the selection or what is dragged changes, for controls
+   * laid over the canvas. Returns what stops it. */
+  watch(fn: () => void) {
+    this.watchers.add(fn);
+    return () => void this.watchers.delete(fn);
+  }
+  /** Whether something is being dragged on the canvas now. */
+  get dragging() {
+    return !!this.gesture && this.gesture.kind !== "press" && this.gesture.moved;
+  }
+  /** Where the selection is on screen: the box around the selected modules, or around
+   * the selected link's lines. */
+  selectionRect(): DOMRect | undefined {
+    const r = this.element.getBoundingClientRect(),
+      { x, y, scale } = this.camera;
+    let b: Bounds | undefined;
+    if (this.selection.length) {
+      const boxes = this.selection.flatMap((id) => {
+        const m = this.renderer.instances.get(id);
+        return m ? [this.ghost.get(id) ?? m.bounds] : [];
+      });
+      if (boxes.length) b = union(boxes);
+    } else if (this.link) {
+      const t = this.traceOf(this.link);
+      const points = t ? [...t.lines.flat(), ...t.boxes.flatMap((b) => [b, { x: b.x + b.width, y: b.y + b.height }])] : [];
+      if (points.length) {
+        const xs = points.map((p) => p.x),
+          ys = points.map((p) => p.y);
+        b = {
+          x: Math.min(...xs),
+          y: Math.min(...ys),
+          width: Math.max(...xs) - Math.min(...xs),
+          height: Math.max(...ys) - Math.min(...ys),
+        };
+      }
+    }
+    return b && new DOMRect(r.left + x + b.x * scale, r.top + y + b.y * scale, b.width * scale, b.height * scale);
   }
   private changed() {
     cancelAnimationFrame(this.gliding);
@@ -859,6 +1140,10 @@ export class Canvas {
   }
   select(ids: string[]) {
     this.selection = ids.filter((id) => this.renderer.instances.has(id));
+    if (this.link && (this.selection.length || !ids.length)) {
+      this.link = null;
+      this.options.selectLink?.(null);
+    }
     this.options.select(
       this.selection.map((id) => {
         const m = this.renderer.instances.get(id)!;
@@ -866,6 +1151,22 @@ export class Canvas {
       }),
     );
     this.paint();
+  }
+  /** Selects a link, leaving no module selected, or no link. */
+  selectLink(id: string | null) {
+    const next = id && this.renderer.links.has(id) ? id : null;
+    if (next && this.selection.length) {
+      this.selection = [];
+      this.options.select([]);
+    }
+    if (next !== this.link) {
+      this.link = next;
+      this.options.selectLink?.(next);
+    }
+    this.paint();
+  }
+  get selectedLink() {
+    return this.link;
   }
   /** The middle of the view, in scene units, clear of the controls laid over it. */
   center() {
@@ -893,9 +1194,15 @@ export class Canvas {
       m.bounds.height * scale,
     );
   }
-  /** Shows a module with other data while a change to it is being made. */
+  /** Shows a module or a link with other data while a change to it is being made. */
   preview(id: string, data: Record<string, unknown>) {
-    void this.renderer.redraw(id, data);
+    void this.renderer.redraw(id, data).then(() => this.paint());
+  }
+  /** Shows modules at other places and sizes, as they are typed or scrubbed in, until
+   * the change is committed. */
+  reshape(moves: { id: string; bounds: Bounds }[]) {
+    this.drag(moves, false);
+    this.paint();
   }
   /** Moves modules by a distance in scene units, until the move is committed. */
   nudge(ids: string[], dx: number, dy: number) {
@@ -912,7 +1219,7 @@ export class Canvas {
   /** The module drawn at a point: the topmost whose drawing paints there, or failing
    * that the smallest whose box holds the point, so a large module laid over others does
    * not hide them where it draws nothing. */
-  private moduleAt(x: number, y: number) {
+  private moduleAt(x: number, y: number, loose = true) {
     const hosts = document
       .elementsFromPoint(x, y)
       .filter(
@@ -938,21 +1245,30 @@ export class Canvas {
       )
         return of(host);
     }
+    if (!loose) return undefined;
     const area = (b: Bounds) => b.width * b.height;
     return hosts
       .flatMap((h) => of(h) ?? [])
       .sort((a, b) => area(a.bounds) - area(b.bounds))[0];
   }
-  private hoverOver(id: string | null) {
-    if (this.hovered === id) return;
+  private hoverOver(id: string | null, link: string | null = null) {
+    if (this.hovered === id && this.hoveredLink === link) return;
     this.hovered = id;
+    this.hoveredLink = link;
     this.paint();
   }
   /** The words or picture under a double click, and the module they belong to. The press
    * before it held the pointer, so the click lands on the canvas; what is under it is
    * found by where it is. */
   private dblclick(e: MouseEvent) {
-    const moduleId = this.moduleAt(e.clientX, e.clientY)?.id;
+    const picked = this.pick(e.clientX, e.clientY);
+    if (picked.link) return this.retypeLink(e, picked.link);
+    // A double click on the paper while editing puts words there.
+    if (!picked.module && this.editing && this.tool === "select" && this.options.place) {
+      e.preventDefault();
+      return this.options.place(this.toScene(e.clientX, e.clientY));
+    }
+    const moduleId = picked.module?.id;
     const root = moduleId && this.renderer.host("module", moduleId)?.shadowRoot;
     const inner =
       root &&
@@ -1009,6 +1325,66 @@ export class Canvas {
                 (rect.width / (words.offsetWidth || rect.width))
               : rect.height * 0.8,
         };
+      },
+    });
+  }
+  /** The first words a module draws, to change where they are as a double click on them
+   * would. */
+  wordsIn(moduleId: string): Extract<Pointed, { kind: "text" }> | undefined {
+    const root = this.renderer.host("module", moduleId)?.shadowRoot;
+    if (!root) return undefined;
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    while (walk.nextNode()) {
+      const node = walk.currentNode,
+        parent = node.parentElement;
+      const text = node.textContent?.trim();
+      if (!text || !parent || parent.closest("style,script,defs")) continue;
+      const words = parent.closest("text") ?? parent;
+      const rect = words.getBoundingClientRect();
+      if (!rect.width || !rect.height) continue;
+      return {
+        kind: "text",
+        moduleId,
+        text: words instanceof SVGElement ? words.textContent!.trim() : text,
+        place: () => {
+          const rect = words.getBoundingClientRect();
+          return {
+            rect,
+            size:
+              words instanceof HTMLElement
+                ? parseFloat(getComputedStyle(words).fontSize) *
+                  (rect.width / (words.offsetWidth || rect.width))
+                : rect.height * 0.8,
+          };
+        },
+      };
+    }
+    return undefined;
+  }
+  /** Words of a link double-clicked while editing, to change where they are. */
+  private retypeLink(e: MouseEvent, linkId: string) {
+    const root = this.renderer.host("link", linkId)?.shadowRoot;
+    const words = [...(root?.querySelectorAll("text") ?? [])].find((el) => {
+      const r = el.getBoundingClientRect();
+      return (
+        e.clientX >= r.left - 3 &&
+        e.clientX <= r.right + 3 &&
+        e.clientY >= r.top - 3 &&
+        e.clientY <= r.bottom + 3
+      );
+    });
+    const text = words?.textContent?.trim();
+    if (!words || !text || !this.options.point) return;
+    e.preventDefault();
+    getSelection()?.removeAllRanges();
+    this.options.point({
+      kind: "text",
+      moduleId: linkId,
+      link: true,
+      text,
+      place: () => {
+        const rect = words.getBoundingClientRect();
+        return { rect, size: rect.height * 0.8 };
       },
     });
   }
@@ -1081,8 +1457,9 @@ export class Canvas {
       [...this.renderer.instances.values()]
         .filter((m) => !moving.has(m.id))
         .map((m) => ({ ...m.bounds }));
+    const control = target.closest?.<HTMLElement>("[data-canvas-control]");
     // A handle on the selection's box resizes the selection as one.
-    const handle = target.dataset?.handle as Handle | undefined;
+    const handle = control?.dataset.handle as Handle | undefined;
     if (handle && this.movable) {
       const parts = chosen();
       this.gesture = {
@@ -1096,7 +1473,7 @@ export class Canvas {
       return capture();
     }
     // A dot on a side of the selected module draws a link from there.
-    const side = target.dataset?.connect as Side | undefined;
+    const side = control?.dataset.connect as Side | undefined;
     if (side && this.selection.length === 1) {
       this.gesture = {
         ...start,
@@ -1105,7 +1482,20 @@ export class Canvas {
       };
       return capture();
     }
-    const m = this.moduleAt(e.clientX, e.clientY);
+    // An end of the selected link is dragged onto another module, or another side.
+    const end = control?.dataset.linkEnd as "from" | "to" | undefined;
+    if (end && this.link) {
+      this.gesture = { ...start, kind: "relink", linkId: this.link, end };
+      this.paint();
+      return capture();
+    }
+    const { module: m, link } = this.pick(e.clientX, e.clientY);
+    // A press on a link while editing selects it.
+    if (link && this.editing && !m) {
+      this.selectLink(link);
+      this.gesture = { ...start, kind: "press" };
+      return capture();
+    }
     // Pressing a module selects it; dragging one already selected moves it, and dragging
     // anything else moves the view. While editing, any module pressed can be dragged at
     // once, Shift adds a module to the selection or takes it out, and dragging over the
@@ -1185,11 +1575,86 @@ export class Canvas {
       );
     });
   }
+  /** The size or place of what is dragged, in a tag under it. */
+  private showReadout(text: string | null, b?: Bounds) {
+    if (!text || !b) return void (this.readout.style.display = "none");
+    const { x, y, scale } = this.camera;
+    this.readout.textContent = text;
+    Object.assign(this.readout.style, {
+      display: "block",
+      left: x + (b.x + b.width / 2) * scale + "px",
+      top: y + (b.y + b.height) * scale + 10 + "px",
+    });
+  }
+  /** Puts dragged modules where they are going at once, and draws what has to be drawn
+   * again for it (resized modules, the links meeting them) once a frame, always with the
+   * latest place, however fast the pointer moves. */
+  private drag(moves: { id: string; bounds: Bounds }[], ghost = true) {
+    if (ghost) for (const m of moves) this.ghost.set(m.id, m.bounds);
+    this.renderer.position(moves);
+    this.wanted = moves;
+    if (this.redrawing) return;
+    const renderer = this.renderer;
+    const next = (): Promise<unknown> | undefined => {
+      const latest = this.wanted;
+      this.wanted = undefined;
+      if (!latest || renderer !== this.renderer) {
+        this.redrawing = undefined;
+        this.paint();
+        return;
+      }
+      return (this.redrawing = renderer
+        .move(latest)
+        .catch(() => {})
+        .then(() => new Promise((r) => requestAnimationFrame(r)))
+        .then(next));
+    };
+    next();
+  }
+  /** The side of a module facing a point on screen, and where its anchor is on screen. */
+  private sideToward(m: Instance, clientX: number, clientY: number) {
+    const side = facing(m, this.toScene(clientX, clientY)),
+      a = sidePoint[side],
+      { x, y, scale } = this.camera,
+      b = this.ghost.get(m.id) ?? m.bounds;
+    return {
+      side,
+      x: x + (b.x + a.x * b.width) * scale,
+      y: y + (b.y + a.y * b.height) * scale,
+    };
+  }
+  /** A dashed line from a point on screen to the pointer, or to the side of the module it
+   * is over, which is marked. */
+  private drawLine(from: Point, e: PointerEvent, skip: string) {
+    const r = this.element.getBoundingClientRect();
+    const over = this.moduleAt(e.clientX, e.clientY);
+    const target = over && over.id !== skip ? over : undefined;
+    const toward = target && this.sideToward(target, e.clientX, e.clientY);
+    const ex = toward ? toward.x : e.clientX - r.left,
+      ey = toward ? toward.y : e.clientY - r.top;
+    this.line.style.display = "block";
+    const [line, dot, ring] = [...this.line.children] as SVGElement[];
+    line.setAttribute("x1", String(from.x));
+    line.setAttribute("y1", String(from.y));
+    line.setAttribute("x2", String(ex));
+    line.setAttribute("y2", String(ey));
+    dot.setAttribute("cx", String(ex));
+    dot.setAttribute("cy", String(ey));
+    ring.style.display = toward ? "" : "none";
+    if (toward) {
+      ring.setAttribute("cx", String(toward.x));
+      ring.setAttribute("cy", String(toward.y));
+    }
+    this.hoverOver(target?.id ?? null);
+  }
   private move(e: PointerEvent) {
     const g = this.gesture;
     if (!g) {
-      if (this.editing && this.tool === "select" && !this.spacing)
-        this.hoverOver(this.moduleAt(e.clientX, e.clientY)?.id ?? null);
+      if (this.editing && this.tool === "select" && !this.spacing) {
+        const { module: m, link } = this.pick(e.clientX, e.clientY);
+        this.hoverOver(m?.id ?? null, m ? null : (link ?? null));
+        this.element.style.cursor = !m && link ? "pointer" : "";
+      }
       return;
     }
     const dx = e.clientX - g.x,
@@ -1200,6 +1665,7 @@ export class Canvas {
     // Snapping lines a dragged box up with its neighbours; Cmd or Ctrl turns it off.
     const snapping = this.editing && !e.metaKey && !e.ctrlKey;
     const threshold = 6 / scale;
+    const round = (n: number) => Math.round(n);
     if (g.kind === "pan") {
       this.camera = { ...g.camera, x: g.camera.x + dx, y: g.camera.y + dy };
       this.changed();
@@ -1210,8 +1676,8 @@ export class Canvas {
       if (this.editing && e.shiftKey)
         Math.abs(mx) > Math.abs(my) ? (my = 0) : (mx = 0);
       let guides: Guide[] = [];
+      const frame = union(g.moves.map((m) => m.bounds));
       if (snapping) {
-        const frame = union(g.moves.map((m) => m.bounds));
         const s = snap(
           { ...frame, x: frame.x + mx, y: frame.y + my },
           g.others,
@@ -1222,12 +1688,13 @@ export class Canvas {
         guides = s.guides;
       }
       this.showGuides(guides);
-      void this.renderer.move(
-        g.moves.map((m) => ({
-          id: m.id,
-          bounds: { ...m.bounds, x: m.bounds.x + mx, y: m.bounds.y + my },
-        })),
-      );
+      g.last = g.moves.map((m) => ({
+        id: m.id,
+        bounds: { ...m.bounds, x: m.bounds.x + mx, y: m.bounds.y + my },
+      }));
+      this.drag(g.last);
+      const now = { ...frame, x: frame.x + mx, y: frame.y + my };
+      if (this.editing) this.showReadout(`${round(now.x)}, ${round(now.y)}`, now);
     } else if (g.kind === "resize") {
       const options = {
         keep: e.shiftKey,
@@ -1249,13 +1716,13 @@ export class Canvas {
         guides = s.guides;
       }
       this.showGuides(guides);
-      void this.renderer.move(
-        g.moves.map((m) => ({
-          id: m.id,
-          bounds:
-            g.moves.length === 1 ? next : scaled(m.bounds, g.frame, next),
-        })),
-      );
+      g.last = g.moves.map((m) => ({
+        id: m.id,
+        bounds: g.moves.length === 1 ? next : scaled(m.bounds, g.frame, next),
+      }));
+      this.drag(g.last);
+      if (this.editing)
+        this.showReadout(`${round(next.width)} × ${round(next.height)}`, next);
     } else if (g.kind === "marquee") {
       const at = this.toScene(e.clientX, e.clientY);
       const box = {
@@ -1288,42 +1755,42 @@ export class Canvas {
         this.select(picked);
       }
     } else if (g.kind === "connect") {
-      const r = this.element.getBoundingClientRect();
       const from = this.renderer.instances.get(g.from.moduleId);
       if (!from) return;
       const a = sidePoint[g.from.side],
         { x, y } = this.camera;
-      const sx = x + (from.bounds.x + a.x * from.bounds.width) * scale,
-        sy = y + (from.bounds.y + a.y * from.bounds.height) * scale,
-        ex = e.clientX - r.left,
-        ey = e.clientY - r.top;
-      this.line.style.display = "block";
-      const line = this.line.querySelector("line")!,
-        dot = this.line.querySelector("circle")!;
-      line.setAttribute("x1", String(sx));
-      line.setAttribute("y1", String(sy));
-      line.setAttribute("x2", String(ex));
-      line.setAttribute("y2", String(ey));
-      dot.setAttribute("cx", String(ex));
-      dot.setAttribute("cy", String(ey));
-      const over = this.moduleAt(e.clientX, e.clientY);
-      this.hoverOver(over && over.id !== from.id ? over.id : null);
+      this.drawLine(
+        {
+          x: x + (from.bounds.x + a.x * from.bounds.width) * scale,
+          y: y + (from.bounds.y + a.y * from.bounds.height) * scale,
+        },
+        e,
+        from.id,
+      );
+    } else if (g.kind === "relink") {
+      const link = this.renderer.links.get(g.linkId);
+      if (!link) return;
+      const fixed = link[g.end === "from" ? "to" : "from"],
+        p = this.renderer.endpoint(fixed),
+        { x, y } = this.camera;
+      this.drawLine({ x: x + p.x * scale, y: y + p.y * scale }, e, fixed.moduleId);
     }
     this.paint();
   }
   private finish() {
     this.gesture = undefined;
+    this.ghost.clear();
     this.marquee.style.display = "none";
     this.line.style.display = "none";
     this.showGuides([]);
+    this.showReadout(null);
     this.cursor();
     this.paint();
   }
   /** A gesture the system took away: what it moved goes back. */
   private cancel() {
     const g = this.gesture;
-    if (g && (g.kind === "move" || g.kind === "resize"))
-      void this.renderer.move(g.moves);
+    if (g && (g.kind === "move" || g.kind === "resize")) this.drag(g.moves);
     this.finish();
   }
   private up(e: PointerEvent) {
@@ -1332,22 +1799,21 @@ export class Canvas {
     if (this.element.hasPointerCapture(e.pointerId))
       this.element.releasePointerCapture(e.pointerId);
     this.finish();
-    if (g.moved && (g.kind === "move" || g.kind === "resize")) {
+    if (g.moved && (g.kind === "move" || g.kind === "resize") && g.last) {
       this.changed();
-      this.options.commit?.(
-        g.moves.map((m) => ({
-          id: m.id,
-          bounds: { ...this.renderer.instances.get(m.id)!.bounds },
-        })),
-      );
+      this.options.commit?.(g.last.map((m) => ({ id: m.id, bounds: { ...m.bounds } })));
     }
-    if (g.kind === "connect" && g.moved) {
+    if ((g.kind === "connect" || g.kind === "relink") && g.moved) {
       const to = this.moduleAt(e.clientX, e.clientY);
-      if (to && to.id !== g.from.moduleId)
-        this.options.connect?.(g.from, {
-          moduleId: to.id,
-          side: facing(to, this.toScene(e.clientX, e.clientY)),
-        });
+      const at = to && { moduleId: to.id, side: facing(to, this.toScene(e.clientX, e.clientY)) };
+      if (g.kind === "connect" && at && at.moduleId !== g.from.moduleId)
+        this.options.connect?.(g.from, at);
+      if (g.kind === "relink" && at) {
+        const link = this.renderer.links.get(g.linkId);
+        const fixed = link?.[g.end === "from" ? "to" : "from"];
+        if (fixed && at.moduleId !== fixed.moduleId)
+          this.options.reconnect?.(g.linkId, g.end, at);
+      }
       this.hoverOver(null);
     }
     if (!g.moved && !this.editing && this.selection.length === 1) {

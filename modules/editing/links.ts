@@ -119,18 +119,23 @@ export function connect(
     id: link.id,
   };
 }
-/** Moves one end of a link to another side of its module, or the middle of it. */
+/** Moves one end of a link to a side of its module, or, given another module, to a side
+ * of that one; a link never ends where it starts. */
 export function reattach(
   work: Work,
   sceneId: string,
   linkId: string,
   end: "from" | "to",
   side: Side,
+  moduleId?: string,
 ): WorkEdit {
   const scene = sceneOf(work, sceneId);
   const link = scene.links.find((l) => l.id === linkId);
   if (!link) throw Error("连线不存在");
-  const m = scene.modules.find((x) => x.id === link[end].moduleId)!;
+  const m = scene.modules.find((x) => x.id === (moduleId ?? link[end].moduleId));
+  if (!m) throw Error("元素不存在");
+  if (m.id === link[end === "from" ? "to" : "from"].moduleId)
+    throw Error("连线要连到另一个元素");
   const at = anchorAt(m, side);
   return edit(work, [
     {

@@ -45,14 +45,20 @@ export function SceneView({
   commit,
   point,
   connect,
+  selectLink,
+  reconnect,
   menu,
   place: placeAt,
   disabled,
   editing,
   quiet,
+  version = "",
   view,
 }: {
   work: Work;
+  /** What tells this showing of the work from another of the same revision: a hand edit
+   * shown before it is saved. */
+  version?: string;
   sceneId: string;
   /** The run drawing or asking right now, whose layout and gaze show on the canvas. */
   run?: Run;
@@ -67,6 +73,10 @@ export function SceneView({
   point: (pointed: Pointed) => void;
   /** A link drawn while editing, from one module's side to another's. */
   connect?: CanvasOptions["connect"];
+  /** A link selected while editing, or none. */
+  selectLink?: CanvasOptions["selectLink"];
+  /** An end of a link dragged onto a side of a module. */
+  reconnect?: CanvasOptions["reconnect"];
   /** A right click while editing, for the menu. */
   menu?: CanvasOptions["menu"];
   /** A press with the placing tool, at a point in the scene. */
@@ -78,20 +88,20 @@ export function SceneView({
     locale = useLocale();
   const host = useRef<HTMLDivElement>(null),
     cameras = useRef(new Map<string, Camera>()),
-    drawn = useRef(work),
+    drawn = useRef(drawnAs(work) + version),
     [canvas, setCanvas] = useState<Canvas>(),
     // Until the scene is drawn the page keeps showing that it is loading, so opening a
     // work goes from the spinner straight to the picture, without a blank page between.
     [shown, setShown] = useState(false),
     [error, setError] = useState("");
-  const callbacks = useRef({ open, select, commit, point, connect, menu, place: placeAt, view, quiet });
+  const callbacks = useRef({ open, select, commit, point, connect, selectLink, reconnect, menu, place: placeAt, view, quiet });
   const picked = useRef<{ key: string; ids: string[] } | null>(null);
-  callbacks.current = { open, select, commit, point, connect, menu, place: placeAt, view, quiet };
+  callbacks.current = { open, select, commit, point, connect, selectLink, reconnect, menu, place: placeAt, view, quiet };
   useEffect(() => {
     setError("");
     setShown(false);
     const key = work.id + ":" + sceneId;
-    drawn.current = work;
+    drawn.current = drawnAs(work) + version;
     const view = new Canvas(host.current!, work, work.scenes[sceneId], {
       camera: cameras.current.get(key),
       movable: !disabled,
@@ -115,6 +125,8 @@ export function SceneView({
       commit: (m) => callbacks.current.commit(m),
       point: (p) => callbacks.current.point(p),
       connect: (from, to) => callbacks.current.connect?.(from, to),
+      selectLink: (id) => callbacks.current.selectLink?.(id),
+      reconnect: (id, end, to) => callbacks.current.reconnect?.(id, end, to),
       menu: (at) => callbacks.current.menu?.(at),
       place: (at) => callbacks.current.place?.(at),
       cameraChanged: (c) => cameras.current.set(key, c),
@@ -137,15 +149,16 @@ export function SceneView({
     };
   }, [work.id, sceneId]);
   useEffect(() => {
-    if (!canvas || drawnAs(drawn.current) === drawnAs(work)) return;
-    drawn.current = work;
+    const now = drawnAs(work) + version;
+    if (!canvas || drawn.current === now || !work.scenes[sceneId]) return;
+    drawn.current = now;
     setError("");
     canvas.update(
       work,
       work.scenes[sceneId],
       callbacks.current.quiet(work.revision),
     );
-  }, [canvas, work]);
+  }, [canvas, work, version]);
   useEffect(() => canvas?.setMovable(!disabled), [canvas, disabled]);
   useEffect(
     () => canvas?.setEditing(editing && !disabled),

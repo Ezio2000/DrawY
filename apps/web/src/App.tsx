@@ -43,12 +43,14 @@ import {
 } from "../../../modules/contracts/index.ts";
 import type { Canvas, Pointed } from "../../../modules/canvas/index.ts";
 import {
+  applied,
   moveParts,
   removeParts,
   replace,
+  showable,
 } from "../../../modules/editing/index.ts";
 import { EditPanel, Retype } from "./Editor.tsx";
-import { EditMenu, EditTools } from "./EditMenu.tsx";
+import { EditMenu, EditTools, SelectionBar } from "./EditMenu.tsx";
 import { useHandEdits } from "./handEdits.ts";
 import { listen } from "./events.ts";
 import { leaving } from "./Settings.tsx";
@@ -83,12 +85,14 @@ const sceneOf = (path: string) => {
  * and its process), the drafts (every revision, to look at or bring back) or the editor,
  * while the work is edited by hand. */
 type Panel = "" | "journal" | "drafts" | "edit";
-/** How wide the studio and the drafts panel are, each as the person last dragged it: the
- * conversation reads best wide, a list of drafts needs far less. */
-type Sized = "journal" | "drafts";
+/** How wide the studio, the drafts panel and the editor are, each as the person last
+ * dragged it: the conversation reads best wide, a list of drafts needs far less, and the
+ * editor wants room for its fields without crowding the canvas. */
+type Sized = "journal" | "drafts" | "edit";
 const panelWidths: Record<Sized, { min: number; initial: number }> = {
   journal: { min: 360, initial: 520 },
   drafts: { min: 260, initial: 340 },
+  edit: { min: 300, initial: 380 },
 };
 const panelWidth = {
   max: () => Math.max(420, Math.round(innerWidth * 0.62)),
@@ -145,6 +149,8 @@ export function App() {
     [uploading, setUploading] = useState(0),
     [style, setStyle] = useState<StyleMaterial>(),
     [selected, S] = useState<Selection[]>([]),
+    // The link selected while editing, when no module is.
+    [linkId, setLink] = useState<string | null>(null),
     // Words being changed where they are drawn.
     [retyping, setRetyping] = useState<Extract<Pointed, { kind: "text" }>>(),
     // A picture or a drawing being chosen from the library, and what it is for.
@@ -157,6 +163,7 @@ export function App() {
     [widths, setWidths] = useState(() => ({
       journal: panelWidth.read("journal"),
       drafts: panelWidth.read("drafts"),
+      edit: panelWidth.read("edit"),
     })),
     [picking, setPicking] = useState(false),
     [scenes, M] = useState(false),
@@ -192,6 +199,12 @@ export function App() {
   const own = useRef(new Set<number>());
   // Revisions undone, to bring back while the work is still where undoing left it.
   const [redoable, setRedoable] = useState<{ at: number; revisions: number[] }>();
+  // Hand edits not saved yet, laid on the work so they show at once: the work they will
+  // leave, and a count telling one showing from the next. Cleared once the last is saved.
+  const [draft, setDraft] = useState<{ work: Work; n: number }>();
+  const drafted = useRef<Work>(undefined);
+  const queued = useRef(0);
+  const shown = draft && work && draft.work.id === work.id ? draft.work : work;
   const deleting = useRef<{ id: string; timer: ReturnType<typeof setTimeout> }>(
     undefined,
   );
@@ -235,6 +248,7 @@ export function App() {
   }, [work, addressed, detailId]);
   useEffect(() => {
     S([]);
+    setLink(null);
     setDetail(undefined);
     M(false);
     setRetyping(undefined);
@@ -283,6 +297,7 @@ export function App() {
     work,
     sceneId,
     selected: ids,
+    link: linkId,
     editing,
     editless,
     canvas,
@@ -502,7 +517,9 @@ export function App() {
       }
       const request = selected.length
         ? `${message}\n${selected.map((s) => `Selected module: ${s.moduleId}\n${s.label}`).join("\n")}`
-        : message;
+        : chosenLink
+          ? `${message}\nSelected link: ${chosenLink.id} (${chosenLink.from.moduleId} → ${chosenLink.to.moduleId})`
+          : message;
       const r =
         run?.status === "waiting"
           ? await api<Run>("/runs/" + run.id + "/answer", "POST", {
@@ -581,20 +598,48 @@ export function App() {
       inflight.current--;
     }
   }
-  /** Commits a hand edit, made from the work as the edits before it left it. */
+  /** Commits a hand edit, made from the work as the edits before it left it. It shows at
+   * once, laid on what the edits before it will leave, unless it takes in a material the
+   * work does not hold yet; the saved work replaces it when the last edit is saved, and
+   * a failed edit takes back what was shown. */
   function change(make: (w: Work) => WorkEdit | null) {
-    const job = edits.current.then(async () => {
-      const w = current.current;
-      if (!w) return false;
-      const edit = make(w);
-      if (!edit) return false;
-      const saved = await mine(() =>
-        api<Work>("/works/" + w.id + "/edits", "POST", edit),
-      );
-      setRedoable(undefined);
-      W(saved);
-      return true;
-    });
+    const base = drafted.current ?? current.current;
+    if (base) {
+      try {
+        const guess = make(base);
+        if (guess && showable(base, guess)) {
+          const next = applied(base, guess);
+          drafted.current = next;
+          setDraft((d) => ({ work: next, n: (d?.n ?? 0) + 1 }));
+        }
+      } catch {
+        // The edit says why when it is made for real.
+      }
+    }
+    queued.current++;
+    const job = edits.current
+      .then(async () => {
+        const w = current.current;
+        if (!w) return false;
+        const edit = make(w);
+        if (!edit) return false;
+        const saved = await mine(() =>
+          api<Work>("/works/" + w.id + "/edits", "POST", edit),
+        );
+        setRedoable(undefined);
+        W(saved);
+        return true;
+      })
+      .catch((e) => {
+        drafted.current = undefined;
+        setDraft(undefined);
+        throw e;
+      })
+      .finally(() => {
+        if (--queued.current) return;
+        drafted.current = undefined;
+        setDraft(undefined);
+      });
     edits.current = job.catch(() => {});
     return job;
   }
@@ -628,8 +673,13 @@ export function App() {
         ask(t.edit.askText(nameOf(p.moduleId), p.text, text), t.edit.handedText);
     });
   }
-  const nameOf = (moduleId: string) =>
-    active?.modules.find((m) => m.id === moduleId)?.label || moduleId;
+  /** A module by its name, or a link by the names of the modules it joins. */
+  const nameOf = (id: string): string => {
+    const link = active?.links.find((l) => l.id === id);
+    if (link) return `${nameOf(link.from.moduleId)} → ${nameOf(link.to.moduleId)}`;
+    return active?.modules.find((m) => m.id === id)?.label || id;
+  };
+  const chosenLink = !selected.length && linkId ? active?.links.find((l) => l.id === linkId) : undefined;
   /** Hands a change to the author, written into the composer for the person to send, and
    * says why. */
   function ask(text?: string, why = "") {
@@ -754,7 +804,9 @@ export function App() {
       quote={
         place !== "home" && selected.length
           ? selected.map((s) => s.label || s.moduleId).join(t.now.list)
-          : undefined
+          : place !== "home" && chosenLink
+            ? nameOf(chosenLink.id)
+            : undefined
       }
       unquote={() => canvas.current?.select([])}
       edit={editing || editless || !work?.brief ? undefined : () => setPanel("edit")}
@@ -763,7 +815,7 @@ export function App() {
           ? t.home.placeholder
           : run?.status === "waiting"
             ? t.composer.answering
-            : selected.length
+            : selected.length || chosenLink
               ? t.composer.selected
               : working
                 ? t.composer.working
@@ -902,6 +954,7 @@ export function App() {
                 {
                   "--journal": widths.journal + "px",
                   "--drafts": widths.drafts + "px",
+                  "--edit": widths.edit + "px",
                 } as CSSProperties
               }
             >
@@ -980,14 +1033,17 @@ export function App() {
                 <SceneView
                   key={work.id}
                   work={
-                    preview?.work.scenes[sceneId] ? preview.work : work
+                    preview?.work.scenes[sceneId] ? preview.work : shown!
                   }
+                  version={!preview && draft ? "~" + draft.n : ""}
                   sceneId={sceneId}
                   run={working || run?.status === "waiting" ? run : undefined}
                   disabled={editless}
                   editing={editing}
                   quiet={(revision) =>
-                    inflight.current > 0 || own.current.has(revision)
+                    !!drafted.current ||
+                    inflight.current > 0 ||
+                    own.current.has(revision)
                   }
                   view={(c) => (canvas.current = c)}
                   open={(target: Target) =>
@@ -1004,6 +1060,8 @@ export function App() {
                   }
                   point={point}
                   connect={hand.ops.connect}
+                  selectLink={setLink}
+                  reconnect={hand.ops.reconnect}
                   menu={hand.setMenu}
                   place={(at) => {
                     hand.setTool("select");
@@ -1013,11 +1071,30 @@ export function App() {
                 {editing && !editless && (
                   <EditTools tool={hand.tool} setTool={hand.setTool} ops={hand.ops} />
                 )}
+                {editing && !editless && (
+                  <SelectionBar
+                    canvas={canvas.current}
+                    stage={stage.current}
+                    ops={hand.ops}
+                    selected={ids}
+                    link={chosenLink ? linkId : null}
+                    grouped={
+                      !!selected.length &&
+                      selected.every((s) => {
+                        const g = active?.modules.find((m) => m.id === s.moduleId)?.group;
+                        return g && g === active?.modules.find((m) => m.id === selected[0].moduleId)?.group;
+                      })
+                    }
+                    hidden={!!hand.menu || !!retyping || hand.tool !== "select"}
+                    ask={() => ask()}
+                  />
+                )}
                 {hand.menu && editing && !editless && (
                   <EditMenu
                     at={hand.menu}
                     ops={hand.ops}
                     selected={ids}
+                    link={chosenLink ? linkId : null}
                     grouped={selected.some(
                       (s) => active?.modules.find((m) => m.id === s.moduleId)?.group,
                     )}
@@ -1130,10 +1207,10 @@ export function App() {
                   />
                 </nav>
                 <div className={cx("side-panel")} data-kind={panel || undefined} inert={!panel}>
-                  {panel && !editing && (
+                  {panel && (
                     <Resizer
-                      kind={drafting ? "drafts" : "journal"}
-                      width={drafting ? widths.drafts : widths.journal}
+                      kind={editing ? "edit" : drafting ? "drafts" : "journal"}
+                      width={editing ? widths.edit : drafting ? widths.drafts : widths.journal}
                       set={(kind, n) => setWidths((w) => ({ ...w, [kind]: n }))}
                       label={t.work.resize}
                     />
@@ -1159,9 +1236,10 @@ export function App() {
                   >
                     {editing ? (
                       <EditPanel
-                        work={work}
+                        work={shown!}
                         sceneId={sceneId}
                         selected={ids}
+                        link={chosenLink ? linkId : null}
                         canvas={canvas.current}
                         busy={
                           working || run?.status === "waiting"

@@ -5,6 +5,7 @@ import {
   FileText,
   Group as GroupIcon,
   Plus,
+  Spline,
   Trash2,
 } from "lucide-react";
 import type { Canvas } from "../../../modules/canvas/index.ts";
@@ -91,14 +92,14 @@ export function Look({ work, change }: { work: Work; change: Change }) {
         if (isColour(v))
           return (
             <Token
-              key={k + work.revision}
+              key={k + ":" + v}
               name={names[k] ?? k}
               value={v}
               set={(c) => c !== hex(v) && void change((w) => setStyle(w, k, c))}
             />
           );
         return (
-          <label key={k + work.revision} className={cx("field")} data-inline>
+          <label key={k + ":" + v} className={cx("field")} data-inline>
             <span className={cx("field-name")}>{names[k] ?? k}</span>
             <input
               className={cx("edit-input")}
@@ -355,17 +356,20 @@ const escape = (s: string) =>
 
 /** The scene's modules as a list of layers, the topmost first: a click selects one
  * (Shift adds it), a double click renames it, and dragging one restacks it. Grouped
- * modules are marked with their group. */
+ * modules are marked with their group. The scene's links follow, each selected by a
+ * click. */
 export function Layers({
   work,
   sceneId,
   selected,
+  link,
   canvas,
   change,
 }: {
   work: Work;
   sceneId: string;
   selected: string[];
+  link: string | null;
   canvas?: Canvas;
   change: Change;
 }) {
@@ -378,7 +382,10 @@ export function Layers({
   const drawingName = (id: string) =>
     work.drawings[id]?.name ?? work.materials[id]?.name ?? id;
   if (!layers.length) return <p className={cx("edit-note")}>{t.edit.layers.empty}</p>;
+  const nameOf = (id: string) =>
+    scene.modules.find((m) => m.id === id)?.label || id;
   return (
+    <>
     <ol className={cx("layers")} onDragLeave={() => setOver(undefined)}>
       {layers.map((m) => {
         const chosen = selected.includes(m.id);
@@ -464,5 +471,28 @@ export function Layers({
         );
       })}
     </ol>
+    {!!scene.links.length && (
+      <>
+        <h3 className={cx("layers-heading")}>{t.edit.links}</h3>
+        <ol className={cx("layers")}>
+          {scene.links.map((l) => (
+            <li
+              key={l.id}
+              aria-selected={link === l.id}
+              onClick={() => canvas?.selectLink(l.id)}
+            >
+              <i>
+                <Spline size={13} />
+              </i>
+              <span className={cx("layer-name")}>
+                {nameOf(l.from.moduleId)} → {nameOf(l.to.moduleId)}
+              </span>
+              <small>{drawingName(l.drawingId)}</small>
+            </li>
+          ))}
+        </ol>
+      </>
+    )}
+    </>
   );
 }
