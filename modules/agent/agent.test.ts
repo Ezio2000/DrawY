@@ -1146,6 +1146,70 @@ it("tells the author what the user changed themselves since its last turn", asyn
   }
 });
 
+it("hands a continuing conversation only what the user changed since", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    vi.mocked(generate).mockImplementation(async () => ({
+      items: [
+        {
+          type: "function_call",
+          name: "ask_user",
+          call_id: crypto.randomUUID(),
+          arguments: JSON.stringify({
+            questions: [
+              { id: "q", text: "Which?", options: [{ label: "A" }, { label: "B" }] },
+            ],
+          }),
+        },
+      ],
+      usage: {},
+      response: {},
+    }));
+    const agent = new Agent(() => {});
+    const ask = async (prompt: string) => {
+      const run = await agent.start(store, work.id, "root", prompt);
+      await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
+      agent.cancel(store, run.id);
+      return store
+        .context(run.id)
+        .input.findLast(
+          (i: any) => typeof i.content === "string" && i.content.includes("Current scene:"),
+        ).content as string;
+    };
+    expect(await ask("Draw")).toContain("Current work:");
+    // Nothing changed: the conversation already holds the work.
+    expect(await ask("Again")).toBe(
+      "Current scene: root\nThe work is as you last saw it (revision 1).",
+    );
+    for (const edit of [
+      (w: Work) => setData(w, "root", "level-0", { color: "#000000" }),
+      (w: Work) => removeParts(w, "root", ["control"]),
+    ])
+      await writeWork(store, work.id, edit(store.work(work.id)), { kind: "edit" });
+    const told = await ask("Continue");
+    expect(told).toMatch(
+      /^Since your last turn the user changed the work themselves \(revision 1 to 3\)\.[^\n]*\n- scene root: changed level-0; removed control\n/,
+    );
+    expect(told).not.toContain("Current work:");
+    const changed = JSON.parse(told.match(/\nChanged: (.*)\nCurrent scene: root$/)![1]);
+    const now = store.work(work.id).scenes.root;
+    expect(changed.scenes.root.modules).toEqual(
+      now.modules.filter((m) => m.id === "level-0"),
+    );
+    expect(changed.scenes.root.order).toEqual(now.modules.map((m) => m.id));
+    expect(changed.scenes.root.removed).toEqual(["control"]);
+    expect(changed.drawings).toBeUndefined();
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
 it.each(["api", "oauth"] as const)("keeps hosted searches in the %s conversation and continues with drawing tools", async (channel) => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-search-")), db = new Storage(dir);
   try {
