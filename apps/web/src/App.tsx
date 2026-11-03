@@ -75,6 +75,17 @@ const pageOf = (path: string): Page =>
           : path.startsWith("/traces")
             ? "traces"
             : "home";
+/** Runs fetched from the server laid over the runs already shown: the fetched ones in their
+ * order, each replaced by the shown one when that is newer, then any shown run the fetch
+ * did not include, such as one started while it was on the way. */
+function merged(fetched: Run[], shown: Run[], shownNewer: boolean) {
+  const byId = new Map(shown.map((x) => [x.id, x]));
+  const ids = new Set(fetched.map((x) => x.id));
+  return [
+    ...fetched.map((x) => (shownNewer ? byId.get(x.id) ?? x : x)),
+    ...shown.filter((x) => !ids.has(x.id)),
+  ];
+}
 const workIdOf = (path: string) => path.match(/^\/a\/([^/]+)/)?.[1];
 /** A subscene has its own address under its work's, so the browser goes back up a level. */
 const sceneOf = (path: string) => {
@@ -144,6 +155,8 @@ export function App() {
     // Something that went well, said briefly.
     [notice, setNotice] = useState(""),
     [runs, R] = useState<Run[]>([]),
+    // The work whose run history has arrived; until then an empty journal is still loading.
+    [runsOf, setRunsOf] = useState<string>(),
     [prompt, Q] = useState(""),
     [attachments, A] = useState<Attachment[]>([]),
     [uploading, setUploading] = useState(0),
@@ -333,10 +346,14 @@ export function App() {
     setDetail(undefined);
     S([]);
     R([]);
+    setRunsOf(undefined);
     const r = await runs;
     // A work left while its runs were on the way keeps out of the next one.
     if (workIdOf(location.pathname) !== id) return;
-    R(r);
+    // Runs started or updated while the history was on the way are newer than it: they
+    // keep their state, and the history fills in what came before them.
+    R((now) => merged(r, now, true));
+    setRunsOf(id);
     // A reply from an earlier visit stays in the journal, not under the canvas; one still
     // to come shows when it arrives.
     const last = r.at(-1);
@@ -392,7 +409,9 @@ export function App() {
             api<Run[]>("/works/" + current.current.id + "/runs"),
           ]).then(([w, r]) => {
             W(w);
-            R(r);
+            // What the server says now is what was missed while disconnected; a run
+            // started since the request went out is kept.
+            R((now) => merged(r, now, false));
           });
         return;
       }
@@ -1271,6 +1290,7 @@ export function App() {
                     ) : (
                       <Studio
                         runs={runs}
+                        loaded={runsOf === work.id}
                         work={work}
                         restore={(r) => void attempt(() => restore(r))}
                         resume={() =>

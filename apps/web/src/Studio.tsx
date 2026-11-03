@@ -19,7 +19,7 @@ import { Markdown, plain, sourcesOf } from "./Markdown.tsx";
 import { cx } from "./cx.ts";
 import { span } from "./time.ts";
 import { useT, type Words } from "./i18n.tsx";
-import { useLocale } from "@drawy/ui";
+import { Spinner, useLocale } from "@drawy/ui";
 import { localize } from "../../../modules/contracts/messages.ts";
 import { money } from "./money.ts";
 import {
@@ -872,12 +872,15 @@ function WorkUsage({ runs }: { runs: Run[] }) {
  * they happened; the drafts each saved are kept in the drafts panel. */
 export function Studio({
   runs,
+  loaded,
   work,
   restore,
   resume,
   openTrace,
 }: {
   runs: Run[];
+  /** Whether the work's run history has arrived, so no runs means there are none. */
+  loaded: boolean;
   work: Work;
   restore: (revision: number) => void;
   resume: () => void;
@@ -892,7 +895,12 @@ export function Studio({
   const last = runs.at(-1);
   return (
     <>
-      {!runs.length && <p className={cx("journal-empty")}>{t.journal.empty}</p>}
+      {!runs.length &&
+        (loaded ? (
+          <p className={cx("journal-empty")}>{t.journal.empty}</p>
+        ) : (
+          <Spinner />
+        ))}
       <WorkUsage runs={runs} />
       {runs.map((run) => (
         <RunView
