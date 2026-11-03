@@ -235,6 +235,7 @@ export function SceneSettings({
         <span className={cx("field-name")}>{t.edit.scene.script}</span>
         <p className={cx("edit-hint")}>{t.edit.scene.scriptHint}</p>
         <Code
+          key={"script:" + sceneId}
           label={t.edit.scene.script}
           value={scene.interactionId ? (work.interactions[scene.interactionId]?.source ?? "") : ""}
           rows={6}

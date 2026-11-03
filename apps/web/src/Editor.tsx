@@ -342,10 +342,10 @@ function Selected({
       {one && (
         <Section id="advanced" title={t.edit.code.heading} open={false}>
           <p className={cx("edit-hint")}>{t.edit.code.hint}</p>
-          <DrawingPanel work={work} sceneId={sceneId} module={one} change={change} pick={pick} />
+          <DrawingPanel key={one.id} work={work} sceneId={sceneId} module={one} change={change} pick={pick} />
           <div className={cx("field")}>
             <span className={cx("field-name")}>{t.edit.code.record}</span>
-            <ModuleRecord work={work} sceneId={sceneId} module={one} change={change} />
+            <ModuleRecord key={one.id} work={work} sceneId={sceneId} module={one} change={change} />
           </div>
         </Section>
       )}

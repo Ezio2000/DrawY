@@ -22,7 +22,8 @@ import { useT } from "./i18n.tsx";
  * work is checked as every write is. */
 
 /** A field of code: Tab indents, ⌘Enter keeps it, Escape takes the change back. What
- * does not pass `check` is not kept, and says why. */
+ * does not pass `check` is not kept, and says why. A draft belongs to what it edits:
+ * give each field a key naming that record, so a draft is never kept onto another. */
 export function Code({
   value,
   apply,
@@ -49,6 +50,8 @@ export function Code({
   }, [value]);
   const dirty = code !== value;
   const keep = async () => {
+    // Nothing changed is nothing to keep: saving it would only make an empty revision.
+    if (code === value) return;
     const problem = check?.(code) ?? null;
     if (problem) return setError(problem);
     try {
@@ -212,6 +215,7 @@ export function DrawingPanel({
           <div className={cx("field")}>
             <span className={cx("field-name")}>{t.edit.code.source}</span>
             <Code
+              key={"source:" + own.id}
               label={t.edit.code.source}
               value={own.source}
               rows={14}
@@ -222,6 +226,7 @@ export function DrawingPanel({
           <div className={cx("field")}>
             <span className={cx("field-name")}>{t.edit.code.params}</span>
             <Code
+              key={"params:" + own.id}
               label={t.edit.code.params}
               value={json(own.params ?? {})}
               rows={6}
