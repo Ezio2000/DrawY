@@ -532,6 +532,13 @@ describe("hand edits reach what the author writes", () => {
     expect(resized(box, "e", 100, 0, { keep: true })).toEqual({ x: 0, y: -25, width: 200, height: 100 });
     expect(resized(box, "e", 20, 0, { centred: true })).toEqual({ x: -20, y: 0, width: 140, height: 50 });
     expect(resized(box, "w", 500, 0)).toMatchObject({ width: 8, x: 92 });
+    // Kept proportions stay kept at the smallest size: the shorter side stops at the minimum.
+    expect(resized(box, "se", -500, -500, { keep: true, min: 10 })).toEqual({
+      x: 0,
+      y: 0,
+      width: 20,
+      height: 10,
+    });
     expect(scaled({ x: 50, y: 25, width: 50, height: 25 }, box, { x: 0, y: 0, width: 200, height: 100 })).toEqual({
       x: 100,
       y: 50,

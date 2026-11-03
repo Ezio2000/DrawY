@@ -472,7 +472,7 @@ export function DataEditor({
     <div className={cx("fields")}>
       {keys.map((key) => (
         <DataEntry
-          key={key + ":" + work.revision}
+          key={part.id + ":" + key + ":" + work.revision}
           name={nameOf(t, { key } as Field)}
           value={part.data[key]}
           work={work}
@@ -506,12 +506,17 @@ function DataEntry({
 }) {
   const [value, setValue] = useState(initial);
   const latest = useRef(value);
+  // What was last kept, so leaving a value commits it only when it changed.
+  const saved = useRef(initial);
   const set = (path: Path, v: unknown, keep: boolean) => {
     const next = setAt(latest.current, path, v);
     latest.current = next;
     setValue(next);
     preview(next);
-    if (keep) commit(next);
+    if (keep && JSON.stringify(next) !== JSON.stringify(saved.current)) {
+      saved.current = next;
+      commit(next);
+    }
   };
   return (
     <div className={cx("field")}>
@@ -714,7 +719,7 @@ function Node({
     <Words
       value={String(value)}
       onChange={(s) => set(path, s, false)}
-      onDone={(s) => s !== value && set(path, s, true)}
+      onDone={(s) => set(path, s, true)}
     />
   );
 }

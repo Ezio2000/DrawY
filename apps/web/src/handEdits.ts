@@ -56,6 +56,10 @@ const CLIP_TYPE = "application/x-drawy+json";
 const CLIP_KEY = "drawy.clip";
 /** The parts last copied, kept for this tab and, where storage allows, for other tabs. */
 let held: Clip | undefined;
+/** A clip with when it was copied: the system clipboard can hold an older clip than one
+ * copied from the menu, which cannot write to it, and the newer one is what is pasted. */
+type Stamped = Clip & { copiedAt?: number };
+const newer = (a: Stamped, b?: Stamped) => (b?.copiedAt ?? 0) > (a.copiedAt ?? 0) ? b! : a;
 function keep(clip: Clip) {
   held = clip;
   try {
@@ -223,7 +227,8 @@ export function useHandEdits({
     },
     copy(): Clip | null {
       if (!work || !selected.length) return null;
-      const clip = copy(work, sceneId, selected);
+      const made = copy(work, sceneId, selected);
+      const clip: Stamped | null = made && { ...made, copiedAt: Date.now() };
       if (clip) {
         keep(clip);
         setClipped(true);
@@ -405,7 +410,7 @@ export function useHandEdits({
       e.preventDefault();
       try {
         const clip = JSON.parse(data?.getData(CLIP_TYPE) || "null");
-        if (isClip(clip)) return latest.current.ops.paste(clip);
+        if (isClip(clip)) return latest.current.ops.paste(newer(clip, kept()));
       } catch {}
       const files = [...(data?.files ?? [])].filter((f) => f.type.startsWith("image/"));
       if (files.length) return latest.current.ops.pictures(files);

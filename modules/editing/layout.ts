@@ -93,8 +93,15 @@ export function resized(
       height = width / ratio;
     else width = height * ratio;
   }
-  width = Math.max(min, width);
-  height = Math.max(min, height);
+  if (keep) {
+    // Kept proportions shrink no further than the shorter side's minimum.
+    const f = Math.max(width / box.width, min / Math.min(box.width, box.height));
+    width = box.width * f;
+    height = box.height * f;
+  } else {
+    width = Math.max(min, width);
+    height = Math.max(min, height);
+  }
   const x = centred
     ? box.x + (box.width - width) / 2
     : sx < 0
