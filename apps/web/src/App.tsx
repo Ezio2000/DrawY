@@ -713,8 +713,11 @@ export function App() {
   function remove(w: Summary) {
     const pending = deleting.current;
     if (pending) {
+      // The earlier one can no longer be taken back: take it out of the list
+      // now, or it reappears once `trash` moves on to this work.
       clearTimeout(pending.timer);
-      void api("/works/" + pending.id, "DELETE").catch(() => {});
+      L((old) => old.filter((o) => o.id !== pending.id));
+      void api("/works/" + pending.id, "DELETE").catch(() => refreshList());
     }
     if (work?.id === w.id) go("/");
     setTrash(w);
@@ -722,6 +725,7 @@ export function App() {
       id: w.id,
       timer: setTimeout(() => {
         deleting.current = undefined;
+        L((old) => old.filter((o) => o.id !== w.id));
         setTrash(undefined);
         void attempt(async () => {
           await api("/works/" + w.id, "DELETE");
@@ -857,7 +861,6 @@ export function App() {
             works={shownWorks}
             current={work?.id}
             go={go}
-            rename={(id, title) => void attempt(() => rename(id, title))}
             remove={remove}
             logout={() =>
               void attempt(async () => {

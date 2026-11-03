@@ -5,8 +5,6 @@ import {
   Settings2,
   ScrollText,
   LogOut,
-  Ellipsis,
-  PenLine,
   Trash2,
   ChevronsUpDown,
 } from "lucide-react";
@@ -88,7 +86,6 @@ export function Rail({
   works,
   current,
   go,
-  rename,
   remove,
   logout,
 }: {
@@ -99,17 +96,12 @@ export function Rail({
   works: Summary[];
   current?: string;
   go: (path: string) => void;
-  rename: (id: string, title: string) => void;
   remove: (work: Summary) => void;
   logout: () => void;
 }) {
   const t = useT();
-  const [menu, setMenu] = useState<string>(),
-    [renaming, setRenaming] = useState<string>(),
-    [account, setAccount] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null),
-    accountRef = useRef<HTMLDivElement>(null);
-  useDismiss(!!menu, () => setMenu(undefined), menuRef);
+  const [account, setAccount] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
   useDismiss(account, () => setAccount(false), accountRef);
   const nav = (path: string) => {
     go(path);
@@ -156,60 +148,22 @@ export function Rail({
             <li
               className={cx("rail-work")}
               data-current={w.id === current || undefined}
-              data-menu={menu === w.id || undefined}
               key={w.id}
             >
-              {renaming === w.id ? (
-                <Rename
-                  title={w.title}
-                  done={(title) => {
-                    setRenaming(undefined);
-                    if (title) rename(w.id, title);
-                  }}
-                />
-              ) : (
-                <button
-                  className={cx("rail-work-open")}
-                  onClick={() => nav("/a/" + w.id)}
-                  onDoubleClick={() => setRenaming(w.id)}
-                >
-                  <span>{w.title}</span>
-                </button>
-              )}
-              <div className={cx("rail-work-more")} ref={menu === w.id ? menuRef : undefined}>
-                <button
-                  aria-label={t.rail.more(w.title)}
-                  aria-expanded={menu === w.id}
-                  onClick={() => setMenu(menu === w.id ? undefined : w.id)}
-                >
-                  <Ellipsis size={15} />
-                </button>
-                {menu === w.id && (
-                  <div className={cx("popover")} role="menu">
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        setMenu(undefined);
-                        setRenaming(w.id);
-                      }}
-                    >
-                      <PenLine size={15} />
-                      {t.rail.rename}
-                    </button>
-                    <button
-                      role="menuitem"
-                      data-danger
-                      onClick={() => {
-                        setMenu(undefined);
-                        remove(w);
-                      }}
-                    >
-                      <Trash2 size={15} />
-                      {t.rail.remove}
-                    </button>
-                  </div>
-                )}
-              </div>
+              <button
+                className={cx("rail-work-open")}
+                onClick={() => nav("/a/" + w.id)}
+              >
+                <span>{w.title}</span>
+              </button>
+              <button
+                className={cx("rail-work-remove")}
+                aria-label={t.rail.removeWork(w.title)}
+                data-tip={t.rail.remove}
+                onClick={() => remove(w)}
+              >
+                <Trash2 size={15} />
+              </button>
             </li>
           ))}
         </ul>
