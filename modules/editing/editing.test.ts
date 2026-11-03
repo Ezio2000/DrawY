@@ -815,3 +815,121 @@ describe("hand edits reach what the author writes", () => {
     expect(showable(work, { baseRevision: work.revision, materials: ["arrow"] })).toBe(false);
   });
 });
+
+describe("changing part of a scene", () => {
+  const work = () => {
+    const w = fixture();
+    const [a, b] = w.scenes.root.modules;
+    w.scenes.root.links = [
+      {
+        id: "a-b",
+        drawingId: a.drawingId,
+        from: { moduleId: a.id, anchor: Object.keys(a.anchors)[0] },
+        to: { moduleId: b.id, anchor: Object.keys(b.anchors)[0] },
+        data: { label: "旧", rows: [{ v: 1 }, { v: 2 }] },
+      },
+    ];
+    a.data = { ...a.data, rows: [{ v: 1 }, { v: 2 }, { v: 3 }], names: { "St. Louis": "x" } };
+    return w;
+  };
+  const edit = (w: Work, sceneEdits: WorkEdit["sceneEdits"]): WorkEdit => ({
+    baseRevision: w.revision,
+    sceneEdits,
+  });
+  it("changes only the fields and values it names", () => {
+    const w = work();
+    const [a, b, ...rest] = w.scenes.root.modules;
+    const next = applied(
+      w,
+      edit(w, [
+        {
+          id: "root",
+          modules: [
+            {
+              id: a.id,
+              bounds: { x: 1, y: 2, width: 3, height: 4 },
+              dataChanges: [
+                { path: ["rows", 1, "v"], value: 20 },
+                { path: ["rows", 3], value: { v: 4 } },
+                { path: ["rows", 0] },
+                { path: ["names", "St. Louis"], value: "圣路易斯" },
+              ],
+            },
+          ],
+          links: [{ id: "a-b", dataChanges: [{ path: ["label"], value: "新" }] }],
+        },
+      ]),
+    );
+    const changed = next.scenes.root.modules[0];
+    expect(changed.bounds).toEqual({ x: 1, y: 2, width: 3, height: 4 });
+    expect(changed.label).toBe(a.label);
+    expect(changed.data.rows).toEqual([{ v: 20 }, { v: 3 }, { v: 4 }]);
+    expect(changed.data.names).toEqual({ "St. Louis": "圣路易斯" });
+    expect(next.scenes.root.modules[1]).toEqual(b);
+    expect(next.scenes.root.modules.slice(2)).toEqual(rest);
+    expect(next.scenes.root.links[0].data).toEqual({ label: "新", rows: [{ v: 1 }, { v: 2 }] });
+    // The work it started from is untouched.
+    expect(w.scenes.root.modules[0].data.rows).toHaveLength(3);
+    validateWork(next);
+  });
+  it("adds a new part whole, on top, and refuses one without every field", () => {
+    const w = work();
+    const fresh = {
+      id: "fresh",
+      label: "新",
+      bounds: { x: 0, y: 0, width: 10, height: 10 },
+      drawingId: w.scenes.root.modules[0].drawingId,
+      group: null,
+      target: null,
+      anchors: {},
+      data: {},
+    };
+    const next = applied(w, edit(w, [{ id: "root", modules: [fresh] }]));
+    expect(next.scenes.root.modules.at(-1)).toEqual(fresh);
+    expect(() =>
+      applied(w, edit(w, [{ id: "root", modules: [{ id: "typo", data: {} }] }])),
+    ).toThrow(/模块 typo 是新增的/);
+    expect(() =>
+      applied(w, edit(w, [{ id: "root", links: [{ id: "typo", data: {} }] }])),
+    ).toThrow(/连线 typo 是新增的/);
+  });
+  it("removes a module with its links and checks, and refuses what is not there", () => {
+    const w = work();
+    const id = w.scenes.root.modules[0].id;
+    w.scenes.root.checks = [{ moduleId: id, selector: "button" }];
+    const next = applied(w, edit(w, [{ id: "root", removeModules: [id] }]));
+    expect(next.scenes.root.modules.some((m) => m.id === id)).toBe(false);
+    expect(next.scenes.root.links).toEqual([]);
+    expect(next.scenes.root.checks).toEqual([]);
+    validateWork(next);
+    expect(() => applied(w, edit(w, [{ id: "nowhere", title: "x" }]))).toThrow(/场景 nowhere 不存在/);
+    expect(() =>
+      applied(w, edit(w, [{ id: "root", modules: [{ id, dataChanges: [{ path: ["no", "such"], value: 1 }] }] }])),
+    ).toThrow(/没有 no\.such/);
+    expect(() =>
+      applied(w, edit(w, [{ id: "root", modules: [{ id, dataChanges: [{ path: ["rows", 9], value: 1 }] }] }])),
+    ).toThrow(/没有 rows\.9/);
+  });
+  it("restacks only the modules it lists, among the places they hold", () => {
+    const w = work();
+    const ids = w.scenes.root.modules.map((m) => m.id);
+    const [first, second, third, ...rest] = ids;
+    const next = applied(w, edit(w, [{ id: "root", order: [third, first] }]));
+    expect(next.scenes.root.modules.map((m) => m.id)).toEqual([third, second, first, ...rest]);
+    expect(() => applied(w, edit(w, [{ id: "root", order: ["nope"] }]))).toThrow(/order 里的模块 nope/);
+  });
+  it("changes a scene's own fields and lays edits over records in the same write", () => {
+    const w = work();
+    const next = applied(w, {
+      baseRevision: w.revision,
+      scenes: [{ id: "extra", title: "新", parentId: "root", modules: [], links: [], interactionId: null, checks: [] }],
+      sceneEdits: [
+        { id: "extra", title: "新场景" },
+        { id: "root", title: "改名", interactionId: null },
+      ],
+    });
+    expect(next.scenes.extra.title).toBe("新场景");
+    expect(next.scenes.root.title).toBe("改名");
+    expect(next.scenes.root.interactionId).toBeNull();
+  });
+});

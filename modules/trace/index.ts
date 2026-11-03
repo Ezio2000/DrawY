@@ -401,7 +401,7 @@ export class Tracer {
       return undefined;
     const [span] = this.full([spanId]).filter((s) => s.traceId === traceId);
     if (!span) return undefined;
-    if (span.kind !== "turn" || !span.parentId) return { span };
+    if (span.kind !== "turn" || !span.parentId || span.attrs.failed) return { span };
     const earlier = this.spans(traceId).filter(
       (s) =>
         s.parentId === span.parentId &&

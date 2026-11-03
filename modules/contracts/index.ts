@@ -224,13 +224,65 @@ export function stepBefore(
       at--;
   return at > 1 ? at - 1 : undefined;
 }
+/** One value inside a part's data, so changing a row of a long list does not resend it. */
+export const dataChangeSchema = z.object({
+  path: z
+    .array(z.union([z.string().min(1), z.number().int().min(0)]))
+    .min(1)
+    .describe('Keys and list positions from data down to the value, such as ["rows", 2, "value"]'),
+  value: z
+    .unknown()
+    .optional()
+    .describe("The new value; leave out to delete it. The position just past a list's end appends"),
+});
+const dataChanges = z
+  .array(dataChangeSchema)
+  .optional()
+  .describe("Single values to change inside data, applied in order after data, when sent");
+// Fields stay in the order of a whole record: layout streams before content.
+export const modulePatchSchema = instanceSchema
+  .partial()
+  .required({ id: true })
+  .extend({ dataChanges });
+export const linkPatchSchema = linkSchema
+  .partial()
+  .required({ id: true })
+  .extend({ dataChanges });
+/** Part of an existing scene changed, leaving everything it does not name as it is. */
+export const sceneEditSchema = z.object({
+  id: key,
+  title: key.optional(),
+  parentId: z.string().nullable().optional(),
+  interactionId: z.string().nullable().optional(),
+  checks: sceneSchema.shape.checks.optional(),
+  modules: z
+    .array(modulePatchSchema)
+    .optional()
+    .describe("A module with a known id changes only the fields sent; a new id needs every field and goes on top"),
+  links: z
+    .array(linkPatchSchema)
+    .optional()
+    .describe("A link with a known id changes only the fields sent; a new id needs every field"),
+  removeModules: z.array(key).optional().describe("Modules to delete, with their links and checks"),
+  removeLinks: z.array(key).optional(),
+  order: z
+    .array(key)
+    .optional()
+    .describe(
+      "Modules to restack: they take the stacking places they already hold among them, in this order from the bottom, and no other module moves",
+    ),
+});
 export const workEditSchema = z.object({
   baseRevision: z.number().int().describe("The work's current revision, as the last set_brief or write_work returned it"),
   title: z.string().optional(),
   scenes: z
     .array(sceneSchema)
     .optional()
-    .describe("Each replaces the scene with its id whole, including every module and link it keeps"),
+    .describe("New scenes, or whole recompositions: each replaces the scene with its id, and modules and links left out are deleted"),
+  sceneEdits: z
+    .array(sceneEditSchema)
+    .optional()
+    .describe("Changes to parts of existing scenes; everything not named stays as it is"),
   drawings: z.array(drawingSchema).optional(),
   interactions: z.array(interactionSchema).optional(),
   details: z.array(detailSchema).optional(),
@@ -251,6 +303,111 @@ export const workEditSchema = z.object({
     .optional(),
 });
 export type WorkEdit = z.infer<typeof workEditSchema>;
+export type SceneEdit = z.infer<typeof sceneEditSchema>;
+/** A box in scene units, as the author reads and writes it. */
+export const boxSchema = z
+  .array(z.number())
+  .length(4)
+  .refine(([, , width, height]) => width > 0 && height > 0, "宽和高必须大于 0")
+  .describe("[x, y, width, height] in scene units");
+export const boxOf = ({ x, y, width, height }: Bounds) => [x, y, width, height];
+export const boundsOf = ([x, y, width, height]: number[]): Bounds => ({ x, y, width, height });
+/* What the author writes: every part a flat record that changes only what it names, so a
+ * write is as long as the change and shallow enough that its brackets stay in hand. The
+ * workspace takes it as a `WorkEdit` (workspace/author.ts). */
+const authorModuleSchema = z
+  .object({
+    id: key,
+    scene: key.optional().describe("The scene it belongs to; leave out for the current scene"),
+    label: z
+      .string()
+      .optional()
+      .describe("What a person editing the work calls this module, in the user's language; leave out when the words in its data say it"),
+    bounds: boxSchema.optional().describe("[x, y, width, height] in scene units; a new module needs it"),
+    drawingId: key.optional().describe("A drawing defined in the work, or a library drawing used as it is; a new module needs it"),
+    group: z.string().nullable().optional().describe("Modules with the same group move together; it draws nothing"),
+    target: targetSchema.nullable().optional().describe("Where clicking this module leads"),
+    anchors: z
+      .record(z.string(), pointSchema)
+      .optional()
+      .describe("Named points links attach to, normalized to the module (0..1); only for a point other than the middle of a side"),
+    data: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe("The drawing's parameters for this instance; replaces all of them"),
+    dataChanges,
+  })
+  .strict();
+const authorEndSchema = z.union([key, endpointSchema]);
+const authorLinkSchema = z
+  .object({
+    id: key,
+    scene: key.optional().describe("The scene it belongs to; leave out for the current scene"),
+    drawingId: key.optional().describe("A link drawing; a new link defaults to the library's arrow"),
+    from: authorEndSchema
+      .optional()
+      .describe("A module id, which joins the side facing the other end, or {moduleId, anchor} with one of its anchors or a side (left, right, top, bottom); a new link needs it"),
+    to: authorEndSchema.optional().describe("As from"),
+    data: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe("The drawing's parameters for this link; replaces all of them"),
+    dataChanges,
+  })
+  .strict();
+const authorSceneSchema = z
+  .object({
+    id: key,
+    title: key.optional().describe("A new scene needs it"),
+    parentId: z.string().optional().describe("The scene this one opens from; a new scene defaults to the current scene"),
+    interactionId: z.string().nullable().optional(),
+    checks: sceneSchema.shape.checks.optional(),
+    clear: z
+      .boolean()
+      .optional()
+      .describe("Delete everything in it first, to recompose it from the modules and links in this write"),
+    order: z
+      .array(key)
+      .optional()
+      .describe("Modules to restack: they take the stacking places they already hold among them, in this order from the bottom, and no other module moves"),
+  })
+  .strict();
+export const authorWriteSchema = z
+  .object({
+    baseRevision: workEditSchema.shape.baseRevision,
+    title: z.string().optional(),
+    scenes: z
+      .array(authorSceneSchema)
+      .optional()
+      .describe("New scenes, and changes to a scene's own fields; leave out when only its parts change"),
+    modules: z
+      .array(authorModuleSchema)
+      .optional()
+      .describe("In stacking and drawing order, first at the bottom. A known id changes only the fields sent; a new id goes on top"),
+    links: z
+      .array(authorLinkSchema)
+      .optional()
+      .describe("A known id changes only the fields sent"),
+    drawings: workEditSchema.shape.drawings,
+    interactions: workEditSchema.shape.interactions,
+    details: workEditSchema.shape.details,
+    materials: workEditSchema.shape.materials,
+    style: workEditSchema.shape.style,
+    remove: z
+      .object({
+        modules: z.array(key).optional().describe("Also deletes their links and checks"),
+        links: z.array(key).optional(),
+        drawings: z.array(key).optional(),
+        scenes: z.array(key).optional(),
+        interactions: z.array(key).optional(),
+        details: z.array(key).optional(),
+        materials: z.array(key).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type AuthorWrite = z.infer<typeof authorWriteSchema>;
 export interface Selection {
   moduleId: string;
   label: string;
@@ -404,6 +561,8 @@ export type ToolActivity =
       /** The drawing definition whose source is arriving now. */
       writing?: string;
       scenes: { id: string; title: string; modules: Sketch[] }[];
+      /** Modules and links this write changes in part, in scenes it does not replace. */
+      changed?: number;
       details: string[];
       /** Materials taken into the work by this write. */
       materials: string[];
@@ -414,7 +573,7 @@ export type ToolActivity =
       name: "view_canvas";
       sceneId?: string;
       focus: "overview" | "region" | "annotate" | "actions";
-      region?: Bounds;
+      regions?: Bounds[];
       /** The names of pictures still developing that the look waits for. */
       waiting?: string[];
       screenshots?: Picture[];
@@ -462,6 +621,28 @@ export interface RunUsage {
     imageInput?: number;
     textOutput?: number;
   };
+  /** What failed and did not count towards the above, though it was spent all the same. */
+  failed?: FailedUsage;
+}
+/** Model attempts that did not finish (a dropped stream, a cut-off answer, a cancelled
+ * turn), tool calls written broken and pictures that did not develop. */
+export interface FailedUsage {
+  /** Model attempts, whether or not they cost anything: a refused request costs nothing. */
+  attempts: number;
+  /** How long those attempts took, with the waits before each was tried again. */
+  ms: number;
+  input: number;
+  cached: number;
+  cacheWrite: number;
+  output: number;
+  /** How much of `output` is estimated from what had streamed, as a stream that breaks
+   * off never reports it. It leaves out thinking that was not shown, so it runs low. */
+  estimated: number;
+  /** Tool calls whose input was not valid JSON. The model is told and writes them again, so
+   * their tokens are in the turn that wrote them, not in the counts above. */
+  invalidCalls: number;
+  /** Pictures that failed; the picture model reports nothing for those. */
+  images: number;
 }
 export interface Run {
   id: string;

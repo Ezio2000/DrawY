@@ -149,19 +149,21 @@ const flow = d.flow
   : "";
 let label = "";
 if (d.label) {
-  const size = Number(d.size ?? 14);
+  const size = Number(d.size ?? 16);
   const m = mid;
   let n = normal;
   const above = (d.labelSide ?? "above") === "above";
   if ((n.y > 0.2 || (Math.abs(n.y) <= 0.2 && n.x > 0)) === above)
     n = { x: -n.x, y: -n.y };
-  const off = size * 0.9 + w;
+  // Beside an upright line the words start at the line, as they are wider than they are tall.
+  const upright = Math.abs(n.x) > 0.8;
+  const off = upright ? size * 0.5 + w : size * 0.9 + w;
   const esc = (s) =>
     String(s).replace(
       /[&<>"]/g,
       (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch],
     );
-  label = `<text x="${m.x + n.x * off}" y="${m.y + n.y * off}" text-anchor="middle" dominant-baseline="central" font-size="${size}" fill="${d.labelColor || color}" font-family="${esc(t.font || "system-ui")}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4" stroke-linejoin="round">${esc(d.label)}</text>`;
+  label = `<text x="${m.x + n.x * off}" y="${m.y + n.y * off}" text-anchor="${upright ? (n.x > 0 ? "start" : "end") : "middle"}" dominant-baseline="central" font-size="${size}" fill="${d.labelColor || color}" font-family="${esc(t.font || "system-ui")}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4" stroke-linejoin="round">${esc(d.label)}</text>`;
 }
 return api.svg(`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible">${flow}
   <path class="${d.flow ? "flow" : ""}" d="${line}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${dash}"/>

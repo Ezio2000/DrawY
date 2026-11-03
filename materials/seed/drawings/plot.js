@@ -7,7 +7,13 @@ const W = api.width,
 const size = Number(d.size ?? 13);
 const xs = { min: 0, max: 10, label: "", ...(d.x || {}) };
 const ys = { min: 0, max: 10, label: "", ...(d.y || {}) };
-const pad = { l: size * 3.4, r: size * 1.2, t: size * 1.4, b: size * 3 };
+// The axis names stand clear of the plot: above its top and below its ticks.
+const pad = {
+  l: size * 3.4,
+  r: size * 1.2,
+  t: size * (ys.label ? 2.2 : 1.4),
+  b: size * (xs.label ? 3.4 : 2.4),
+};
 const pw = W - pad.l - pad.r,
   ph = H - pad.t - pad.b;
 const X = (v) => pad.l + ((v - xs.min) / (xs.max - xs.min)) * pw;
@@ -48,9 +54,9 @@ for (const v of xt)
 for (const v of yt)
   out += `<line x1="${pad.l - 4}" x2="${pad.l}" y1="${Y(v)}" y2="${Y(v)}" stroke="${ink}"/><text x="${pad.l - 7}" y="${Y(v)}" text-anchor="end" dominant-baseline="central" font-size="${size}" fill="${muted}">${esc(ys.format ? ys.format.replace("{}", v) : v)}</text>`;
 if (xs.label)
-  out += `<text x="${pad.l + pw}" y="${H - size * 0.3}" text-anchor="end" font-size="${size}" fill="${ink}">${esc(xs.label)}</text>`;
+  out += `<text x="${pad.l + pw}" y="${H - size * 0.35}" text-anchor="end" font-size="${size}" fill="${ink}">${esc(xs.label)}</text>`;
 if (ys.label)
-  out += `<text x="${pad.l}" y="${size * 0.5}" text-anchor="start" font-size="${size}" fill="${ink}">${esc(ys.label)}</text>`;
+  out += `<text x="${pad.l}" y="${size * 1.1}" text-anchor="start" font-size="${size}" fill="${ink}">${esc(ys.label)}</text>`;
 const palette = [t.accent || "#d97757", t.accent2 || "#4a7fa8", ink, muted];
 (d.series || []).forEach((s, i) => {
   const f = s.fn ? new Function("x", "return " + s.fn) : null;
@@ -74,7 +80,8 @@ const palette = [t.accent || "#d97757", t.accent2 || "#4a7fa8", ink, muted];
       out += `<circle cx="${X(x)}" cy="${Y(y)}" r="3.2" fill="${color}"/>`;
   if (s.label && pts.length) {
     const [x, y] = pts[pts.length - 1];
-    out += `<text x="${X(x) - 4}" y="${Y(y) - size * 0.8}" text-anchor="end" font-size="${size}" fill="${color}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4">${esc(s.label)}</text>`;
+    const py = Y(Math.max(ys.min, Math.min(ys.max, y)));
+    out += `<text x="${X(x) - 4}" y="${py < pad.t + size ? py + size * 1.3 : py - size * 0.8}" text-anchor="end" font-size="${size}" fill="${color}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4">${esc(s.label)}</text>`;
   }
 });
 // The current value on the first curve, with guides down to both axes.
@@ -95,9 +102,12 @@ if (mark) {
     const text =
       d.marker.label ??
       (ys.format ? ys.format.replace("{}", y.toFixed(2)) : y.toFixed(2));
-    out += `<text x="${X(x) + 9}" y="${Y(y) - 9}" font-size="${size}" fill="${color}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4">${esc(text)}</text>`;
+    // Near the right edge the words turn back over the plot; near the top they go below.
+    const flip = X(x) > pad.l + pw * 0.62;
+    const low = Y(y) < pad.t + size * 1.2;
+    out += `<text x="${X(x) + (flip ? -9 : 9)}" y="${Y(y) + (low ? size * 1.3 : -9)}" text-anchor="${flip ? "end" : "start"}" font-size="${size}" fill="${color}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4">${esc(text)}</text>`;
   }
 }
 return api.svg(
-  `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="${esc(t.font || "system-ui")}">${out}</svg>`,
+  `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(t.font || "system-ui")}">${out}</svg>`,
 );

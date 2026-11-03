@@ -665,6 +665,7 @@ function Draft({ step }: { step: Tool<"write_work"> }) {
   const modules = step.scenes.reduce((n, s) => n + s.modules.length, 0);
   const facts = [
     modules && w.modules(modules),
+    step.changed && w.changed(step.changed),
     step.drawings.length && w.drawings(step.drawings.length),
     step.materials.length && w.materials(step.materials.length),
     step.removed && w.removed(step.removed),
@@ -677,7 +678,7 @@ function Draft({ step }: { step: Tool<"write_work"> }) {
       </span>
       {step.scenes.map((s) => (
         <div key={s.id} className={cx("draft-scene")}>
-          <b>{s.title || s.id}</b>
+          {s.title && <b>{s.title}</b>}
           <span className={cx("draft-modules")}>
             {/* While streaming every module shows as it lands; a saved draft keeps a few. */}
             {(step.status === "running" ? s.modules : s.modules.slice(0, 8)).map((m) => (
@@ -714,6 +715,16 @@ export function spentBy(run: Run) {
     images: u?.images?.count ?? 0,
     imageTokens: (u?.images?.input ?? 0) + (u?.images?.output ?? 0),
     hosted: Object.entries(u?.hosted ?? {}).filter(([n]) => n !== "web_search"),
+    failed: {
+      attempts: u?.failed?.attempts ?? 0,
+      ms: u?.failed?.ms ?? 0,
+      input: u?.failed?.input ?? 0,
+      cached: u?.failed?.cached ?? 0,
+      output: u?.failed?.output ?? 0,
+      estimated: u?.failed?.estimated ?? 0,
+      invalidCalls: u?.failed?.invalidCalls ?? 0,
+      images: u?.failed?.images ?? 0,
+    },
     cost: costOf(u, run.prices),
   };
 }
@@ -730,11 +741,22 @@ const total = (list: Spent[]): Spent => ({
   images: list.map((s) => s.images).reduce(sum, 0),
   imageTokens: list.map((s) => s.imageTokens).reduce(sum, 0),
   hosted: list.flatMap((s) => s.hosted),
+  failed: {
+    attempts: list.map((s) => s.failed.attempts).reduce(sum, 0),
+    ms: list.map((s) => s.failed.ms).reduce(sum, 0),
+    input: list.map((s) => s.failed.input).reduce(sum, 0),
+    cached: list.map((s) => s.failed.cached).reduce(sum, 0),
+    output: list.map((s) => s.failed.output).reduce(sum, 0),
+    estimated: list.map((s) => s.failed.estimated).reduce(sum, 0),
+    invalidCalls: list.map((s) => s.failed.invalidCalls).reduce(sum, 0),
+    images: list.map((s) => s.failed.images).reduce(sum, 0),
+  },
   cost: list.some((s) => s.cost)
     ? {
         author: list.map((s) => s.cost?.author ?? 0).reduce(sum, 0),
         search: list.map((s) => s.cost?.search ?? 0).reduce(sum, 0),
         image: list.map((s) => s.cost?.image ?? 0).reduce(sum, 0),
+        failed: list.map((s) => s.cost?.failed ?? 0).reduce(sum, 0),
         total: list.map((s) => s.cost?.total ?? 0).reduce(sum, 0),
       }
     : undefined,
@@ -786,6 +808,31 @@ function Bill({
       parts: [w.imageTokens(s.images, k(s.imageTokens))],
       cost: s.cost?.image,
     },
+    // Only when something failed: most runs have nothing to say here.
+    ...(s.failed.attempts || s.failed.invalidCalls || s.failed.images
+      ? [
+          {
+            key: "failed",
+            label: w.failed,
+            who: undefined,
+            parts: [
+              ...(s.failed.attempts
+                ? [
+                    w.failedAttempts(s.failed.attempts),
+                    w.failedTime(Math.round(s.failed.ms / 1000)),
+                    w.input(k(s.failed.input), k(s.failed.cached)),
+                    s.failed.estimated
+                      ? w.failedOutputAbout(k(s.failed.output))
+                      : w.failedOutput(k(s.failed.output)),
+                  ]
+                : []),
+              ...(s.failed.invalidCalls ? [w.failedCalls(s.failed.invalidCalls)] : []),
+              ...(s.failed.images ? [w.failedImages(s.failed.images)] : []),
+            ],
+            cost: s.cost?.failed,
+          },
+        ]
+      : []),
   ];
   return (
     <table className={cx("bill")}>
@@ -823,6 +870,7 @@ function usage(run: Run, t: Words) {
     ...s.hosted.map(([n, c]) => `${toolName(n)} ×${c}`),
     !!s.images && t.usage.images(s.images),
     !!tokens && t.usage.tokens(k(tokens)),
+    !!s.failed.attempts && t.usage.failedAttempts(s.failed.attempts),
   ].filter(Boolean) as string[];
 }
 /** What the whole work has spent over every request, service by service. */

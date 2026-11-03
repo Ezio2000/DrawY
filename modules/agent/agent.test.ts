@@ -11,7 +11,7 @@ import { writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { CutOff, generate } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
-import { costOf, modelCatalogSchema, type Run, type Work } from "../contracts/index.ts";
+import { boxOf, costOf, modelCatalogSchema, type Run, type Work } from "../contracts/index.ts";
 import { removeParts, setData } from "../editing/index.ts";
 import { tracer } from "../trace/index.ts";
 import { library as client } from "../materials/index.ts";
@@ -177,12 +177,14 @@ it("lays out streamed modules on the write step before the write is saved", asyn
     };
     store.saveRun(run);
     const scene = work.scenes.root,
+      flat = scene.modules.map(({ bounds, ...m }) => ({ ...m, bounds: boxOf(bounds) })),
       args = JSON.stringify({
         baseRevision: 1,
-        scenes: [scene],
+        modules: flat,
+        links: scene.links,
         drawings: Object.values(work.drawings),
       }),
-      cut = args.indexOf(JSON.stringify(scene.modules[3])),
+      cut = args.indexOf(JSON.stringify(flat[3])),
       writing = Object.values(work.drawings)[0],
       // Part way through the first drawing's source.
       within = args.indexOf(JSON.stringify(writing.source)) + 8;
@@ -744,24 +746,8 @@ it("settles a brief only on the user's own words, then applies its style and sho
                 source: 'return api.material("apple")',
               },
             ],
-            scenes: [
-              {
-                ...work.scenes.root,
-                modules: [
-                  {
-                    id: "apple",
-                    label: "苹果",
-                    drawingId: "fruit",
-                    data: {},
-                    bounds: { x: 0, y: 0, width: 200, height: 194 },
-                    anchors: {},
-                    group: null,
-                    target: null,
-                  },
-                ],
-                checks: [],
-              },
-            ],
+            scenes: [{ id: "root", clear: true }],
+            modules: [{ id: "apple", label: "苹果", drawingId: "fruit", bounds: [0, 0, 200, 194] }],
           },
         ],
         ["view_canvas", {}],
@@ -1530,17 +1516,8 @@ it("reminds the author of the guides after the brief and of unread cards after a
     };
     const uses = (revision: number) => ({
       baseRevision: revision,
-      scenes: [
-        {
-          ...work.scenes.root,
-          modules: [
-            { id: "a", label: "a", bounds: { x: 0, y: 0, width: 10, height: 10 }, drawingId: "plot", group: null, target: null, anchors: {}, data: {} },
-          ],
-          links: [],
-          checks: [],
-          interactionId: null,
-        },
-      ],
+      scenes: [{ id: "root", clear: true }],
+      modules: [{ id: "a", label: "a", bounds: [0, 0, 10, 10], drawingId: "plot" }],
     });
     script(
       [
@@ -1566,14 +1543,12 @@ it("reminds the author of the guides after the brief and of unread cards after a
 });
 
 it("keeps the instructions to what every work needs, with the rest listed and readable", async () => {
-  const { AUTHOR, WRITE_EXAMPLE, catalogue, gist } = await import("./prompts.ts");
+  const { AUTHOR, catalogue, gist } = await import("./prompts.ts");
   const { guides } = await import("./guides.ts");
-  const { guideTopics, workEditSchema } = await import("../contracts/index.ts");
+  const { guideTopics } = await import("../contracts/index.ts");
   const { readFileSync } = await import("node:fs");
   const seed = (name: string) =>
     JSON.parse(readFileSync(new URL(`../../materials/seed/${name}.json`, import.meta.url), "utf8"));
-  // The example the author is shown is a valid write.
-  expect(workEditSchema.safeParse(WRITE_EXAMPLE).success).toBe(true);
   // Every topic the tool accepts has a guide and is listed with when to read it.
   expect(Object.keys(guides).sort()).toEqual([...guideTopics].sort());
   for (const topic of guideTopics)
@@ -1646,7 +1621,12 @@ it("counts what a cut-off turn spent and does not ask again what less thought ca
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("failed"));
     const failed = store.run(run.id);
     expect(failed.error).toContain("截断");
-    expect(failed.usage).toMatchObject({ input: 100, output: 32768 });
+    // Spent all the same, and told apart from what the run got for its money.
+    expect(failed.usage).toMatchObject({
+      input: 0,
+      output: 0,
+      failed: { attempts: 1, input: 100, output: 32768, estimated: 0 },
+    });
     expect(vi.mocked(generate)).toHaveBeenCalledTimes(1);
   } finally {
     db.close();
@@ -1679,7 +1659,7 @@ it("asks once more with the least thought when a turn thinks away its whole budg
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("failed"));
     // Thought away again at the least: it stops rather than paying a third time.
     expect(efforts).toEqual([undefined, "low"]);
-    expect(store.run(run.id).usage).toMatchObject({ output: 2000, reasoning: 2000 });
+    expect(store.run(run.id).usage).toMatchObject({ output: 0, failed: { attempts: 2, output: 2000 } });
     expect(store.run(run.id).error).toContain("思考");
   } finally {
     db.close();
@@ -1751,4 +1731,275 @@ it("lowers a turn's effort the way its request format changes effort", () => {
   // Already the least it accepts.
   expect(withLessThought(input, role("chat", "x", ["high"]), "high")).toBeUndefined();
   expect(withLessThought(input, role("chat", "x", []), "high")).toBeUndefined();
+});
+
+const run_ = (work: Work): Run => ({
+  id: "run",
+  workId: work.id,
+  sceneId: "root",
+  status: "running",
+  steps: [{ kind: "message", role: "user", text: "改一下", materials: [] }],
+  observations: [],
+  startedAt: Date.now(),
+});
+const said = (text: string) => ({
+  items: [{ type: "message", role: "assistant", content: [{ type: "output_text", text }] }],
+  usage: {},
+  response: {},
+});
+const called = (name: string, args: object, id = name) => ({
+  items: [{ type: "function_call", name, arguments: JSON.stringify(args), call_id: id }],
+  usage: {},
+  response: {},
+});
+it("takes closing words as the end when the latest revision has been seen, without asking for finish", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const run = run_(work);
+    store.saveRun(run);
+    const ctx = { input: [] as any[], settings: store.settings(), generations: 0 };
+    const turns = [said("还没看过就说完了"), called("view_canvas", {}), said("画好了，看图吧。")];
+    let turn = 0;
+    vi.mocked(generate).mockImplementation(async () => turns[turn++] as never);
+    await new Agent(() => {}).execute(store, run, ctx, "request");
+    expect(turn).toBe(3);
+    expect(run.status).toBe("completed");
+    // The words before the look were not taken for the end; the ones after it were, once.
+    expect(ctx.input.some((i) => String(i.content).includes("no tool call"))).toBe(true);
+    expect(
+      run.steps.filter((s) => s.kind === "message" && s.role === "assistant").map((s) => (s as { text: string }).text),
+    ).toEqual(["还没看过就说完了", "画好了，看图吧。"]);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+it("saves a partial write, showing only what it changed and laying out what moved", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const [first, second] = work.scenes.root.modules;
+    const run = run_(work);
+    store.saveRun(run);
+    const ctx = { input: [] as any[], settings: store.settings(), generations: 0 };
+    const bounds = { x: 5, y: 6, width: 70, height: 80 };
+    const turns = [
+      called("write_work", {
+        baseRevision: 1,
+        scenes: [{ id: "root", order: [second.id, first.id] }],
+        modules: [
+          { id: first.id, bounds: boxOf(bounds) },
+          { id: second.id, dataChanges: [{ path: ["extra"], value: 1 }] },
+        ],
+      }),
+      called("view_canvas", {}),
+      called("finish", { message: "好了" }),
+    ];
+    let turn = 0;
+    vi.mocked(generate).mockImplementation(async () => turns[turn++] as never);
+    await new Agent(() => {}).execute(store, run, ctx, "request");
+    expect(run.status).toBe("completed");
+    expect(run.steps.find((s) => s.kind === "tool" && s.name === "write_work")).toMatchObject({
+      status: "done",
+      revision: 2,
+      changed: 2,
+      scenes: [{ id: "root", modules: [{ id: first.id, bounds }] }],
+    });
+    const saved = store.work(work.id).scenes.root;
+    expect(saved.modules.find((m) => m.id === first.id)!.bounds).toEqual(bounds);
+    expect(saved.modules.find((m) => m.id === second.id)!.data.extra).toBe(1);
+    expect(saved.modules.length).toBe(work.scenes.root.modules.length);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+it("takes a hand edit in the same partial form, with the same checks", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    const id = work.scenes.root.modules[0].id;
+    const { work: saved } = await writeWork(
+      store,
+      work.id,
+      { baseRevision: 1, sceneEdits: [{ id: "root", modules: [{ id, label: "手改" }] }] },
+      { kind: "edit" },
+    );
+    expect(saved.scenes.root.modules[0].label).toBe("手改");
+    await expect(
+      writeWork(
+        store,
+        work.id,
+        { baseRevision: 2, sceneEdits: [{ id: "root", modules: [{ id, drawingId: "no-such-drawing" }] }] },
+        { kind: "edit" },
+      ),
+    ).rejects.toThrow("no-such-drawing");
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("asks again when the stream breaks off, and bills the attempt that failed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"], shouldAdvanceTime: true, advanceTimeDelta: 500 });
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const run = run_(work);
+    store.saveRun(run);
+    const ctx = { input: [] as any[], settings: store.settings(), generations: 0 };
+    ctx.settings.prices = {
+      ...ctx.settings.prices,
+      author: { input: 4, cached: 0.2, cacheWrite: 5, output: 20 },
+    };
+    run.prices = ctx.settings.prices;
+    let turn = 0;
+    vi.mocked(generate).mockImplementation(async (_role, { onEvent }) => {
+      turn++;
+      if (turn === 1) {
+        // The input is reported as the stream opens; the output never is.
+        onEvent!({
+          type: "response.usage",
+          usage: {
+            input_tokens: 1000,
+            input_tokens_details: { cached_tokens: 900, cache_write_tokens: 100 },
+            output_tokens: 0,
+          },
+        });
+        onEvent!({ type: "response.function_call_arguments.delta", item_id: "x", delta: "a".repeat(300) });
+        throw Error("模型连接在完成前中断");
+      }
+      return (turn === 2
+        ? { ...called("view_canvas", {}), usage: { input_tokens: 50, output_tokens: 5 } }
+        : called("finish", { message: "好了" })) as never;
+    });
+    const going = new Agent(() => {}).execute(store, run, ctx, "request");
+    await vi.advanceTimersByTimeAsync(3000);
+    await going;
+    expect(turn).toBe(3);
+    expect(run.status).toBe("completed");
+    expect(run.usage).toMatchObject({
+      input: 50,
+      output: 5,
+      failed: { attempts: 1, input: 1000, cached: 900, cacheWrite: 100, output: 100, estimated: 100, invalidCalls: 0, images: 0 },
+    });
+    expect(run.usage!.failed!.ms).toBeGreaterThanOrEqual(2000);
+    const cost = costOf(run.usage, run.prices)!;
+    // 900 read, 100 written and 100 written out, apart from what the run got.
+    expect(cost.failed).toBeCloseTo((900 * 0.2 + 100 * 5 + 100 * 20) / 1e6, 8);
+    expect(cost.total).toBeCloseTo(cost.author + cost.search + cost.image + cost.failed, 8);
+  } finally {
+    vi.useRealTimers();
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+it("bills a cancelled turn and counts a request that was refused, which costs nothing", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    const run = run_(work);
+    store.saveRun(run);
+    const ctx = { input: [] as any[], settings: store.settings(), generations: 0 };
+    vi.mocked(generate).mockImplementation(async () => {
+      throw Error("模型请求 400: 不行");
+    });
+    await new Agent(() => {}).execute(store, run, ctx, "request");
+    expect(run.status).toBe("failed");
+    expect(run.usage!.failed).toMatchObject({ attempts: 1, input: 0, output: 0, estimated: 0 });
+    expect(costOf(run.usage, run.prices)!.failed).toBe(0);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("answers tool input written broken as a failed call, which the model corrects in its next turn", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const run = run_(work);
+    store.saveRun(run);
+    const ctx = { input: [] as any[], settings: store.settings(), generations: 0 };
+    const broken = '{"baseRevision":1,"modules":[{"id":"x"}]}],"links":[]}';
+    let turn = 0;
+    const seen: any[][] = [];
+    vi.mocked(generate).mockImplementation(async (_role, { input, onEvent }) => {
+      seen.push(structuredClone(input));
+      turn++;
+      if (turn === 1) {
+        onEvent!({
+          type: "response.output_item.added",
+          item: { id: "w", type: "function_call", name: "write_work", call_id: "w" },
+        });
+        return {
+          items: [
+            { type: "function_call", name: "write_work", arguments: broken, call_id: "w" },
+            { type: "function_call", name: "view_canvas", arguments: "{}", call_id: "v" },
+          ],
+          usage: { input_tokens: 100, output_tokens: 40 },
+          response: {},
+        } as never;
+      }
+      if (turn === 2)
+        return {
+          items: [
+            { type: "function_call", name: "write_work", arguments: '{"baseRevision":1,"title":"改好了"}', call_id: "w2" },
+            { type: "function_call", name: "view_canvas", arguments: "{}", call_id: "v2" },
+          ],
+          usage: { input_tokens: 200, output_tokens: 20 },
+          response: {},
+        } as never;
+      return called("finish", { message: "好了" }) as never;
+    });
+    await new Agent(() => {}).execute(store, run, ctx, "request");
+    expect(turn).toBe(3);
+    expect(run.status).toBe("completed");
+    // What it wrote, why it failed, and that the look was not taken at an older version.
+    const outputs = seen[1].filter((i) => i.type === "function_call_output").map((i) => i.output);
+    expect(outputs[0]).toContain("不是有效的 JSON");
+    expect(outputs[0]).toContain("没有保存");
+    expect(outputs[1]).toContain("write_work failed");
+    expect(seen[1].find((i) => i.call_id === "w" && i.type === "function_call").arguments).toBe(broken);
+    // The step that streamed ended, and both turns' tokens are the run's own.
+    expect(run.steps.find((s) => s.kind === "tool" && s.id === "w")).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("不是有效的 JSON"),
+    });
+    expect(run.usage).toMatchObject({ input: 300, output: 60 });
+    expect(run.usage!.failed).toMatchObject({ attempts: 0, invalidCalls: 1 });
+    expect(store.work(work.id).title).toBe("改好了");
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
 });

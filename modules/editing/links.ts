@@ -40,7 +40,7 @@ export function facing(m: Instance, p: Point): Side {
 }
 /** The name of the anchor at a point on a module: one it has there already, or a new one
  * named for the side, which the module is given. */
-function anchorAt(m: Instance, side: Side): { module: Instance; anchor: string } {
+export function anchorAt(m: Instance, side: Side): { module: Instance; anchor: string } {
   const at = sidePoint[side];
   const have = Object.entries(m.anchors).find(
     ([, a]) => Math.abs(a.x - at.x) < 0.02 && Math.abs(a.y - at.y) < 0.02,
