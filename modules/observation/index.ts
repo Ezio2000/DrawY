@@ -12,12 +12,13 @@ import { tracer } from "../trace/index.ts";
 import { drawnWith } from "../materials/index.ts";
 import { union } from "../contracts/geometry.ts";
 export const viewSchema = z.object({
-  sceneId: z.string().optional(),
-  region: boundsSchema.optional(),
-  annotate: z.boolean().optional(),
+  sceneId: z.string().optional().describe("One scene; leave out to see every nonempty scene"),
+  region: boundsSchema.optional().describe("A close-up of this area, in scene units"),
+  annotate: z.boolean().optional().describe("Mark each object's id and bounds on the image"),
   actions: z
     .array(z.object({ moduleId: z.string(), selector: z.string() }))
-    .optional(),
+    .optional()
+    .describe("CSS-selector clicks to perform in order, in the scene given by sceneId"),
 });
 export type ViewOptions = z.infer<typeof viewSchema>;
 /** The capture service cannot look right now; nothing about the work is wrong. */

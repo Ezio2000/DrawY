@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { Storage } from "../storage/index.ts";
 import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
-import { Agent, steering, SEARCH_LIMIT } from "./index.ts";
+import { Agent, steering, SEARCH_LIMIT, withLessThought } from "./index.ts";
 import { settleSchema } from "./tools.ts";
 import { writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
-import { generate } from "../models/index.ts";
+import { CutOff, generate } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
 import { costOf, modelCatalogSchema, type Run, type Work } from "../contracts/index.ts";
 import { removeParts, setData } from "../editing/index.ts";
@@ -1457,4 +1457,326 @@ it("steers the service's search like the provider's own, except over Chat Comple
   const hosted = [{ type: "function", name: "write_work" }, { type: "web_search" }];
   expect(steering(run(search(2)), hosted, { protocol: "responses", toolLimits: true })).toEqual({ max_tool_calls: SEARCH_LIMIT - 2 });
   expect(steering(run(search(2)), hosted, limitless)).toEqual({});
+});
+
+it("gives the author guides and drawing cards on demand, and only once", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const seen: any[][] = [];
+    script(
+      [
+        ["draw_guide", { topics: ["maps", "copy"], drawings: ["arrow", "no-such"] }],
+        // Asked again: geomap came with maps, and arrow was read on its own.
+        ["draw_guide", { topics: ["maps"], drawings: ["geomap", "arrow", "plot"] }],
+        ["draw_guide", {}],
+        ["view_canvas", {}],
+        ["finish", { message: "done" }],
+      ],
+      seen,
+    );
+    const run = await new Agent(() => {}).start(store, work.id, "root", "画");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    const [first, second, empty] = outputs(seen.at(-1)!).map((o) => JSON.parse(o));
+    expect(first.guides.map((g: any) => g.topic)).toEqual(["maps", "copy"]);
+    expect(first.guides[0].text).toContain("geomap");
+    expect(first.drawings.map((d: any) => d.id)).toEqual(["geomap", "arrow"]);
+    expect(first.drawings[1]).toMatchObject({ use: "link", size: "200×60" });
+    expect(first.drawings[1].params.route).toBeTruthy();
+    expect(first.drawings[1].example.flow).toBe(true);
+    expect(first.unknown).toEqual(["no-such"]);
+    expect(second.guides).toBeUndefined();
+    expect(second.drawings.map((d: any) => d.id)).toEqual(["plot"]);
+    expect(second.alreadyAbove).toEqual(["maps", "geomap", "arrow"]);
+    expect(empty.error).toBeTruthy();
+    // A step in the studio says what was read.
+    const steps = store.run(run.id).steps.filter((s) => s.kind === "tool" && s.name === "draw_guide");
+    expect(steps[0]).toMatchObject({
+      status: "done",
+      topics: ["maps", "copy"],
+      drawings: ["arrow", "no-such"],
+    });
+    expect(steps[2]).toMatchObject({ status: "failed" });
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("sends a guide again once a summary has dropped it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    const { guidesRead } = await import("./guides.ts");
+    const read = [
+      { type: "function_call", name: "draw_guide", call_id: "a", arguments: '{"topics":["maps"]}' },
+      { type: "function_call_output", call_id: "a", output: "{}" },
+    ];
+    expect([...guidesRead(read).topics]).toEqual(["maps"]);
+    expect([...guidesRead(read).drawings]).toEqual(["geomap"]);
+    expect(guidesRead([{ role: "user", content: "Conversation summary. …" }]).topics.size).toBe(0);
+    // A call not answered yet has been read by nobody.
+    expect(guidesRead(read.slice(0, 1)).topics.size).toBe(0);
+    // Nor has a call the tool refused, whatever else it named.
+    for (const args of ['{"topics":["maps","bogus"]}', '{"topics":"maps"}', "{not json"])
+      expect(
+        guidesRead([
+          { type: "function_call", name: "draw_guide", call_id: "b", arguments: args },
+          { type: "function_call_output", call_id: "b", output: '{"error":"x"}' },
+        ]).topics.size,
+      ).toBe(0);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("keeps the extra thought for the decision when the author reads a guide first", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const seen: any[][] = [];
+    script(
+      [
+        ["draw_guide", { topics: ["formats"] }],
+        ["write_work", { baseRevision: 1, title: "edited" }],
+        ["view_canvas", {}],
+        ["draw_guide", { topics: ["pictures"] }],
+        ["write_work", { baseRevision: 2, title: "again" }],
+        ["view_canvas", {}],
+        ["finish", { message: "done" }],
+      ],
+      seen,
+    );
+    const run = await new Agent(() => {}).start(store, work.id, "root", "画");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    const effort = (input: any[]) =>
+      input.findLast((i) => i.type === "configuration_update")?.reasoning.effort;
+    expect(seen.map(effort)).toEqual(["max", "max", "medium", "max", "max", "medium", "max"]);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("reminds the author of the guides after the brief and of unread cards after a write", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    work.materials = {};
+    store.commit(work, 0, { kind: "edit" });
+    const seen: any[][] = [];
+    const brief = {
+      subject: "苹果",
+      intent: "苹果",
+      audience: "学生",
+      ideas: [
+        { kind: "anatomy", idea: "切开的苹果" },
+        { kind: "change", idea: "一年里的苹果树" },
+      ],
+      concept: "切开的苹果居中",
+      register: "formal",
+      style: "textbook",
+      direction: "安静的线条",
+      cast: [],
+      basis: { subject: "苹果", intent: "苹果" },
+    };
+    const uses = (revision: number) => ({
+      baseRevision: revision,
+      scenes: [
+        {
+          ...work.scenes.root,
+          modules: [
+            { id: "a", label: "a", bounds: { x: 0, y: 0, width: 10, height: 10 }, drawingId: "plot", group: null, target: null, anchors: {}, data: {} },
+          ],
+          links: [],
+          checks: [],
+          interactionId: null,
+        },
+      ],
+    });
+    script(
+      [
+        ["set_brief", brief],
+        ["write_work", uses(2)],
+        ["draw_guide", { drawings: ["plot"] }],
+        ["write_work", { ...uses(3), title: "again" }],
+        ["view_canvas", {}],
+        ["finish", { message: "done" }],
+      ],
+      seen,
+    );
+    const run = await new Agent(() => {}).start(store, work.id, "root", "画苹果");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    const [settled, unread, , read] = outputs(seen.at(-1)!).map((o) => JSON.parse(o));
+    expect(settled.guides).toContain("draw_guide");
+    expect(unread.cardsUnread).toEqual(["plot"]);
+    expect(read.cardsUnread).toBeUndefined();
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("keeps the instructions to what every work needs, with the rest listed and readable", async () => {
+  const { AUTHOR, WRITE_EXAMPLE, catalogue, gist } = await import("./prompts.ts");
+  const { guides } = await import("./guides.ts");
+  const { guideTopics, workEditSchema } = await import("../contracts/index.ts");
+  const { readFileSync } = await import("node:fs");
+  const seed = (name: string) =>
+    JSON.parse(readFileSync(new URL(`../../materials/seed/${name}.json`, import.meta.url), "utf8"));
+  // The example the author is shown is a valid write.
+  expect(workEditSchema.safeParse(WRITE_EXAMPLE).success).toBe(true);
+  // Every topic the tool accepts has a guide and is listed with when to read it.
+  expect(Object.keys(guides).sort()).toEqual([...guideTopics].sort());
+  for (const topic of guideTopics)
+    expect(AUTHOR).toContain(`- ${topic}: ${guides[topic].when}.`);
+  // The instructions are not to be read as shouting.
+  expect(AUTHOR + Object.values(guides).map((g) => g.text).join("")).not.toMatch(/\b(MUST|NEVER|ALWAYS|IMPORTANT|CRITICAL)\b/);
+  // Parameters and examples stay on the cards; the index is one short line per drawing.
+  const index = catalogue(seed("styles"), [...seed("drawings"), ...seed("effects")]);
+  expect(index).not.toContain("e.g. ");
+  for (const d of seed("drawings")) {
+    expect(index).toContain(`- ${d.id}`);
+    expect(gist(d.about).length).toBeLessThan(170);
+  }
+  expect(AUTHOR.length + index.length).toBeLessThan(30000);
+});
+
+it("answers every call of a batch before showing its pictures", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const seen: any[][] = [];
+    const call = (name: string, args: unknown, call_id: string) => ({
+      type: "function_call",
+      name,
+      call_id,
+      arguments: JSON.stringify(args),
+    });
+    const turns = [
+      [
+        call("find_materials", { subjects: ["苹果"], kinds: ["picture"] }, "a"),
+        call("draw_guide", { topics: ["copy"] }, "b"),
+      ],
+      [call("view_canvas", {}, "d")],
+      [call("finish", { message: "done" }, "e")],
+    ];
+    vi.mocked(generate).mockImplementation(async (_role, { input }) => {
+      seen.push(structuredClone(input));
+      return { items: turns[seen.length - 1], usage: {}, response: {} };
+    });
+    const run = await new Agent(() => {}).start(store, work.id, "root", "画");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    const items = seen[1].filter((i) => i.type !== "configuration_update");
+    const order = items.slice(-3).map((i) => i.call_id ?? i.role);
+    expect(order).toEqual(["a", "b", "user"]);
+    expect(items.at(-1).content.some((c: any) => c.type === "input_image")).toBe(true);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("counts what a cut-off turn spent and does not ask again what less thought cannot cure", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    vi.mocked(generate).mockClear();
+    vi.mocked(generate).mockImplementation(async () => {
+      throw new CutOff("max_output_tokens", false, { input_tokens: 100, output_tokens: 32768 });
+    });
+    const run = await new Agent(() => {}).start(store, work.id, "root", "画");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("failed"));
+    const failed = store.run(run.id);
+    expect(failed.error).toContain("截断");
+    expect(failed.usage).toMatchObject({ input: 100, output: 32768 });
+    expect(vi.mocked(generate)).toHaveBeenCalledTimes(1);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("asks once more with the least thought when a turn thinks away its whole budget", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const efforts: unknown[] = [];
+    vi.mocked(generate).mockClear();
+    vi.mocked(generate).mockImplementation(async (_role, { input }) => {
+      efforts.push(input.findLast((i: any) => i.type === "configuration_update")?.reasoning.effort);
+      if (efforts.length <= 2)
+        throw new CutOff("max_output_tokens", true, {
+          input_tokens: 100,
+          output_tokens: 1000,
+          output_tokens_details: { reasoning_tokens: 1000 },
+        });
+      return { items: [], usage: {}, response: {} };
+    });
+    const run = await new Agent(() => {}).start(store, work.id, "root", "画");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("failed"));
+    // Thought away again at the least: it stops rather than paying a third time.
+    expect(efforts).toEqual(["max", "low"]);
+    expect(store.run(run.id).usage).toMatchObject({ output: 2000, reasoning: 2000 });
+    expect(store.run(run.id).error).toContain("思考");
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("lowers a turn's effort the way its request format changes effort", () => {
+  const input: any[] = [];
+  const role = (protocol: string, model: string, efforts: string[]) =>
+    ({ protocol, model, efforts, effort: "high" }) as never;
+  // In the conversation: the request stays as it is, so the cached prefix holds.
+  const astra = withLessThought(input, role("responses", "gpt-6-astra", ["low", "high", "max"]), "max")!;
+  expect(input).toEqual([{ type: "configuration_update", reasoning: { effort: "low" } }]);
+  expect((astra.role as any).effort).toBe("high");
+  // A model whose effort only the request sets, such as DeepSeek's over Responses.
+  input.length = 0;
+  const deepseek = withLessThought(input, role("responses", "deepseek-flash", ["low", "high", "max"]), "high")!;
+  expect(input).toEqual([]);
+  expect((deepseek.role as any).effort).toBe("low");
+  // Per request, in the turn itself.
+  const chat = withLessThought(input, role("chat", "deepseek-chat", ["low", "high"]), "high")!;
+  expect(input).toEqual([]);
+  expect(chat.effort).toBe("low");
+  expect((chat.role as any).effort).toBe("high");
+  // Already the least it accepts.
+  expect(withLessThought(input, role("chat", "x", ["high"]), "high")).toBeUndefined();
+  expect(withLessThought(input, role("chat", "x", []), "high")).toBeUndefined();
 });

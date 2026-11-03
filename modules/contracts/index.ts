@@ -51,30 +51,34 @@ export const drawingSchema = z.object({
 // sketched while its drawing code is still arriving.
 export const instanceSchema = z.object({
   id: key,
-  label: z.string(),
-  bounds: boundsSchema,
-  drawingId: key,
-  group: z.string().nullable(),
-  target: targetSchema.nullable(),
-  anchors: z.record(z.string(), pointSchema),
-  data: z.record(z.string(), z.unknown()),
+  label: z.string().describe("What a person editing the work calls this module, in the user's language"),
+  bounds: boundsSchema.describe("Position and size in scene units"),
+  drawingId: key.describe("A drawing defined in the work, or a library drawing used as it is"),
+  group: z.string().nullable().describe("Modules with the same group move together; it draws nothing"),
+  target: targetSchema.nullable().describe("Where clicking this module leads; null for most modules"),
+  anchors: z
+    .record(z.string(), pointSchema)
+    .describe("Named points links attach to, normalized to the module (0..1)"),
+  data: z.record(z.string(), z.unknown()).describe("The drawing's parameters for this instance"),
 });
 const endpointSchema = z.object({ moduleId: key, anchor: key });
 export const linkSchema = z.object({
   id: key,
-  drawingId: key,
-  from: endpointSchema,
-  to: endpointSchema,
-  data: z.record(z.string(), z.unknown()),
+  drawingId: key.describe("A link drawing, usually the library's arrow"),
+  from: endpointSchema.describe("A module id and one of its anchors"),
+  to: endpointSchema.describe("A module id and one of its anchors"),
+  data: z.record(z.string(), z.unknown()).describe("The drawing's parameters for this link"),
 });
 export const sceneSchema = z.object({
   id: key,
   title: key,
-  parentId: z.string().nullable(),
-  modules: z.array(instanceSchema),
+  parentId: z.string().nullable().describe("The scene this one opens from; null for a top-level scene"),
+  modules: z.array(instanceSchema).describe("In stacking and drawing order, first at the bottom"),
   links: z.array(linkSchema),
   interactionId: z.string().nullable(),
-  checks: z.array(z.object({ moduleId: key, selector: key })),
+  checks: z
+    .array(z.object({ moduleId: key, selector: key }))
+    .describe("Important buttons view_canvas should try, by module and CSS selector"),
 });
 export const interactionSchema = z.object({
   id: key,
@@ -85,8 +89,8 @@ export const detailSchema = z.object({ id: key, title: key, html: z.string() });
  * words (a request, an answer or a standing preference) that decide that part; the concept
  * is the author's own decision of how the picture carries the intent. */
 export const briefSchema = z.object({
-  subject: z.string().min(1),
-  intent: z.string().min(1),
+  subject: z.string().min(1).describe("The subject as you understand it"),
+  intent: z.string().min(1).describe("What the picture must make clear or make felt"),
   audience: z.string().min(1),
   concept: z
     .string()
@@ -95,7 +99,7 @@ export const briefSchema = z.object({
       "The visual idea the picture is built on, chosen by the author: what the eye meets first, how the parts are arranged and what that arrangement says; not a list of parts and not the look",
     ),
   register: z.enum(["formal", "expressive"]),
-  style: key,
+  style: key.describe("A style id from the library"),
   direction: z
     .string()
     .min(1)
@@ -107,13 +111,15 @@ export const briefSchema = z.object({
     .max(12)
     .describe("Recognizable things that will appear, one per entry"),
   basis: z.object({
-    subject: z.string().min(1),
-    intent: z.string().min(1),
+    subject: z.string().min(1).describe("The user's words, verbatim, that say which thing"),
+    intent: z.string().min(1).describe("The user's words, verbatim, that say which aspect or purpose"),
     register: z
       .string()
       .min(1)
       .optional()
-      .describe("Omitted when the user's words leave the register to you"),
+      .describe(
+        "The user's words, verbatim, that say how serious or personal it should be: a medium, audience, purpose or mood such as 教科书, 严谨, 汇报, 科普, 给孩子看, 绘本, 海报, 放飞想象, 水墨. Omitted when their words leave the register to you",
+      ),
   }),
 });
 /** A material as a work uses it: what the runtime needs, copied when the work took it, so
@@ -219,15 +225,21 @@ export function stepBefore(
   return at > 1 ? at - 1 : undefined;
 }
 export const workEditSchema = z.object({
-  baseRevision: z.number().int(),
+  baseRevision: z.number().int().describe("The work's current revision, as the last set_brief or write_work returned it"),
   title: z.string().optional(),
-  scenes: z.array(sceneSchema).optional(),
+  scenes: z
+    .array(sceneSchema)
+    .optional()
+    .describe("Each replaces the scene with its id whole, including every module and link it keeps"),
   drawings: z.array(drawingSchema).optional(),
   interactions: z.array(interactionSchema).optional(),
   details: z.array(detailSchema).optional(),
   /** Material ids to take into the work besides those its drawings name literally. */
-  materials: z.array(key).optional(),
-  style: z.record(z.string(), z.string()).optional(),
+  materials: z
+    .array(key)
+    .optional()
+    .describe("Material ids to take into the work besides those its drawings and data name literally"),
+  style: z.record(z.string(), z.string()).optional().describe("Style tokens to change"),
   remove: z
     .object({
       drawings: z.array(key).optional(),
@@ -339,6 +351,17 @@ export interface Citation {
   url: string;
   title: string;
 }
+/** The guides the author can read on demand with draw_guide. */
+export const guideTopics = [
+  "pictures",
+  "drawing",
+  "diagrams",
+  "maps",
+  "exploration",
+  "formats",
+  "copy",
+] as const;
+export type GuideTopic = (typeof guideTopics)[number];
 export type ToolActivity =
   | {
       name: "web_search";
@@ -353,6 +376,8 @@ export type ToolActivity =
    * by its output item's type without `_call` (e.g. `code_interpreter`). */
   | { name: "hosted"; tool: string; detail?: string }
   | { name: "read_work"; revision?: number }
+  /** What the author read on demand: guides by topic, library drawings by id. */
+  | { name: "draw_guide"; topics: GuideTopic[]; drawings: string[] }
   | {
       name: "set_brief";
       subject: string;

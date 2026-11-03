@@ -83,7 +83,7 @@ it("settles a model to what its provider's connection and format offer", () => {
   // The effort kept is one the model offers.
   expect(settleWriter({ channel: "api" }, { ...defaultWriter(), effort: "max", efforts: ["low", "high"] }).effort).toBe("high");
   // Only the Responses API takes a speed.
-  expect(speedsOf({ channel: "api", protocol: "responses" })).toEqual(["flex", "default", "fast"]);
+  expect(speedsOf({ channel: "api", protocol: "responses" })).toEqual(["flex", "default", "fast", "ultrafast"]);
   expect(speedsOf({ channel: "api", protocol: "anthropic" })).toEqual([]);
 });
 

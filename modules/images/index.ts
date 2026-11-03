@@ -10,15 +10,23 @@ import { tracer } from "../trace/index.ts";
 export const pictureRequestSchema = z.object({
   name: z.object({ zh: z.string().min(1), en: z.string().min(1) }),
   aliases: z.array(z.string()).default([]),
-  role: z.enum(["object", "figure", "scene", "texture", "icon"]),
-  /** What is in the frame: the subject, its state, view and details. Not the style. */
-  depicts: z.string().min(1),
+  role: z
+    .enum(["object", "figure", "scene", "texture", "icon"])
+    .describe(
+      "object, figure and icon are cut-outs on transparency; scene is a vignette fading into paper; texture is a seamless surface",
+    ),
+  depicts: z
+    .string()
+    .min(1)
+    .describe("What is in the frame: the subject, its state, view and details; not the style"),
   aspect: z.enum(["square", "landscape", "portrait"]).default("square"),
-  /** A name other pictures in the same request can refer to. */
-  key: z.string().optional(),
-  /** Pictures to work from, to restyle, vary or keep consistent with: material ids, or
-   * keys of pictures in the same request, which are then made first. */
-  references: z.array(z.string()).default([]),
+  key: z.string().optional().describe("A name other pictures in the same request can refer to"),
+  references: z
+    .array(z.string())
+    .default([])
+    .describe(
+      "Pictures to work from, to restyle, vary or keep consistent with: material ids, or keys of pictures in the same request, which are then made first",
+    ),
 });
 export type PictureRequest = z.input<typeof pictureRequestSchema>;
 const sizes = {
@@ -93,10 +101,10 @@ function promptFor(
   // The role decides the background: a cut-out stands on transparency, a scene is whole.
   const framing = {
     object:
-      "A single subject, centred, filling most of the frame with a small even margin, isolated on a transparent background; no ground, no frame.",
+      "A single subject, centred, filling most of the frame with a small even margin, isolated on a fully transparent background; no scenery, ground, cast shadow or frame.",
     figure:
-      "One character, centred, filling most of the frame with a small even margin, isolated on a transparent background; no ground, no frame.",
-    icon: "One simple symbol, centred, filling most of the frame, on a transparent background.",
+      "One character, centred, filling most of the frame with a small even margin, isolated on a fully transparent background; no scenery, ground, cast shadow or frame.",
+    icon: "One simple symbol, centred, filling most of the frame, on a fully transparent background; no scenery or frame.",
     scene:
       "A self-contained vignette: the scene fills the frame, but its edges dissolve softly into plain off-white paper; no border, no frame.",
     texture: "A seamless full-bleed surface with no focal subject.",
@@ -115,7 +123,14 @@ function promptFor(
       : "",
   ].filter(Boolean);
   // The medium comes first: picture models otherwise drift towards a realistic default.
-  return `${style}\nSubject: ${r.depicts}\n${framing} Nothing else in the frame. No text, letters, numbers, arrows, labels or watermark.\nLook and mood only (adds nothing to the content): ${direction}${shown.length ? "\n" + shown.join("\n") : ""}`;
+  return [
+    style,
+    `Subject: ${r.depicts}`,
+    framing,
+    `Look and mood only, adding nothing to the content: ${direction}`,
+    ...shown,
+    "Nothing else in the frame. No text, letters, numbers, arrows, labels, logos or watermark.",
+  ].join("\n");
 }
 
 /** Calls the picture model and returns the bytes of one picture. */

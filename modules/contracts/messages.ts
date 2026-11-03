@@ -36,6 +36,8 @@ const exact: Record<string, string> = {
   "请在模型设置中配置生图凭证":
     "Set up the image model's credentials in Settings",
   "请先配置模型凭证": "Set up the model's credentials in Settings first",
+  "模型的思考用完了这一轮的输出额度，还没写出内容；可以调低思考强度再试":
+    "The model used up this turn's output budget thinking before writing anything. Try a lower thinking effort.",
   "这一轮要写的内容太多，模型的输出被截断了":
     "There was too much to write in one go, and the model's output was cut off",
   // Runs saved before this wording still carry the old one.
@@ -82,6 +84,8 @@ const exact: Record<string, string> = {
 };
 
 const patterns: [RegExp, (...m: string[]) => string][] = [
+  [/^模型服务中止了这一轮的输出：(.+)$/, (reason) => `The model service stopped this turn's output: ${reason}`],
+  [/^模型服务中止了这一轮的输出：(.+)$/, (reason) => `The model service stopped this turn's output: ${reason}`],
   [/^画布查看服务不可用([\s\S]*)$/, (d) => "The canvas capture service is unavailable" + d],
   [/^生图失败 (\d+): ([\s\S]*)$/, (s, d) => `Image generation failed (${s}): ${d}`],
   [/^模型请求 (\d+): ([\s\S]*)$/, (s, d) => `Model request failed (${s}): ${d}`],

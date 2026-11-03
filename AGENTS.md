@@ -36,6 +36,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
    - `ask_user` 暂停运行，状态变为 `waiting`，用户回答后由 `resume` 继续。`start` 在首次异步操作前读取完整 `Settings`，存入服务端持久化的 `Context.settings`；恢复、绘制循环、压缩、搜索、生图与简报偏好校验都使用此快照，不重读账号设置。`run.services` 和 `run.prices` 从此快照生成，跨作品选择或管理员改价不会影响已有运行；新运行单独读取最新设置，只继承旧运行的对话，不继承配置。完整快照含连接凭证，只存在服务端 context，不放入公开 Run 或 trace。
    - `set_brief` 定下简报。
    - `find_materials` 检索素材库。
+   - `draw_guide` 按需读取指南和库画法卡片（渐进式披露，见“提示词的三层”）。
    - `generate_images` 在后台生成图片（`modules/images`）。这些图片先在素材库里预留 ID，作者马上就能引用。每张图除了作者给的内容参考图，还会带上作品里已有的同风格图片和风格样张作为风格参考图（`styleReferences`），保持画风一致。
    - `read_work` 读取作品，`write_work` 修改作品，`view_canvas` 截图查看。`view_canvas` 可单独调用，或放在同轮一个或多个 `write_work` 之后的最后一项；按顺序保存后截图，任一保存失败就跳过本轮截图。`ask_user` 和 `finish` 仍需单独调用。
 4. `write_work` 交给 `modules/workspace` 原子提交。提交时校验 `baseRevision`，不一致时返回 409；把作品新提到的素材从素材库取进作品的 `materials` 快照，不再提到的移出去，已有的库画法和质感换成库里的当前版本（作者的素材目录描述的就是当前版本）；再校验整个作品，最后由 `modules/storage` 写成一个新版本，记下 `Cause`。
@@ -138,7 +139,22 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 - 简报里的立意（`concept`）是作者自己定的视觉想法，不引用用户的话；`set_brief` 的参数（`tools.ts` 的 `settleSchema`）在立意前先要两三种画法（`ideas`），每种标明种类（`ideaKinds`）且种类互不相同，只记在运行步骤里不进作品。创作模型在工具循环里几乎不做隐式推理：在 high 和 xhigh 下，定立意和看图后的轮次推理 token 通常只有几十，只有 max 会真正思考（约 300～900）。所以未开启“决策轮沿用设置”时，`agent/index.ts` 的 `deliberate` 只在这两类决策轮用 `configuration_update` 把强度升到 max，其余轮次回到设置的强度；请求级的 `reasoning.effort` 保持不变，否则缓存前缀会失效。除此之外，要它发散、评判，还得让它写成显式输出：想法写进参数，看图后的评判写成给用户的一句进度；`view_canvas` 把意图和立意放在截图旁边，全图附上 `figure.viewFilled`。看图时按“准确→立意是否读得出→工艺”的顺序评判；
 - 结束前必须看过最新版本的所有非空场景，并且截图里没有运行错误（`requireObserved`）。
 
-改提示词前先读一遍现有的 `AUTHOR`，在原有结构里修改，不要另起一套写法。
+改提示词前先读一遍现有的 `AUTHOR` 和 `guides.ts`，在原有结构里修改，不要另起一套写法。
+
+**提示词的三层。** 常驻指令只放每个作品都用得上的内容，其余按需读取，这样系统提示词每轮带的 token 少，同时前缀依然逐字节稳定。放在哪一层按“多少作品用得上”决定，新增规则时也照此判断：
+- 系统提示词（`prompts.ts`）：`AUTHOR` 加 `catalogue` 的索引。`# Guides` 由 `guideIndex` 从 `guides` 的 `when` 生成，每个主题一行“什么时候读”；`# Library` 每个画法一行，取 `about` 开头到第一个冒号、分号或句号的那一句（`gist`），所以 `about` 要以“它是什么”开头。
+- 指南（`guides.ts` 的 `guides`，主题列表是 `contracts` 的 `guideTopics`）：`pictures`、`drawing`、`diagrams`、`maps`、`exploration`、`formats`、`copy`。`cards` 是读这个主题时一起给的画法卡片。指南不再指向别的指南（官方建议引用只深一层）。新增主题要改 `guideTopics`、`guides` 和 `i18n.tsx` 的 `steps.guideTopics` 中英文。
+- 卡片（`materials` 的 `drawingCard`）：库画法的完整说明、参数、默认尺寸和示例数据。
+
+`draw_guide` 是工具循环里的普通步骤，结果追加在对话里，不改系统提示词和工具列表，所以不破坏缓存。`guidesRead` 从 `ctx.input` 算出已读内容，重复请求只回 `alreadyAbove`；压缩替换对话后自然清空，可以重新读。作者可能不读就动手，所以有两处提醒：`set_brief` 的结果在还没读过指南时附 `guides`，`write_work` 的结果列出作品用到但没读过卡片的库画法（`cardsUnread`）。只调用 `draw_guide` 的一轮不算做了决定，下一轮仍是决策轮（`deciding`）。
+
+一轮有多个工具调用时，`loop` 等这一批的结果全部写入后才追加图片消息，因为 DeepSeek 的 Responses 接口把夹在结果之间的消息当成调用没有结果（400）。Responses 的 `response.incomplete` 抛 `CutOff`，带服务方给的原因和 usage：`loop` 把用量计入运行并记进 trace，只有思考、没写出内容时提示调低思考强度。
+
+一轮有多个工具调用时，`loop` 等这一批的结果全部写入后才追加图片消息，因为 DeepSeek 的 Responses 接口把夹在结果之间的消息当成调用没有结果（400）。
+
+输出被截断时三种适配器都抛 `models/types.ts` 的 `CutOff`，带服务方给的原因、usage 和 `thoughtOnly`（只有思考、还没写出内容）。`loop` 把用量计入运行并记进 trace；`thoughtOnly` 时由 `withLessThought` 按该格式改变强度的方式（对话里的 `configuration_update` 或请求参数）以模型接受的最低档重试一次，再失败就停止。这一轮之后的强度照常由 `deliberate` 决定。
+
+工具说明写清做什么、什么时候用、返回什么和失败时怎样；字段的含义写在 schema 的 `.describe` 里（JSDoc 模型看不到），不在系统提示词里重复。
 
 **面向用户的文字要中英双语。** 前端文案在 `apps/web/src/i18n.tsx`，以 `zh` 为基准，`en` 必须有相同的键；共享组件的文案在 `modules/ui/src/words.ts`。服务端内部说中文，错误在离开服务时由 `modules/contracts/messages.ts` 按请求的语言翻译，所以新增的错误信息要在那里补上英文。写给模型的文字保持原样，不翻译。
 

@@ -6,7 +6,7 @@
  * are checked against the conversation they were written in, and a changed byte drops them. */
 import Anthropic from "@anthropic-ai/sdk";
 import { effortFor, pinnedProvider, topEffort, type Role } from "../contracts/index.ts";
-import type { Adapter, Answer, Item, Request } from "./types.ts";
+import { CutOff, type Adapter, type Answer, type Item, type Request } from "./types.ts";
 type Block = Record<string, any>;
 type Message = { role: "user" | "assistant" | "system"; content: Block[]; output_config?: Item };
 
@@ -372,10 +372,22 @@ async function generate(
     open = new Map();
     if (stop !== "pause_turn") break;
   }
-  if (stop === "max_tokens") throw Error("这一轮要写的内容太多，模型的输出被截断了");
+  const spent = () => ({
+    input_tokens: usage.input,
+    input_tokens_details: { cached_tokens: usage.cached, cache_write_tokens: usage.written },
+    output_tokens: usage.output,
+    // Messages reports thinking within the output tokens, not apart from it.
+    output_tokens_details: { reasoning_tokens: 0 },
+  });
+  if (stop === "max_tokens")
+    throw new CutOff(
+      stop,
+      content.some((b) => b.type === "thinking") && content.every((b) => b.type === "thinking"),
+      spent(),
+    );
   // A declined turn is not handed to another model: the run stops and says so.
   if (stop === "refusal") throw Error("模型拒绝了这一轮的内容");
-  if (stop === "model_context_window_exceeded") throw Error("这一轮要写的内容太多，模型的输出被截断了");
+  if (stop === "model_context_window_exceeded") throw new CutOff(stop, false, spent());
   if (!stop || stop === "pause_turn") throw Error("模型连接在完成前中断");
   const items = itemsOf(content);
   for (const item of items)
@@ -383,13 +395,7 @@ async function generate(
       onEvent({ type: "response.output_item.done", item: { ...item, id: `msg_${turn}` } });
   return {
     items,
-    usage: {
-      input_tokens: usage.input,
-      input_tokens_details: { cached_tokens: usage.cached, cache_write_tokens: usage.written },
-      output_tokens: usage.output,
-      // Messages reports thinking within the output tokens, not apart from it.
-      output_tokens_details: { reasoning_tokens: 0 },
-    },
+    usage: spent(),
     response: { id, model, status: "completed", protocol: "anthropic" },
   };
 }

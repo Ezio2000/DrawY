@@ -1,5 +1,5 @@
 import { it, expect, vi, afterEach } from "vitest";
-import { generate, toMessages } from "./index.ts";
+import { CutOff, generate, toMessages } from "./index.ts";
 import { defaultRole, type Role } from "../contracts/index.ts";
 const role: Role = {
   ...defaultRole(),
@@ -53,6 +53,36 @@ it("does not return executable calls after output truncation", async () => {
     generate(role, { instructions: "", input: [], tools: [], signal: new AbortController().signal }),
   ).rejects.toThrow("截断");
 });
+it("says why a response stopped early and keeps what it spent", async () => {
+  const stopped = async (lines: object[]) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(lines.map((l) => "data: " + JSON.stringify(l) + "\n\n").join(""))),
+    );
+    return generate(role, { instructions: "", input: [], tools: [], signal: new AbortController().signal }).catch((e) => e);
+  };
+  const usage = { output_tokens: 32768, output_tokens_details: { reasoning_tokens: 32768 } };
+  // Cut off partway through a call: it had started to write, so less thought is no cure.
+  const writing = await stopped([
+    { type: "response.output_item.added", item: { type: "function_call" } },
+    { type: "response.incomplete", response: { usage, incomplete_details: { reason: "max_output_tokens" } } },
+  ]);
+  expect(writing.thoughtOnly).toBe(false);
+  expect(writing.message).toContain("截断");
+  const thinking = await stopped([
+    { type: "response.output_item.added", item: { type: "reasoning" } },
+    { type: "response.incomplete", response: { usage, incomplete_details: { reason: "max_output_tokens" } } },
+  ]);
+  expect(thinking).toBeInstanceOf(CutOff);
+  expect(thinking.message).toContain("思考");
+  expect(thinking.reason).toBe("max_output_tokens");
+  expect(thinking.thoughtOnly).toBe(true);
+  expect(thinking.usage).toEqual(usage);
+  const filtered = await stopped([
+    { type: "response.incomplete", response: { usage, incomplete_details: { reason: "content_filter" } } },
+  ]);
+  expect(filtered.message).toContain("content_filter");
+});
 it("does not treat a disconnected stream as completion", async () => {
   vi.stubGlobal(
     "fetch",
@@ -72,7 +102,7 @@ it.each([
   ["api", "flex", "flex"],
   ["api", "default", "default"],
   ["api", "fast", "priority"],
-  ["api", "ultrafast", "default"],
+  ["api", "ultrafast", "ultrafast"],
   ["oauth", "flex", "default"],
   ["oauth", "default", "default"],
   ["oauth", "fast", "priority"],
@@ -257,6 +287,21 @@ it("names pictures in words for a model that cannot see, and keeps its reasoning
   await generate(role, { instructions: "", input: [{ type: "reasoning", summary: [], reasoning_content: "mine" }, { role: "user", content: "hi" }], tools: [], signal: new AbortController().signal });
   const responses = JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string);
   expect(responses.input).toEqual([{ role: "user", content: "hi" }]);
+});
+it("keeps what a Chat Completions turn spent before its output limit, and whether it wrote", async () => {
+  const cut = (delta: object) =>
+    new Response(chunks([
+      { choices: [{ delta, finish_reason: "length" }] },
+      { choices: [], usage: { prompt_tokens: 10, completion_tokens: 20, completion_tokens_details: { reasoning_tokens: 20 } } },
+    ]));
+  const ask = () => generate(deepseek, { instructions: "", input: [], tools: [], signal: new AbortController().signal }).catch((e) => e);
+  vi.stubGlobal("fetch", vi.fn(async () => cut({ reasoning_content: "hmm" })));
+  const thinking = await ask();
+  expect(thinking).toBeInstanceOf(CutOff);
+  expect(thinking.thoughtOnly).toBe(true);
+  expect(thinking.usage).toMatchObject({ input_tokens: 10, output_tokens: 20 });
+  vi.stubGlobal("fetch", vi.fn(async () => cut({ reasoning_content: "hmm", content: "x" })));
+  expect((await ask()).thoughtOnly).toBe(false);
 });
 it("fails a Chat Completions turn cut off by its output limit", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(chunks([{ choices: [{ delta: { content: "x" }, finish_reason: "length" }] }]))));
