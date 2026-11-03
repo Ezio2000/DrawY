@@ -588,7 +588,10 @@ export function picked(catalog: ModelCatalog, own: UserSettings) {
 /** Initial user choices, named by API model rather than administrator-assigned ids.
  * Claude's direct and OpenRouter names differ only in their provider prefix and dots. */
 const tuningPresets: Record<string, Tuning> = {
+  "gpt-6-astra": { effort: "medium", speed: "default" },
+  "gpt-6-1-sol": { effort: "medium", speed: "default" },
   "gpt-6-1-terra": { effort: "high", speed: "fast" },
+  "gpt-6-luna": { effort: "high", speed: "fast" },
   "claude-sonnet-5-5": { effort: "medium" },
   "claude-opus-5-5": { effort: "medium" },
   "deepseek-flash": { effort: "high" },

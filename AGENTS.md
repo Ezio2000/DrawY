@@ -164,4 +164,4 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 Responses 服务是否接受 `max_tool_calls` 和 `tool_choice: allowed_tools` 记在绘制模型的 `toolLimits`（默认 `true`，旧目录读出时补上），经 `settingsFor` 进入 `Role.toolLimits`，`responses.ts` 的 `narrow` 只读它，不按地址判断。DeepSeek 等不支持的服务由管理员关掉，请求不发送这两项，独立搜索仍在 DrawY 执行时按预算拒绝超额调用，工具列表保持不变。
 
-绘制模型的用户预设定义在 `contracts/models.ts` 的 `tuningPresets`，按 API 模型名匹配（忽略供应商前缀及点号和连字符的写法差别）：Terra high/fast，Sonnet 5.5 medium，Opus 5.5 medium，DeepSeek Flash high。`tuningOf` 依次使用用户为该模型保存的选择、用户预设、管理员模型默认值，并按模型开放的选项落定；模型之间不共享回退参数。
+绘制模型的用户预设定义在 `contracts/models.ts` 的 `tuningPresets`，按 API 模型名匹配（忽略供应商前缀及点号和连字符的写法差别）：Astra medium/default，Sol medium/default，Terra high/fast，Luna high/fast，Sonnet 5.5 medium，Opus 5.5 medium，DeepSeek Flash high。`tuningOf` 依次使用用户为该模型保存的选择、用户预设、管理员模型默认值，并按模型开放的选项落定；模型之间不共享回退参数。
