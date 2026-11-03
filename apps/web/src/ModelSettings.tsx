@@ -687,12 +687,6 @@ function writerGroups(
             />
           </Row>
         )}
-        <Row label={w.decisionUsesSetting} hint={w.decisionUsesSettingHint}>
-          <Switch
-            checked={m.decisionUsesSetting}
-            onChange={(on) => patch({ decisionUsesSetting: on })}
-          />
-        </Row>
         {served.length > 0 && (
           <Row label={w.offeredSpeeds} hint={w.offeredSpeedsHint} wide>
             <Chips

@@ -84,9 +84,8 @@ export const responses: Adapter = {
   },
   // GPT-6 models take a configuration_update item, which changes the effort until the
   // next one; the request's own effort stays, so the cached prefix holds. Older models
-  // keep the configured effort, since changing the request's would restart the cache.
+  // take it only on the request, which restarts the cache.
   effortControl: (role) => (/^gpt-(?:[6-9]|\d{2,})/.test(role.model) ? "conversation" : "fixed"),
-  decidingEffort: () => "max",
   narrow(tools, left, isSearch, role) {
     // Some services speak Responses without allowed_tools or max_tool_calls (DeepSeek's);
     // their model says so, and the search service's calls are refused past the budget

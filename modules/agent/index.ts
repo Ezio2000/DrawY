@@ -543,27 +543,14 @@ async function compact(
     });
   });
 }
-/** The most thought goes where the work is decided: the turn that answers the user (the
- * brief and its concept, or whether to ask) and the turn that judges a look. Without it
- * the author acts at once there, with almost no reasoning, whatever effort is configured;
- * the turns that carry decisions out keep the configured effort. How the effort changes
- * is the request format's (its adapter's `effortControl`): per request, or by a
- * configuration_update item that lasts until the next one, while the request's own effort
- * stays as configured so the cached prefix holds. Returns the effort the turn thinks at. */
-function deliberate(input: Item[], role: Role, deciding: boolean): Effort {
-  const adapter = adapterFor(role.protocol),
-    control = adapter.effortControl(role);
-  if (control === "fixed") return role.effort;
-  // Keeping the configured level also restores it when earlier history raised the effort.
-  const effort =
-    deciding && !role.decisionUsesSetting ? adapter.decidingEffort(role) : role.effort;
-  if (control === "conversation") {
-    const current =
-      input.findLast((i) => i.type === "configuration_update")?.reasoning?.effort ??
-      role.effort;
-    if (effort !== current) input.push({ type: "configuration_update", reasoning: { effort } });
-  }
-  return effort;
+/** Every turn thinks at the configured effort. A configuration_update lasts until the next
+ * one, so where the format changes effort in the conversation, one left by an earlier turn
+ * (see `withLessThought`) or run is replaced before it carries over. */
+function holdEffort(input: Item[], role: Role) {
+  if (adapterFor(role.protocol).effortControl(role) !== "conversation") return;
+  const current = input.findLast((i) => i.type === "configuration_update")?.reasoning?.effort;
+  if (current && current !== role.effort)
+    input.push({ type: "configuration_update", reasoning: { effort: role.effort } });
 }
 /** How to ask again a turn whose whole output budget went on thinking: at the least thought
  * the model accepts, the same way its effort changes otherwise. Undefined when it is
@@ -917,8 +904,6 @@ export class Agent {
       flushing(flush);
     };
     let seen = ctx.input.length;
-    // A request or an answer is decided on first; so is every look at the canvas.
-    let deciding: boolean = true;
     while (ctx.generations++ < 24) {
       let thinking: Extract<Step, { kind: "thinking" }> | undefined;
       // Progress the author writes takes its place among the steps as it streams.
@@ -927,9 +912,7 @@ export class Agent {
       ctx.input.push(...(await this.developed(store, run)));
       await compact(store, run, ctx, abort.signal);
       if (seen > ctx.input.length) seen = 0;
-      const effort = deliberate(ctx.input, settings.author, deciding);
-      const decided: boolean = deciding;
-      deciding = false;
+      holdEffort(ctx.input, settings.author);
       const turnStart = Date.now();
       const steer = steering(run, availableTools, settings.author);
       let firstOutput: number | undefined;
@@ -942,7 +925,7 @@ export class Agent {
           estimatedTokens: contextSize(ctx),
           request: {
             ...requestOf(settings.author),
-            effort,
+            effort: settings.author.effort,
             instructionsChars: instructions.length,
             tools: availableTools.length,
             ...(Object.keys(steer).length ? { steer } : {}),
@@ -955,7 +938,7 @@ export class Agent {
           // When each hosted call began, to time its span once it is done.
           const began = new Map<string, number>();
           let result!: Awaited<ReturnType<typeof generate>>;
-          let asked = { role: settings.author, effort };
+          let asked = { role: settings.author, effort: settings.author.effort };
           let lessened = false;
           for (let attempt = 0, waits = [2000, 8000, 0]; attempt < waits.length; attempt++) {
             const wait = waits[attempt];
@@ -1183,7 +1166,6 @@ export class Agent {
         );
         if (outcome.done) return;
         if (call.name === "write_work" && outcome.error) writeError = outcome.error;
-        if (call.name === "view_canvas" && !outcome.error) deciding = true;
         ctx.input.push({
           type: "function_call_output",
           call_id: call.call_id,
@@ -1195,8 +1177,6 @@ export class Agent {
       }
       ctx.input.push(...shown);
       store.context(run.id, ctx);
-      // Reading a guide decides nothing, so the decision is still ahead.
-      if (calls.every((c) => c.name === "draw_guide")) deciding = decided;
     }
     throw Error("已达到本轮 24 次生成上限");
   }

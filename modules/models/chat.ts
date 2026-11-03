@@ -1,7 +1,7 @@
 /* Chat Completions, which most providers other than OpenAI and Anthropic offer
  * (DeepSeek, Qwen, Kimi…). The conversation goes out as messages, and each streamed answer
  * comes back as the Responses API would report it. */
-import { effortFor, topEffort, type Role } from "../contracts/index.ts";
+import { effortFor, type Role } from "../contracts/index.ts";
 import { events, post } from "./http.ts";
 import { textOf } from "./text.ts";
 import { CutOff, type Adapter, type Answer, type Item, type Request } from "./types.ts";
@@ -231,8 +231,6 @@ async function generate(
 
 export const chat: Adapter = {
   generate,
-  // Chat Completions asks for its effort on each request, which leaves the cached prefix
-  // alone: the deciding turns ask for the most the model accepts.
+  // Chat Completions asks for its effort on each request, which leaves the cached prefix alone.
   effortControl: () => "request",
-  decidingEffort: (role) => topEffort(role.efforts) ?? role.effort,
 };

@@ -1,7 +1,7 @@
 /* Calling the drawing models. The run speaks the Responses API's items and events; each
  * request format has an adapter that turns them into its own requests and its answers
  * back (`responses.ts`, `chat.ts`, `anthropic.ts`). What differs by format, from how a
- * turn's effort is raised to how its searches are held to a budget, is asked of the
+ * turn's effort is lowered to how its searches are held to a budget, is asked of the
  * adapter here, so the run never checks which format a model speaks. */
 import { pinnedProvider, type Protocol, type Role } from "../contracts/index.ts";
 import { anthropic } from "./anthropic.ts";

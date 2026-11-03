@@ -5,7 +5,7 @@
  * `anthropic`, so the next request sends them back exactly as they came: thinking blocks
  * are checked against the conversation they were written in, and a changed byte drops them. */
 import Anthropic from "@anthropic-ai/sdk";
-import { effortFor, pinnedProvider, topEffort, type Role } from "../contracts/index.ts";
+import { effortFor, pinnedProvider, type Role } from "../contracts/index.ts";
 import { CutOff, type Adapter, type Answer, type Item, type Request } from "./types.ts";
 type Block = Record<string, any>;
 type Message = { role: "user" | "assistant" | "system"; content: Block[]; output_config?: Item };
@@ -414,9 +414,8 @@ function failure(e: unknown, signal: AbortSignal): unknown {
 export const anthropic: Adapter = {
   generate,
   // The newer Claude models take an effort change as a system message in the conversation;
-  // the others keep the configured effort, since changing it would restart the cache.
+  // the others take it only on the request, which restarts the cache.
   effortControl: (role) => (perTurnEffort(role.model) ? "conversation" : "fixed"),
-  decidingEffort: (role) => topEffort(role.efforts) ?? role.effort,
   // Messages has no way to narrow the tools without changing them; Claude's own search is
   // held to a number per request in its tool, and a search service's calls are refused
   // past the budget by the run.
