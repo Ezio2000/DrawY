@@ -1306,6 +1306,14 @@ it("shows any hosted tool as a step, records it under its turn and adds up what 
     expect(meter("web_search")).toMatchObject({ kind: "tool", calls: 1 });
     expect(meter("code_interpreter")).toMatchObject({ kind: "tool", calls: 1 });
     expect(meter("model")).toMatchObject({ kind: "turn", calls: 3, input: 500, cached: 250, output: 30 });
+    // The timeline has each span's brief; the whole record comes one span at a time, a
+    // turn's with everything it was sent, earlier turns' outputs included.
+    expect(first.attrs.output).toBeUndefined();
+    const second = spans.filter((s) => s.kind === "turn")[1];
+    const opened = tracer.whole(store.userId, run.id, second.id)!;
+    expect(opened.span.attrs.output).toBeDefined();
+    expect(opened.context!.items).toEqual(expect.arrayContaining([code, search]));
+    expect(tracer.whole("someone-else", run.id, second.id)).toBeUndefined();
   } finally { tracer.close(); db.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 it("keeps web search within the request's budget without changing the tools it lists", () => {

@@ -37,3 +37,5 @@ pnpm test
 输入框会分别记住每个绘制模型的强度和速度。首次使用的用户预设为 Astra medium/default、Sol medium/default、Terra high/fast、Luna high/fast、Sonnet 5.5 medium、Opus 5.5 medium、DeepSeek Flash high；手动修改后只影响对应模型，切换回来会恢复它自己的设置。
 
 每次创作任务会固定开始时的绘制模型、强度、速度、搜索、生图及价格设置。回答作者追问时沿用这份设置；在其他作品或标签页切换模型、调整价格，不会改变已开始的任务和它的计费。新的创作请求使用最新设置。
+
+打开作品时先显示画面，运行历史随后加载；历史加载期间可以输入文字，发送和手动编辑在任务状态确定后开放。

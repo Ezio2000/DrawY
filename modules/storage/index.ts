@@ -40,6 +40,7 @@ export class Storage {
  CREATE TABLE IF NOT EXISTS captures(user_id TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(user_id,id));
  CREATE TABLE IF NOT EXISTS settings(user_id TEXT PRIMARY KEY,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS runs(user_id TEXT NOT NULL,id TEXT NOT NULL,work_id TEXT NOT NULL,data TEXT NOT NULL,context TEXT,PRIMARY KEY(user_id,id));
+ CREATE INDEX IF NOT EXISTS runs_work ON runs(user_id,work_id);
  CREATE TABLE IF NOT EXISTS roles(id TEXT PRIMARY KEY,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS system(key TEXT PRIMARY KEY,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS invites(code TEXT PRIMARY KEY,created_by TEXT,created_at INTEGER NOT NULL,used_by TEXT,used_at INTEGER);`);
@@ -448,6 +449,18 @@ export class UserStore {
       .prepare("SELECT data FROM runs WHERE user_id=? AND id=?")
       .get(this.userId, runId) as { data: string } | undefined;
     return r && (JSON.parse(r.data) as Run);
+  }
+  /** What a run spent, at what prices and with which services, read without the rest of
+   * the run. */
+  runCost(runId: string): Pick<Run, "usage" | "prices" | "services"> | undefined {
+    const r = this.storage.db
+      .prepare(
+        "SELECT json_extract(data,'$.usage') AS usage,json_extract(data,'$.prices') AS prices,json_extract(data,'$.services') AS services FROM runs WHERE user_id=? AND id=?",
+      )
+      .get(this.userId, runId) as Record<"usage" | "prices" | "services", string | null> | undefined;
+    if (!r) return undefined;
+    const parse = (v: string | null) => (v === null ? undefined : JSON.parse(v));
+    return { usage: parse(r.usage), prices: parse(r.prices), services: parse(r.services) };
   }
   runs(workId: string): Run[] {
     this.work(workId);

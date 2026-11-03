@@ -75,6 +75,17 @@ const pageOf = (path: string): Page =>
           : path.startsWith("/traces")
             ? "traces"
             : "home";
+/** Runs fetched from the server laid over the runs already shown: the fetched ones in their
+ * order, each replaced by the shown one when that is newer, then any shown run the fetch
+ * did not include, such as one started while it was on the way. */
+function merged(fetched: Run[], shown: Run[], shownNewer: boolean) {
+  const byId = new Map(shown.map((x) => [x.id, x]));
+  const ids = new Set(fetched.map((x) => x.id));
+  return [
+    ...fetched.map((x) => (shownNewer ? byId.get(x.id) ?? x : x)),
+    ...shown.filter((x) => !ids.has(x.id)),
+  ];
+}
 const workIdOf = (path: string) => path.match(/^\/a\/([^/]+)/)?.[1];
 /** A subscene has its own address under its work's, so the browser goes back up a level. */
 const sceneOf = (path: string) => {
@@ -144,6 +155,8 @@ export function App() {
     // Something that went well, said briefly.
     [notice, setNotice] = useState(""),
     [runs, R] = useState<Run[]>([]),
+    // The work whose run history has arrived; until then an empty journal is still loading.
+    [runsOf, setRunsOf] = useState<string>(),
     [prompt, Q] = useState(""),
     [attachments, A] = useState<Attachment[]>([]),
     [uploading, setUploading] = useState(0),
@@ -210,6 +223,7 @@ export function App() {
   );
   const run = runs.at(-1),
     working = live(run);
+  const loadingRuns = page === "work" && (!work || runsOf !== work.id);
   // While the author works or waits for an answer, the composer leaves the page for the
   // studio, without the model picks; it comes back once the run ends.
   const engaged = working || run?.status === "waiting";
@@ -268,7 +282,7 @@ export function App() {
   const canRedo = !!work && redoable?.at === work.revision;
   const ids = selected.map((s) => s.moduleId);
   // Editing waits while the author works or an earlier revision is shown.
-  const editless = working || run?.status === "waiting" || !!preview;
+  const editless = loadingRuns || working || run?.status === "waiting" || !!preview;
   const manages = !!user?.permissions.includes("models.manage");
   const connected =
     models && !!models.writers.find((m) => m.id === models.chosen.writer)?.ready;
@@ -325,14 +339,22 @@ export function App() {
   }
   const refreshList = () => api<Summary[]>("/works").then(L);
   async function load(id: string) {
-    const [w, r] = await Promise.all([
-      api<Work>("/works/" + id),
-      api<Run[]>("/works/" + id + "/runs"),
-    ]);
+    // The work shows as soon as it arrives; its runs, which can be long, follow.
+    const runs = api<Run[]>("/works/" + id + "/runs");
+    runs.catch(() => {});
+    const w = await api<Work>("/works/" + id);
     W(w);
     setDetail(undefined);
     S([]);
-    R(r);
+    R([]);
+    setRunsOf(undefined);
+    const r = await runs;
+    // A work left while its runs were on the way keeps out of the next one.
+    if (workIdOf(location.pathname) !== id) return;
+    // Runs started or updated while the history was on the way are newer than it: they
+    // keep their state, and the history fills in what came before them.
+    R((now) => merged(r, now, true));
+    setRunsOf(id);
     // A reply from an earlier visit stays in the journal, not under the canvas; one still
     // to come shows when it arrives.
     const last = r.at(-1);
@@ -388,7 +410,9 @@ export function App() {
             api<Run[]>("/works/" + current.current.id + "/runs"),
           ]).then(([w, r]) => {
             W(w);
-            R(r);
+            // What the server says now is what was missed while disconnected; a run
+            // started since the request went out is kept.
+            R((now) => merged(r, now, false));
           });
         return;
       }
@@ -497,7 +521,7 @@ export function App() {
     }
   }
   async function send(text = prompt, target = sceneId, picked = choices) {
-    if ((!text.trim() && !attachments.length) || working || uploading) return;
+    if ((!text.trim() && !attachments.length) || loadingRuns || busy || working || uploading) return;
     if (!connected) {
       if (manages) go("/settings");
       return;
@@ -512,6 +536,7 @@ export function App() {
           title: (text.trim() || attachments[0].name).slice(0, 36),
         });
         W(w);
+        setRunsOf(w.id);
         target = w.rootSceneId;
         go("/a/" + w.id);
       }
@@ -829,7 +854,7 @@ export function App() {
       style={place === "home" ? style : undefined}
       setStyle={place === "home" ? setStyle : undefined}
       working={working}
-      busy={busy}
+      busy={busy || loadingRuns}
       send={() => void attempt(() => send())}
       stop={() => void attempt(stop)}
       attach={(files) => void attempt(() => upload(files))}
@@ -1267,6 +1292,7 @@ export function App() {
                     ) : (
                       <Studio
                         runs={runs}
+                        loaded={runsOf === work.id}
                         work={work}
                         restore={(r) => void attempt(() => restore(r))}
                         resume={() =>

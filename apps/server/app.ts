@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
+import { compress } from "hono/compress";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
@@ -74,6 +75,10 @@ export function createApp(storage: Storage) {
   const publish = (user: string, event: object) =>
     listeners.get(user)?.forEach((fn) => fn(event));
   const agent = new Agent(publish);
+  // Text goes out compressed: the app's code, works, runs, traces and map layers are
+  // several times smaller that way. Pictures are already compressed and the event stream
+  // must not be held back, so the default filter passes them over.
+  app.use("*", compress());
   app.onError((e, c) =>
     c.json(
       {
@@ -526,7 +531,7 @@ export function createApp(storage: Storage) {
   });
   // Each trace is its run's, so it carries what the run cost.
   const costed = (store: UserStore, trace: TraceSummary) => {
-    const run = store.runOrUndefined(trace.id);
+    const run = store.runCost(trace.id);
     return { ...trace, cost: run && costOf(run.usage, run.prices), services: run?.services };
   };
   app.get("/api/traces", (c) =>
@@ -543,6 +548,13 @@ export function createApp(storage: Storage) {
       "Content-Type": file.type,
       "Cache-Control": "private, max-age=31536000, immutable",
     });
+  });
+  // A span in full, with the whole input a model turn was sent; the timeline has only
+  // each span's brief.
+  app.get("/api/traces/:id/spans/:span", (c) => {
+    const found = tracer.whole(c.get("user").id, c.req.param("id"), c.req.param("span"));
+    if (!found) throw new DomainError("没有这次运行的记录", 404);
+    return c.json(found);
   });
   app.get("/api/traces/:id", (c) => {
     const trace = tracer.get(c.get("user").id, c.req.param("id"));
@@ -603,6 +615,12 @@ export function createApp(storage: Storage) {
     });
   });
   app.use("/runtime/*", serveStatic({ root: "dist" }));
+  // Built assets are named by their content, so a browser keeps them for good; the page
+  // that names them is asked for afresh.
+  app.use("/assets/*", async (c, next) => {
+    await next();
+    if (c.res.ok) c.header("Cache-Control", "public, max-age=31536000, immutable");
+  });
   app.use("*", serveStatic({ root: "dist/web" }));
   app.get("*", async (c) =>
     c.html(await readFile("dist/web/index.html", "utf8")),
