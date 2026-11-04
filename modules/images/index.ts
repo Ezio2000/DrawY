@@ -81,6 +81,9 @@ export interface Development {
   done: Promise<{
     status: "ready" | "failed";
     error?: string;
+    /** Pictures returned by the model, including discarded opaque attempts, even if a
+     * later retry fails. Each is billable by the picture. */
+    count: number;
     /** The picture model's token counts, when it reports them (`imageTokensOf` splits
      * them as they are priced). */
     usage?: ImageUsage;
@@ -387,6 +390,8 @@ export async function develop(
     if (known) return known;
     const { r, id, prompt, styled, width, height } = reserved[i];
     const transparent = r.role !== "scene" && r.role !== "texture";
+    let count = 0;
+    let usage: ImageUsage | undefined;
     const development: Development = {
       id,
       name: r.name.zh,
@@ -418,9 +423,15 @@ export async function develop(
                       Buffer.from(b).toString("base64"),
                   ),
                 });
-              const painting = () =>
-                paint(role, prompt, `${width}x${height}`, transparent, references);
-              let { bytes, usage } = await painting();
+              const painting = async () => {
+                const result = await paint(role, prompt, `${width}x${height}`, transparent, references);
+                count++;
+                usage = added(usage, result.usage);
+                // Preserve the charge in the trace before validation or a retry can fail.
+                span.set({ count, ...(usage ? { usage } : {}) });
+                return result.bytes;
+              };
+              let bytes = await painting();
               // A cut-out that came out with a background around it is painted once more,
               // since a label cannot rescue a box; a second one is kept, and said to be one.
               let opaque = false;
@@ -432,9 +443,7 @@ export async function develop(
               } catch (e) {
                 if (!(transparent && e instanceof MaterialsError && e.status === 422)) throw e;
                 tracer.note("opaque cut-out", { id }, "painted again");
-                const again = await painting();
-                bytes = again.bytes;
-                usage = added(usage, again.usage);
+                bytes = await painting();
                 try {
                   made = await keep(true);
                 } catch (e) {
@@ -446,12 +455,10 @@ export async function develop(
               span.set({
                 bytes: bytes.length,
                 url: made.kind === "picture" ? made.file.url : undefined,
-                ...(usage ? { usage } : {}),
                 ...(opaque ? { opaque } : {}),
               });
               return {
                 status: "ready" as const,
-                ...(usage ? { usage } : {}),
                 ...(opaque ? { opaque } : {}),
               };
             },
@@ -465,8 +472,9 @@ export async function develop(
           return { status: "failed" as const, error };
         })
         .then((result) => {
-          development.settled = { ...result, at: Date.now() };
-          return result;
+          const billed = { ...result, count, ...(usage ? { usage } : {}) };
+          development.settled = { ...billed, at: Date.now() };
+          return billed;
         }),
     };
     developments.set(i, development);

@@ -7,7 +7,7 @@ import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { Agent, steering, SEARCH_LIMIT, withLessThought } from "./index.ts";
 import { settleSchema } from "./tools.ts";
-import { writeWork } from "../workspace/index.ts";
+import { restore, writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { CutOff, generate } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
@@ -15,7 +15,7 @@ import { boxOf, costOf, modelCatalogSchema, type Run, type Work } from "../contr
 import { removeParts, setData } from "../editing/index.ts";
 import { tracer } from "../trace/index.ts";
 import { library as client } from "../materials/index.ts";
-import { serveLibrary, picture } from "@drawy/materials/testing";
+import { serveLibrary, picture, solid } from "@drawy/materials/testing";
 let library: ReturnType<typeof serveLibrary>;
 beforeEach(() => {
   library = serveLibrary(client.base);
@@ -968,6 +968,70 @@ it("develops pictures while the author composes and holds the end until they wer
   }
 });
 
+it.each([false, true])("bills the first picture and its opaque retry even when the retry fails: %s", async (fails) => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-image-bill-")), db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id), work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const catalog = db.models();
+    Object.assign(catalog.painters[0], { credential: "test", baseUrl: "https://example.invalid" });
+    catalog.painters[0].models[0].prices = {
+      image: 1, textInput: 5, imageInput: 8, output: 30, textOutput: 0,
+    };
+    db.saveModels(catalog);
+    const png = await solid();
+    let paints = 0;
+    library.route(async () => {
+      if (++paints === 2 && fails) return new Response("failed", { status: 400 });
+      return Response.json({
+        data: [{ b64_json: png.toString("base64") }],
+        usage: {
+          input_tokens: 10,
+          input_tokens_details: { text_tokens: 4, image_tokens: 6 },
+          output_tokens: 100,
+        },
+      });
+    });
+    const agent = new Agent(() => {});
+    let turn = 0;
+    vi.mocked(generate).mockImplementation(async () => {
+      if (turn++ === 0)
+        return {
+          items: [answer("generate_images", {
+            images: [{ name: { zh: "船", en: "boat" }, role: "object", depicts: "a boat" }],
+          }, "paint")],
+          usage: {}, response: {},
+        };
+      await Promise.all((agent.developments.get("retry-bill") ?? []).map((d) => d.done));
+      return {
+        items: [answer(turn === 2 ? "view_canvas" : "finish", turn === 2 ? {} : { message: "done" }, "c" + turn)],
+        usage: {}, response: {},
+      };
+    });
+    const run: Run = {
+      id: "retry-bill", workId: work.id, sceneId: "root", status: "running",
+      steps: [], observations: [], startedAt: Date.now(),
+    };
+    store.saveRun(run);
+    await agent.execute(store, run, { input: [], settings: store.settings(), generations: 0 }, "request");
+    const count = fails ? 1 : 2;
+    expect(paints).toBe(2);
+    expect(run.status).toBe("completed");
+    expect(run.usage?.images).toEqual({
+      count, input: 10 * count, output: 100 * count,
+      textInput: 4 * count, imageInput: 6 * count, textOutput: 0,
+    });
+    expect(run.usage?.failed?.images ?? 0).toBe(fails ? 1 : 0);
+    expect(costOf(run.usage, run.prices)?.image).toBeCloseTo(count * (1 + 3068 / 1e6), 8);
+    expect(store.run(run.id).usage).toEqual(run.usage);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
 it("stops the run when the canvas cannot be looked at, instead of spending turns on it", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
@@ -1174,7 +1238,7 @@ it("tells the author what the user changed themselves since its last turn", asyn
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
     const told = store.context(run.id).input.find((i: any) => String(i.content).includes("Current scene:")).content as string;
     expect(told).toMatch(
-      /^Since your last turn the user changed the work themselves \(revision 2 to 4\)\.[^\n]*\n- scene root: changed level-0; removed control\nCurrent scene: root\n/,
+      /^Since your last turn the user changed the work themselves \(revision 2 to 4\)\.[^\n]*\n- scene root: changed level-0; removed control; interaction checks changed\nCurrent scene: root\n/,
     );
     // With nothing changed since, the work is given as it is.
     const work2 = store.work(work.id);
@@ -1292,7 +1356,7 @@ it("hands a continuing conversation only what the user changed since", async () 
       await writeWork(store, work.id, edit(store.work(work.id)), { kind: "edit" });
     const told = await ask("Continue");
     expect(told).toMatch(
-      /^Since your last turn the user changed the work themselves \(revision 1 to 3\)\.[^\n]*\n- scene root: changed level-0; removed control\n/,
+      /^Since your last turn the user changed the work themselves \(revision 1 to 3\)\.[^\n]*\n- scene root: changed level-0; removed control; interaction checks changed\n/,
     );
     expect(told).not.toContain("Current work:");
     const changed = JSON.parse(told.match(/\nChanged: (.*)\nCurrent scene: root$/)![1]);
@@ -1309,6 +1373,22 @@ it("hands a continuing conversation only what the user changed since", async () 
     expect(changed.scenes.root.order).toEqual(now.modules.map((m) => m.id));
     expect(changed.scenes.root.removed).toEqual(["control"]);
     expect(changed.drawings).toBeUndefined();
+
+    // Restoring a draft can change only the checks; the author still needs their new value.
+    const beforeChecks = store.work(work.id);
+    const checks = [{ moduleId: "level-0", selector: ".inspect" }];
+    await writeWork(store, work.id, {
+      baseRevision: beforeChecks.revision,
+      sceneEdits: [{ id: "root", checks }],
+    }, { kind: "edit" });
+    const checksTold = await ask("Check this");
+    expect(checksTold).toContain("interaction checks changed");
+    const delta = (text: string) => JSON.parse(text.match(/\nChanged: (.*)\nCurrent scene: root$/)![1]);
+    expect(delta(checksTold).scenes.root.checks).toEqual(checks);
+    restore(store, work.id, beforeChecks.revision);
+    const restored = delta(await ask("Continue from the earlier draft"));
+    expect(restored.scenes.root.checks).toEqual(beforeChecks.scenes.root.checks);
+    expect(restored.scenes.root.modules).toEqual([]);
   } finally {
     db.close();
     rmSync(dir, { recursive: true });

@@ -70,7 +70,7 @@ for (const channel of ["api", "oauth"] as const)
     ]);
     expect(made.id).toMatch(/^g-microscope-/);
 
-    expect(await made.done).toEqual({ status: "ready" });
+    expect(await made.done).toEqual({ status: "ready", count: 1 });
     expect(made.settled?.status).toBe("ready");
     const m = await library.library.ready(made.id, store.userId, 0);
     expect(m).toMatchObject({
@@ -151,7 +151,7 @@ it("retries a dropped connection or a busy server before giving up", async () =>
       { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
     ]);
     while (!made.settled) await vi.advanceTimersByTimeAsync(1000);
-    expect(await made.done).toEqual({ status: "ready" });
+    expect(await made.done).toEqual({ status: "ready", count: 1 });
     expect(calls).toBe(3);
   } finally {
     vi.useRealTimers();
@@ -178,7 +178,7 @@ it("paints a cut-out again when it comes out with a background, and says so when
   });
   const [ship] = await develop(store, store.settings().image, fixture(), [ask("ship")]);
   // Both paintings are paid for.
-  expect(await ship.done).toEqual({ status: "ready", usage: { input_tokens: 20, output_tokens: 200 } });
+  expect(await ship.done).toEqual({ status: "ready", count: 2, usage: { input_tokens: 20, output_tokens: 200 } });
   expect(calls).toBe(2);
   const kept = await library.library.ready(ship.id, store.userId, 0);
   expect(kept).toMatchObject({ form: { background: "transparent" } });
@@ -214,6 +214,7 @@ it("records a failed picture so the work and the author both learn of it", async
   ]);
   expect(await made.done).toMatchObject({
     status: "failed",
+    count: 0,
     error: expect.stringContaining("400"),
   });
   await expect(library.library.ready(made.id, store.userId, 0)).rejects.toThrow(

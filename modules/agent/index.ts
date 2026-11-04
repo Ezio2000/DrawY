@@ -525,6 +525,7 @@ function changeLines(changes: ReturnType<typeof changesBetween>) {
           ...list("removed", s.removed),
           ...(s.restacked ? ["stacking order changed"] : []),
           ...(s.retitled ? ["its title, parent or interaction changed"] : []),
+          ...(s.checksChanged ? ["interaction checks changed"] : []),
         ].join("; ")}`,
     ),
     ...list("- scenes added", addedScenes),
@@ -1733,17 +1734,18 @@ export class Agent {
           for (const [i, d] of made.entries())
             void d.done.then(async (r) => {
               shown[i].status = r.status;
-              if (r.status === "ready") {
+              if (r.count) {
                 const u = usageOf(run);
                 const images = (u.images ??= { count: 0, input: 0, output: 0 });
                 const t = imageTokensOf(r.usage);
-                images.count++;
+                images.count += r.count;
                 images.input += t.input;
                 images.output += t.output;
                 images.textInput = (images.textInput ?? 0) + t.textInput;
                 images.imageInput = (images.imageInput ?? 0) + t.imageInput;
                 images.textOutput = (images.textOutput ?? 0) + t.textOutput;
-              } else failedOf(run).images++;
+              }
+              if (r.status === "failed") failedOf(run).images++;
               this.emit(store, run);
               // An open canvas redraws the picture with its measured content.
               const work = store.works().find((w) => w.id === run.workId);
