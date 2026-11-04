@@ -4,6 +4,7 @@ import type { UserStore } from "../storage/index.ts";
 import { DomainError, type Work, type ImageRole } from "../contracts/index.ts";
 import type { Material, StyleMaterial } from "@drawy/materials/schema";
 import { library, styleOf } from "../materials/index.ts";
+import { MaterialsError } from "@drawy/materials/client";
 import { tracer } from "../trace/index.ts";
 
 /** A picture the author wants made. */
@@ -45,6 +46,29 @@ type ImageUsage = {
   input_tokens_details?: { text_tokens?: number; image_tokens?: number };
   output_tokens_details?: { text_tokens?: number; image_tokens?: number };
 };
+/** Two paintings' token counts as one. */
+function added(a: ImageUsage | undefined, b: ImageUsage | undefined): ImageUsage | undefined {
+  if (!a || !b) return a ?? b;
+  const sum = (x?: number, y?: number) => (x ?? 0) + (y ?? 0);
+  const details = (
+    x?: { text_tokens?: number; image_tokens?: number },
+    y?: { text_tokens?: number; image_tokens?: number },
+  ) =>
+    x || y
+      ? {
+          text_tokens: sum(x?.text_tokens, y?.text_tokens),
+          image_tokens: sum(x?.image_tokens, y?.image_tokens),
+        }
+      : undefined;
+  const input = details(a.input_tokens_details, b.input_tokens_details),
+    output = details(a.output_tokens_details, b.output_tokens_details);
+  return {
+    input_tokens: sum(a.input_tokens, b.input_tokens),
+    output_tokens: sum(a.output_tokens, b.output_tokens),
+    ...(input ? { input_tokens_details: input } : {}),
+    ...(output ? { output_tokens_details: output } : {}),
+  };
+}
 /** A picture being made in the background. */
 export interface Development {
   id: string;
@@ -55,8 +79,10 @@ export interface Development {
     /** The picture model's token counts, when it reports them (`imageTokensOf` splits
      * them as they are priced). */
     usage?: ImageUsage;
+    /** A cut-out that came out with nothing clear around it, twice: it shows as a box. */
+    opaque?: boolean;
   }>;
-  settled?: { status: "ready" | "failed"; error?: string; at: number };
+  settled?: { status: "ready" | "failed"; error?: string; opaque?: boolean; at: number };
 }
 
 /** Pictures sent only for their look, so a new picture matches the style's samples and
@@ -387,25 +413,42 @@ export async function develop(
                       Buffer.from(b).toString("base64"),
                   ),
                 });
-              const { bytes, usage } = await paint(
-                role,
-                prompt,
-                `${width}x${height}`,
-                transparent,
-                references,
-              );
-              const made = await library.develop(
-                id,
-                bytes,
-                "image/png",
-                store.userId,
-              );
+              const painting = () =>
+                paint(role, prompt, `${width}x${height}`, transparent, references);
+              let { bytes, usage } = await painting();
+              // A cut-out that came out with a background around it is painted once more,
+              // since a label cannot rescue a box; a second one is kept, and said to be one.
+              let opaque = false;
+              const keep = (cutOut: boolean) =>
+                library.develop(id, bytes, "image/png", store.userId, cutOut);
+              let made: Material;
+              try {
+                made = await keep(transparent);
+              } catch (e) {
+                if (!(transparent && e instanceof MaterialsError && e.status === 422)) throw e;
+                tracer.note("opaque cut-out", { id }, "painted again");
+                const again = await painting();
+                bytes = again.bytes;
+                usage = added(usage, again.usage);
+                try {
+                  made = await keep(true);
+                } catch (e) {
+                  if (!(e instanceof MaterialsError && e.status === 422)) throw e;
+                  opaque = true;
+                  made = await keep(false);
+                }
+              }
               span.set({
                 bytes: bytes.length,
                 url: made.kind === "picture" ? made.file.url : undefined,
                 ...(usage ? { usage } : {}),
+                ...(opaque ? { opaque } : {}),
               });
-              return { status: "ready" as const, ...(usage ? { usage } : {}) };
+              return {
+                status: "ready" as const,
+                ...(usage ? { usage } : {}),
+                ...(opaque ? { opaque } : {}),
+              };
             },
           );
         })

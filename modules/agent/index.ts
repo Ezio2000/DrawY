@@ -846,7 +846,11 @@ export class Agent {
     );
     const lines = fresh.map((d) =>
       d.settled!.status === "ready"
-        ? `${d.id} (${d.name}) developed; visible content ${sizes.get(d.id) ?? "unknown"}.`
+        ? `${d.id} (${d.name}) developed; visible content ${sizes.get(d.id) ?? "unknown"}.${
+            d.settled!.opaque
+              ? " It came out with a background around it, painted twice, so it shows as a box: use it as a scene, or generate it again."
+              : ""
+          }`
         : `${d.id} (${d.name}) failed: ${d.settled!.error}. Generate it again or draw another way.`,
     );
     return [

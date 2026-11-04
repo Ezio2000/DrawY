@@ -63,3 +63,11 @@ export function picture(color = "#a33") {
     .png()
     .toBuffer();
 }
+/** A small PNG with nothing clear in it, as a cut-out that kept its background. */
+export function solid(color = "#eee") {
+  return sharp({
+    create: { width: 40, height: 20, channels: 4, background: color },
+  })
+    .png()
+    .toBuffer();
+}
