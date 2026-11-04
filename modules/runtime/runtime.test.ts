@@ -671,6 +671,37 @@ it("passes over modules an interaction names once they are taken out of the scen
   await page.waitForTimeout(150);
   expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
 });
+it("draws links over a backdrop laid under the whole figure and under every other module", async () => {
+  const drawing = (id: string, source: string) => ({ id, name: id, params: {}, source });
+  work.drawings.box = drawing("box", `return api.svg('<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>')`);
+  work.drawings.line = drawing("line", `return api.svg('<svg><line x1="'+api.from.x+'" y1="'+api.from.y+'" x2="'+api.to.x+'" y2="'+api.to.y+'" stroke="red"/></svg>')`);
+  const module = (id: string, bounds: { x: number; y: number; width: number; height: number }) => ({
+    id, label: id, bounds, drawingId: "box", group: null, target: null,
+    anchors: { r: { x: 1, y: 0.5 }, l: { x: 0, y: 0.5 } }, data: {},
+  });
+  const parts = [module("a", { x: 100, y: 100, width: 100, height: 100 }), module("b", { x: 500, y: 100, width: 100, height: 100 })];
+  const link = { id: "ab", drawingId: "line", from: { moduleId: "a", anchor: "r" }, to: { moduleId: "b", anchor: "l" }, data: {} };
+  const depths = () =>
+    page.evaluate(() =>
+      Object.fromEntries(
+        [...document.querySelectorAll<HTMLElement>("[data-module-id],[data-link-id]")].map((h) => [
+          h.dataset.moduleId ?? h.dataset.linkId,
+          Number(h.style.zIndex),
+        ]),
+      ),
+    );
+  work.scenes.root = { ...work.scenes.root, modules: [module("world", { x: 0, y: 0, width: 800, height: 400 }), ...parts], links: [link], interactionId: null, checks: [] };
+  await open();
+  const over = await depths();
+  expect(over.world).toBeLessThan(over.ab);
+  expect(over.ab).toBeLessThan(over.a);
+  // A bottom module that does not lie under the figure is a part like the others.
+  work.scenes.root = { ...work.scenes.root, modules: [module("note", { x: 0, y: 0, width: 80, height: 40 }), ...parts] };
+  await open();
+  const parted = await depths();
+  expect(parted.note).toBe(parted.a);
+  expect(parted.ab).toBeLessThan(parted.note);
+});
 it("disposes drawing and scene resources when leaving the canvas", async () => {
   work.drawings.title.source =
     `const timer=setInterval(()=>document.body.dataset.ticks=String(Number(document.body.dataset.ticks||0)+1),10);api.cleanup(()=>clearInterval(timer));` +
