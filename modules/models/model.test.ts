@@ -16,7 +16,7 @@ it("retains completed streamed tool arguments when final output is empty", async
     type: "function_call",
     call_id: "c",
     name: "write_work",
-    arguments: '{"baseRevision":1,"scenes":[]}',
+    arguments: '{"title":1,"scenes":[]}',
   };
   const data = [
     { type: "response.output_item.done", item },
@@ -190,7 +190,7 @@ it("speaks Chat Completions and reports its stream as the Responses API would", 
           { choices: [{ delta: { reasoning_content: "Think" } }] },
           { choices: [{ delta: { content: "Drawing." } }] },
           { choices: [{ delta: { tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "write_work", arguments: "" } }] } }] },
-          { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"baseRevision"' } }] } }] },
+          { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"title"' } }] } }] },
           { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: ":1}" } }] } }] },
           { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
           { choices: [], usage: { prompt_tokens: 100, completion_tokens: 20, prompt_cache_hit_tokens: 60, completion_tokens_details: { reasoning_tokens: 5 } } },
@@ -221,7 +221,7 @@ it("speaks Chat Completions and reports its stream as the Responses API would", 
   expect(result.items).toEqual([
     { type: "reasoning", summary: [], reasoning_content: "Think" },
     { type: "message", role: "assistant", content: [{ type: "output_text", text: "Drawing.", annotations: [] }] },
-    { type: "function_call", call_id: "call_1", name: "write_work", arguments: '{"baseRevision":1}' },
+    { type: "function_call", call_id: "call_1", name: "write_work", arguments: '{"title":1}' },
   ]);
   expect(result.usage).toEqual({
     input_tokens: 100,
@@ -239,7 +239,7 @@ it("speaks Chat Completions and reports its stream as the Responses API would", 
       .filter((e) => e.type === "response.function_call_arguments.delta")
       .map((e) => e.delta)
       .join(""),
-  ).toBe('{"baseRevision":1}');
+  ).toBe('{"title":1}');
 });
 it("turns the conversation into messages, with pictures after the results they follow", () => {
   const picture = { type: "input_image", image_url: "data:image/png;base64,AA" };

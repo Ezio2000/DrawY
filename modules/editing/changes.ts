@@ -17,9 +17,8 @@ function same(a: unknown, b: unknown): boolean {
 }
 /** What changed in a work between two of its revisions: per scene, the parts added,
  * removed, changed in what they show, and only moved or resized, and whether the scene
- * itself (its title, parent, interaction or checks) changed; the scenes added and removed whole;
- * the drawings, interactions and details added, changed or removed; and whether its
- * shared style changed. */
+ * itself (its title, parent, script or checks) changed; the scenes added and removed whole;
+ * the drawings and details added, changed or removed; and whether its shared style changed. */
 export function changesBetween(before: Work, after: Work) {
   const scenes = Object.values(after.scenes).flatMap((scene) => {
     const was = before.scenes[scene.id];
@@ -28,8 +27,10 @@ export function changesBetween(before: Work, after: Work) {
     );
     const now = [...scene.modules, ...scene.links];
     const ids = new Set(now.map((p) => p.id));
-    const source = (w: Work, p: Instance | Link) =>
-      w.drawings[p.drawingId]?.source;
+    const source = (w: Work, p: Instance | Link) => {
+      const d = w.drawings[p.drawingId];
+      return d && JSON.stringify([d.source, d.defaults]);
+    };
     const added: string[] = [],
       changed: string[] = [],
       moved: string[] = [];
@@ -54,10 +55,8 @@ export function changesBetween(before: Work, after: Work) {
     const restacked = order(was) !== order(scene);
     // A new scene is reported whole, below; this is about what changed inside one.
     if (!was) return [];
-    const retitled =
-      was.title !== scene.title ||
-      was.parentId !== scene.parentId ||
-      was.interactionId !== scene.interactionId;
+    const retitled = was.title !== scene.title || was.parentId !== scene.parentId;
+    const scriptChanged = (was.interaction ?? "") !== (scene.interaction ?? "");
     const checksChanged = !same(was.checks, scene.checks);
     return added.length ||
       removed.length ||
@@ -65,8 +64,9 @@ export function changesBetween(before: Work, after: Work) {
       moved.length ||
       restacked ||
       retitled ||
+      scriptChanged ||
       checksChanged
-      ? [{ id: scene.id, added, removed, changed, moved, restacked, retitled, checksChanged }]
+      ? [{ id: scene.id, added, removed, changed, moved, restacked, retitled, scriptChanged, checksChanged }]
       : [];
   });
   const records = <T>(a: Record<string, T>, b: Record<string, T>) => ({
@@ -80,7 +80,6 @@ export function changesBetween(before: Work, after: Work) {
     addedScenes: sceneRecords.added,
     removedScenes: sceneRecords.removed,
     drawings: records(before.drawings, after.drawings),
-    interactions: records(before.interactions, after.interactions),
     details: records(before.details, after.details),
     style: !same(before.style, after.style),
   };

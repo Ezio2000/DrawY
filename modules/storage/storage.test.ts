@@ -1,4 +1,4 @@
-import { fixture } from "../runtime/fixture.ts";
+import { fixture, workEdit } from "../runtime/fixture.ts";
 import { beforeEach, afterEach, describe, it, expect } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -92,14 +92,8 @@ describe("user owned works", () => {
       store,
       work.id,
       {
-        baseRevision: 2,
-        drawings: Object.values(content.drawings),
-        scenes: Object.values(content.scenes),
-        details: Object.values(content.details),
-        interactions: Object.values(content.interactions),
-      },
-      { kind: "edit" },
-    );
+        ...workEdit(content),
+      }, { cause: { kind: "edit" } });
     expect(saved.revision).toBe(3);
     const changed = {
       ...saved.drawings.tier,
@@ -109,20 +103,15 @@ describe("user owned works", () => {
       store,
       work.id,
       {
-        baseRevision: 3,
         drawings: [changed],
-      },
-      { kind: "edit" },
-    );
+      }, { cause: { kind: "edit" } });
     expect(edited.scenes).toEqual(saved.scenes);
     expect(edited.drawings.tier).toEqual(changed);
     await expect(
       writeWork(
         store,
         work.id,
-        { baseRevision: 3, title: "stale" },
-        { kind: "edit" },
-      ),
+        { title: "stale" }, { base: 3, cause: { kind: "edit" } }),
     ).rejects.toThrow("版本");
     expect(restore(store, work.id, 3).revision).toBe(5);
     expect(store.work(work.id).drawings.tier).toEqual(content.drawings.tier);
@@ -138,11 +127,8 @@ describe("user owned works", () => {
       store,
       work.id,
       {
-        baseRevision: 2,
         drawings: [{ id: "x", name: "x", source: 'return api.draw("steps")' }],
-      },
-      { kind: "edit" },
-    );
+      }, { cause: { kind: "edit" } });
     const sourceOf = (w: Work) => {
       const m = w.materials.steps;
       if (m.kind !== "drawing") throw Error("steps is a library drawing");
@@ -164,9 +150,7 @@ describe("user owned works", () => {
     const { work: next } = await writeWork(
       store,
       work.id,
-      { baseRevision: 4, title: "renamed" },
-      { kind: "edit" },
-    );
+      { title: "renamed" }, { cause: { kind: "edit" } });
     expect(sourceOf(next).source).toBe(current);
     // Until it is written, a work keeps the version it was saved with.
     expect(sourceOf(store.revision(work.id, 4)).source).toBe(
@@ -191,17 +175,11 @@ describe("user owned works", () => {
       store,
       work.id,
       {
-        baseRevision: 2,
-        drawings: Object.values(content.drawings),
-        scenes: Object.values(content.scenes),
-        details: Object.values(content.details),
-        interactions: Object.values(content.interactions),
-      },
-      run("r1"),
-    );
+        ...workEdit(content),
+      }, { cause: run("r1") });
     // A second request saves two drafts; undo takes back both.
-    await writeWork(store, work.id, { baseRevision: 3, title: "a" }, run("r2"));
-    await writeWork(store, work.id, { baseRevision: 4, title: "b" }, run("r2"));
+    await writeWork(store, work.id, { title: "a" }, { cause: run("r2") });
+    await writeWork(store, work.id, { title: "b" }, { cause: run("r2") });
     expect(undo(store, work.id)).toMatchObject({ revision: 6, title: "b" });
     expect(store.work(work.id).drawings).toEqual(
       store.revision(work.id, 3).drawings,
@@ -221,9 +199,7 @@ describe("user owned works", () => {
     const { work: kept, keptTitle } = await writeWork(
       store,
       work.id,
-      { baseRevision: 7, title: "作者的标题" },
-      run("r3"),
-    );
+      { title: "作者的标题" }, { cause: run("r3") });
     expect([kept.title, kept.named, keptTitle]).toEqual(["【high】我的标题", true, true]);
     expect(undo(store, work.id)).toMatchObject({ title: "【high】我的标题", named: true });
   });
@@ -238,81 +214,55 @@ describe("user owned works", () => {
       store,
       work.id,
       {
-        baseRevision: 2,
-        drawings: Object.values(content.drawings),
-        scenes: Object.values(content.scenes),
-        details: Object.values(content.details),
-        interactions: Object.values(content.interactions),
-      },
-      { kind: "edit" },
-    );
+        ...workEdit(content),
+      }, { cause: { kind: "edit" } });
     await expect(
       writeWork(
         store,
         work.id,
         {
-          baseRevision: 3,
           remove: { drawings: ["tier"] },
-        },
-        { kind: "edit" },
-      ),
+        }, { cause: { kind: "edit" } }),
     ).rejects.toThrow("画法");
     await expect(
       writeWork(
         store,
         work.id,
         {
-          baseRevision: 3,
-          scenes: [{ ...content.scenes.child, parentId: "child" }],
-        },
-        { kind: "edit" },
-      ),
+          scenes: [{ id: "child", parentId: "child" }],
+        }, { cause: { kind: "edit" } }),
     ).rejects.toThrow("循环");
     await expect(
       writeWork(
         store,
         work.id,
         {
-          baseRevision: 3,
-          scenes: [{ ...content.scenes.child, parentId: "missing" }],
-        },
-        { kind: "edit" },
-      ),
+          scenes: [{ id: "child", parentId: "missing" }],
+        }, { cause: { kind: "edit" } }),
     ).rejects.toThrow("父场景");
     await expect(
       writeWork(
         store,
         work.id,
         {
-          baseRevision: 3,
-          scenes: [
+          links: [
             {
-              ...content.scenes.root,
-              links: [
-                {
-                  id: "link",
-                  drawingId: "connector",
-                  from: { moduleId: "level-0", anchor: "missing" },
-                  to: { moduleId: "level-1", anchor: "left" },
-                  data: {},
-                },
-              ],
+              id: "link",
+              from: { moduleId: "level-0", at: "right" },
+              to: { moduleId: "gone", at: "left" },
             },
           ],
         },
-        { kind: "edit" },
+        { cause: { kind: "edit" } },
       ),
-    ).rejects.toThrow("锚点");
+    ).rejects.toThrow("连线 link 的一端 gone");
     const { work: cleared } = await writeWork(
       store,
       work.id,
       {
-        baseRevision: 3,
-        scenes: [{ ...content.scenes.root, modules: [], checks: [] }],
+        scenes: [{ id: "root", clear: true }],
         remove: { drawings: ["tier"] },
-      },
-      { kind: "edit" },
-    );
+      }, { cause: { kind: "edit" } });
     expect(cleared.revision).toBe(4);
     expect(cleared.drawings.tier).toBeUndefined();
   });
@@ -341,14 +291,8 @@ describe("user owned works", () => {
       store,
       work.id,
       {
-        baseRevision: 2,
-        drawings: Object.values(content.drawings),
-        scenes: Object.values(content.scenes),
-        details: Object.values(content.details),
-        interactions: Object.values(content.interactions),
-      },
-      { kind: "run", runId: "r", prompt: "draw" },
-    );
+        ...workEdit(content),
+      }, { cause: { kind: "run", runId: "r", prompt: "draw" } });
     const m = saved.scenes.root.modules[0];
     const send = (cookie: string, body: object) =>
       app.request(`/api/works/${work.id}/edits`, {
@@ -356,9 +300,10 @@ describe("user owned works", () => {
         headers: { cookie, "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-    const edit = moveParts(saved, "root", [
-      { id: m.id, bounds: { ...m.bounds, x: 901 } },
-    ]);
+    const edit = {
+      baseRevision: saved.revision,
+      edit: moveParts(saved, "root", [{ id: m.id, bounds: { ...m.bounds, x: 901 } }]),
+    };
     expect((await send(bob.cookie, edit)).status).toBe(404);
     const r = await send(alice.cookie, edit);
     expect(r.status).toBe(200);
@@ -398,30 +343,16 @@ describe("user owned works", () => {
       label: "苹果",
       drawingId: "fruit",
       data: { body: "earth", label: "earth orbit" },
-      bounds: { x: 0, y: 0, width: 10, height: 10 },
-      anchors: {},
-      group: null,
-      target: null,
+      bounds: [0, 0, 10, 10],
     };
     await expect(
       writeWork(
         a,
         work.id,
         {
-          baseRevision: 1,
           drawings: [fruit],
-          scenes: [
-            {
-              ...content.scenes.root,
-              modules: [module],
-              links: [],
-              checks: [],
-              interactionId: null,
-            },
-          ],
-        },
-        { kind: "edit" },
-      ),
+          modules: [module],
+        }, { cause: { kind: "edit" } }),
     ).rejects.toThrow("set_brief");
     a.commit({ ...a.work(work.id), brief: content.brief }, 1, { kind: "edit" });
     const theirs = await client.ingest(
@@ -439,9 +370,7 @@ describe("user owned works", () => {
       writeWork(
         a,
         work.id,
-        { baseRevision: 2, materials: [theirs.id] },
-        { kind: "edit" },
-      ),
+        { materials: [theirs.id] }, { cause: { kind: "edit" } }),
     ).rejects.toThrow();
     // One whose role sees all materials may use it.
     const theirsToo = createWork(admin, "admin's");
@@ -451,28 +380,15 @@ describe("user owned works", () => {
     const { added: taken } = await writeWork(
       admin,
       theirsToo.id,
-      { baseRevision: 2, materials: [theirs.id] },
-      { kind: "edit" },
-    );
+      { materials: [theirs.id] }, { cause: { kind: "edit" } });
     expect(taken).toEqual([theirs.id]);
     const { work: saved, added } = await writeWork(
       a,
       work.id,
       {
-        baseRevision: 2,
         drawings: [fruit],
-        scenes: [
-          {
-            ...content.scenes.root,
-            modules: [module],
-            links: [],
-            checks: [],
-            interactionId: null,
-          },
-        ],
-      },
-      { kind: "edit" },
-    );
+        modules: [module],
+      }, { cause: { kind: "edit" } });
     // Called literally in code, or held as an id in module data.
     expect(added.sort()).toEqual(["apple", "earth"]);
     expect(saved.materials.apple).toMatchObject({
@@ -485,13 +401,10 @@ describe("user owned works", () => {
         a,
         work.id,
         {
-          baseRevision: saved.revision,
           drawings: [
             { ...fruit, source: 'return api.material("no-such-thing")' },
           ],
-        },
-        { kind: "edit" },
-      ),
+        }, { cause: { kind: "edit" } }),
     ).rejects.toThrow("no-such-thing");
     // A module drawn by a library drawing as it is takes that drawing in; a picture is
     // not a drawing.
@@ -499,22 +412,11 @@ describe("user owned works", () => {
       a,
       work.id,
       {
-        baseRevision: saved.revision,
-        scenes: [
-          {
-            ...content.scenes.root,
-            modules: [
+        modules: [
               module,
               { ...module, id: "wave", drawingId: "waves", data: {} },
             ],
-            links: [],
-            checks: [],
-            interactionId: null,
-          },
-        ],
-      },
-      { kind: "edit" },
-    );
+      }, { cause: { kind: "edit" } });
     expect(plotted.materials.waves).toMatchObject({ kind: "drawing" });
     // A picture generated before ids were cut first may carry "--"; data naming it keeps it.
     await client.reserve(
@@ -536,42 +438,20 @@ describe("user owned works", () => {
       a,
       work.id,
       {
-        baseRevision: plotted.revision,
-        scenes: [
-          {
-            ...content.scenes.root,
-            modules: [
+        modules: [
               module,
               { ...module, id: "wave", drawingId: "waves", data: {} },
               { ...module, id: "old", data: { picture: "g-old-name--ab12" } },
             ],
-            links: [],
-            checks: [],
-            interactionId: null,
-          },
-        ],
-      },
-      { kind: "edit" },
-    );
+      }, { cause: { kind: "edit" } });
     expect(old).toEqual(["g-old-name--ab12"]);
     await expect(
       writeWork(
         a,
         work.id,
         {
-          baseRevision: plotted.revision + 1,
-          scenes: [
-            {
-              ...content.scenes.root,
-              modules: [{ ...module, drawingId: "apple" }],
-              links: [],
-              checks: [],
-              interactionId: null,
-            },
-          ],
-        },
-        { kind: "edit" },
-      ),
+          modules: [{ ...module, drawingId: "apple" }],
+        }, { cause: { kind: "edit" } }),
     ).rejects.toThrow("画法 apple 不存在");
   });
   it("retains saved content and suspended conversation across reopening", () => {
@@ -999,10 +879,8 @@ describe("exported pages", () => {
       store,
       work.id,
       {
-        baseRevision: 2,
         drawings: Object.values(content.drawings),
-        scenes: Object.values(content.scenes),
-        interactions: Object.values(content.interactions),
+        ...workEdit(content),
         details: [
           ...Object.values(content.details),
           {
@@ -1011,9 +889,7 @@ describe("exported pages", () => {
             html: `<img src="/materials/files/line-activity"><img src="/materials/files/line-activity?color=%23ff0000"><img src="/materials/files/line-activity?wait=0&amp;color=%2300aa00">`,
           },
         ],
-      },
-      { kind: "edit" },
-    );
+      }, { cause: { kind: "edit" } });
     const page = await (
       await app.request(`/api/works/${work.id}/scenes/root/page`, { headers: { cookie } })
     ).text();

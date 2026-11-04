@@ -20,6 +20,7 @@ import {
   setInteraction,
   setStyle,
   setStyles,
+  labelOf,
   syntaxError,
 } from "../../../modules/editing/index.ts";
 import type { Work } from "../../../modules/contracts/index.ts";
@@ -238,7 +239,7 @@ export function SceneSettings({
         <Code
           key={"script:" + sceneId}
           label={t.edit.scene.script}
-          value={scene.interactionId ? (work.interactions[scene.interactionId]?.source ?? "") : ""}
+          value={scene.interaction ?? ""}
           rows={6}
           check={(code) => (code.trim() ? syntaxError(code) : null)}
           apply={(code) => change((w) => setInteraction(w, sceneId, code))}
@@ -382,8 +383,10 @@ export function Layers({
   const drawingName = (id: string) =>
     work.drawings[id]?.name ?? work.materials[id]?.name ?? id;
   if (!layers.length) return <p className={cx("edit-note")}>{t.edit.layers.empty}</p>;
-  const nameOf = (id: string) =>
-    scene.modules.find((m) => m.id === id)?.label || id;
+  const nameOf = (id: string) => {
+    const m = scene.modules.find((x) => x.id === id);
+    return m ? labelOf(m) : id;
+  };
   return (
     <>
     <ol className={cx("layers")} onDragLeave={() => setOver(undefined)}>
@@ -438,7 +441,7 @@ export function Layers({
               <input
                 autoFocus
                 className={cx("edit-input")}
-                defaultValue={m.label}
+                defaultValue={labelOf(m)}
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {
                   e.stopPropagation();
@@ -453,7 +456,7 @@ export function Layers({
               />
             ) : (
               <>
-                <span className={cx("layer-name")}>{m.label || m.id}</span>
+                <span className={cx("layer-name")}>{labelOf(m)}</span>
                 <small>{drawingName(m.drawingId)}</small>
                 {m.group && (
                   <i data-tip={t.edit.layers.group(m.group)}>

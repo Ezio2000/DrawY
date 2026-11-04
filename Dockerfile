@@ -25,6 +25,7 @@ RUN pnpm exec playwright install --with-deps chromium \
   && rm -rf /var/lib/apt/lists/*
 COPY apps/capture apps/capture
 COPY modules/observation/capture.ts modules/observation/capture.ts
+COPY modules/contracts/geometry.ts modules/contracts/geometry.ts
 EXPOSE 8091
 CMD ["pnpm","exec","tsx","apps/capture/main.ts"]
 

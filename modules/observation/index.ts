@@ -4,6 +4,7 @@ import {
   boxOf,
   boxSchema,
   DomainError,
+  drawingOf,
   type Work,
   type Observation,
 } from "../contracts/index.ts";
@@ -12,7 +13,7 @@ import type { Item } from "../models/index.ts";
 import type { Shot } from "./capture.ts";
 import { tracer } from "../trace/index.ts";
 import { drawnWith } from "../materials/index.ts";
-import { union } from "../contracts/geometry.ts";
+import { MIN_TEXT, opening, union } from "../contracts/geometry.ts";
 export const viewSchema = z.object({
   sceneId: z.string().optional().describe("One scene; leave out to see every nonempty scene"),
   claims: z
@@ -43,7 +44,7 @@ export type Reported = Record<string, Record<string, string>>;
 /** A look's modules as the author reads them, leaving out what it was already told. */
 function moduleReport(work: Work, shot: Shot, reported: Reported) {
   const known = (reported[shot.sceneId] ??= {});
-  const modules = (shot.modules ?? []).map(({ label: _, bounds, pictures, ...m }) => {
+  const modules = (shot.modules ?? []).map(({ bounds, pictures, ...m }) => {
     const uses = drawnWith(work, shot.sceneId, m.id);
     return {
       ...m,
@@ -215,15 +216,30 @@ export async function observe(
     },
   );
 }
-/** How the scene's figure sits in the opening view: its extent in scene units and the
- * share of the view it covers, which drops as its proportions stray from the view's. */
+/** How the scene's figure sits in the opening view: its extent in scene units, the share of
+ * the view it covers, which drops as its proportions stray from the view's, and the text
+ * too small to read there with the size in scene units that would be readable. */
 function figure(work: Work, shot: Shot) {
-  const box = union(work.scenes[shot.sceneId].modules.map((m) => m.bounds));
+  const scene = work.scenes[shot.sceneId];
+  const box = union(scene.modules.map((m) => m.bounds));
+  /** A part's size parameter, and the size at which its smallest text would read: what
+   * changing it takes, whatever share of the size that text is drawn at. */
+  const remedy = (id: string, px: number) => {
+    const part = [...scene.modules, ...scene.links].find((p) => p.id === id);
+    const size = part && (part.data.size ?? drawingOf(work, part.drawingId)?.defaults.size);
+    return typeof size === "number" ? { size, sizeThatReads: Math.ceil((size * MIN_TEXT) / px) } : {};
+  };
   const { scale } = shot.camera;
   return {
     width: Math.round(box.width),
     height: Math.round(box.height),
     ...(shot.text?.smallest ? { smallestText: shot.text.smallest } : {}),
+    ...(shot.text?.small.length
+      ? {
+          tooSmall: shot.text.small.map((t) => ({ ...t, ...remedy(t.moduleId, t.px) })),
+          readableFrom: `text reads at ${MIN_TEXT}px here from size ${opening(box).smallestSize} in scene units`,
+        }
+      : {}),
     viewFilled:
       Math.round(
         ((box.width * scale * box.height * scale) /

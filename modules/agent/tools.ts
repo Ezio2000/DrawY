@@ -1,6 +1,6 @@
 import { viewSchema } from "../observation/index.ts";
 import { z } from "zod";
-import { authorWriteSchema, briefSchema, guideTopics } from "../contracts/index.ts";
+import { briefSchema, guideTopics, workEditSchema } from "../contracts/index.ts";
 import { pictureRequestSchema } from "../images/index.ts";
 const fn = (name: string, description: string, parameters: object) => ({
   type: "function",
@@ -113,6 +113,15 @@ export const guideSchema = z
       .describe("Library drawing ids whose cards to read, from the list under # Library"),
   })
   .refine((g) => g.topics?.length || g.drawings?.length, "至少要指定一个指南或画法");
+/** What write_work takes: an edit, and whether it finishes the write refused before it. */
+export const writeSchema = workEditSchema.extend({
+  amend: z
+    .boolean()
+    .optional()
+    .describe(
+      "Finish the write just refused: send only what corrects it, and both save as one revision",
+    ),
+});
 export const tools = [
   fn(
     "ask_user",
@@ -141,17 +150,17 @@ export const tools = [
   ),
   fn(
     "read_work",
-    "Read the current saved work: brief, materials, scene compositions, drawing sources and revision. Each request already gives you the work as it stood and what you wrote is above, so a change needs no read first; call this when you need the source of something you have not seen, or the state after a failed write.",
+    "Read the current saved work: brief, materials, scene compositions, drawing sources and revision. Each request already gives you the work as it stood and what you wrote is above, so a change needs no read first; call this when you need the source of something you have not seen.",
     { type: "object", properties: {}, additionalProperties: false },
   ),
   fn(
     "write_work",
-    "Atomically change the work, saving a new revision that the viewer sees drawn. modules and links are flat lists: a known id changes only the fields sent and everything not named stays as it is, while a new id is added. Leave out what a part does not need. drawings, interactions, details and materials are upserted or removed whole by id. Fails without saving when baseRevision is stale or the result is invalid, and says why. Write modules before drawings and each module's bounds before its data, because the layout is shown to the viewer while the rest streams.",
-    schema(authorWriteSchema),
+    "Change the work, saving one new revision that the viewer sees drawn. Send only what changes: a record with a known id keeps every field you leave out, and a new id adds the record. data, defaults and style merge key by key, null deleting a key; code and pages change whole or by edits. The revision saves whole or not at all: a refusal lists every problem and holds the write, so correct it with amend: true and only what was wrong. Write modules before drawings and each module's bounds before its data, because the layout is shown to the viewer while the rest streams.",
+    schema(writeSchema),
   ),
   fn(
     "view_canvas",
-    "See current saved scenes as images in this conversation, with geometry: the camera, modules changed since the last look with the materials they use and where a picture's visible content is, the smallest text, any words cut off, and any runtime errors. Shows each scene's opening view and declared interaction checks. Optionally add close-ups of up to three regions, annotate object ids and bounds, or perform a sequence of CSS-selector clicks in one scene; a close-up of a revision you have already seen whole returns just the close-up. Waits for developing pictures first. Call it alone or last after write_work calls: saves run in order before the screenshot, and a failed save skips it so you do not judge an older version.",
+    "See current saved scenes as images in this conversation, with geometry: the camera, modules changed since the last look with the materials they use and where a picture's visible content is, the parts whose text is too small and the size that would read, any words cut off, and any runtime errors. Shows each scene's opening view and declared interaction checks. Optionally add close-ups of up to three regions, annotate object ids and bounds, or perform a sequence of CSS-selector clicks in one scene; a close-up of a revision you have already seen whole returns just the close-up. Waits for developing pictures first. Call it alone or last after write_work calls: saves run in order before the screenshot, and a failed save skips it so you do not judge an older version.",
     schema(viewSchema),
   ),
 ];

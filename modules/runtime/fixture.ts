@@ -1,4 +1,4 @@
-import type { Work, Instance } from "../contracts/index.ts";
+import { boxOf, type Instance, type Scene, type Work, type WorkEdit } from "../contracts/index.ts";
 
 // A test work whose drawing method is entirely work-owned source.
 export function fixture(): Work {
@@ -7,7 +7,6 @@ export function fixture(): Work {
   const modules: Instance[] = names.map((label, i) => ({
     id: "level-" + i,
     drawingId: "tier",
-    label,
     data: {
       label,
       color: colors[i],
@@ -21,7 +20,6 @@ export function fixture(): Work {
       width: 240 + i * 100,
       height: 94,
     },
-    anchors: { left: { x: 0, y: 0.5 }, right: { x: 1, y: 0.5 } },
     group: "pyramid",
     target: { kind: "detail", id: "explanation" },
   }));
@@ -31,9 +29,6 @@ export function fixture(): Work {
     label: "标题",
     data: {},
     bounds: { x: 100, y: 10, width: 640, height: 70 },
-    anchors: {},
-    group: null,
-    target: null,
   });
   modules.push({
     id: "control",
@@ -41,9 +36,6 @@ export function fixture(): Work {
     label: "交互",
     data: {},
     bounds: { x: 250, y: 630, width: 340, height: 48 },
-    anchors: {},
-    group: null,
-    target: null,
   });
   return {
     id: "fixture",
@@ -90,7 +82,7 @@ return root;`,
         parentId: null,
         modules,
         links: [],
-        interactionId: "explore",
+        interaction: `api.on('control','emphasize',async()=>{await new Promise(resolve=>setTimeout(resolve,60));await api.set('level-4',{color:'#e8aa68',tip:'已突出基础需要'});});api.on('control','explore',()=>api.openScene('child'));`,
         checks: [
           { moduleId: "control", selector: '[data-action="emphasize"]' },
           { moduleId: "control", selector: '[data-action="explore"]' },
@@ -103,22 +95,11 @@ return root;`,
         modules: ["mermaid"].map((drawingId, i) => ({
           id: drawingId,
           drawingId,
-          label: drawingId,
           data: {},
           bounds: { x: i * 450, y: 0, width: 400, height: 300 },
-          anchors: {},
-          group: null,
-          target: null,
         })),
         links: [],
-        interactionId: null,
         checks: [],
-      },
-    },
-    interactions: {
-      explore: {
-        id: "explore",
-        source: `api.on('control','emphasize',async()=>{await new Promise(resolve=>setTimeout(resolve,60));await api.set('level-4',{color:'#e8aa68',tip:'已突出基础需要'});});api.on('control','explore',()=>api.openScene('child'));`,
       },
     },
     details: {
@@ -146,5 +127,33 @@ return root;`,
       muted: "#6c7972",
       font: "system-ui,sans-serif",
     },
+  };
+}
+/** A scene written whole as an edit. */
+export function sceneEdit(scene: Scene, clear = true): WorkEdit {
+  return {
+    scenes: [
+      {
+        id: scene.id,
+        title: scene.title,
+        ...(scene.parentId ? { parentId: scene.parentId } : {}),
+        interaction: scene.interaction ?? null,
+        checks: scene.checks,
+        ...(clear ? { clear: true } : {}),
+      },
+    ],
+    modules: scene.modules.map(({ bounds, ...m }) => ({ ...m, scene: scene.id, bounds: boxOf(bounds) })),
+    links: scene.links.map((l) => ({ ...l, scene: scene.id })),
+  };
+}
+/** A work's contents written as one edit: its scenes parents first, then the rest. */
+export function workEdit(work: Work): WorkEdit {
+  const scenes = Object.values(work.scenes).map((s) => sceneEdit(s));
+  return {
+    scenes: scenes.flatMap((s) => s.scenes!),
+    modules: scenes.flatMap((s) => s.modules!),
+    links: scenes.flatMap((s) => s.links!),
+    drawings: Object.values(work.drawings),
+    details: Object.values(work.details),
   };
 }

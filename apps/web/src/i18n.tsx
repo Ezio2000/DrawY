@@ -184,6 +184,7 @@ const zh = {
     linkEnds: {
       from: "起点",
       to: "终点",
+      auto: "自动",
       sides: { left: "左", right: "右", top: "上", bottom: "下" },
       reverse: "调转方向",
     },
@@ -199,6 +200,7 @@ const zh = {
       shared: (n: number) => `这份画法有 ${n} 个元素在用，改代码会一起变。`,
       onlyThis: "只改这一个",
       source: "画法代码",
+      defaults: "默认值（JSON）：所有用这份画法的元素共用，元素自己的值优先",
       params: "可调参数（JSON）",
       record: "元素记录（JSON）",
       revert: "还原",
@@ -1257,6 +1259,7 @@ const en: Words = {
     linkEnds: {
       from: "Starts at",
       to: "Ends at",
+      auto: "Auto",
       sides: { left: "Left", right: "Right", top: "Top", bottom: "Bottom" },
       reverse: "Reverse",
     },
@@ -1272,6 +1275,7 @@ const en: Words = {
       shared: (n) => `${n} parts use this drawing; changing its code changes them all.`,
       onlyThis: "Change only this one",
       source: "Drawing code",
+      defaults: "Defaults (JSON): shared by every part drawn with this; a part's own value wins",
       params: "Adjustable values (JSON)",
       record: "Part record (JSON)",
       revert: "Revert",

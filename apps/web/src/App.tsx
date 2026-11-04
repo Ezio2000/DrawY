@@ -44,6 +44,7 @@ import {
 import type { Canvas, Pointed } from "../../../modules/canvas/index.ts";
 import {
   applied,
+  labelOf,
   moveParts,
   removeParts,
   replace,
@@ -649,7 +650,7 @@ export function App() {
         const edit = make(w);
         if (!edit) return false;
         const saved = await mine(() =>
-          api<Work>("/works/" + w.id + "/edits", "POST", edit),
+          api<Work>("/works/" + w.id + "/edits", "POST", { baseRevision: w.revision, edit }),
         );
         setRedoable(undefined);
         W(saved);
@@ -702,7 +703,8 @@ export function App() {
   const nameOf = (id: string): string => {
     const link = active?.links.find((l) => l.id === id);
     if (link) return `${nameOf(link.from.moduleId)} → ${nameOf(link.to.moduleId)}`;
-    return active?.modules.find((m) => m.id === id)?.label || id;
+    const m = active?.modules.find((x) => x.id === id);
+    return m ? labelOf(m) : id;
   };
   const chosenLink = !selected.length && linkId ? active?.links.find((l) => l.id === linkId) : undefined;
   /** Hands a change to the author, written into the composer for the person to send, and

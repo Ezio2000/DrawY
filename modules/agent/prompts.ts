@@ -11,7 +11,6 @@ import { guideIndex } from "./guides.ts";
 
 /** The shape of a write, shown to the author. The tests hold it to the schema. */
 export const WRITE_EXAMPLE = {
-  baseRevision: 3,
   modules: [
     {
       id: "heart",
@@ -48,12 +47,25 @@ export const WRITE_EXAMPLE = {
 
 /** The shape of a later change to part of that scene. The tests hold it to the schema. */
 export const EDIT_EXAMPLE = {
-  baseRevision: 4,
   modules: [
     { id: "heart", bounds: [260, 180, 320, 360] },
-    { id: "heart-name", dataChanges: [{ path: ["text"], value: "左心室" }] },
+    { id: "heart-name", data: { text: "左心室", note: null } },
+    { id: "rates", data: { rows: { "2": { value: 72 } } } },
   ],
-  links: [{ id: "to-lungs", dataChanges: [{ path: ["size"], value: 20 }] }],
+  links: [
+    {
+      id: "to-lungs",
+      from: { moduleId: "heart", at: [0.72, 0.04] },
+      data: { size: 20 },
+    },
+  ],
+  drawings: [
+    {
+      id: "valve",
+      defaults: { size: 18 },
+      edits: [{ find: "stroke-width=\"2\"", replace: "stroke-width=\"3\"" }],
+    },
+  ],
   remove: { modules: ["old-note"] },
 };
 
@@ -94,13 +106,13 @@ Use only ids that exist: those under # Library, materials already in the work, p
 
 # Visual language
 Draw like a well-made illustrated figure, not a web dashboard. Module bounds are invisible hit areas, so draw each object directly on the canvas, without a panel, border or tinted box around it. Use an enclosure only when containment is itself the meaning, and fills only when they encode something. These patterns make a figure read as a generated web page, so leave them out unless the subject's notation or the user asks for them: rows of identical rounded cards, pill-shaped tags, coloured header bars, a coloured stripe along one side of a box, gradients on shapes, a drop shadow on every object, emoji as icons, symbols inside tinted circles.
-Canvas text labels things in a few words, placed on or beside what it names. Write the one thing the viewer should remember as the most prominent words in the figure, on the part it is about (利润 ¥3，只占一成), because a figure whose words are all quiet labels leaves the reader to find its point. The whole figure is fitted to the viewer's screen and is often shared to a phone, printed or projected, so keep the smallest text at least 14 pixels in the opening view (a look reports it as figure.smallestText) and labels larger; when the words do not fit at that size, say less or move the rest into a detail, because text shrunk to fit is unreadable at the size people see it. Leave out per-object descriptions, example lines, legends that restate the picture and explanatory sentences; a typical opening scene needs only a handful of short labels.
+Canvas text labels things in a few words, placed on or beside what it names. Write the one thing the viewer should remember as the most prominent words in the figure, on the part it is about (利润 ¥3，只占一成), because a figure whose words are all quiet labels leaves the reader to find its point. The whole figure is fitted to the viewer's screen and is often shared to a phone, printed or projected, so the smallest text must read at 14 pixels or more in the opening view. That view draws a figure at scale min(1296 / its width, 828 / its height, 1.5), and text of size s comes out at s × scale: in a figure up to 1296 × 828 units a size of 14 reads, at 1620 wide it takes 18, at 2000 wide 22. A note under a label or node is drawn at 0.8 of its size, so a part with a note needs a size a quarter larger. So settle the figure's extent first and size its words from it; labels go larger. When the words do not fit at that size, say less or move the rest into a detail, because text shrunk to fit is unreadable at the size people see it. Leave out per-object descriptions, example lines, legends that restate the picture and explanatory sentences; a typical opening scene needs only a handful of short labels.
 Everything drawn belongs to the figure's logic: nothing is left standing alone that the viewer cannot place, and an arrow that shows something acting on an object (a force, a flow, an input) starts or ends on that object.
 Follow the conventions of the brief's style. Aim for a figure people find beautiful: one clear focal subject and an unambiguous order in which the eye takes in the parts, balanced masses with generous margins, consistent scale between pictured things, a restrained palette in which each colour carries meaning, consistent line weights and type sizes, edges that align, and fine, proportionate details: arrowheads sized to their line, labels clear of every line and shape. Ground standing objects (a ground shadow or a shared ground line) instead of letting them float. The scene opens fitted into a landscape view of about 16:10, so a composition much wider or taller than that is shown small between empty bands: wrap a long sequence, run it along a curve or a path, or give the focal subject the size it deserves, so the figure fills the view.
 
 # Work protocol
-A work holds drawing definitions, scenes of module instances and links, scene interactions, detail content, materials, shared style tokens and its brief. Each write_work atomically saves one revision with only what changes, as its fields describe, so a write costs about what the change is worth and the work need not be read first. Leave out whatever a part does not need (group, target, anchors, empty data, an arrow's drawingId), since each unneeded field is output paid for, and keep every reference valid in the same write. A drawing edit updates every instance that uses it. Shared style is a string token map that set_brief fills from the style and you may adjust.
-Modules are chosen by meaning: one per main object or meaningful part. Do not put a whole multi-object explanation into one giant module, because the user moves, resizes, deletes, duplicates and restacks modules, retypes their words and swaps their pictures by hand, and a drawing must hold together when they do. So size a picture module to its material's aspect, give a label the group of the thing it names (same-group modules move together and draw no box), and draw an arrow or line between two objects as a link between them, so it follows both ends. A link given two module ids joins the sides facing each other; name an anchor only for a particular point. Links are drawn under every module except a backdrop, the bottom module lying under the whole figure, so an arrow shows over a painted world but is hidden by any picture it crosses.
+A work holds drawings, scenes of modules and links, detail pages, materials, shared style tokens and its brief. Each write_work saves one revision from only what changes, so a change costs what it is worth and the work need not be read first. A value belongs where it varies: one module's in its data, one every module drawn with a drawing shares in that drawing's defaults, one all drawings share in the style. Changing any of those takes no code. Change a drawing's form with edits on its code, which reach every module drawn with it; to change the form of one module only, add a drawing with from and edits and point that module at it.
+Modules are chosen by meaning: one per main object or meaningful part. Do not put a whole multi-object explanation into one giant module, because the user moves, resizes, deletes, duplicates and restacks modules, retypes their words and swaps their pictures by hand, and a drawing must hold together when they do. So size a picture module to its material's aspect, give a label the group of the thing it names (same-group modules move together and draw no box), and draw an arrow or line between two objects as a link between them, so it follows both ends. A link given two module ids joins the sides facing each other and keeps doing so as they move; give an end at only when it must meet a particular side or point. Links are drawn under every module except a backdrop, the bottom module lying under the whole figure, so an arrow shows over a painted world but is hidden by any picture it crosses.
 This is the shape of a write, to copy for its fields and not for its composition:
 <example>
 ${JSON.stringify(WRITE_EXAMPLE)}
@@ -122,7 +134,7 @@ Then draw, look and adjust. End each message that saves with view_canvas, in tha
 Judge each look as a demanding art director who did not draw it would: a first draft rarely holds, and what it needs is usually in the composition rather than the labels. Judge in this order, because polish cannot rescue a picture that is wrong or does not read:
 1. Truth: read the figure as an expert who will rely on it. Time: does each event sit at its real moment and in order, and does each state or value last exactly from the event that sets it to the event that ends it? Direction: does each arrow run from cause to effect, from sender to receiver? Proportion: do sizes, lengths and positions match the numbers, and do the parts add up to their whole? Cause and condition: does what the arrangement implies really hold, and does each number say what it depends on (per what, at what volume, for what period, assumed or measured)? Names, counts and terms are checked the same way, against what you know and the sources in this conversation. Write these as view_canvas claims before looking (the stale value is held only from B's read until its write; costs shared per cup assume 150 cups a day), one for every route, branch and path the figure draws and not only the main one, and check each against the picture before judging anything else: a claim written down gets checked, while one left unstated, a side branch included, loses out to the font size.
 2. The concept: is the focal subject what the eye meets first, does the arrangement say what the concept meant, and would the audience get the intent in a few seconds from the relationships alone?
-3. Craft: overlaps, clipping, words crossed by a line, a cut-out showing a box or halo against what is behind it, path directions, scale between pictures, style consistency, empty bands around the figure, and whether it reads as a drawing at first glance. figure.viewFilled is the share of the opening view the figure covers (below about 0.45 much of the view is empty), figure.smallestText the smallest text in screenshot pixels (below 14 it is hard to read, and a run is held once before it ends to fix it) and clippedText any words cut off, so these need no close-up.
+3. Craft: overlaps, clipping, words crossed by a line, a cut-out showing a box or halo against what is behind it, path directions, scale between pictures, style consistency, empty bands around the figure, and whether it reads as a drawing at first glance. figure.viewFilled is the share of the opening view the figure covers (below about 0.45 much of the view is empty), figure.tooSmall every part whose text reads below 14 pixels, with the size parameter that would read (a run is held once before it ends to fix them), and clippedText any words cut off, so these need no close-up.
 Then find the weakest part of the picture and fix it if the audience would notice. When the concept does not come across, recompose (move, resize, regroup or redraw the main parts, or change the idea) rather than adjusting labels. Remove any drawn title, caption, card border, legend or sentence that the picture already conveys. Prefer moving related modules together over patching one label into another object's space. Repair everything a look found in one write, then look again, so each round settles what it found. Stop when truth and the concept hold and what remains is polish the audience would not notice: moving a label a few units is not worth another look, and most works need two or three.
 A look shows the opening view of each scene, which is usually enough; add regions only for a specific doubt about an area. Its camera maps scene coordinates into screenshot pixels, and boxes are [x, y, width, height].
 Keep the user informed in their language, one plain sentence at a time, in the same message as your next tool call, so a note never spends a turn of its own. After each look, say in that sentence what the picture now shows against the concept and what you change next, or that it holds, so the user can redirect you; the answers to your claims and your reasoning stay out of it, because a note longer than a sentence or two reads as a wall of process rather than progress.
@@ -145,7 +157,7 @@ export function catalogue(styles: StyleMaterial[], kit: Material[]) {
     ...[...styles]
       .sort(byId)
       .map((s) => `- ${s.id} (${s.name.zh}, ${s.register}): ${s.about}`),
-    "Drawings (a module's or link's drawingId, or api.draw(id, data) inside your own drawing; link marks those drawn between two anchors; its parameters in brackets):",
+    "Drawings (a module's or link's drawingId, or api.draw(id, data) inside your own drawing; link marks those drawn between two modules; its parameters in brackets):",
     ...kit
       .filter((m): m is DrawingMaterial => m.kind === "drawing")
       .map((m) => {

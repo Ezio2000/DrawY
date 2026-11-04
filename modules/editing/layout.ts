@@ -43,13 +43,13 @@ export function distribute(
   sceneId: string,
   ids: string[],
   axis: "x" | "y",
-): WorkEdit {
+): WorkEdit | null {
   const scene = sceneOf(work, sceneId);
   const size = axis === "x" ? "width" : "height";
   const chosen = scene.modules
     .filter((m) => ids.includes(m.id))
     .sort((a, b) => a.bounds[axis] - b.bounds[axis]);
-  if (chosen.length < 3) return moveParts(work, sceneId, []);
+  if (chosen.length < 3) return null;
   const first = chosen[0].bounds,
     last = chosen.at(-1)!.bounds;
   const span = last[axis] + last[size] - first[axis];

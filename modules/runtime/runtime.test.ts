@@ -210,8 +210,8 @@ it("moves groups, resizes an isolated module and recomputes connected anchors", 
   work.scenes.root.links.push({
     id: "connection",
     drawingId: "connector",
-    from: { moduleId: "level-0", anchor: "right" },
-    to: { moduleId: "level-4", anchor: "right" },
+    from: { moduleId: "level-0", at: "right" },
+    to: { moduleId: "level-4", at: "right" },
     data: {},
   });
   await open();
@@ -275,9 +275,6 @@ it("selects what is pressed while editing, instead of opening or operating it, a
     label: "苹果",
     data: {},
     bounds: { x: 700, y: 120, width: 160, height: 160 },
-    anchors: {},
-    group: null,
-    target: null,
   });
   await open();
   await page.evaluate(() => {
@@ -361,9 +358,6 @@ it("selects what is pressed while editing, instead of opening or operating it, a
           label: "罩",
           data: {},
           bounds: { x: 0, y: 0, width: 900, height: 600 },
-          anchors: {},
-          group: null,
-          target: null,
         },
       ],
     });
@@ -497,8 +491,8 @@ it("selects a link by its line while editing, drags its ends onto other modules 
   work.scenes.root.links.push({
     id: "next",
     drawingId: "line",
-    from: { moduleId: "level-0", anchor: "right" },
-    to: { moduleId: "level-1", anchor: "right" },
+    from: { moduleId: "level-0", at: "right" },
+    to: { moduleId: "level-1", at: "right" },
     data: { label: "然后" },
   });
   await open();
@@ -648,8 +642,6 @@ it("stops a drawing still running for a module taken out while it draws", async 
       id: "slow",
       label: "慢",
       drawingId: "slow",
-      group: null,
-      target: null,
     };
     view.update({ ...work, revision: 2 }, { ...scene, modules: [...scene.modules, slow] }, true);
     view.update({ ...work, revision: 3 }, scene, true);
@@ -676,11 +668,10 @@ it("draws links over a backdrop laid under the whole figure and under every othe
   work.drawings.box = drawing("box", `return api.svg('<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>')`);
   work.drawings.line = drawing("line", `return api.svg('<svg><line x1="'+api.from.x+'" y1="'+api.from.y+'" x2="'+api.to.x+'" y2="'+api.to.y+'" stroke="red"/></svg>')`);
   const module = (id: string, bounds: { x: number; y: number; width: number; height: number }) => ({
-    id, label: id, bounds, drawingId: "box", group: null, target: null,
-    anchors: { r: { x: 1, y: 0.5 }, l: { x: 0, y: 0.5 } }, data: {},
+    id, label: id, bounds, drawingId: "box", data: {},
   });
   const parts = [module("a", { x: 100, y: 100, width: 100, height: 100 }), module("b", { x: 500, y: 100, width: 100, height: 100 })];
-  const link = { id: "ab", drawingId: "line", from: { moduleId: "a", anchor: "r" }, to: { moduleId: "b", anchor: "l" }, data: {} };
+  const link = { id: "ab", drawingId: "line", from: { moduleId: "a", at: "right" as const }, to: { moduleId: "b", at: "left" as const }, data: {} };
   const depths = () =>
     page.evaluate(() =>
       Object.fromEntries(
@@ -690,7 +681,7 @@ it("draws links over a backdrop laid under the whole figure and under every othe
         ]),
       ),
     );
-  work.scenes.root = { ...work.scenes.root, modules: [module("world", { x: 0, y: 0, width: 800, height: 400 }), ...parts], links: [link], interactionId: null, checks: [] };
+  work.scenes.root = { ...work.scenes.root, modules: [module("world", { x: 0, y: 0, width: 800, height: 400 }), ...parts], links: [link], checks: [] };
   await open();
   const over = await depths();
   expect(over.world).toBeLessThan(over.ab);
@@ -706,7 +697,7 @@ it("disposes drawing and scene resources when leaving the canvas", async () => {
   work.drawings.title.source =
     `const timer=setInterval(()=>document.body.dataset.ticks=String(Number(document.body.dataset.ticks||0)+1),10);api.cleanup(()=>clearInterval(timer));` +
     work.drawings.title.source;
-  work.interactions.explore.source += `api.cleanup(()=>document.body.dataset.cleaned='yes');`;
+  work.scenes.root.interaction += `api.cleanup(()=>document.body.dataset.cleaned='yes');`;
   await open();
   await page.waitForFunction(() => Number(document.body.dataset.ticks) > 2);
   await page.evaluate(() => window.drawyView.dispose());
@@ -775,9 +766,6 @@ it("keeps words uncut at large sizes and at the edges of every library drawing, 
           drawingId: m.id,
           data: data(m),
           bounds: { x: 0, y, ...m.size },
-          anchors: {},
-          group: null,
-          target: null,
         };
         y += m.size.height + 60;
         return at;
@@ -800,10 +788,9 @@ it("keeps words uncut at large sizes and at the edges of every library drawing, 
     })),
     links: [],
     checks: [],
-    interactionId: null,
   };
   await open();
-  expect((await page.evaluate(readText)).clipped).toEqual([]);
+  expect((await page.evaluate(readText, 14)).clipped).toEqual([]);
   // A plot's names and marker also stay within the box the author gave it.
   const plotted = await page.evaluate(() => {
     const host = document.querySelector<HTMLElement>('[data-module-id="plot"]')!;
@@ -818,11 +805,11 @@ it("keeps words uncut at large sizes and at the edges of every library drawing, 
   work.scenes.root = {
     ...work.scenes.root,
     modules: [
-      { id: "upper", label: "upper", drawingId: "node", data: { title: "上" }, bounds: { x: 300, y: 0, width: 160, height: 60 }, anchors: { bottom: { x: 0.5, y: 1 } }, group: null, target: null },
-      { id: "lower", label: "lower", drawingId: "node", data: { title: "下" }, bounds: { x: 300, y: 400, width: 160, height: 60 }, anchors: { top: { x: 0.5, y: 0 } }, group: null, target: null },
+      { id: "upper", label: "upper", drawingId: "node", data: { title: "上" }, bounds: { x: 300, y: 0, width: 160, height: 60 } },
+      { id: "lower", label: "lower", drawingId: "node", data: { title: "下" }, bounds: { x: 300, y: 400, width: 160, height: 60 } },
     ],
     links: [
-      { id: "down", drawingId: "arrow", from: { moduleId: "upper", anchor: "bottom" }, to: { moduleId: "lower", anchor: "top" }, data: { label: "返回一个很长的值", size: 22 } },
+      { id: "down", drawingId: "arrow", from: { moduleId: "upper", at: "bottom" }, to: { moduleId: "lower", at: "top" }, data: { label: "返回一个很长的值", size: 22 } },
     ],
   };
   await open();
@@ -846,13 +833,10 @@ it("keeps words uncut at large sizes and at the edges of every library drawing, 
       drawingId: "tight",
       data: {},
       bounds: { x: 0, y: 0, width: 100, height: 40 },
-      anchors: {},
-      group: null,
-      target: null,
     },
   ];
   await open();
-  const report = await page.evaluate(readText);
+  const report = await page.evaluate(readText, 14);
   expect(report.clipped[0]).toMatchObject({ moduleId: "tight" });
   expect(report.smallest!.px).toBeGreaterThan(20);
 }, 30000);
@@ -863,22 +847,19 @@ it("measures words as they are shown and reports those their own container cuts"
     drawingId: id,
     data: {},
     bounds: { x, y: 0, width, height },
-    anchors: {},
-    group: null,
-    target: null,
   });
   const drawn = (id: string, source: string) => {
     work.drawings[id] = { id, name: id, source };
   };
   const lines = "很多行的文字".repeat(12);
   const scene = (...modules: ReturnType<typeof module>[]) => {
-    work.scenes.root = { ...work.scenes.root, modules, links: [], checks: [], interactionId: null };
+    work.scenes.root = { ...work.scenes.root, modules, links: [], checks: [], };
   };
   // Many lines of one size read as that size, whatever the height of the whole block.
   drawn("many", `return api.html('<div style="width:120px;font-size:20px;line-height:1.5">${lines}</div>');`);
   scene(module("many", 120, 600));
   await open();
-  let report = await page.evaluate(readText);
+  let report = await page.evaluate(readText, 14);
   const scale = await page.evaluate(() => window.drawyView.view.scale);
   expect(report.smallest!.px).toBe(Math.round(20 * scale));
   expect(report.clipped).toEqual([]);
@@ -889,7 +870,7 @@ it("measures words as they are shown and reports those their own container cuts"
   );
   scene(module("lined", 200, 200));
   await open();
-  report = await page.evaluate(readText);
+  report = await page.evaluate(readText, 14);
   const svgScale = await page.evaluate(() => window.drawyView.view.scale);
   expect(report.smallest!.px).toBe(Math.round(20 * svgScale));
   // The element directly holding the words can be what cuts them off.
@@ -899,7 +880,7 @@ it("measures words as they are shown and reports those their own container cuts"
   drawn("tight", `return api.html('<div style="height:20px;line-height:1;overflow:hidden;font-size:20px;white-space:nowrap">刚好放下</div>');`);
   scene(module("cut", 120, 30), module("ellipsis", 80, 30, 200), module("tight", 120, 20, 400));
   await open();
-  report = await page.evaluate(readText);
+  report = await page.evaluate(readText, 14);
   expect(report.clipped.map((c) => c.moduleId).sort()).toEqual(["cut", "ellipsis"]);
 }, 30000);
 it("leaves keyboard input inside a drawing control to that control", async () => {
@@ -984,9 +965,6 @@ return svg;`,
     drawingId,
     data: { id },
     bounds: { x, y: 0, width: 300, height: 150 },
-    anchors: {},
-    group: null,
-    target: null,
   });
   work.scenes.root = {
     ...work.scenes.root,
@@ -997,7 +975,6 @@ return svg;`,
     ],
     links: [],
     checks: [],
-    interactionId: null,
   };
   // A developing picture holds up the page's load event, but not the canvas.
   await page.goto(origin + "/api/works/fixture/scenes/root?revision=1", {
@@ -1073,11 +1050,8 @@ it("stands pictures on their box, reports where they are seen and wires library 
     name: "读数",
     source: "return api.html(`<b>${api.data.value}</b>`)",
   };
-  work.interactions.react = {
-    id: "react",
-    source:
-      'api.on("length", "change", (v) => api.set("readout", { value: v }));',
-  };
+  const reactScript =
+    'api.on("length", "change", (v) => api.set("readout", { value: v }));';
   const at = (
     id: string,
     drawingId: string,
@@ -1090,9 +1064,6 @@ it("stands pictures on their box, reports where they are seen and wires library 
     drawingId,
     data,
     bounds: { x: 0, y, width: 300, height },
-    anchors: {},
-    group: null,
-    target: null,
   });
   work.scenes.root = {
     ...work.scenes.root,
@@ -1110,7 +1081,7 @@ it("stands pictures on their box, reports where they are seen and wires library 
     ],
     links: [],
     checks: [],
-    interactionId: "react",
+    interaction: reactScript,
   };
   const [shot] = await capture(browser, {
     origin,
@@ -1174,37 +1145,30 @@ it("draws every library drawing from its example data and routes elbow arrows at
     drawingId: string,
     bounds: { x: number; y: number; width: number; height: number },
     data: Record<string, unknown>,
-    anchors = {},
   ) => ({
     id,
     label: id,
     drawingId,
     data,
     bounds,
-    anchors,
-    group: null,
-    target: null,
   });
   const modules = drawings.map((m) => {
     const at = place(m.id, m.id, { x: 0, y, ...m.size }, m.example);
     y += m.size.height + 40;
     return at;
   });
-  const sides = { left: { x: 0, y: 0.5 }, right: { x: 1, y: 0.5 } };
   modules.push(
     place(
       "from",
       "node",
       { x: 1000, y: 0, width: 180, height: 70 },
       { title: "下单" },
-      sides,
     ),
     place(
       "to",
       "node",
       { x: 1300, y: 240, width: 180, height: 70 },
       { title: "支付" },
-      sides,
     ),
   );
   work.scenes.root = {
@@ -1214,17 +1178,16 @@ it("draws every library drawing from its example data and routes elbow arrows at
       {
         id: "route",
         drawingId: "arrow",
-        from: { moduleId: "from", anchor: "right" },
-        to: { moduleId: "to", anchor: "left" },
+        from: { moduleId: "from", at: "right" },
+        to: { moduleId: "to", at: "left" },
         data: { route: "elbow" },
       },
     ],
     checks: [],
-    interactionId: null,
   };
   await open();
   // Whatever a library drawing's example says, none of it is cut off by the drawing itself.
-  expect((await page.evaluate(readText)).clipped).toEqual([]);
+  expect((await page.evaluate(readText, 14)).clipped).toEqual([]);
   const result = await page.evaluate(() => {
     const words = (id: string) =>
       document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!
@@ -1313,9 +1276,6 @@ it("maps across the 180th meridian in one piece and names what the view shows", 
     drawingId: "geomap",
     data,
     bounds: { x: 0, y, width: 960, height: 600 },
-    anchors: {},
-    group: null,
-    target: null,
   });
   work.scenes.root = {
     ...work.scenes.root,
@@ -1431,9 +1391,6 @@ it("draws a city's real streets under a walk through it, and says so when they c
         drawingId: "geomap",
         data: walk,
         bounds: { x: 0, y: 0, width: 960, height: 600 },
-        anchors: {},
-        group: null,
-        target: null,
       },
     ],
     links: [],
@@ -1551,9 +1508,6 @@ it("draws the world in a rounded projection and a country in relief, naming what
     drawingId: "geomap",
     data,
     bounds: { x: 0, y, width: 960, height: 600 },
-    anchors: {},
-    group: null,
-    target: null,
   });
   work.scenes.root = {
     ...work.scenes.root,
@@ -1604,4 +1558,61 @@ it("draws the world in a rounded projection and a country in relief, naming what
   expect(seen.china).not.toContain("科布多省");
   expect(seen.relief).toBe(1);
   expect(seen.reliefTiles).toBeGreaterThan(0);
+});
+
+it("draws links from ends they hold, following their modules, and every drawing with its defaults", async () => {
+  const box = (id: string, x: number, y: number) => ({
+    id,
+    drawingId: "tinted",
+    bounds: { x, y, width: 100, height: 60 },
+    data: id === "own" ? { fill: "#00ff00" } : {},
+  });
+  work.drawings.tinted = {
+    id: "tinted",
+    name: "带默认值",
+    defaults: { fill: "#ff0000", size: 30 },
+    source: "return api.html(`<div id='t' style='width:${api.width}px;height:${api.height}px;background:${api.data.fill};font-size:${api.data.size}px'>字</div>`)",
+  };
+  work.drawings.tally = {
+    id: "tally",
+    name: "组合",
+    source: "const inner = await api.draw('tinted', {size: 40}, {width: 50, height: 20}); const root = api.html(''); root.append(inner); return root;",
+  };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [box("a", 0, 0), box("b", 400, 0), box("own", 0, 300), { ...box("nest", 400, 300), drawingId: "tally" }],
+    links: [
+      { id: "auto", drawingId: "connector", from: { moduleId: "a" }, to: { moduleId: "b" }, data: {} },
+      { id: "point", drawingId: "connector", from: { moduleId: "a", at: [0.25, 1] }, to: { moduleId: "b", at: "bottom" }, data: {} },
+    ],
+    checks: [],
+  };
+  delete work.scenes.root.interaction;
+  await open();
+  const read = () =>
+    page.evaluate(() => {
+      const r = window.drawyView.renderer;
+      const ends = (id: string) => r.ends(r.links.get(id)!);
+      const fill = (id: string, q = "#t") =>
+        document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!.querySelector<HTMLElement>(q)!.style;
+      return {
+        errors: window.drawyErrors,
+        auto: ends("auto"),
+        point: ends("point"),
+        colors: [fill("a").background, fill("own").background],
+        nested: fill("nest").fontSize,
+      };
+    });
+  const before = await read();
+  expect(before.errors).toEqual([]);
+  expect(before.auto).toEqual({ from: { x: 100, y: 30, side: "right" }, to: { x: 400, y: 30, side: "left" } });
+  expect(before.point).toEqual({ from: { x: 25, y: 60, side: "bottom" }, to: { x: 450, y: 60, side: "bottom" } });
+  // The default shows until a module's own data says otherwise; a drawing draws another of the work's.
+  expect(before.colors).toEqual(["rgb(255, 0, 0)", "rgb(0, 255, 0)"]);
+  expect(before.nested).toBe("40px");
+  await page.evaluate(() => window.drawyView.renderer.move([{ id: "b", bounds: { x: 0, y: 500, width: 100, height: 60 } }]));
+  const after = await read();
+  // Only the end with no place of its own changes side; the one with a place stays on it.
+  expect(after.auto).toEqual({ from: { x: 50, y: 60, side: "bottom" }, to: { x: 50, y: 500, side: "top" } });
+  expect(after.point).toEqual({ from: { x: 25, y: 60, side: "bottom" }, to: { x: 50, y: 560, side: "bottom" } });
 });

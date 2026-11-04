@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, GitFork, RotateCcw } from "lucide-react";
-import { useLocale } from "@drawy/ui";
 import {
   fork,
+  moduleRecord,
   setDrawing,
   setModule,
   syntaxError,
@@ -11,8 +11,7 @@ import {
 } from "../../../modules/editing/index.ts";
 import type { Instance, Work } from "../../../modules/contracts/index.ts";
 import type { Material } from "@drawy/materials/schema";
-import { api } from "./api.ts";
-import { ownCopy, type Change } from "./handEdits.ts";
+import type { Change } from "./handEdits.ts";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 
@@ -140,8 +139,7 @@ export function DrawingPanel({
   change: Change;
   pick: (kind: "drawing", chosen: (m: Material) => void) => void;
 }) {
-  const t = useT(),
-    locale = useLocale();
+  const t = useT();
   const own = work.drawings[module.drawingId];
   const library = work.materials[module.drawingId];
   const users = usersOf(work, module.drawingId);
@@ -152,22 +150,9 @@ export function DrawingPanel({
     ),
   ];
   const FROM_LIBRARY = "\u0000library";
-  const forkOwn = () =>
-    void change(
-      (w) =>
-        fork(
-          w,
-          sceneId,
-          [module.id],
-          { name: own!.name, params: own!.params, source: own!.source },
-          own!.id,
-        ).edit,
-    );
-  const forkLibrary = async () => {
-    const m = await api<Material>("/materials/" + module.drawingId);
-    const copy = ownCopy(m, t, locale);
-    await change((w) => fork(w, sceneId, [module.id], copy, module.drawingId).edit);
-  };
+  // A copy of what it is drawn with now, whether the work's own or a library drawing.
+  const forkIt = () =>
+    void change((w) => fork(w, sceneId, [module.id], module.drawingId).edit);
   return (
     <div className={cx("fields")}>
       <label className={cx("field")}>
@@ -195,7 +180,7 @@ export function DrawingPanel({
       {library?.kind === "drawing" && (
         <div className={cx("edit-callout")}>
           <p>{t.edit.code.libraryNote}</p>
-          <button className={cx("secondary small")} onClick={() => void forkLibrary()}>
+          <button className={cx("secondary small")} onClick={forkIt}>
             <GitFork size={13} />
             {t.edit.code.makeOwn}
           </button>
@@ -206,7 +191,7 @@ export function DrawingPanel({
           {users.length > 1 && (
             <div className={cx("edit-callout")}>
               <p>{t.edit.code.shared(users.length)}</p>
-              <button className={cx("secondary small")} onClick={forkOwn}>
+              <button className={cx("secondary small")} onClick={forkIt}>
                 <GitFork size={13} />
                 {t.edit.code.onlyThis}
               </button>
@@ -221,6 +206,25 @@ export function DrawingPanel({
               rows={14}
               check={syntaxError}
               apply={(source) => change((w) => setDrawing(w, { ...w.drawings[own.id], source }))}
+            />
+          </div>
+          <div className={cx("field")}>
+            <span className={cx("field-name")}>{t.edit.code.defaults}</span>
+            <Code
+              key={"defaults:" + own.id}
+              label={t.edit.code.defaults}
+              value={json(own.defaults ?? {})}
+              rows={4}
+              check={jsonError}
+              apply={(code) => {
+                const defaults = parsed(code) as Record<string, unknown>;
+                return change((w) =>
+                  setDrawing(w, {
+                    ...w.drawings[own.id],
+                    defaults: Object.keys(defaults).length ? defaults : undefined,
+                  }),
+                );
+              }}
             />
           </div>
           <div className={cx("field")}>
@@ -249,7 +253,7 @@ export function DrawingPanel({
 }
 
 /** A module written out in full, as the author writes it: its name, place, drawing,
- * group, where it leads, its anchors and all its data. */
+ * group, where it leads and all its data. */
 export function ModuleRecord({
   work,
   sceneId,
@@ -262,11 +266,10 @@ export function ModuleRecord({
   change: Change;
 }) {
   const t = useT();
-  const { id: _id, ...record } = module;
   return (
     <Code
       label={t.edit.code.record}
-      value={json(record)}
+      value={json(moduleRecord(module))}
       rows={12}
       check={jsonError}
       apply={(code) => change((w) => setModule(w, sceneId, module.id, parsed(code)))}
