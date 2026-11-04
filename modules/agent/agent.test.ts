@@ -507,14 +507,24 @@ it("compacts at the budget with original references and closes interrupted tool 
     };
     let turn = 0;
     const agent = new Agent(() => {});
+    const requests: { instructions: string; tools: unknown; cacheKey?: string }[] = [];
+    const before = structuredClone(ctx.input);
     vi.mocked(generate).mockImplementation(
-      async (role, { input, tools, budget }) => {
+      async (role, { input, tools, budget, instructions, cacheKey }) => {
+        requests.push({ instructions, tools, cacheKey });
         if (turn++ === 0) {
-          expect(tools).toEqual([]);
-          // A summary is made with little reasoning and room to finish.
-          expect(role.effort).toBe("low");
+          // A summary is asked of the conversation as it stands, after it, so the cached
+          // prefix is read rather than paid for again; with room to finish.
+          expect(input.slice(0, before.length)).toEqual(before);
+          expect(input.at(-1)).toMatchObject({ role: "user" });
+          expect(String(input.at(-1)!.content)).toContain("Summarize this drawing conversation");
           expect(budget).toBe(16384);
-          expect(input.some((i: any) => i.type === "configuration_update")).toBe(false);
+          // With little reasoning: in the conversation where its format takes that, else on the request.
+          const lowered = input.at(-2)!;
+          if (lowered.type === "configuration_update") {
+            expect(lowered.reasoning.effort).not.toBe("max");
+            expect(role.effort).toBe(store.settings().author.effort);
+          } else expect(role.effort).toBe("low");
           return {
             items: [
               {
@@ -526,10 +536,12 @@ it("compacts at the budget with original references and closes interrupted tool 
             response: {},
           };
         }
-        expect(input[0].content[0].text).toContain("Keep five panels");
-        expect(input[0].content[1].text).toContain(reference.id);
-        expect(input[0].content[2].image_url).toMatch(/^data:image\/webp/);
-        expect(input[1].content).toContain(work.id);
+        // The standing preferences, then the summary, then the work.
+        expect(input[0].content).toBe("User preferences: none");
+        expect(input[1].content[0].text).toContain("Keep five panels");
+        expect(input[1].content[1].text).toContain(reference.id);
+        expect(input[1].content[2].image_url).toMatch(/^data:image\/webp/);
+        expect(input[2].content).toContain(work.id);
         agent.cancel(store, run.id);
         return {
           items: ["one", "two"].map((call_id) => ({
@@ -544,6 +556,10 @@ it("compacts at the budget with original references and closes interrupted tool 
       },
     );
     await agent.execute(store, run, ctx, "request");
+    // The same instructions, tools and cache key as the turns around it.
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toEqual(requests[1]);
+    expect((requests[0].tools as unknown[]).length).toBeGreaterThan(0);
     expect(store.run(run.id).status).toBe("cancelled");
     expect(
       store
@@ -594,8 +610,8 @@ it("goes on without old pictures when a summary fails, and sizes the context by 
     const agent = new Agent(() => {});
     const seen: any[][] = [];
     let summaries = 0;
-    vi.mocked(generate).mockImplementation(async (_role, { input, tools = [] }) => {
-      if (!tools.length) {
+    vi.mocked(generate).mockImplementation(async (_role, { input }) => {
+      if (String(input.at(-1)?.content).includes("Summarize this drawing conversation")) {
         summaries++;
         throw Error("模型输出被截断");
       }
@@ -1156,7 +1172,7 @@ it("tells the author what the user changed themselves since its last turn", asyn
     const agent = new Agent(() => {});
     const run = await agent.start(store, work.id, "root", "Continue");
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
-    const told = store.context(run.id).input[1].content as string;
+    const told = store.context(run.id).input.find((i: any) => String(i.content).includes("Current scene:")).content as string;
     expect(told).toMatch(
       /^Since your last turn the user changed the work themselves \(revision 2 to 4\)\.[^\n]*\n- scene root: changed level-0; removed control\nCurrent scene: root\n/,
     );
@@ -1178,6 +1194,51 @@ it("tells the author what the user changed themselves since its last turn", asyn
           typeof i.content === "string" && i.content.includes("Current work:"),
       );
     expect(latest.content).toMatch(/^Current scene: root\n/);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("tells a conversation the user's preferences, out of the instructions, and again only when they change", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    const instructions: string[] = [];
+    vi.mocked(generate).mockImplementation(async (_role, turn) => {
+      instructions.push(turn.instructions);
+      return {
+        items: [
+          {
+            type: "function_call",
+            name: "ask_user",
+            call_id: crypto.randomUUID(),
+            arguments: JSON.stringify({ questions: [{ id: "q", text: "Which?", options: [{ label: "A" }, { label: "B" }] }] }),
+          },
+        ],
+        usage: {},
+        response: {},
+      };
+    });
+    const agent = new Agent(() => {});
+    const told = async (prompt: string) => {
+      const run = await agent.start(store, work.id, "root", prompt);
+      await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
+      agent.cancel(store, run.id);
+      return store.context(run.id).input.filter((i: any) => String(i.content).startsWith("User preferences: ")).map((i: any) => i.content);
+    };
+    store.saveOwnSettings({ ...store.ownSettings(), preferences: "用中文标注" });
+    expect(await told("Draw")).toEqual(["User preferences: 用中文标注"]);
+    expect(await told("Again")).toEqual(["User preferences: 用中文标注"]);
+    store.saveOwnSettings({ ...store.ownSettings(), preferences: "少用红色" });
+    expect(await told("Once more")).toEqual(["User preferences: 用中文标注", "User preferences: 少用红色"]);
+    // The instructions are the same whatever the user prefers.
+    expect(new Set(instructions).size).toBe(1);
+    expect(instructions[0]).not.toContain("用中文标注");
   } finally {
     db.close();
     rmSync(dir, { recursive: true });

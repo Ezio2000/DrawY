@@ -464,7 +464,16 @@ interface Context {
   /** The revision of the work this conversation already holds: the last one the author
    * saved, read or was handed whole. A later request sends only what changed since. */
   known?: number;
+  /** The user's standing preferences as this conversation was last told them. */
+  preferences?: string;
 }
+/** The user's standing preferences as the author is told them: in the conversation rather
+ * than the instructions, so the instructions stay the same for everyone and are cached once. */
+const preferencesOf = (settings: Settings) => settings.preferences.trim() || "none";
+const preferencesMessage = (preferences: string): Item => ({
+  role: "user",
+  content: `User preferences: ${preferences}`,
+});
 async function userMessage(
   store: UserStore,
   text: string,
@@ -694,38 +703,51 @@ function withoutOldPictures(input: Item[]): Item[] {
       : item,
   );
 }
+/** What a summary is asked to keep, at the end of the conversation it summarizes. */
+const SUMMARY_REQUEST =
+  "Summarize this drawing conversation so the author can continue from your notes alone, since everything else in it is about to be dropped. Keep: what the user asked and every requirement or correction, in their words; the brief and its basis; what each reference image is for; the material ids chosen or generated and what each depicts; decisions and why they were made; facts and sources found by research; what is unfinished; tool failures still unresolved. Leave out drawing code, module lists and guide text, because the latest saved work and the original reference images are supplied separately and guides can be read again. Call no tool and write only the notes; do not continue the work.";
 async function compact(
   store: UserStore,
   run: Run,
   ctx: Context,
   signal: AbortSignal,
+  instructions: string,
+  tools: Item[],
 ) {
   const size = contextSize(ctx);
   if (size < 200000) return;
   await tracer.span("compact", "context", { size }, async (span) => {
     const author = ctx.settings.author;
     const began = Date.now();
-    let result: Awaited<ReturnType<typeof generate>>;
+    // A summary needs little thought: at the author's effort, xhigh reasoning used up the
+    // output budget and the cut-off summary failed the whole run. Where the effort changes
+    // in the conversation, the summary is asked of the same request as every turn, so it
+    // reads the whole conversation from the cache instead of paying for all of it again.
+    const inConversation = adapterFor(author.protocol).effortControl(author) === "conversation";
+    let summary = "",
+      answered = false;
     try {
-      result = await generate(
-        // A summary needs little thought: at the author's effort, xhigh reasoning used up
-        // the output budget and the cut-off summary failed the whole run.
-        { ...author, effort: "low" },
-        {
-          instructions:
-            "Summarize this drawing conversation so the author can continue from your notes alone, since everything else in it is about to be dropped. Keep: what the user asked and every requirement or correction, in their words; the brief and its basis; what each reference image is for; the material ids chosen or generated and what each depicts; decisions and why they were made; facts and sources found by research; what is unfinished; tool failures still unresolved. Leave out drawing code, module lists and guide text, because the latest saved work and the original reference images are supplied separately and guides can be read again. Write only the notes; do not continue the work.",
-          // Effort changes made for the author's turns would override the summary's own.
-          input: ctx.input.filter((i) => i.type !== "configuration_update"),
-          // Without tools the calls and results so far are told in words.
-          tools: [],
-          signal,
-          budget: 16384,
-          // A summary asks with other instructions; it keeps off the author's cached prefix.
-          cacheKey: store.userId + ":compact",
-        },
-      );
+      const result = await generate(inConversation ? author : { ...author, effort: "low" }, {
+        instructions,
+        input: [
+          ...ctx.input,
+          ...(inConversation
+            ? [{ type: "configuration_update", reasoning: { effort: lowestEffort(author.efforts) ?? "low" } }]
+            : []),
+          { role: "user", content: SUMMARY_REQUEST },
+        ],
+        tools,
+        signal,
+        budget: 16384,
+        cacheKey: store.userId,
+      });
+      spend(run, result.usage);
+      answered = true;
+      summary = textOf(result.items);
+      span.set({ usage: result.usage, response: result.response });
+      if (!summary) throw Error("摘要是空的");
     } catch (e) {
-      spendFailed(run, { ms: Date.now() - began });
+      if (!answered) spendFailed(run, { ms: Date.now() - began });
       if (signal.aborted) throw e;
       // Without a summary the run goes on with less to read rather than stopping.
       ctx.input = withoutOldPictures(ctx.input);
@@ -748,9 +770,10 @@ async function compact(
       ),
     ];
     ctx.input = [
+      preferencesMessage((ctx.preferences = preferencesOf(ctx.settings))),
       await userMessage(
         store,
-        "Conversation summary. Guides and drawing cards read earlier are no longer above, so read again with draw_guide what you still need.\n" + textOf(result.items),
+        "Conversation summary. Guides and drawing cards read earlier are no longer above, so read again with draw_guide what you still need.\n" + summary,
         references,
       ),
       workMessage(run.sceneId, store.work(run.workId)),
@@ -759,14 +782,8 @@ async function compact(
     ctx.measured = undefined;
     ctx.reported = undefined;
     store.context(run.id, ctx);
-    spend(run, result.usage);
     // The next turn starts from this summary alone.
-    span.set({
-      summary: textOf(result.items),
-      usage: result.usage,
-      response: result.response,
-      replaced: true,
-    });
+    span.set({ summary, replaced: true });
   });
 }
 /** Every turn thinks at the configured effort. A configuration_update lasts until the next
@@ -903,8 +920,11 @@ export class Agent {
       ...(before?.measured ? { measured: before.measured } : {}),
       ...(before?.reported ? { reported: before.reported } : {}),
       known: work.revision,
+      preferences: preferencesOf(settings),
     };
     ctx.input.push(
+      // Told again only when they changed since this conversation last heard them.
+      ...(before?.preferences === ctx.preferences ? [] : [preferencesMessage(ctx.preferences!)]),
       message,
       before
         ? catchUp(store, sceneId, work, before.known)
@@ -1055,7 +1075,6 @@ export class Agent {
               const instructions = [
                 AUTHOR,
                 catalogue(await styleList(), await kit()),
-                "User preferences: " + (settings.preferences || "none"),
               ].join("\n\n");
               // Where this execution starts from; each turn records what it adds.
               execution.set({
@@ -1146,7 +1165,7 @@ export class Agent {
       let said: Extract<Step, { kind: "message" }> | undefined;
       abort.signal.throwIfAborted();
       ctx.input.push(...(await this.developed(store, run)));
-      await compact(store, run, ctx, abort.signal);
+      await compact(store, run, ctx, abort.signal, instructions, availableTools);
       if (seen > ctx.input.length) seen = 0;
       holdEffort(ctx.input, settings.author);
       const turnStart = Date.now();
