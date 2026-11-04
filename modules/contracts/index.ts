@@ -204,29 +204,76 @@ export interface RevisionSummary {
   updatedAt: number;
   cause: Cause;
 }
-/** The revision a step of the work started from: the one before the first revision of the
- * step that made `revision`. A step is one request to the author with every revision it
- * saved, or one hand edit; a restored revision stands for the one it brought back. */
-export function stepBefore(
-  history: RevisionSummary[],
-  revision: number,
-): number | undefined {
-  const of = new Map(history.map((r) => [r.revision, r.cause]));
-  const seen = new Set<number>();
-  let at = revision;
-  while (of.get(at)?.kind === "restore" && !seen.has(at)) {
-    seen.add(at);
-    at = (of.get(at) as Extract<Cause, { kind: "restore" }>).revision;
+/** Where a work has got to, as the list of works shows it. */
+export interface WorkProgress {
+  /** Its latest request's state; null before the first. */
+  run: "running" | "waiting" | "viewing" | "completed" | "failed" | "cancelled" | null;
+  /** What that request asked, its first words. */
+  prompt: string;
+  /** The version it stands at. */
+  version: number;
+  /** Whether nothing has been drawn on it yet. */
+  blank: boolean;
+}
+/** What people count as one version of a work: everything one request to the author
+ * saved (only how it ended matters), a run of hand edits, a run of restores, or the blank
+ * start. Numbered from the oldest, the blank start being 0, so the numbers follow the
+ * requests made rather than every draft the author saved on the way. */
+export interface Version {
+  number: number;
+  /** The revision it stands at: the last one it saved. */
+  revision: number;
+  /** Every revision it saved, oldest first. */
+  revisions: number[];
+  /** The cause of its last revision. */
+  cause: Cause;
+  updatedAt: number;
+}
+const sameStep = (a: Cause, b: Cause) =>
+  a.kind === b.kind &&
+  a.kind !== "create" &&
+  (a.kind !== "run" || a.runId === (b as Extract<Cause, { kind: "run" }>).runId);
+/** The versions of a work, oldest first, from its revisions in any order. */
+export function versionsOf(history: Pick<RevisionSummary, "revision" | "cause" | "updatedAt">[]): Version[] {
+  const versions: Version[] = [];
+  for (const r of [...history].sort((a, b) => a.revision - b.revision)) {
+    const last = versions.at(-1);
+    if (last && sameStep(last.cause, r.cause)) {
+      last.revisions.push(r.revision);
+      last.revision = r.revision;
+      last.cause = r.cause;
+      last.updatedAt = r.updatedAt;
+    } else
+      versions.push({
+        number: versions.length,
+        revision: r.revision,
+        revisions: [r.revision],
+        cause: r.cause,
+        updatedAt: r.updatedAt,
+      });
   }
-  const cause = of.get(at);
-  if (!cause || cause.kind === "create") return undefined;
-  if (cause.kind === "run")
-    while (
-      of.get(at - 1)?.kind === "run" &&
-      (of.get(at - 1) as Extract<Cause, { kind: "run" }>).runId === cause.runId
-    )
-      at--;
-  return at > 1 ? at - 1 : undefined;
+  // Without the blank start (it can only be missing from a partial history) numbering
+  // still begins at 1.
+  if (versions[0] && versions[0].cause.kind !== "create")
+    for (const v of versions) v.number++;
+  return versions;
+}
+/** The version a revision belongs to. */
+export const versionOf = (versions: Version[], revision: number) =>
+  versions.find((v) => v.revisions.includes(revision));
+/** The revision undoing goes back to from `revision`: the version before the one it is
+ * in. A restored version stands for the one it brought back, so undoing twice keeps going
+ * back instead of swinging between two versions. */
+export function stepBefore(history: RevisionSummary[], revision: number): number | undefined {
+  const versions = versionsOf(history);
+  let v = versionOf(versions, revision);
+  const seen = new Set<Version>();
+  while (v?.cause.kind === "restore" && !seen.has(v)) {
+    seen.add(v);
+    v = versionOf(versions, v.cause.revision);
+  }
+  if (!v) return undefined;
+  return versions[versions.indexOf(v) - 1]?.revision;
 }
 /* A change to a work, the one form the author's write_work and every hand edit share. Each
  * record names what it changes by id and says nothing about the rest:
@@ -433,7 +480,11 @@ export interface Account {
   /** Whether the role is built in, so its name is shown in the reader's language. */
   builtinRole: boolean;
   permissions: Permission[];
+  /** Requests to the author it may still make; null is no limit. */
+  quota: number | null;
 }
+/** The requests a new account may make until an administrator gives it more. */
+export const DEFAULT_QUOTA = 10;
 /** A one-time code an administrator hands out, which lets one person create an account. */
 export interface Invite {
   code: string;
@@ -646,6 +697,8 @@ export interface Run {
   prices?: RunPrices;
 }
 export interface RunServices {
+  /** The label picked; people who do not manage models are shown only this. */
+  label?: string;
   author: string;
   model: string;
   effort?: Effort;

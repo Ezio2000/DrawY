@@ -5,6 +5,9 @@ import {
   id,
   ADMIN,
   MEMBER,
+  DEFAULT_QUOTA,
+  versionsOf,
+  type WorkProgress,
   defaultCatalog,
   emptySettings,
   modelCatalogSchema,
@@ -97,6 +100,13 @@ export class Storage {
       db.exec(
         `ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT '${MEMBER}'`,
       );
+    // Requests left to make; null is no limit. Accounts get the default allowance, those
+    // who administer the app none.
+    if (!columns.some((c) => c.name === "quota"))
+      db.exec(
+        `ALTER TABLE users ADD COLUMN quota INTEGER DEFAULT ${DEFAULT_QUOTA};
+ UPDATE users SET quota=NULL WHERE role='${ADMIN}';`,
+      );
     const builtin: AccountRole[] = [
       {
         id: ADMIN,
@@ -162,8 +172,10 @@ export class Storage {
   }
   account(userId: string): Account {
     const u = this.db
-      .prepare("SELECT id,name,role FROM users WHERE id=?")
-      .get(userId) as { id: string; name: string; role: string } | undefined;
+      .prepare("SELECT id,name,role,quota FROM users WHERE id=?")
+      .get(userId) as
+      | { id: string; name: string; role: string; quota: number | null }
+      | undefined;
     if (!u) throw new DomainError("账号不存在", 404);
     const role = this.roles().find((r) => r.id === u.role) ?? this.role(MEMBER);
     return {
@@ -173,7 +185,31 @@ export class Storage {
       roleName: role.name,
       builtinRole: role.builtin,
       permissions: role.permissions,
+      quota: u.quota,
     };
+  }
+  /** Sets how many more requests an account may make; null is no limit. */
+  setQuota(userId: string, quota: number | null) {
+    this.account(userId);
+    this.db.prepare("UPDATE users SET quota=? WHERE id=?").run(quota, userId);
+    return this.account(userId);
+  }
+  /** Takes one request from an account's allowance, refusing when none is left. */
+  spendQuota(userId: string) {
+    const { quota } = this.account(userId);
+    if (quota === null) return;
+    if (
+      !this.db
+        .prepare("UPDATE users SET quota=quota-1 WHERE id=? AND quota>0")
+        .run(userId).changes
+    )
+      throw new DomainError("提问次数已用完，请联系管理员", 403);
+  }
+  /** Gives back a request taken for one that did not start. */
+  refundQuota(userId: string) {
+    this.db
+      .prepare("UPDATE users SET quota=quota+1 WHERE id=? AND quota IS NOT NULL")
+      .run(userId);
   }
   /** An account's name, for showing whose a material is; a removed one has none. */
   accountName(userId: string) {
@@ -377,6 +413,36 @@ export class UserStore {
         return look.screenshots![0].url;
     }
     return null;
+  }
+  /** Where a work has got to, for the list of works: its latest request and its versions. */
+  progress(workId: string): WorkProgress {
+    const db = this.storage.db;
+    const run = db
+      .prepare(
+        "SELECT json_extract(data,'$.status') AS status, json_extract(data,'$.steps[0].text') AS prompt, json_extract(data,'$.error') AS error FROM runs WHERE user_id=? AND work_id=? ORDER BY rowid DESC LIMIT 1",
+      )
+      .get(this.userId, workId) as
+      | { status: Run["status"]; prompt: string | null; error: string | null }
+      | undefined;
+    const versions = versionsOf(
+      db
+        .prepare(
+          "SELECT revision,cause FROM revisions WHERE user_id=? AND work_id=?",
+        )
+        .all(this.userId, workId)
+        .map((r) => ({
+          revision: r.revision as number,
+          cause: JSON.parse(r.cause as string),
+          updatedAt: 0,
+        })),
+    );
+    const latest = versions.at(-1);
+    return {
+      run: run?.status ?? null,
+      prompt: (run?.prompt ?? "").slice(0, 120),
+      version: latest?.number ?? 0,
+      blank: !latest || latest.cause.kind === "create",
+    };
   }
   revisions(workId: string): RevisionSummary[] {
     this.work(workId);

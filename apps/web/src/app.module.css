@@ -187,11 +187,51 @@
   color: var(--text);
 }
 
-.rail-work-open span {
+.rail-work-open span,
+.rail-work-open small {
   display: block;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* What the work is doing or which version it is at, under its title. */
+.rail-work-open small {
+  margin-top: 1px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.rail-work-open small i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 5px 1px 0;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+}
+
+.rail-work-open small[data-tone="live"] {
+  color: var(--ai-deep);
+}
+
+.rail-work-open small[data-tone="live"] i {
+  animation: rail-pulse 1.2s ease-in-out infinite;
+}
+
+.rail-work-open small[data-tone="ask"] {
+  color: var(--ai-deep);
+}
+
+.rail-work-open small[data-tone="failed"] {
+  color: var(--red-text);
+}
+
+@keyframes rail-pulse {
+  50% {
+    opacity: 0.3;
+  }
 }
 
 .rail-work-remove {
@@ -1010,6 +1050,19 @@ h2:has(> .title) {
   gap: 2px;
   max-width: 100%;
   padding: 0 6px;
+}
+
+/* Requests left to make, beside the label: quiet until none are left. */
+.quota {
+  padding: 0 8px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.quota[data-out] {
+  color: var(--red-text);
 }
 
 /* Where the row is short of room, the long names give way (the model's last); effort and
@@ -5755,6 +5808,22 @@ body:has(.resizer[data-dragging]) {
   width: 168px;
 }
 
+.members-head span.members-quota-head {
+  width: 84px;
+  margin-left: auto;
+  margin-right: 14px;
+}
+
+.members-quota {
+  width: 84px;
+  height: 34px;
+  padding: 0 11px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .members ul {
   margin: 0;
   padding: 0 0 6px;
@@ -7045,137 +7114,117 @@ body:has(.resizer[data-dragging]) {
   color: var(--text);
 }
 
-/* The drafts panel: each request with the drafts it saved, newest first. */
+/* The versions panel: one row for each request, run of hand edits or restore, newest
+   first; each can be looked at on the canvas or restored, the button always in view. */
+.drafts-hint {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
 .drafts {
   display: grid;
-  gap: 14px;
-  margin: 4px 0 0;
+  gap: 4px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.drafts-group > header {
+.drafts-version {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
-  font-size: 13px;
-  color: var(--text-2);
+  padding: 4px 6px 4px 4px;
+  border-radius: 10px;
+  transition: background-color 0.15s var(--ease);
 }
 
-.drafts-group > header > i {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  background: var(--fill);
-  color: var(--text-3);
-}
-
-.drafts-group > header > span {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--text);
-}
-
-.drafts-group > header > small {
-  flex: none;
-  font-size: 11.5px;
-  color: var(--text-3);
-}
-
-.drafts-group > ul {
-  display: grid;
-  gap: 2px;
-  margin: 0 0 0 11px;
-  padding: 0 0 0 18px;
-  list-style: none;
-  border-left: 1px solid var(--line);
-}
-
-.drafts-group li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: 9px;
-}
-
-.drafts-group li:hover {
+.drafts-version:hover {
   background: var(--fill);
 }
 
-.drafts-group li[data-previewing] {
+.drafts-version[data-previewing] {
   background: var(--blue-soft);
+}
+
+.drafts-version[data-current] {
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 
 .drafts-look {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 9px;
   flex: 1;
   min-width: 0;
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 9px;
+  padding: 6px 4px;
   text-align: left;
-  font-size: 13px;
-  color: var(--text-2);
 }
 
-.drafts-look > b {
-  font-weight: 500;
+.drafts-look > i {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+  border-radius: 7px;
+  background: var(--fill);
+  color: var(--text-3);
+}
+
+.drafts-look[aria-pressed="true"] > i {
+  background: var(--ai);
+  color: #fff;
+}
+
+.drafts-look > span {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.drafts-look b {
+  font-size: 13.5px;
+  font-weight: 600;
   color: var(--text);
 }
 
-.drafts-look > small {
-  margin-left: auto;
+.drafts-look small {
+  white-space: nowrap;
   font-size: 11.5px;
   color: var(--text-3);
 }
 
-.drafts-look[aria-pressed="true"] > svg {
-  color: var(--ai-deep);
+.drafts-look q {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  color: var(--text-2);
+  quotes: none;
 }
 
-.drafts-group li > em {
+.drafts-version > em {
   flex: none;
-  margin-right: 10px;
-  font-style: normal;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--fill-2);
   font-size: 11.5px;
-  font-weight: 500;
-  color: var(--ai-deep);
+  font-style: normal;
+  color: var(--text-2);
 }
 
 .drafts-restore {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
   flex: none;
-  height: 26px;
-  margin-right: 4px;
-  padding: 0 9px;
-  border-radius: 7px;
-  font-size: 12px;
-  color: var(--text-2);
-  opacity: 0;
+  gap: 5px;
 }
 
-.drafts-group li:hover .drafts-restore,
-.drafts-group li[data-previewing] .drafts-restore,
-.drafts-restore:focus-visible {
-  opacity: 1;
-}
-
-.drafts-restore:hover:not(:disabled) {
-  background: var(--bg);
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--line-strong);
-}
 
 /* Model settings: a provider's models listed inside it, prices as numbers with units. */
 .entries.nested {

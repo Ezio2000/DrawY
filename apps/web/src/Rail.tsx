@@ -7,12 +7,35 @@ import {
   LogOut,
   Trash2,
   ChevronsUpDown,
+  SquarePen,
 } from "lucide-react";
 import { PanelMark } from "@drawy/ui/brand";
 import { cx } from "./cx.ts";
 import { Brand } from "./Title.tsx";
 import { LanguageSwitch, useT } from "./i18n.tsx";
 import type { Summary, User } from "./api.ts";
+import { ago } from "./time.ts";
+import type { Words } from "./i18n.tsx";
+
+/** Where a work has got to, in a few words: drawing, waiting for an answer, stopped, or
+ * the version it is at. */
+function progressOf(w: Summary, t: Words) {
+  const p = w.progress;
+  const where = p.blank ? t.rail.blank : t.rail.version(p.version);
+  switch (p.run) {
+    case "running":
+    case "viewing":
+      return { tone: "live", text: t.rail.drawing };
+    case "waiting":
+      return { tone: "ask", text: t.rail.asking };
+    case "failed":
+      return { tone: "failed", text: t.rail.failed(where) };
+    case "cancelled":
+      return { tone: "", text: t.rail.stopped(where) };
+    default:
+      return { tone: "", text: `${where} · ${ago(w.updatedAt)}` };
+  }
+}
 
 /** Closes a popover on a press outside `ref` or on Escape. */
 export function useDismiss(
@@ -86,6 +109,7 @@ export function Rail({
   works,
   current,
   go,
+  create,
   remove,
   logout,
 }: {
@@ -96,6 +120,8 @@ export function Rail({
   works: Summary[];
   current?: string;
   go: (path: string) => void;
+  /** Starts a blank canvas and opens it. */
+  create: () => void;
   remove: (work: Summary) => void;
   logout: () => void;
 }) {
@@ -140,11 +166,25 @@ export function Rail({
         </span>
       </div>
       {link("/", t.rail.home, House, page === "home")}
+      <button
+        className={cx("rail-button")}
+        aria-label={t.rail.blankCanvas}
+        data-tip={open ? undefined : t.rail.blankCanvas}
+        onClick={() => {
+          create();
+          setOpen(false);
+        }}
+      >
+        <SquarePen size={17} />
+        <span className={cx("rail-label")}>{t.rail.blankCanvas}</span>
+      </button>
       {link("/library", t.rail.library, Shapes, page === "library")}
       <section className={cx("rail-recents")} inert={!open}>
         <h2>{t.rail.recents}</h2>
         <ul>
-          {works.map((w) => (
+          {works.map((w) => {
+            const state = progressOf(w, t);
+            return (
             <li
               className={cx("rail-work")}
               data-current={w.id === current || undefined}
@@ -152,9 +192,14 @@ export function Rail({
             >
               <button
                 className={cx("rail-work-open")}
+                title={w.progress.prompt || undefined}
                 onClick={() => nav("/a/" + w.id)}
               >
                 <span>{w.title}</span>
+                <small data-tone={state.tone || undefined}>
+                  {state.tone && <i />}
+                  {state.text}
+                </small>
               </button>
               <button
                 className={cx("rail-work-remove")}
@@ -165,7 +210,8 @@ export function Rail({
                 <Trash2 size={15} />
               </button>
             </li>
-          ))}
+            );
+          })}
         </ul>
       </section>
       <div className={cx("rail-foot")} ref={accountRef}>
@@ -182,10 +228,12 @@ export function Rail({
               <Settings2 size={15} />
               {t.rail.settings}
             </button>
-            <button role="menuitem" onClick={() => (setAccount(false), nav("/traces"))}>
-              <ScrollText size={15} />
-              {t.rail.traces}
-            </button>
+            {user.permissions.includes("models.manage") && (
+              <button role="menuitem" onClick={() => (setAccount(false), nav("/traces"))}>
+                <ScrollText size={15} />
+                {t.rail.traces}
+              </button>
+            )}
             <LanguageSwitch label />
             <hr />
             <button

@@ -1,5 +1,5 @@
 import { pageLocale } from "@drawy/ui";
-import type { Account, ModelMenu } from "../../../modules/contracts/index.ts";
+import type { Account, ModelMenu, WorkProgress } from "../../../modules/contracts/index.ts";
 export async function api<T = any>(
   path: string,
   method = "GET",
@@ -32,6 +32,8 @@ export interface Summary {
   updatedAt: number;
   /** The latest overview the author took of it. */
   cover: string | null;
+  /** Its latest request and the version it is at. */
+  progress: WorkProgress;
 }
 export type User = Account;
 /** What the user can draw, search and paint with, and what they picked of each. */

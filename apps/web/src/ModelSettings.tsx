@@ -14,6 +14,7 @@ import {
   Plus,
   Trash2,
   Server,
+  Tags,
 } from "lucide-react";
 import { Segmented, Switch } from "@drawy/ui";
 import {
@@ -41,6 +42,7 @@ import {
   type ImageModel,
   type ImageProvider,
   type ModelCatalog,
+  type ModelLabel,
   type Protocol,
   type Provider,
   type SearchService,
@@ -356,7 +358,11 @@ function ProviderSection<
       </Head>
       <ul className={cx("entries")}>
         {list.map((p) => {
-          const holdsDefault = p.models.some((m) => m.id === chosen);
+          const holdsDefault = p.models.some(
+            (m) =>
+              m.id === chosen ||
+              catalog.labels.some((l) => l.writer === m.id || l.image === m.id),
+          );
           return (
             <Entry
               key={p.id}
@@ -397,7 +403,10 @@ function ProviderSection<
                             : x,
                         ),
                       );
-                    const kept = isDefault || total < 2;
+                    const labelled = catalog.labels.some(
+                      (l) => l.writer === m.id || l.image === m.id,
+                    );
+                    const kept = isDefault || total < 2 || labelled;
                     return (
                       <Entry
                         key={m.id}
@@ -461,7 +470,9 @@ function ProviderSection<
                             {kept
                               ? isDefault
                                 ? w.defaultKept
-                                : w.lastKept
+                                : labelled
+                                  ? w.labelKept
+                                  : w.lastKept
                               : ""}
                           </small>
                           <button
@@ -1088,6 +1099,193 @@ export function SearchSection({
                 >
                   <Trash2 size={14} />
                   {w.removeSearch}
+                </button>
+              </footer>
+            </Entry>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/** The labels people pick beside the composer, each a whole combination of models that
+ * only those who manage models see: people pick the name, never what is in it. */
+export function LabelSection({
+  catalog,
+  change,
+  editing,
+  setEditing,
+}: {
+  catalog: ModelCatalog;
+  change: (catalog: ModelCatalog) => void;
+  editing?: string;
+  setEditing: (id?: string) => void;
+}) {
+  const t = useT(),
+    w = t.settings;
+  const list = catalog.labels;
+  const writers = catalog.writers.flatMap((p) => p.models.map((m) => ({ p, m })));
+  const painters = catalog.painters.flatMap((p) => p.models.map((m) => ({ p, m })));
+  const webs = [OFF, BUILTIN, ...catalog.searches.map((s) => s.id)];
+  const webName = (v: string) =>
+    v === OFF
+      ? t.composer.searchOff
+      : v === BUILTIN
+        ? t.composer.searchBuiltin
+        : (catalog.searches.find((s) => s.id === v)?.name ?? v);
+  const set = (labels: ModelLabel[], label = catalog.defaults.label) =>
+    change({
+      ...catalog,
+      labels,
+      defaults: {
+        ...catalog.defaults,
+        label: labels.some((l) => l.id === label) ? label : (labels[0]?.id ?? ""),
+      },
+    });
+  return (
+    <section>
+      <Head title={t.titles.labels} hint={w.labelsHint}>
+        <button
+          className={cx("secondary small")}
+          onClick={() => {
+            const id = newId("t");
+            set([
+              ...list,
+              {
+                id,
+                name: w.labelNew(list.length + 1),
+                description: "",
+                writer: catalog.defaults.writer,
+                web: catalog.defaults.web,
+                image: catalog.defaults.image,
+              },
+            ]);
+            setEditing(id);
+          }}
+        >
+          <Plus size={15} />
+          {w.addLabel}
+        </button>
+      </Head>
+      {!list.length && <p className={cx("settings-empty")}>{w.noLabels}</p>}
+      <ul className={cx("entries")}>
+        {list.map((l) => {
+          const patch = (p: Partial<ModelLabel>) =>
+            set(list.map((x) => (x.id === l.id ? { ...x, ...p } : x)));
+          const writer = writers.find((x) => x.m.id === l.writer);
+          const painter = painters.find((x) => x.m.id === l.image);
+          const isDefault = l.id === catalog.defaults.label;
+          return (
+            <Entry
+              key={l.id}
+              icon={<Tags size={16} />}
+              title={l.name}
+              detail={[
+                writer ? writerLabel(writer.p, writer.m) : l.writer,
+                l.effort && w.efforts[l.effort],
+                l.speed && w.speeds[l.speed],
+                webName(l.web),
+                painter ? imageLabel(painter.p, painter.m) : l.image,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              badges={isDefault && <Badge tone="accent">{w.labelIsDefault}</Badge>}
+              open={editing === l.id}
+              toggle={() => setEditing(editing === l.id ? undefined : l.id)}
+            >
+              <Group title={w.basics}>
+                <Row label={w.labelName} hint={w.labelNameHint}>
+                  <input value={l.name} onChange={(e) => patch({ name: e.target.value })} />
+                </Row>
+                <Row label={w.description} hint={w.labelDescriptionHint}>
+                  <input
+                    value={l.description}
+                    onChange={(e) => patch({ description: e.target.value })}
+                  />
+                </Row>
+                <Row label={w.labelIsDefault} hint={w.labelDefaultHint}>
+                  <Switch
+                    checked={isDefault}
+                    disabled={isDefault}
+                    onChange={() => set(list, l.id)}
+                  />
+                </Row>
+              </Group>
+              <Group title={w.labelModels}>
+                <Row label={t.titles.author}>
+                  <select
+                    value={l.writer}
+                    onChange={(e) =>
+                      patch({ writer: e.target.value, effort: undefined, speed: undefined })
+                    }
+                  >
+                    {writers.map(({ p, m }) => (
+                      <option key={m.id} value={m.id}>
+                        {writerLabel(p, m)}
+                      </option>
+                    ))}
+                  </select>
+                </Row>
+                {writer && writer.m.efforts.length > 1 && (
+                  <Row label={w.effort} wide={crowded(writer.m.efforts)}>
+                    <Choose
+                      label={w.effort}
+                      options={writer.m.efforts}
+                      value={l.effort ?? writer.m.effort}
+                      name={(v) => w.efforts[v]}
+                      pick={(effort) => patch({ effort })}
+                    />
+                  </Row>
+                )}
+                {writer && writer.m.speeds.length > 1 && (
+                  <Row label={w.speed} wide={crowded(writer.m.speeds)}>
+                    <Choose
+                      label={w.speed}
+                      options={writer.m.speeds}
+                      value={l.speed ?? writer.m.speed}
+                      name={(v) => w.speeds[v]}
+                      pick={(speed) => patch({ speed })}
+                    />
+                  </Row>
+                )}
+                <Row label={t.titles.search} wide={crowded(webs)}>
+                  <Choose
+                    label={t.titles.search}
+                    options={webs}
+                    value={l.web}
+                    name={webName}
+                    disabled={(v) =>
+                      v === BUILTIN &&
+                      !(
+                        writer?.m.builtinSearch &&
+                        offersBuiltinSearch({ channel: writer.p.channel, protocol: writer.m.protocol })
+                      )
+                    }
+                    pick={(web) => patch({ web })}
+                  />
+                </Row>
+                <Row label={t.titles.image}>
+                  <select value={l.image} onChange={(e) => patch({ image: e.target.value })}>
+                    {painters.map(({ p, m }) => (
+                      <option key={m.id} value={m.id}>
+                        {imageLabel(p, m)}
+                      </option>
+                    ))}
+                  </select>
+                </Row>
+              </Group>
+              <footer className={cx("entry-foot")}>
+                <small />
+                <button
+                  className={cx("secondary small danger")}
+                  onClick={() => {
+                    set(list.filter((x) => x.id !== l.id));
+                    setEditing(undefined);
+                  }}
+                >
+                  <Trash2 size={14} />
+                  {w.removeLabel}
                 </button>
               </footer>
             </Entry>

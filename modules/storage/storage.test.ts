@@ -551,43 +551,18 @@ describe("roles and shared models", () => {
     const admin = await signup("admin"),
       member = await signup("member");
     expect([admin.role, member.role]).toEqual(["admin", "member"]);
-    // Members see the models by name and the options they offer only, and cannot manage
+    // Members see labels by name only, never the models in them, and cannot manage
     // anything.
     const seen = await call(member.cookie, "/models");
     expect(seen.body).toEqual({
-      writers: [
-        {
-          id: "gpt-6-astra",
-          name: "gpt-6-astra[api]",
-          provider: "api",
-          description: "",
-          ready: false,
-          vision: true,
-          efforts: ["low", "medium", "high", "xhigh"],
-          speeds: ["flex", "default", "fast"],
-          effort: "medium",
-          speed: "default",
-          builtinSearch: true,
-        },
-      ],
-      images: [
-        { id: "gpt-image-2-5-sunburst", name: "gpt-image-2.5-sunburst[api]", description: "", ready: false },
-      ],
-      searches: [],
-      chosen: {
-        writer: "gpt-6-astra",
-        effort: "medium",
-        speed: "default",
-        web: "builtin",
-        search: "builtin",
-        image: "gpt-image-2-5-sunburst",
-      },
+      labels: [{ id: "default", name: "默认", description: "", ready: false }],
+      chosen: { label: "default" },
     });
-    expect(JSON.stringify(seen.body)).not.toMatch(/credential|prices/);
-    for (const path of ["/admin/models", "/admin/accounts", "/admin/roles"])
+    expect(JSON.stringify(seen.body)).not.toMatch(/credential|prices|gpt/);
+    for (const path of ["/admin/models", "/admin/accounts", "/admin/roles", "/traces"])
       expect((await call(member.cookie, path)).status).toBe(403);
-    // The administrator connects a second provider; members pick its model, which their
-    // runs use.
+    // The administrator connects a second provider and makes two labels of the models;
+    // members pick a label, which their runs use.
     const catalog = (await call(admin.cookie, "/admin/models")).body;
     const quick = {
       ...catalog.writers[0],
@@ -596,12 +571,18 @@ describe("roles and shared models", () => {
       credential: "key",
       models: [{ ...catalog.writers[0].models[0], id: "quick", efforts: ["low", "high"], effort: "low" }],
     };
+    const image = catalog.defaults.image;
+    const labels = [
+      { id: "fast", name: "快速", description: "", writer: "quick", web: "off", image },
+      { id: "deep", name: "深入", description: "", writer: "quick", effort: "high", web: "builtin", image },
+    ];
     expect(
       (
         await call(admin.cookie, "/admin/models", "PUT", {
           ...catalog,
           writers: [...catalog.writers, quick],
-          defaults: { ...catalog.defaults, writer: "missing" },
+          labels: [...labels, { ...labels[0], id: "broken", writer: "missing" }],
+          defaults: { ...catalog.defaults, label: "fast" },
         })
       ).status,
     ).toBe(400);
@@ -610,92 +591,61 @@ describe("roles and shared models", () => {
         await call(admin.cookie, "/admin/models", "PUT", {
           ...catalog,
           writers: [...catalog.writers, quick],
+          labels,
+          defaults: { ...catalog.defaults, label: "fast" },
         })
       ).status,
     ).toBe(200);
-    await call(member.cookie, "/settings", "PUT", { preferences: "", writer: "quick" });
-    expect((await call(member.cookie, "/models")).body.chosen.writer).toBe("quick");
+    expect((await call(member.cookie, "/models")).body.chosen.label).toBe("fast");
     expect(db.scoped(member.id).settings()).toMatchObject({
+      label: "快速",
       author: { credential: "key", effort: "low" },
-      authorName: "gpt-6-astra[quick]",
+      search: { mode: "off" },
     });
-    expect(db.scoped(admin.id).settings().author.credential).toBe("");
-    // Effort and speed are picked within what the model offers.
-    await call(member.cookie, "/settings", "PUT", { effort: "high", speed: "fast" });
-    expect(db.scoped(member.id).settings().author).toMatchObject({ effort: "high", speed: "fast" });
-    // Drawing, search and pictures are picked apart: DeepSeek draws, a search service
-    // looks things up and Flare paints; then OpenAI draws with its own search, and Flare
-    // still paints.
-    const current = (await call(admin.cookie, "/admin/models")).body;
-    const deepseek = {
-      id: "deepseek-provider",
-      name: "deepseek",
-      channel: "api",
-      baseUrl: "https://api.deepseek.com",
-      credential: "ds-key",
-      models: [
-        {
-          ...current.writers[0].models[0],
-          id: "deepseek",
-          name: "DeepSeek",
-          protocol: "chat",
-          model: "deepseek-flash",
-          efforts: ["low", "high", "max"],
-          effort: "high",
-          // Chat Completions has no built-in search to offer, whatever is claimed.
-          builtinSearch: true,
-        },
-      ],
-    };
-    const saved = await call(admin.cookie, "/admin/models", "PUT", {
-      ...current,
-      writers: [...current.writers, deepseek],
-      painters: [
-        ...current.painters,
-        {
-          id: "flare-provider",
-          name: "flare",
-          channel: "api",
-          baseUrl: "https://flare.invalid/v1",
-          credential: "flare-key",
-          models: [
-            { id: "flare", name: "Flare", description: "", model: "flare-image", prices: { image: 0.02, textInput: 0, imageInput: 0, output: 0, textOutput: 0 } },
-          ],
-        },
-      ],
-      searches: [
-        {
-          id: "web",
-          name: "DeepSeek Search",
-          provider: "deepseek",
-          baseUrl: "https://api.deepseek.com/v1/tools",
-          credential: "ds-key",
-          prices: { query: 0.005, page: 0 },
-        },
-      ],
+    // Only a label can be picked.
+    await call(member.cookie, "/settings", "PUT", { preferences: "", label: "deep", writer: "gpt-6-astra" });
+    expect(db.scoped(member.id).ownSettings()).toEqual({ preferences: "", label: "deep" });
+    expect(db.scoped(member.id).settings()).toMatchObject({
+      label: "深入",
+      author: { credential: "key", effort: "high" },
+      search: { mode: "builtin" },
     });
-    expect(saved.status).toBe(200);
-    expect(saved.body.writers[2].models[0]).toMatchObject({ builtinSearch: false, speeds: [] });
-    await call(member.cookie, "/settings", "PUT", { writer: "deepseek", image: "flare", web: "web" });
-    let mine = db.scoped(member.id).settings();
-    expect(mine).toMatchObject({
-      author: { protocol: "chat", model: "deepseek-flash", effort: "high", speed: "default" },
-      authorName: "DeepSeek",
-      search: { mode: "service", service: { id: "web" } },
-      image: { model: "flare-image", credential: "flare-key" },
-      imageName: "Flare",
-      prices: { search: 0.005, image: { image: 0.02 } },
+    // Members start with ten requests, the first account with no limit; an administrator
+    // sets how many are left, and a request past them is refused.
+    expect((await call(member.cookie, "/auth/me")).body.quota).toBe(10);
+    expect((await call(admin.cookie, "/auth/me")).body.quota).toBe(null);
+    expect(
+      (await call(member.cookie, "/admin/accounts/" + member.id, "PATCH", { quota: 99 })).status,
+    ).toBe(403);
+    expect(
+      (await call(admin.cookie, "/admin/accounts/" + member.id, "PATCH", { quota: 1 })).body,
+    ).toMatchObject({ quota: 1, role: "member" });
+    db.spendQuota(member.id);
+    expect(() => db.spendQuota(member.id)).toThrow("提问次数已用完");
+    db.refundQuota(member.id);
+    expect(db.account(member.id).quota).toBe(1);
+    db.setQuota(member.id, 0);
+    const w = (await call(member.cookie, "/works", "POST", { title: "t" })).body;
+    const refused = await call(member.cookie, "/works/" + w.id + "/runs", "POST", {
+      prompt: "draw",
+      sceneId: w.rootSceneId,
     });
-    const picker = (await call(member.cookie, "/models")).body;
-    expect(picker.chosen).toEqual({ writer: "deepseek", effort: "high", web: "web", search: "service", image: "flare" });
-    // The model's own search is wanted apart from the model: DeepSeek has none, so it does
-    // not search; the OpenAI model it was wanted for does.
-    await call(member.cookie, "/settings", "PUT", { web: "builtin" });
-    expect(db.scoped(member.id).settings().search).toEqual({ mode: "off" });
-    await call(member.cookie, "/settings", "PUT", { writer: "quick" });
-    mine = db.scoped(member.id).settings();
-    expect(mine.search).toEqual({ mode: "builtin" });
-    expect(mine.imageName).toBe("Flare");
+    expect(refused.status).toBe(403);
+    // A request that cannot start gives its allowance back.
+    db.setQuota(member.id, 1);
+    const missing = await call(member.cookie, "/works/" + w.id + "/runs", "POST", {
+      prompt: "draw",
+      sceneId: "nowhere",
+    });
+    expect(missing.status).toBe(404);
+    expect(db.account(member.id).quota).toBe(1);
+    // The list of works says where each has got to.
+    expect((await call(member.cookie, "/works")).body[0].progress).toEqual({
+      run: null,
+      prompt: "",
+      version: 0,
+      blank: true,
+    });
     // A role that manages models makes its accounts able to.
     const editors = await call(admin.cookie, "/admin/roles", "POST", {
       name: "Model editors",

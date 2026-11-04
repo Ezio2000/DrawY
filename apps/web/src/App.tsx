@@ -2,7 +2,7 @@ import { SceneView, DetailView } from "./SceneView.tsx";
 import { Studio, Now, live } from "./Studio.tsx";
 import { ExportMenu } from "./Export.tsx";
 import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Undo2,
   Redo2,
@@ -34,6 +34,8 @@ import { Library } from "./Library.tsx";
 import { Settings } from "./Settings.tsx";
 import {
   stepBefore,
+  versionOf,
+  versionsOf,
   type Work,
   type WorkEdit,
   type Run,
@@ -278,6 +280,8 @@ export function App() {
     const t = setTimeout(() => setNotice(""), 2400);
     return () => clearTimeout(t);
   }, [notice]);
+  // What people count as versions: one for each request, run of hand edits or restore.
+  const versions = useMemo(() => versionsOf(history), [history]);
   const undoable =
     !!work && stepBefore(history, work.revision) !== undefined;
   const canRedo = !!work && redoable?.at === work.revision;
@@ -286,7 +290,9 @@ export function App() {
   const editless = loadingRuns || working || run?.status === "waiting" || !!preview;
   const manages = !!user?.permissions.includes("models.manage");
   const connected =
-    models && !!models.writers.find((m) => m.id === models.chosen.writer)?.ready;
+    models && !!models.labels.find((m) => m.id === models.chosen.label)?.ready;
+  // No requests left to make; answering the author's questions still works.
+  const spent = user?.quota === 0;
   useEffect(() => {
     if (!work) return H([]);
     void api<RevisionSummary[]>("/works/" + work.id + "/revisions").then(H, () => {});
@@ -421,6 +427,14 @@ export function App() {
         if (event.work.id === current.current?.id) W(event.work);
         void refreshList();
       }
+      if (event.type === "run")
+        L((list) =>
+          list.map((w) =>
+            w.id === event.run.workId && w.progress.run !== event.run.status
+              ? { ...w, progress: { ...w.progress, run: event.run.status } }
+              : w,
+          ),
+        );
       if (event.type === "run" && event.run.workId === current.current?.id) {
         R((old) => {
           const found = old.some((r) => r.id === event.run.id);
@@ -523,6 +537,7 @@ export function App() {
   }
   async function send(text = prompt, target = sceneId, picked = choices) {
     if ((!text.trim() && !attachments.length) || loadingRuns || busy || working || uploading) return;
+    if (spent && run?.status !== "waiting") throw Error(t.composer.quotaOut);
     if (!connected) {
       if (manages) go("/settings");
       return;
@@ -562,6 +577,9 @@ export function App() {
           ? old.map((x) => (x.id === r.id ? r : x))
           : [...old, r],
       );
+      // A new request took one from the allowance; an answer did not.
+      if (run?.status !== "waiting")
+        U((u) => (u && u.quota !== null ? { ...u, quota: Math.max(0, u.quota - 1) } : u));
       Q("");
       A([]);
       setStyle(undefined);
@@ -581,11 +599,14 @@ export function App() {
       await send(t.work.expand(title || work.scenes[id].title), id);
   }
   async function restore(revision: number) {
+    const number = versionOf(versions, revision)?.number;
     W(
       await api<Work>("/works/" + work!.id + "/restore", "POST", {
         revision,
       }),
     );
+    setPreview(undefined);
+    if (number !== undefined) setNotice(t.history.restored(number));
     if (run) setDismissed(run.id);
   }
   /** Takes back the latest request, or hand edit, as a whole; it can be brought back
@@ -862,9 +883,11 @@ export function App() {
       attach={(files) => void attempt(() => upload(files))}
       pick={() => setPicking(true)}
       models={place === "panel" || engaged ? undefined : models}
+      quota={user?.quota}
+      spent={spent && run?.status !== "waiting"}
       choose={(change) => {
         setModels((m) => m && chosen(m, change));
-        // What the server settles on (a search the new model lacks falls back) is shown next.
+        // What the server settles on (a label taken away falls back) is shown next.
         void attempt(async () => {
           await api("/settings", "PUT", change);
           setModels(await api<Models>("/models"));
@@ -888,6 +911,16 @@ export function App() {
             works={shownWorks}
             current={work?.id}
             go={go}
+            create={() =>
+              void attempt(async () => {
+                const w = await api<Work>("/works", "POST", { title: t.rail.untitled });
+                W(w);
+                setRunsOf(w.id);
+                R([]);
+                go("/a/" + w.id);
+                await refreshList();
+              })
+            }
             remove={remove}
             logout={() =>
               void attempt(async () => {
@@ -1144,7 +1177,11 @@ export function App() {
                 <div className={cx("dock")} data-dock>
                   {preview && (
                     <div className={cx("preview-bar")} role="status">
-                      <span>{t.history.previewing(preview.revision)}</span>
+                      <span>
+                        {t.history.previewing(
+                          versionOf(versions, preview.revision)?.number ?? 0,
+                        )}
+                      </span>
                       <button
                         className={cx("secondary small")}
                         onClick={() => setPreview(undefined)}
@@ -1284,7 +1321,7 @@ export function App() {
                       />
                     ) : drafting ? (
                       <Drafts
-                        history={history}
+                        versions={versions}
                         current={work.revision}
                         previewing={preview?.revision}
                         locked={engaged}
@@ -1297,6 +1334,7 @@ export function App() {
                         loaded={runsOf === work.id}
                         work={work}
                         restore={(r) => void attempt(() => restore(r))}
+                        versionOf={(r) => versionOf(versions, r)?.number}
                         resume={() =>
                           void attempt(() =>
                             send(t.now.resumeMessage, run?.sceneId ?? sceneId, ""),

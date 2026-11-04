@@ -17,8 +17,8 @@ import {
   DomainError,
   modelCatalogSchema,
   settingsChangeSchema,
-  pickWith,
   type Account,
+  type Run,
   type Work,
   menuFor,
   costOf,
@@ -68,11 +68,29 @@ function dataUrl(bytes: Uint8Array) {
     ? `data:${type};charset=utf-8,${encodeURIComponent(b.toString("utf8")).replace(/['()]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())}`
     : `data:${type};base64,${b.toString("base64")}`;
 }
+/** A run as an account may see it: which models made it is for those who manage models;
+ * everyone else sees the label they picked. */
+function showRun(run: Run, user: Account): Run {
+  if (!run.services || user.permissions.includes("models.manage")) return run;
+  const label = run.services.label ?? "";
+  return {
+    ...run,
+    services: { label, author: label, model: "", search: run.services.search, image: "" },
+  };
+}
 export function createApp(storage: Storage) {
   const app = new Hono<Env>();
   const listeners = new Map<string, Set<(event: object) => void>>();
-  const publish = (user: string, event: object) =>
-    listeners.get(user)?.forEach((fn) => fn(event));
+  const publish = (user: string, event: object) => {
+    const fns = listeners.get(user);
+    if (!fns?.size) return;
+    const e = event as { type?: string; run?: Run };
+    const shown =
+      e.type === "run" && e.run
+        ? { ...e, run: showRun(e.run, storage.account(user)) }
+        : event;
+    fns.forEach((fn) => fn(shown));
+  };
   const agent = new Agent(publish);
   // Text goes out compressed: the app's code, works, runs, traces and map layers are
   // several times smaller that way. Pictures are already compressed and the event stream
@@ -158,11 +176,11 @@ export function createApp(storage: Storage) {
   app.put("/api/settings", async (c) => {
     const store = c.get("store"),
       change = settingsChangeSchema.parse(await c.req.json());
-    store.saveOwnSettings(pickWith(storage.models(), store.ownSettings(), change));
+    store.saveOwnSettings({ ...store.ownSettings(), ...change });
     return c.json({ ok: true });
   });
-  // The drawing models, picture models and search services anyone may pick, by name and
-  // the options they offer only: connections and prices stay with those who manage them.
+  // The labels anyone may pick, by name only: which models each holds, their connections
+  // and prices stay with those who manage them.
   app.get("/api/models", (c) =>
     c.json(menuFor(storage.models(), c.get("store").ownSettings())),
   );
@@ -182,8 +200,15 @@ export function createApp(storage: Storage) {
   });
   app.patch("/api/admin/accounts/:id", async (c) => {
     allowed(c, "accounts.manage");
-    const { role } = z.object({ role: z.string() }).parse(await c.req.json());
-    return c.json(storage.setRole(c.req.param("id"), role));
+    const { role, quota } = z
+      .object({
+        role: z.string().optional(),
+        quota: z.number().int().min(0).max(1_000_000).nullable().optional(),
+      })
+      .parse(await c.req.json());
+    if (role !== undefined) storage.setRole(c.req.param("id"), role);
+    if (quota !== undefined) storage.setQuota(c.req.param("id"), quota);
+    return c.json(storage.account(c.req.param("id")));
   });
   app.get("/api/admin/invites", (c) => {
     allowed(c, "accounts.manage");
@@ -229,6 +254,7 @@ export function createApp(storage: Storage) {
           revision,
           updatedAt,
           cover: c.get("store").cover(id),
+          progress: c.get("store").progress(id),
         })),
     ),
   );
@@ -424,7 +450,12 @@ export function createApp(storage: Storage) {
     return c.json(work);
   });
   app.get("/api/works/:id/runs", (c) =>
-    c.json(c.get("store").runs(c.req.param("id"))),
+    c.json(
+      c
+        .get("store")
+        .runs(c.req.param("id"))
+        .map((r) => showRun(r, c.get("user"))),
+    ),
   );
   app.post("/api/works/:id/runs", async (c) => {
     const args = z
@@ -436,16 +467,23 @@ export function createApp(storage: Storage) {
       // Pictures alone are a request too: draw from them.
       .refine((r) => r.prompt.trim() || r.materials.length)
       .parse(await c.req.json());
-    return c.json(
-      await agent.start(
+    // Each request takes one from the account's allowance, given back if it does not start.
+    const userId = c.get("user").id;
+    storage.spendQuota(userId);
+    try {
+      const run = await agent.start(
         c.get("store"),
         c.req.param("id"),
         args.sceneId,
         args.prompt,
         args.materials,
         requestLocale((k) => c.req.header(k)),
-      ),
-    );
+      );
+      return c.json(showRun(run, c.get("user")));
+    } catch (e) {
+      storage.refundQuota(userId);
+      throw e;
+    }
   });
   app.post("/api/runs/:id/answer", async (c) => {
     const { answer, materials } = z
@@ -456,17 +494,20 @@ export function createApp(storage: Storage) {
       .refine((r) => r.answer.trim() || r.materials.length)
       .parse(await c.req.json());
     return c.json(
-      await agent.resume(
-        c.get("store"),
-        c.req.param("id"),
-        answer,
-        materials,
-        requestLocale((k) => c.req.header(k)),
+      showRun(
+        await agent.resume(
+          c.get("store"),
+          c.req.param("id"),
+          answer,
+          materials,
+          requestLocale((k) => c.req.header(k)),
+        ),
+        c.get("user"),
       ),
     );
   });
   app.post("/api/runs/:id/cancel", (c) =>
-    c.json(agent.cancel(c.get("store"), c.req.param("id"))),
+    c.json(showRun(agent.cancel(c.get("store"), c.req.param("id")), c.get("user"))),
   );
   app.get("/api/captures/:id", (c) => {
     const store = c.get("store");
@@ -534,13 +575,19 @@ export function createApp(storage: Storage) {
     const run = store.runCost(trace.id);
     return { ...trace, cost: run && costOf(run.usage, run.prices), services: run?.services };
   };
-  app.get("/api/traces", (c) =>
-    c.json(
+  // Traces show every request sent to the models, so only those who manage models see them.
+  app.use("/api/traces/*", async (c, next) => {
+    allowed(c, "models.manage");
+    await next();
+  });
+  app.get("/api/traces", (c) => {
+    allowed(c, "models.manage");
+    return c.json(
       tracer
         .list(c.get("user").id, Number(c.req.query("limit") || 60))
         .map((t) => costed(c.get("store"), t)),
-    ),
-  );
+    );
+  });
   app.get("/api/traces/files/:name", (c) => {
     const file = tracer.file(c.req.param("name"));
     if (!file) throw new DomainError("没有这张图", 404);

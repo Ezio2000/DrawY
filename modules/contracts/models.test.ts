@@ -6,7 +6,6 @@ import {
   defaultWriter,
   emptySettings,
   menuFor,
-  pickWith,
   modelCatalogSchema,
   reconnect,
   endpointFor,
@@ -114,95 +113,83 @@ it("refuses a catalog whose defaults or ids do not hold", () => {
   ).toBe(false);
 });
 
-it("picks each of the five on its own, settled against what the model offers", () => {
+/** The catalog with two labels: a fast one on terra with a search service, and a careful
+ * one on the unconnected opus with the model's own search. */
+function labelled(): ModelCatalog {
   const c = catalog();
-  // The initial user preset is independent of the administrator's model defaults.
+  return modelCatalogSchema.parse({
+    ...c,
+    labels: [
+      { id: "fast", name: "快速", description: "Quick sketches", writer: "terra", effort: "max", speed: "fast", web: "s", image: c.defaults.image },
+      { id: "careful", name: "精细", description: "", writer: "opus", effort: "high", web: "builtin", image: c.defaults.image },
+    ],
+    defaults: { ...c.defaults, label: "fast" },
+  });
+}
+
+it("draws with the default models while no label is configured", () => {
+  const c = catalog();
   expect(settingsFor(c, emptySettings())).toMatchObject({
-    author: { model: "gpt-6.1-terra", effort: "high", speed: "fast", credential: "k" },
+    label: "默认",
+    author: { model: "gpt-6.1-terra", effort: c.writers[0].models[0].effort, credential: "k" },
     authorName: "gpt-6.1-terra[api]",
     search: { mode: "builtin" },
   });
-  // A pick of each.
-  const mine = pickWith(c, emptySettings(), { writer: "terra", effort: "max", speed: "fast", web: "s" });
-  expect(settingsFor(c, mine)).toMatchObject({
-    author: { effort: "max", speed: "fast" },
-    search: { mode: "service", service: { id: "s" } },
+  expect(menuFor(c, emptySettings())).toEqual({
+    labels: [{ id: "default", name: "默认", description: "", ready: true }],
+    chosen: { label: "default" },
   });
-  // Another model keeps its own tuning; an unavailable search means none, while the
-  // wanted search is kept for the next model.
-  const opus = { ...mine, writer: "opus", web: "builtin" };
-  expect(settingsFor(c, opus)).toMatchObject({
-    author: { protocol: "chat", effort: "medium", speed: "default", provider: "anthropic" },
+});
+
+it("picks a label, never the models in it, settled against what the model offers", () => {
+  const c = labelled();
+  // Nobody has picked: the default label.
+  expect(settingsFor(c, emptySettings())).toMatchObject({
+    label: "快速",
+    author: { model: "gpt-6.1-terra", effort: "max", speed: "fast" },
+    search: { mode: "service", service: { id: "s" } },
+    prices: { search: 0.002 },
+  });
+  // The careful label's model has no search of its own on Chat Completions, so it does not
+  // search; it offers no speeds, so the model's own is used.
+  const careful = { ...emptySettings(), label: "careful" };
+  expect(settingsFor(c, careful)).toMatchObject({
+    label: "精细",
+    author: { protocol: "chat", effort: "high", speed: "default", provider: "anthropic" },
     search: { mode: "off" },
   });
-  expect(menuFor(c, opus).chosen).toMatchObject({ writer: "opus", web: "builtin", search: "off" });
-  // A model taken away falls back to the default.
-  expect(settingsFor(c, { ...emptySettings(), writer: "gone" }).authorName).toBe("gpt-6.1-terra[api]");
-  const menu = menuFor(c, mine);
-  expect(menu.writers.map((m) => [m.id, m.name, m.provider, m.ready, m.builtinSearch])).toEqual([
-    ["terra", "gpt-6.1-terra[api]", "api", true, true],
-    ["terra-oauth", "gpt-6.1-terra[oauth]", "oauth", true, false],
-    ["opus", "claude-opus-5-5[openrouter/anthropic]", "openrouter", false, false],
-  ]);
-  expect(menu.chosen).toEqual({ writer: "terra", effort: "max", speed: "fast", web: "s", search: "service", image: c.defaults.image });
-  // Nobody but those who manage models sees credentials or prices.
-  expect(JSON.stringify(menu)).not.toMatch(/"k"|prices/);
+  // A label taken away falls back to the default one.
+  expect(settingsFor(c, { ...emptySettings(), label: "gone" }).label).toBe("快速");
+  const menu = menuFor(c, careful);
+  expect(menu).toEqual({
+    labels: [
+      { id: "fast", name: "快速", description: "Quick sketches", ready: true },
+      { id: "careful", name: "精细", description: "", ready: false },
+    ],
+    chosen: { label: "careful" },
+  });
+  // People see neither models, credentials nor prices.
+  expect(JSON.stringify(menu)).not.toMatch(/"k"|prices|terra|opus|claude/);
   // A self-hosted SearXNG needs no key; the others do.
   expect(searchReady({ provider: "searxng", credential: "" })).toBe(true);
   expect(searchReady({ provider: "tavily", credential: "" })).toBe(false);
 });
 
-it("keeps each drawing model's effort and speed for itself", () => {
-  const c = catalog();
-  let own = pickWith(c, emptySettings(), { writer: "opus" });
-  own = pickWith(c, own, { effort: "high" });
-  own = pickWith(c, own, { writer: "terra" });
-  own = pickWith(c, own, { effort: "max", speed: "fast" });
-  // Picking terra's effort leaves opus at the one picked for it.
-  own = pickWith(c, own, { writer: "opus" });
-  expect(settingsFor(c, own).author).toMatchObject({ model: "claude-opus-5-5", effort: "high" });
-  const menu = menuFor(c, own);
-  expect(menu.chosen).toMatchObject({ writer: "opus", effort: "high" });
-  expect(menu.writers.find((m) => m.id === "terra")).toMatchObject({ effort: "max", speed: "fast" });
-  own = pickWith(c, own, { writer: "terra" });
-  expect(settingsFor(c, own).author).toMatchObject({ effort: "max", speed: "fast" });
-});
-
-it("uses model presets for new users and keeps both fields when only one is changed", () => {
-  const c = defaultCatalog();
-  const models = [
-    ["gpt-6.1-terra", "high", "fast"],
-    ["anthropic/claude-sonnet-5.5", "medium", "default"],
-    ["claude-opus-5-5", "medium", "default"],
-    ["deepseek-flash", "high", "default"],
-    ["gpt-6-astra", "medium", "default"],
-    ["gpt-6.1-sol", "medium", "default"],
-    ["gpt-6-luna", "high", "fast"],
-  ] as const;
-  c.writers[0].models = models.map(([model], i) => ({
-    ...defaultWriter(), id: `custom-${i}`, model, effort: "low", speed: "default",
-  }));
-  c.defaults.writer = "custom-0";
-  for (const [i, [_, effort, speed]] of models.entries())
-    expect(settingsFor(c, { ...emptySettings(), writer: `custom-${i}` }).author).toMatchObject({ effort, speed });
-
-  let own = pickWith(c, emptySettings(), { speed: "flex" });
-  expect(own.tunings["custom-0"]).toEqual({ effort: "high", speed: "flex" });
-  own = pickWith(c, own, { writer: "custom-1", effort: "max" });
-  own = pickWith(c, own, { writer: "custom-0" });
-  expect(settingsFor(c, own).author).toMatchObject({ effort: "high", speed: "flex" });
-
-  own = pickWith(c, own, { writer: "custom-2", effort: "low" });
-  own = pickWith(c, own, { writer: "custom-1", speed: "fast" });
-  own = pickWith(c, own, { writer: "custom-2" });
-  expect(settingsFor(c, own).author).toMatchObject({ effort: "low", speed: "default" });
-  expect(own).not.toHaveProperty("effort");
-  expect(own).not.toHaveProperty("speed");
+it("refuses labels naming models, searches or a default that are not there", () => {
+  const c = labelled();
+  const label = c.labels[0];
+  for (const broken of [
+    { ...label, writer: "gone" },
+    { ...label, image: "gone" },
+    { ...label, web: "nowhere" },
+  ])
+    expect(modelCatalogSchema.safeParse({ ...c, labels: [broken] }).success).toBe(false);
+  expect(modelCatalogSchema.safeParse({ ...c, labels: [label, label] }).success).toBe(false);
+  expect(modelCatalogSchema.safeParse({ ...c, defaults: { ...c.defaults, label: "gone" } }).success).toBe(false);
 });
 
 it("prices a run at the speed it picked, the way it searched and the pictures it painted", () => {
-  const c = catalog();
-  const fast = settingsFor(c, pickWith(c, emptySettings(), { speed: "fast", web: "s" }));
+  const fast = settingsFor(labelled(), emptySettings());
   expect(fast.prices).toEqual({
     author: { input: 4, cached: 1, cacheWrite: 0, output: 20 },
     search: 0.002,
@@ -234,7 +221,7 @@ it("prices a run at the speed it picked, the way it searched and the pictures it
     )!.author,
   ).toBeCloseTo(1.25);
   // The model's own search is priced by the call.
-  expect(settingsFor(c, emptySettings()).prices).toMatchObject({ search: 0.01, page: 0 });
+  expect(settingsFor(catalog(), emptySettings()).prices).toMatchObject({ search: 0.01, page: 0 });
   expect(costOf(undefined, undefined)).toBeUndefined();
 });
 

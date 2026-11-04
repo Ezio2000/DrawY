@@ -2,6 +2,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import {
   ADMIN,
   MEMBER,
+  DEFAULT_QUOTA,
   DomainError,
   accountRoleSchema,
   id,
@@ -19,12 +20,13 @@ export function register(db: Storage, name: string, password: string) {
     userId = id(),
     first = !db.db.prepare("SELECT 1 FROM users LIMIT 1").get();
   db.db
-    .prepare("INSERT INTO users(id,name,password,role) VALUES(?,?,?,?)")
+    .prepare("INSERT INTO users(id,name,password,role,quota) VALUES(?,?,?,?,?)")
     .run(
       userId,
       name,
       salt + ":" + scryptSync(password, salt, 32).toString("hex"),
       first ? ADMIN : MEMBER,
+      first ? null : DEFAULT_QUOTA,
     );
   return db.account(userId);
 }

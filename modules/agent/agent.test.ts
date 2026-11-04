@@ -301,6 +301,12 @@ it("pins settings and billing across answers, other works and a storage restart"
     first.model = "writer-a";
     first.prices = { input: 2, cached: 0.2, cacheWrite: 2.5, output: 10, search: 0.01 };
     catalog.writers[0].models.push({ ...structuredClone(first), id: "writer-b", model: "writer-b" });
+    const image = catalog.painters[0].models[0].id;
+    catalog.labels = [
+      { id: "a", name: "A", description: "", writer: first.id, web: "builtin", image },
+      { id: "b", name: "B", description: "", writer: "writer-b", web: "off", image },
+    ];
+    catalog.defaults.label = "a";
     db.saveModels(modelCatalogSchema.parse(catalog));
     const work = fixture();
     work.revision = 0;
@@ -321,7 +327,7 @@ it("pins settings and billing across answers, other works and a storage restart"
 
     // A selection elsewhere and an administrator's price/connection edits must not
     // change the model, tools or prices of the task already waiting for an answer.
-    store.saveOwnSettings({ ...store.ownSettings(), writer: "writer-b", web: "off", preferences: "New preference" });
+    store.saveOwnSettings({ ...store.ownSettings(), label: "b", preferences: "New preference" });
     catalog.writers[0].credential = "new-credential";
     for (const model of catalog.writers[0].models) model.prices.output = 99;
     catalog.painters[0].models[0].model = "new-painter";
@@ -1537,7 +1543,7 @@ it("searches through the search service for a model without its own, counting ea
       return { items: [answer(name, args, "c" + turn)], usage: {}, response: {} };
     });
     const ctx = { input: [], settings: store.settings(), generations: 0 };
-    store.saveOwnSettings({ ...store.ownSettings(), web: "off" });
+    db.saveModels(modelCatalogSchema.parse({ ...catalog, defaults: { ...catalog.defaults, web: "off" } }));
     await new Agent(() => {}).execute(store, run, ctx, "request");
     expect(run.status).toBe("completed");
     expect(asked).toEqual([
@@ -1558,7 +1564,7 @@ it("searches through the search service for a model without its own, counting ea
     expect(run.steps).toContainEqual({ kind: "tool", id: "c1", status: "done", name: "web_search", queries: ["release date", "launch city"], urls: [], action: "search" });
     expect(run.steps).toContainEqual({ kind: "tool", id: "c2", status: "done", name: "web_search", queries: [], urls: ["https://news.invalid/a"], action: "open_page" });
     expect(run.usage).toMatchObject({ searches: 3, pages: 1 });
-    expect(run.services).toEqual({ author: "DeepSeek", model: "deepseek-flash", effort: "high", speed: "default", search: "service", searchBy: "DeepSeek Search", image: "gpt-image-2.5-sunburst[api]" });
+    expect(run.services).toEqual({ label: "默认", author: "DeepSeek", model: "deepseek-flash", effort: "medium", speed: "default", search: "service", searchBy: "DeepSeek Search", image: "gpt-image-2.5-sunburst[api]" });
     // Each query asked and the page read are priced at the service's prices.
     expect(run.prices).toMatchObject({ search: 0.01, page: 0.02 });
     expect(costOf(run.usage, run.prices)!.search).toBeCloseTo(3 * 0.01 + 0.02);
