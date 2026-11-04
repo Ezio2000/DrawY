@@ -9,19 +9,6 @@ import { guideSchema } from "./tools.ts";
  * what a work does not need costs it nothing. `cards` come along with the topic, because
  * its rules are about using those drawings. */
 export const guides: Record<GuideTopic, { when: string; cards?: string[]; text: string }> = {
-  pictures: {
-    when: "before your first generate_images call, and before composing several pictured subjects into one scene",
-    text: `Asking for pictures. Generation runs in the background, so as soon as you know what is missing, request all of it in one call, before working out the layout, and compose with the returned ids while they develop.
-Write depicts for a picture model that knows nothing about the work: the subject, its state, the view (side, from above, cut away), pose, gaze and what it holds or touches, and the materials and details that identify it. For a person or animal say how much of the body shows ("full body, feet included"), since the model crops otherwise. Leave style out of depicts, because the style and the brief's direction are added to every picture and a second description of the look fights them.
-A picture carries no words: the prompt forbids text in the image, so names and numbers belong in your labels.
-Choose the role by how the picture will be used. object, figure and icon are cut-outs on transparency that you can place, move and label; scene is a vignette whose edges fade into paper; texture is a seamless surface. Choose the aspect that fits the thing, and size its module to that aspect.
-For one character across several pictures, give the first a key and put that key in the others' references, because a description alone drifts between pictures. A picture with a reference in the same request starts only when that one has developed, so its ids are still usable at once but it takes twice as long; the others run side by side. Use references only for what a picture must be made from: the work's existing pictures in the style are already shown to the model as style references.
-A generated picture that came out wrong (wrong subject, text in it, clashing style) is replaced with a corrected one, since a label cannot rescue it.
-
-Composing pictures. Keep every picture an independent module and compose it with your own paths, labels, connections and interaction: a picture supplies a thing's appearance, and the scene's layout stays yours, so the user can move or swap each part. Do not let one generated painting hold the whole idea: paint the world as a backdrop and each subject that matters as its own picture, so the scene can point at, explain or change it. Do not add decorative pictures to purely abstract figures, or a picture to every row of a long list or table, where they add nothing the figure states.
-view_canvas reports where each picture's visible content actually is, in scene units. Place labels, leaders and neighbours by that, since a picture rarely fills its module's box.
-When an edit changes how a thing looks, update every other depiction of that thing so the work stays consistent.`,
-  },
   drawing: {
     when: "before writing a drawing or link drawing of your own, including one that composes library drawings with api.draw",
     text: `A drawing definition is reusable JavaScript function-body source. It receives api and returns an Element (or awaits one), because the runtime places what is returned and reports anything else as an error. Leave out HTML documents, body or head, app chrome and viewport sizing. Use the local module width and height; all positions outside a drawing are scene units. Drawing code is async, so await initial data before returning. Keep the source readable, and reuse one definition across instances with different data.
@@ -44,7 +31,7 @@ Looks. Use the style's tokens for ink, colours, stroke and font, and its effects
   },
   diagrams: {
     when: "when the figure is or contains a flowchart, system diagram, hierarchy, matrix, table, chart or other conventional structured form",
-    text: `Build a conventional form from the library's drawing for it: hierarchy, layered architecture (layers), two-by-two matrix (quadrant), comparison table (compare), pyramid or funnel (pyramid), set overlap (venn), mind map (mindmap), numbered process (steps), swimlanes, cause and effect (fishbone), message sequence (sequence), nested rings (concentric), schedule (gantt), a few quantities (bars), parts of a whole (donut), a reading on a scale (gauge), a headline number (stat), several qualities compared (radar), a checklist (checklist), a speech bubble (callout). They already have balanced spacing, a type scale and the style's colours, which boxes placed by hand rarely reach. Read each one's card. They can also be one part of a larger idea, such as a gauge on a drawn machine or a sequence beside the two machines it connects.
+    text: `Build a conventional form from the library's drawing for it (# Library lists them: hierarchy, layers, quadrant, compare, pyramid, venn, mindmap, steps, swimlanes, fishbone, sequence, concentric, gantt, bars, donut, gauge, stat, radar, checklist, callout). They already have balanced spacing, a type scale and the style's colours, which boxes placed by hand rarely reach. Ask for the cards of the ones you use in the same draw_guide call as this guide when you can. They can also be one part of a larger idea, such as a gauge on a drawn machine or a sequence beside the two machines it connects.
 Use one of these as the whole figure only when the user names it or the subject has exactly that structure, since it is the picture every other author would draw.
 Draw a flowchart or system diagram as one node module per block, joined by arrow links with route elbow (first set to the axis the source anchor faces), with blocks of one kind the same size and aligned on shared rows and columns, so the user can move a block and its connections follow. A node's outline is notation the reader expects, so it is the one box the visual language allows.
 Keep api.mermaid for UML class or state diagrams the library does not provide, since its generic look ignores the style. Structure drawings take one of the style's effects as their effect parameter, which gives them the style's texture.`,
@@ -120,8 +107,9 @@ export function guidesRead(input: Item[], pending: Item[] = []) {
   return read;
 }
 
-/** The answer to draw_guide. What is already above is named, not repeated: it would only
- * lengthen what every later turn carries. */
+/** The answer to draw_guide, as plain text: each guide under its topic, each card as one
+ * line of JSON. What is already above is named, not repeated: it would only lengthen what
+ * every later turn carries. */
 export function readGuides(
   request: { topics?: GuideTopic[]; drawings?: string[] },
   kit: Material[],
@@ -134,15 +122,16 @@ export function readGuides(
   const known = new Map(
     kit.filter((m): m is DrawingMaterial => m.kind === "drawing").map((m) => [m.id, m]),
   );
+  const cards = drawings.flatMap((id) => (known.has(id) ? [drawingCard(known.get(id)!)] : []));
   const unknown = drawings.filter((id) => !known.has(id));
-  return {
-    ...(topics.length ? { guides: topics.map((topic) => ({ topic, text: guides[topic].text })) } : {}),
-    ...(drawings.some((id) => known.has(id))
-      ? { drawings: drawings.flatMap((id) => (known.has(id) ? [drawingCard(known.get(id)!)] : [])) }
-      : {}),
-    ...(above.length ? { alreadyAbove: above } : {}),
+  return [
+    ...topics.map((topic) => `## ${topic}\n${guides[topic].text}`),
+    ...(cards.length
+      ? [["## Drawing cards", ...cards.map((card) => JSON.stringify(card))].join("\n")]
+      : []),
+    ...(above.length ? [`Already above in this conversation: ${above.join(", ")}.`] : []),
     ...(unknown.length
-      ? { unknown, note: "These are not library drawings. Their ids are listed under # Library; search others with find_materials." }
-      : {}),
-  };
+      ? [`Not library drawings: ${unknown.join(", ")}. The library's drawings are listed under # Library.`]
+      : []),
+  ].join("\n\n");
 }

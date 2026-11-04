@@ -391,8 +391,20 @@ function activity(name: string, args: any, sceneId: string): ToolActivity {
  * guessed draw something other than it meant, or nothing. */
 function cardsUnread(work: Work, input: Item[], batch: Item[] = []) {
   const { drawings } = guidesRead(input, batch);
+  // Each drawing is pointed out once: an author that went on without its card had a reason.
+  const told = new Set(
+    input.flatMap((i) => {
+      if (i.type !== "function_call_output" || typeof i.output !== "string" || !i.output.includes('"cardsUnread"'))
+        return [];
+      try {
+        return (JSON.parse(i.output).cardsUnread ?? []) as string[];
+      } catch {
+        return [];
+      }
+    }),
+  );
   const unread = Object.values(work.materials)
-    .filter((m) => m.kind === "drawing" && !drawings.has(m.id))
+    .filter((m) => m.kind === "drawing" && !drawings.has(m.id) && !told.has(m.id))
     .map((m) => m.id);
   return unread.length
     ? {
@@ -1430,7 +1442,10 @@ export class Agent {
         ctx.input.push({
           type: "function_call_output",
           call_id: call.call_id,
-          output: JSON.stringify(outcome.output),
+          output:
+            typeof outcome.output === "string"
+              ? outcome.output
+              : JSON.stringify(outcome.output),
         });
         if (outcome.images.length) shown.push({ role: "user", content: outcome.images });
         store.context(run.id, ctx);

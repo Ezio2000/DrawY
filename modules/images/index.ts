@@ -14,22 +14,27 @@ export const pictureRequestSchema = z.object({
   role: z
     .enum(["object", "figure", "scene", "texture", "icon"])
     .describe(
-      "object, figure and icon are cut-outs on transparency; scene is a vignette fading into paper; texture is a seamless surface",
+      "How the picture will be used: object, figure and icon are cut-outs on transparency to place, move and label; scene is a vignette whose edges fade into paper; texture is a seamless surface",
     ),
   depicts: z
     .string()
     .min(1)
-    .describe("What is in the frame: the subject, its state, view and details; not the style"),
-  aspect: z.enum(["square", "landscape", "portrait"]).default("square"),
+    .describe(
+      "For a picture model that knows nothing about the work: the subject, its state, the view (side, from above, cut away), pose, gaze and what it holds or touches, and the materials and details that identify it; for a person or animal, how much of the body shows (\"full body, feet included\"), since the model crops otherwise. Not the style, which is added to every picture, and no words, which the picture cannot carry",
+    ),
+  aspect: z
+    .enum(["square", "landscape", "portrait"])
+    .default("square")
+    .describe("The shape that fits the thing; size its module to it"),
   key: z
     .string()
     .optional()
-    .describe("A name other pictures in the same request can refer to in their references"),
+    .describe("A name other pictures in the same request can refer to in their references, such as the first picture of a character the others must match"),
   references: z
     .array(z.string())
     .default([])
     .describe(
-      "Pictures to work from, to restyle, vary or keep consistent with: material ids, or keys of pictures in the same request, which this one then waits for",
+      "Pictures this one must be made from, to restyle, vary or keep one character consistent, since a description alone drifts between pictures: material ids, or keys of pictures in the same request, which this one then waits for. The work's pictures in its style are already sent as style references",
     ),
 });
 export type PictureRequest = z.input<typeof pictureRequestSchema>;

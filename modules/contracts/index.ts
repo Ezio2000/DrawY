@@ -512,7 +512,6 @@ export interface Citation {
 }
 /** The guides the author can read on demand with draw_guide. */
 export const guideTopics = [
-  "pictures",
   "drawing",
   "diagrams",
   "maps",

@@ -9,7 +9,11 @@ const fn = (name: string, description: string, parameters: object) => ({
   parameters,
   strict: false,
 });
-const schema = (s: z.ZodType) => z.toJSONSchema(s, { io: "input" });
+/** A tool's parameters as JSON Schema, without the draft's URL, which only adds tokens. */
+const schema = (s: z.ZodType) => {
+  const { $schema: _, ...rest } = z.toJSONSchema(s, { io: "input" });
+  return rest;
+};
 export const askSchema = z.object({
   questions: z
     .array(
@@ -132,7 +136,7 @@ export const tools = [
   ),
   fn(
     "generate_images",
-    "Have pictures made in the brief's style, in the background. Ask for every missing picture in one call, as early as you can, since they develop while you lay out. Each is painted beside the work's own pictures in that style and the style's samples, shown to the picture model as style references, so a new picture matches the ones already placed. A picture that references a key in the same request starts when that one has developed; the rest run side by side. Fails before anything is painted when a reference does not exist or references form a circle. Returns material ids at once: use them in drawings immediately. view_canvas waits until they have developed, and you are shown each one as it arrives.",
+    "Have pictures made in the brief's style, in the background. Ask for every missing picture in one call as soon as you know what is missing, before working out the layout, since they develop while you lay out with their ids. Each is painted beside the work's own pictures in that style and the style's samples, shown to the picture model as style references, so a new picture matches the ones already placed; a picture carries no words, so names and numbers belong in your labels. A picture that references a key in the same request starts when that one has developed, taking about twice as long; the rest run side by side. A cut-out that comes out with a background is painted once more, and you are told when it still has one. Fails before anything is painted when a reference does not exist or references form a circle. Returns material ids at once: use them in drawings immediately. view_canvas waits until they have developed, and you are shown each one as it arrives; replace one that came out wrong (wrong subject, words in it, a clashing style), since a label cannot rescue it.",
     schema(generateSchema),
   ),
   fn(

@@ -664,6 +664,14 @@ function script(turns: (Call | Call[])[], seen: any[][] = []) {
     },
   );
 }
+/** A call's output read back: JSON where it is, text otherwise (guides are text). */
+const parsed = (output: string) => {
+  try {
+    return JSON.parse(output);
+  } catch {
+    return output;
+  }
+};
 const outputs = (input: any[]) =>
   input
     .filter((x) => x.type === "function_call_output")
@@ -1517,18 +1525,23 @@ it("gives the author guides and drawing cards on demand, and only once", async (
     );
     const run = await new Agent(() => {}).start(store, work.id, "root", "画");
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
-    const [first, second, empty] = outputs(seen.at(-1)!).map((o) => JSON.parse(o));
-    expect(first.guides.map((g: any) => g.topic)).toEqual(["maps", "copy"]);
-    expect(first.guides[0].text).toContain("geomap");
-    expect(first.drawings.map((d: any) => d.id)).toEqual(["geomap", "arrow"]);
-    expect(first.drawings[1]).toMatchObject({ use: "link", size: "200×60" });
-    expect(first.drawings[1].params.route).toBeTruthy();
-    expect(first.drawings[1].example.flow).toBe(true);
-    expect(first.unknown).toEqual(["no-such"]);
-    expect(second.guides).toBeUndefined();
-    expect(second.drawings.map((d: any) => d.id)).toEqual(["plot"]);
-    expect(second.alreadyAbove).toEqual(["maps", "geomap", "arrow"]);
-    expect(empty.error).toBeTruthy();
+    const [first, second, empty] = outputs(seen.at(-1)!);
+    // Guides read as text under their topics, and cards one line of JSON each.
+    const cards = (text: string) =>
+      text.split("\n").filter((line) => line.startsWith("{")).map((line) => JSON.parse(line));
+    expect([...first.matchAll(/^## (\w+)$/gm)].map((m) => m[1])).toEqual(["maps", "copy"]);
+    expect(first.slice(0, first.indexOf("## copy"))).toContain("geomap");
+    expect(first).toContain("Real geography comes from data.");
+    const read = cards(first);
+    expect(read.map((d: any) => d.id)).toEqual(["geomap", "arrow"]);
+    expect(read[1]).toMatchObject({ use: "link", size: "200×60" });
+    expect(read[1].params.route).toBeTruthy();
+    expect(read[1].example.flow).toBe(true);
+    expect(first).toContain("Not library drawings: no-such.");
+    expect(second).not.toContain("## maps");
+    expect(cards(second).map((d: any) => d.id)).toEqual(["plot"]);
+    expect(second).toContain("Already above in this conversation: maps, geomap, arrow.");
+    expect(JSON.parse(empty).error).toBeTruthy();
     // A step in the studio says what was read.
     const steps = store.run(run.id).steps.filter((s) => s.kind === "tool" && s.name === "draw_guide");
     expect(steps[0]).toMatchObject({
@@ -1619,10 +1632,63 @@ it("reminds the author of the guides after the brief and of unread cards after a
     );
     const run = await new Agent(() => {}).start(store, work.id, "root", "画苹果");
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
-    const [settled, unread, , read] = outputs(seen.at(-1)!).map((o) => JSON.parse(o));
+    const [settled, unread, , read] = outputs(seen.at(-1)!).map(parsed);
     expect(settled.guides).toContain("draw_guide");
     expect(unread.cardsUnread).toEqual(["plot"]);
     expect(read.cardsUnread).toBeUndefined();
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("points out an unread card once, not after every write", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    work.materials = {};
+    store.commit(work, 0, { kind: "edit" });
+    const seen: any[][] = [];
+    const brief = {
+      subject: "苹果",
+      intent: "苹果",
+      audience: "学生",
+      ideas: [
+        { kind: "anatomy", idea: "切开的苹果" },
+        { kind: "change", idea: "一年里的苹果树" },
+      ],
+      concept: "切开的苹果居中",
+      register: "formal",
+      style: "textbook",
+      direction: "安静的线条",
+      cast: [],
+      basis: { subject: "苹果", intent: "苹果" },
+    };
+    const uses = (revision: number) => ({
+      baseRevision: revision,
+      scenes: [{ id: "root", clear: true }],
+      modules: [{ id: "a", label: "a", bounds: [0, 0, 10, 10], drawingId: "plot" }],
+    });
+    script(
+      [
+        ["set_brief", brief],
+        ["write_work", uses(2)],
+        ["write_work", { ...uses(3), title: "again" }],
+        ["view_canvas", {}],
+        ["finish", { message: "done" }],
+      ],
+      seen,
+    );
+    const run = await new Agent(() => {}).start(store, work.id, "root", "画苹果");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    const [, first, second] = outputs(seen.at(-1)!).map(parsed);
+    expect(first.cardsUnread).toEqual(["plot"]);
+    expect(second.revision).toBe(4);
+    expect(second.cardsUnread).toBeUndefined();
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
@@ -1677,7 +1743,7 @@ it("does not remind the author of guides and cards it asks for in the same messa
     );
     const run = await new Agent(() => {}).start(store, work.id, "root", "画苹果");
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
-    const [settled, , written] = outputs(seen.at(-1)!).map((o) => JSON.parse(o));
+    const [settled, , written] = outputs(seen.at(-1)!).map(parsed);
     expect(settled.revision).toBe(2);
     expect(settled.guides).toBeUndefined();
     expect(written.revision).toBe(3);
@@ -1701,14 +1767,16 @@ it("keeps the instructions to what every work needs, with the rest listed and re
     expect(AUTHOR).toContain(`- ${topic}: ${guides[topic].when}.`);
   // The instructions are not to be read as shouting.
   expect(AUTHOR + Object.values(guides).map((g) => g.text).join("")).not.toMatch(/\b(MUST|NEVER|ALWAYS|IMPORTANT|CRITICAL)\b/);
-  // Parameters and examples stay on the cards; the index is one short line per drawing.
+  // Examples stay on the cards; the index is one short line per drawing.
   const index = catalogue(seed("styles"), [...seed("drawings"), ...seed("effects")]);
   expect(index).not.toContain("e.g. ");
   for (const d of seed("drawings")) {
     expect(index).toContain(`- ${d.id}`);
     expect(gist(d.about).length).toBeLessThan(170);
   }
-  expect(AUTHOR.length + index.length).toBeLessThan(30000);
+  // The index names each drawing's parameters, so the common ones need no card, and the
+  // rules on composing pictures, which nearly every work reads, live here and not in a guide.
+  expect(AUTHOR.length + index.length).toBeLessThan(32000);
 });
 
 it("answers every call of a batch before showing its pictures", async () => {
