@@ -35,7 +35,8 @@ import {
 import type { Canvas, Pointed } from "../../../modules/canvas/index.ts";
 import {
   addScene,
-  facing,
+  composed,
+  labelOf,
   moveParts,
   reattach,
   removeParts,
@@ -81,14 +82,7 @@ export type { Change } from "./handEdits.ts";
 
 /** Two edits of the same revision as one, so a change that makes a scene or a detail and
  * points a module at it is one step. */
-function both(a: WorkEdit, b: WorkEdit): WorkEdit {
-  return {
-    ...a,
-    ...b,
-    scenes: [...(a.scenes ?? []), ...(b.scenes ?? [])],
-    details: [...(a.details ?? []), ...(b.details ?? [])],
-  };
-}
+const both = (a: WorkEdit, b: WorkEdit) => composed(a, b) as WorkEdit;
 const TAB = "drawy.edit.tab";
 type Pick = (kind: "picture" | "drawing", chosen: (m: Material) => void) => void;
 
@@ -307,21 +301,21 @@ function Selected({
         <div className={cx("edit-title")}>
           {one ? (
             <input
-              key={one.id + ":" + one.label}
+              key={one.id + ":" + labelOf(one)}
               className={cx("edit-name")}
               aria-label={t.edit.name}
               placeholder={t.edit.untitled}
-              defaultValue={one.label}
+              defaultValue={labelOf(one)}
               onKeyDown={(e) => {
                 e.stopPropagation();
                 if (e.key === "Enter") e.currentTarget.blur();
                 if (e.key === "Escape") {
-                  e.currentTarget.value = one.label;
+                  e.currentTarget.value = labelOf(one);
                   e.currentTarget.blur();
                 }
               }}
               onBlur={(e) =>
-                e.target.value !== one.label &&
+                e.target.value !== labelOf(one) &&
                 void change((w) => rename(w, sceneId, one.id, e.target.value))
               }
             />
@@ -581,7 +575,7 @@ function Arrange({ count, ops }: { count: number; ops: EditOps }) {
 
 const NEW_SCENE = "\u0000scene",
   NEW_DETAIL = "\u0000detail";
-const keyOf = (t: Target | null) => (t ? `${t.kind}:${t.id}` : "");
+const keyOf = (t?: Target) => (t ? `${t.kind}:${t.id}` : "");
 /** Where a click on the selected modules leads: nowhere, into a scene below or another
  * scene, or to a detail; a new scene or detail can be made for it at once. */
 function Leads({
@@ -602,7 +596,7 @@ function Leads({
   const keysNow = new Set(modules.map((m) => keyOf(m.target)));
   const current = keysNow.size === 1 ? [...keysNow][0] : "\u0000mixed";
   const target = modules[0].target;
-  const name = modules[0].label || t.edit.untitled;
+  const name = labelOf(modules[0]);
   const set = (value: string) => {
     if (value === NEW_SCENE)
       return void change((w) => {
@@ -654,9 +648,9 @@ function Leads({
 }
 
 /** A module's name as the editor shows it. */
-const nameIn = (work: Work, sceneId: string, id: string, untitled: string) => {
+const nameIn = (work: Work, sceneId: string, id: string) => {
   const m = work.scenes[sceneId]?.modules.find((x) => x.id === id);
-  return m ? m.label || untitled : id;
+  return m ? labelOf(m) : id;
 };
 /** A link of the selected module, as a row: a press selects the link to change it; it can
  * be turned round or taken out where it is. */
@@ -677,7 +671,7 @@ function Connection({
 }) {
   const t = useT();
   const out = link.from.moduleId === from;
-  const other = nameIn(work, sceneId, out ? link.to.moduleId : link.from.moduleId, t.edit.untitled);
+  const other = nameIn(work, sceneId, out ? link.to.moduleId : link.from.moduleId);
   const words = ["label", "text", "title"]
     .map((k) => link.data[k])
     .find((v): v is string => typeof v === "string" && !!v);
@@ -736,27 +730,15 @@ function LinkPanel({
     locale = useLocale(),
     l = t.edit.linkPanel;
   const scene = work.scenes[sceneId];
-  const name = (id: string) => nameIn(work, sceneId, id, t.edit.untitled);
+  const name = (id: string) => nameIn(work, sceneId, id);
   const modules = scene.modules;
   const end = (which: "from" | "to") => {
     const other = link[which === "from" ? "to" : "from"].moduleId;
-    const m = modules.find((x) => x.id === link[which].moduleId);
-    const anchor = m?.anchors[link[which].anchor];
-    const side = anchor ? sideOf(anchor) : null;
+    const at = link[which].at;
+    const side = Array.isArray(at) ? sideOf({ x: at[0], y: at[1] }) : at;
+    // A new module is met on the side facing the other end, following it as things move.
     const moveTo = (moduleId: string, s?: (typeof sides)[number]) =>
-      void change((w) => {
-        const scene = w.scenes[sceneId];
-        const target = scene.modules.find((x) => x.id === moduleId)!;
-        const o = scene.modules.find((x) => x.id === other)!;
-        // A new module is met on the side facing the other end.
-        const toward =
-          s ??
-          facing(target, {
-            x: o.bounds.x + o.bounds.width / 2,
-            y: o.bounds.y + o.bounds.height / 2,
-          });
-        return reattach(w, sceneId, link.id, which, toward, moduleId);
-      });
+      void change((w) => reattach(w, sceneId, link.id, which, s, moduleId));
     return (
       <div className={cx("link-end")}>
         <span className={cx("field-name")}>{which === "from" ? t.edit.linkEnds.from : t.edit.linkEnds.to}</span>
@@ -769,11 +751,14 @@ function LinkPanel({
             .filter((x) => x.id !== other)
             .map((x) => (
               <option key={x.id} value={x.id}>
-                {x.label || x.id}
+                {labelOf(x)}
               </option>
             ))}
         </select>
         <span className={cx("field-choice")} role="group" aria-label={l.side}>
+          <button aria-pressed={at === undefined} onClick={() => at !== undefined && moveTo(link[which].moduleId)}>
+            {t.edit.linkEnds.auto}
+          </button>
           {sides.map((s) => (
             <button key={s} aria-pressed={side === s} onClick={() => side !== s && moveTo(link[which].moduleId, s)}>
               {t.edit.linkEnds.sides[s]}

@@ -72,13 +72,13 @@
         "type": "choice",
         "options": ["curve", "elbow", "corner"],
         "default": "curve",
-        "description": "curve follows bend; elbow runs at right angles, leaving and arriving along the sides of the modules its anchors sit on; corner turns exactly once"
+        "description": "curve follows bend; elbow runs at right angles, leaving and arriving along the sides of the modules its ends meet; corner turns exactly once"
       },
       "first": {
         "type": "choice",
         "options": ["auto", "horizontal", "vertical"],
         "default": "auto",
-        "description": "for elbow and corner, the axis it leaves along; auto follows the side its anchor sits on, else the longer axis"
+        "description": "for elbow and corner, the axis it leaves along; auto follows the side its end meets, else the longer axis"
       },
       "radius": {
         "type": "number",
@@ -140,7 +140,7 @@
         "max": 40,
         "step": 1,
         "default": 6,
-        "description": "space left before the anchors"
+        "description": "space left before its ends"
       },
       "from": {
         "type": "object",

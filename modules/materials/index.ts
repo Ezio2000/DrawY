@@ -11,6 +11,8 @@ import type {
 import {
   DomainError,
   blankStyle,
+  calledIn,
+  materialsOfPart,
   paramTypes,
   type Candidate,
   type MaterialUse,
@@ -97,7 +99,6 @@ export function useOf(m: Material): MaterialUse | null {
   }
 }
 
-const CALL = /api\.(?:material|draw|effect)\(\s*["'`]([a-z0-9-]+)["'`]/g;
 // "--" is allowed: pictures generated before the slug was cut first carry it.
 const ID = /^[a-z0-9]+(?:-+[a-z0-9]+)*$/;
 /** Ids the work's code calls literally, and id-like strings in its module data. */
@@ -106,11 +107,11 @@ function named(work: Work) {
   const called = new Set<string>(),
     mentioned = new Set<string>(),
     quoted = new Set<string>();
-  for (const { source } of [
-    ...Object.values(work.drawings),
-    ...Object.values(work.interactions),
+  for (const source of [
+    ...Object.values(work.drawings).map((d) => d.source),
+    ...Object.values(work.scenes).flatMap((s) => s.interaction ?? []),
   ]) {
-    for (const [, id] of source.matchAll(CALL)) called.add(id);
+    for (const id of calledIn(source)) called.add(id);
     for (const [, id] of source.matchAll(QUOTED)) quoted.add(id);
   }
   const scan = (v: unknown) => {
@@ -126,37 +127,29 @@ function named(work: Work) {
       if (!work.drawings[x.drawingId]) mentioned.add(x.drawingId);
       scan(x.data);
     }
+  for (const d of Object.values(work.drawings)) scan(d.defaults);
   return { called, mentioned, quoted };
 }
 
 /** The materials a module is drawn with; none means it is drawn by hand. */
 export function drawnWith(work: Work, sceneId: string, moduleId: string) {
   const m = work.scenes[sceneId]?.modules.find((x) => x.id === moduleId);
-  if (!m) return [];
-  const ids = new Set<string>([m.drawingId]);
-  for (const [, id] of (work.drawings[m.drawingId]?.source ?? "").matchAll(
-    CALL,
-  ))
-    ids.add(id);
-  const scan = (v: unknown) => {
-    if (typeof v === "string") ids.add(v);
-    else if (Array.isArray(v)) v.forEach(scan);
-    else if (v && typeof v === "object") Object.values(v).forEach(scan);
-  };
-  scan(m.data);
-  return [...ids].filter((id) => work.materials[id]);
+  return m ? materialsOfPart(work, m) : [];
 }
 
 /** Brings the work's materials in line with what it names: takes in new ones, refreshes
  * pictures that were still developing and library code, and lets go of those no longer
- * named. Returns the ids newly taken. */
-export async function take(work: Work, explicit: string[], user: Viewer) {
+ * named. Returns the ids newly taken and those that its code or the edit names but the
+ * library does not have. `keep` leaves in place what nothing names yet, for a drawing copied
+ * from the library in the same write. */
+export async function take(work: Work, explicit: string[], user: Viewer, keep = false) {
   const { called, mentioned, quoted } = named(work);
   // A material nothing in the work names any more leaves it, such as a picture an edit
   // replaced; one named only in code (an interaction switching pictures) stays.
-  for (const id of Object.keys(work.materials))
-    if (![explicit, called, mentioned, quoted].some((s) => [...s].includes(id)))
-      delete work.materials[id];
+  if (!keep)
+    for (const id of Object.keys(work.materials))
+      if (![explicit, called, mentioned, quoted].some((s) => [...s].includes(id)))
+        delete work.materials[id];
   const strict = [...new Set([...explicit, ...called])];
   // Library code (drawings and effects) is taken again each time the work is written, so
   // it is the version the author's catalog describes; a work left alone keeps rendering
@@ -169,24 +162,10 @@ export async function take(work: Work, explicit: string[], user: Viewer) {
         m.kind === "effect",
     )
     .map((m) => m.id);
-  const lenient = [...new Set([...mentioned, ...refresh])].filter(
-    (id) =>
-      !strict.includes(id) && (!work.materials[id] || refresh.includes(id)),
-  );
-  const missing = strict.filter(
+  const wanted = [...new Set([...strict, ...mentioned, ...refresh])].filter(
     (id) => !work.materials[id] || refresh.includes(id),
   );
-  let found: Material[] = [];
-  try {
-    found = [
-      ...(missing.length ? await library.get(missing, user) : []),
-      ...(lenient.length ? await library.get(lenient, user, true) : []),
-    ];
-  } catch (e) {
-    throw new DomainError(
-      `${e instanceof Error ? e.message : e}。素材 ID 需来自 find_materials、set_brief 或 generate_images 的结果`,
-    );
-  }
+  const found = wanted.length ? await library.get(wanted, user, true) : [];
   const added: string[] = [];
   for (const m of found) {
     const use = useOf(m);
@@ -194,7 +173,8 @@ export async function take(work: Work, explicit: string[], user: Viewer) {
     if (!work.materials[m.id]) added.push(m.id);
     work.materials[m.id] = use;
   }
-  return added;
+  const missing = strict.filter((id) => !found.some((m) => m.id === id) && !work.materials[id]);
+  return { added, missing };
 }
 /** Records that a work now uses these materials. */
 export function used(ids: string[], workId: string, user: string) {
@@ -404,18 +384,13 @@ export async function preview(id: string, user: Viewer): Promise<Work> {
             label: m.name.zh,
             bounds: { x: 0, y: 0, ...m.size },
             drawingId: m.id,
-            group: null,
-            target: null,
-            anchors: {},
             data: m.example,
           },
         ],
         links: [],
-        interactionId: null,
         checks: [],
       },
     },
-    interactions: {},
     details: {},
     brief: null,
     materials: {},

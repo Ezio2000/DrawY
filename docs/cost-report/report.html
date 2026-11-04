@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DrawY 降本实验报告</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
+<style>
+/* 布局：左侧固定目录 + 右侧单栏正文；先摘要与问题，再 20 个案例篇幅。颜色只有一种强调色，三档用固定的三色身份色。 */
+:root {
+  color-scheme: light;
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #141920;
+  --muted: #5a6371;
+  --line: #dde2e8;
+  --accent: #1d5d8a;
+  --t-medium: #2a78d6;
+  --t-high: #eb6834;
+  --t-xhigh: #1baf7a;
+  --bad: #c62828;
+  --bad-bg: #fdecec;
+  --ok-bg: #edf6f1;
+  --sev0: #c62828; --sev1: #d4610b; --sev2: #9a7a00; --sev3: #6b7380;
+  --display: "Noto Serif SC", "Songti SC", "SimSun", serif;
+  --body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111418; --surface: #191d23; --ink: #e8ecf1; --muted: #9aa3b0; --line: #2a3039;
+    --accent: #6fa8d6; --t-medium: #3987e5; --t-high: #d95926; --t-xhigh: #199e70;
+    --bad: #ef6b6b; --bad-bg: #3a1d1f; --ok-bg: #16281f;
+    --sev0: #ef6b6b; --sev1: #f0904a; --sev2: #d6b33a; --sev3: #8e97a4;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111418; --surface: #191d23; --ink: #e8ecf1; --muted: #9aa3b0; --line: #2a3039;
+  --accent: #6fa8d6; --t-medium: #3987e5; --t-high: #d95926; --t-xhigh: #199e70;
+  --bad: #ef6b6b; --bad-bg: #3a1d1f; --ok-bg: #16281f;
+  --sev0: #ef6b6b; --sev1: #f0904a; --sev2: #d6b33a; --sev3: #8e97a4;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; overflow-x: clip; background: var(--bg); color: var(--ink); font: 15px/1.7 var(--body); }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1, h2 { font-family: var(--display); text-wrap: balance; letter-spacing: .01em; }
+h3 { font-size: 15px; margin: 22px 0 8px; }
+pre { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; font-size: 12.5px; line-height: 1.6; }
+pre code { background: none; border: 0; padding: 0; overflow-wrap: normal; }
+code { overflow-wrap: anywhere; font-size: .9em; background: var(--bg); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line); }
+.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.muted, .hint { color: var(--muted); font-size: 13px; }
+.layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 32px; max-width: 1480px; margin: 0 auto; padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); }
+nav.toc { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto; padding: 28px 0; font-size: 13px; }
+nav.toc p { margin: 0 0 6px; color: var(--muted); font-size: 12px; letter-spacing: .08em; }
+nav.toc ul { list-style: none; margin: 0 0 18px; padding: 0; }
+nav.toc li a { display: flex; gap: 10px; padding: 3px 8px; border-radius: 6px; color: var(--ink); text-decoration: none; }
+nav.toc li a:hover { background: var(--surface); }
+nav.toc li a span { color: var(--muted); font-variant-numeric: tabular-nums; width: 1.6em; }
+main { min-width: 0; padding: 28px 0 80px; }
+.hero { padding: 20px 0 8px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.hero h1 { font-size: 34px; line-height: 1.3; margin: 0 0 10px; }
+.hero .sub { color: var(--muted); max-width: 72ch; margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 14px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
+.meta b { color: var(--ink); font-weight: 500; }
+section.block { padding: 28px 0 8px; }
+section.block > h2, section.case h2 { font-size: 24px; margin: 0 0 14px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
+.tile b { font-size: 26px; font-family: var(--display); font-variant-numeric: tabular-nums; }
+.tile span { color: var(--muted); font-size: 13px; }
+.tile.warn { border-color: var(--bad); }
+.tile.warn b { color: var(--bad); }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 16px; }
+figure.chart { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+figure.chart figcaption { font-weight: 500; font-size: 14px; }
+.bar { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 10px; font-size: 13px; }
+.track { height: 12px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+.fill { display: block; height: 100%; border-radius: 0 4px 4px 0; }
+.f-medium { background: var(--t-medium); } .f-high { background: var(--t-high); } .f-xhigh { background: var(--t-xhigh); }
+.bv { font-variant-numeric: tabular-nums; min-width: 4.5em; text-align: right; }
+.note { margin: 0; font-size: 12px; color: var(--muted); }
+.tier { display: inline-block; font-size: 12px; font-weight: 500; padding: 0 8px 0 7px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); line-height: 20px; white-space: nowrap; }
+.tier::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
+.t-medium::before { background: var(--t-medium); } .t-high::before { background: var(--t-high); } .t-xhigh::before { background: var(--t-xhigh); }
+.tablewrap { overflow-x: auto; margin: 12px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+thead th { font-weight: 500; color: var(--muted); font-size: 12px; white-space: nowrap; }
+tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
+td.strong { font-weight: 700; }
+.ph { display: inline-block; padding: 0 7px; border-radius: 5px; margin: 1px 2px 1px 0; font-size: 12px; background: var(--ok-bg); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ph.bad { background: var(--bad-bg); color: var(--bad); font-weight: 500; }
+table.matrix td, table.matrix th { text-align: center; padding: 6px 5px; }
+table.matrix td a { display: block; color: var(--ink); text-decoration: none; font-variant-numeric: tabular-nums; }
+table.matrix td small, table.matrix th small { display: block; color: var(--muted); font-size: 11px; font-weight: 400; white-space: nowrap; }
+table.matrix th a { color: var(--ink); text-decoration: none; }
+table.matrix td.bad { background: var(--bad-bg); }
+table.matrix td.bad a { color: var(--bad); font-weight: 700; }
+.findings { display: flex; flex-direction: column; gap: 12px; }
+.finding { display: grid; grid-template-columns: 44px 1fr; gap: 14px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--sev3); border-radius: 8px; padding: 14px 16px; }
+.finding > div { min-width: 0; }
+.finding h3 { margin: 0 0 4px; font-size: 16px; }
+.finding p { margin: 4px 0; max-width: 90ch; }
+.finding .fix b, .review b { margin-right: 8px; }
+.finding .refs { font-size: 12px; color: var(--muted); }
+.finding .refs a { margin-right: 6px; }
+.sev { font-weight: 700; font-size: 13px; color: var(--sev3); }
+.sev-P0 { border-left-color: var(--sev0); } .sev-P0 .sev { color: var(--sev0); }
+.sev-P1 { border-left-color: var(--sev1); } .sev-P1 .sev { color: var(--sev1); }
+.sev-P2 { border-left-color: var(--sev2); } .sev-P2 .sev { color: var(--sev2); }
+ul.pos { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+ul.pos li { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+ul.pos li b { display: block; margin-bottom: 4px; }
+.flow { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+figure { margin: 0; }
+figure img { width: 100%; height: auto; display: block; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); }
+figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.prose { max-width: 78ch; }
+.prose li { margin-bottom: 4px; }
+.reco { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin-top: 14px; }
+.reco p { margin: 6px 0; }
+section.case { border-top: 2px solid var(--ink); margin-top: 48px; padding-top: 22px; }
+.casehead { display: flex; gap: 16px; align-items: baseline; }
+.casehead .no { font-family: var(--display); font-size: 40px; line-height: 1; color: var(--accent); font-variant-numeric: tabular-nums; }
+.casehead h2 { margin: 0; }
+.who { margin: 2px 0 0; color: var(--muted); }
+.ask { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin: 16px 0 4px; }
+.lbl { font-size: 12px; color: var(--muted); }
+blockquote { margin: 4px 0 0; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; font-size: 15px; }
+blockquote.fu { border-style: dashed; }
+ul.verdict { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 4px; }
+ul.verdict li { display: flex; gap: 10px; align-items: baseline; }
+.gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.col { display: flex; flex-direction: column; gap: 10px; }
+.colhead { display: flex; flex-direction: column; gap: 2px; }
+.colhead .wt { font-size: 12px; color: var(--muted); }
+.extras { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.qa, .reply, .brief { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; }
+.qa ol, .reply ul { margin: 6px 0 0; padding-left: 20px; }
+.qa .opts { display: block; color: var(--muted); font-size: 12px; }
+.qa .ans { margin: 6px 0 0; font-weight: 500; }
+.reply ul { list-style: none; padding: 0; }
+.reply li b { margin-right: 6px; font-weight: 500; color: var(--muted); }
+.reply li.err { color: var(--bad); }
+.briefs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.brief p { margin: 6px 0; }
+.brief p b { display: block; font-size: 12px; color: var(--muted); font-weight: 500; }
+.brief summary { cursor: pointer; font-size: 12px; color: var(--accent); }
+.brief ul { padding-left: 18px; margin: 6px 0 0; }
+.review { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 8px; }
+.review ul, .review ol { padding-left: 20px; margin: 0; }
+.review li { margin-bottom: 6px; }
+.review p { margin: 0; }
+dialog { padding: 0; border: 0; background: transparent; max-width: 96vw; max-height: 96vh; }
+dialog::backdrop { background: rgb(0 0 0 / .78); }
+dialog img { display: block; max-width: 96vw; max-height: 92vh; border-radius: 6px; }
+dialog button { position: fixed; top: 14px; right: 18px; font: 500 14px var(--body); padding: 6px 12px; border-radius: 6px; border: 0; cursor: pointer; }
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: 1fr; }
+  nav.toc { position: static; height: auto; padding-bottom: 0; }
+  nav.toc ul { display: flex; flex-wrap: wrap; gap: 2px; }
+}
+@media (max-width: 760px) {
+  .finding { grid-template-columns: 1fr; gap: 4px; }
+  .casehead .no { font-size: 30px; }
+  .layout { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .gallery, .extras, .briefs, .two, .review, .ask { grid-template-columns: 1fr; }
+  .hero h1 { font-size: 26px; }
+}
+
+/* 三轮用固定的身份色，沿用体验报告的三个颜色。 */
+.t-r1::before { background: var(--t-medium); } .t-r2::before { background: var(--t-high); } .t-r3::before { background: var(--t-xhigh); }
+.f-r1 { background: var(--t-medium); } .f-r2 { background: var(--t-high); } .f-r3 { background: var(--t-xhigh); }
+.prose-wide > p, .prose-wide > ul { max-width: 86ch; }
+.prose-wide li { margin-bottom: 4px; }
+.prose-wide h3 { font-size: 16px; margin: 24px 0 8px; }
+.prose-wide .gallery { margin-top: 14px; }
+.tablewrap th { white-space: nowrap; }
+.colhead { align-items: flex-start; }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" aria-label="目录">
+  <p>报告</p>
+  <ul><li><a href="#summary"><span>·</span>结论摘要</a></li><li><a href="#rounds"><span>·</span>三轮改了什么</a></li><li><a href="#money"><span>·</span>钱花在哪里</a></li><li><a href="#json"><span>·</span>无效 JSON</a></li><li><a href="#quality"><span>·</span>画面质量</a></li><li><a href="#open"><span>·</span>还没解决的问题</a></li><li><a href="#matrix"><span>·</span>运行一览</a></li><li><a href="#method"><span>·</span>方法与口径</a></li></ul>
+  <p>5 个题材</p>
+  <ul><li><a href="#zheng"><span>·</span>郑和下西洋</a></li><li><a href="#chest"><span>·</span>胸痛接诊</a></li><li><a href="#coffee"><span>·</span>咖啡店赚钱</a></li><li><a href="#otter"><span>·</span>小水獭</a></li><li><a href="#redis"><span>·</span>Redis 超卖</a></li></ul>
+</nav>
+<main>
+<header class="hero">
+  <h1>DrawY 降本实验报告：5 个题材 × 3 轮改动</h1>
+  <p class="sub">同样 5 句话的提示词，在保持作品可用的前提下，比较三版代码的费用、耗时和画面。第 1 轮是优化前的基线；第 2 轮加入七项流程优化；第 3 轮再改写入格式、错误恢复和第一稿的工作方式。</p>
+  <ul class="meta"><li><b>2026-11-03</b></li><li><b>基线 main cec09ca，第 3 轮 10edce8</b></li><li><b>绘制模型 anthropic/claude-opus-5.5（OpenRouter，medium）</b></li><li><b>生图模型 gpt-image-2.5-flare</b></li><li><b>搜索 DeepSeek Search</b></li><li><b>Chromium 1440×900</b></li></ul>
+</header>
+<section class="block prose-wide" id="summary"><h2>结论摘要</h2><div class="tiles"><div class="tile"><b>−35%</b><span>Opus 费用 $3.04 → $1.98</span></div><div class="tile"><b>−37%</b><span>总费用 $3.86 → $2.45</span></div><div class="tile"><b>−29%</b><span>单题耗时之和 822 → 583 秒</span></div><div class="tile"><b>−39%</b><span>输出 71.8k → 43.6k token</span></div><div class="tile"><b>−74%</b><span>检查截图 42 → 11 张</span></div></div>
+<div class="charts"><figure class="chart"><figcaption>Opus 费用</figcaption><div class="bar"><span>第 1 轮</span><span class="track"><span class="fill f-r1" style="width:100%"></span></span><span class="bv">$3.04</span></div><div class="bar"><span>第 2 轮</span><span class="track"><span class="fill f-r2" style="width:87.31514952349654%"></span></span><span class="bv">$2.66</span></div><div class="bar"><span>第 3 轮</span><span class="track"><span class="fill f-r3" style="width:64.9359185014788%"></span></span><span class="bv">$1.98</span></div></figure><figure class="chart"><figcaption>输出 token</figcaption><div class="bar"><span>第 1 轮</span><span class="track"><span class="fill f-r1" style="width:100%"></span></span><span class="bv">71.8k</span></div><div class="bar"><span>第 2 轮</span><span class="track"><span class="fill f-r2" style="width:89.83286908077994%"></span></span><span class="bv">64.5k</span></div><div class="bar"><span>第 3 轮</span><span class="track"><span class="fill f-r3" style="width:60.724233983286915%"></span></span><span class="bv">43.6k</span></div></figure><figure class="chart"><figcaption>其中思考（估算）</figcaption><div class="bar"><span>第 1 轮</span><span class="track"><span class="fill f-r1" style="width:99.2%"></span></span><span class="bv">49.6k</span></div><div class="bar"><span>第 2 轮</span><span class="track"><span class="fill f-r2" style="width:100%"></span></span><span class="bv">50.0k</span></div><div class="bar"><span>第 3 轮</span><span class="track"><span class="fill f-r3" style="width:66%"></span></span><span class="bv">33.0k</span></div></figure></div><div class="tablewrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>第 1 轮 基线</th>
+<th>第 2 轮</th>
+<th>第 3 轮</th>
+<th>第 3 轮比基线</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Opus 费用（含失败尝试）</td>
+<td>$3.04</td>
+<td>$2.66</td>
+<td><strong>$1.98</strong></td>
+<td><strong>−35%</strong></td>
+</tr>
+<tr>
+<td>总费用（含生图和搜索）</td>
+<td>$3.86</td>
+<td>$3.05</td>
+<td><strong>$2.45</strong></td>
+<td><strong>−37%</strong></td>
+</tr>
+<tr>
+<td>单题耗时之和</td>
+<td>822 秒</td>
+<td>759 秒</td>
+<td><strong>583 秒</strong></td>
+<td>−29%</td>
+</tr>
+<tr>
+<td>模型轮次</td>
+<td>33</td>
+<td>31</td>
+<td><strong>25</strong></td>
+<td>−24%</td>
+</tr>
+<tr>
+<td>输出 token</td>
+<td>71.8k</td>
+<td>64.5k</td>
+<td><strong>43.6k</strong></td>
+<td>−39%</td>
+</tr>
+<tr>
+<td>其中思考（估算）</td>
+<td>49.6k</td>
+<td>50.0k</td>
+<td><strong>33.0k</strong></td>
+<td>−33%</td>
+</tr>
+<tr>
+<td>其中工具参数（估算）</td>
+<td>22.2k</td>
+<td>14.5k</td>
+<td><strong>10.6k</strong></td>
+<td>−52%</td>
+</tr>
+<tr>
+<td>缓存写入 token</td>
+<td>285k</td>
+<td>235k</td>
+<td><strong>182k</strong></td>
+<td>−36%</td>
+</tr>
+<tr>
+<td>写入 / 查看次数</td>
+<td>12 / 12</td>
+<td>16 / 16</td>
+<td><strong>10 / 10</strong></td>
+<td>−17%</td>
+</tr>
+<tr>
+<td>检查截图</td>
+<td>42 张</td>
+<td>21 张</td>
+<td><strong>11 张</strong></td>
+<td>−74%</td>
+</tr>
+<tr>
+<td>生成图片</td>
+<td>22 张</td>
+<td>11 张</td>
+<td>11 张</td>
+<td>−50%</td>
+</tr>
+<tr>
+<td>第一稿出现（单题平均）</td>
+<td>89 秒</td>
+<td>110 秒</td>
+<td><strong>84 秒</strong></td>
+<td>−6%</td>
+</tr>
+<tr>
+<td>失败尝试</td>
+<td>0</td>
+<td>1（坏 JSON）</td>
+<td>1（断流）</td>
+<td></td>
+</tr>
+</tbody></table></div>
+<p><strong>一句话结论：</strong> 第 3 轮把只算 Opus 的费用降了约三分之一，5 个题材全部完成，画面没有整体退步，胸痛一题的内容和时间轴有退步。</p>
+<p><strong>最有效的一项：</strong> 让作者不在思考里排坐标。第 2 轮的优化只是把思考从简报挪到了第一稿，总量没变（49.6k → 50.0k）；这一项才真正减少了思考。</p>
+<p><strong>读这些数字时要注意：</strong> 每个题材每轮只跑一次，单题波动很大，看合计比看单题可靠。第 1 轮是顺序运行，后两轮是并发运行，并发让每题都冷启动一次，对后两轮略不利（见<a href="#method">方法与口径</a>）。</p>
+</section>
+<section class="block prose-wide" id="rounds"><h2>三轮改了什么</h2><h3>第 2 轮：七项流程优化</h3>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th>方向</th>
+<th>改动</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>截图</td>
+<td>去掉自动网格局部图，默认只给全图，模块信息只报变化的部分，自动量最小字号和被裁文字</td>
+<td>截图 42 → 21 张</td>
+</tr>
+<tr>
+<td>局部修改</td>
+<td>新增按模块、连线和单个数据项修改</td>
+<td>工具参数 22.2k → 14.5k</td>
+</tr>
+<tr>
+<td>基础画法</td>
+<td>补上 15 个未公开参数，修好 <code>plot</code> 文字裁切和竖向箭头标签压线（箭头这项在第 3 轮才生效）</td>
+<td>加了测试防止再漏</td>
+</tr>
+<tr>
+<td>生图</td>
+<td>先预留全部 ID，依赖图等被引用的图完成后再画；提示词按表达价值决定是否生图</td>
+<td>图片 22 → 11 张，竞争失败未再出现</td>
+</tr>
+<tr>
+<td>缓存</td>
+<td>在模型上一轮加一个断点，避开 20 块回看窗口</td>
+<td>见下方实测</td>
+</tr>
+<tr>
+<td>往返</td>
+<td>保存和查看同轮，文字收尾且条件满足时直接结束</td>
+<td>补 <code>finish</code> 的多余一轮消失</td>
+</tr>
+<tr>
+<td>检查</td>
+<td>看图前写下要核对的说法（<code>claims</code>），专业事实定向搜索</td>
+<td>胸痛开始查指南，咖啡写明摊销条件</td>
+</tr>
+</tbody></table></div>
+<p>缓存断点的实测：同一段对话一次新增 29 个内容块时，不加断点只读到 6,890 token，要重写 46,755 token；加了断点读到 50,208 token，只写 237 token。</p>
+<p>这一轮也暴露了问题：小改变便宜后作者反而改得更多，写入和查看从 12 次涨到 16 次，所以 Opus 费用只降了 13%。</p>
+<h3>第 3 轮：三项针对性改动</h3>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th>改动</th>
+<th>做法</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>不排坐标</td>
+<td>提示词要求作者在思考里不算画布坐标，大致放在 20 单位的格子上就写，看图后再小改</td>
+<td>第一稿思考占大头；多看一次图只要 $0.03–0.06，多想 1 万 token 约 $0.25</td>
+</tr>
+<tr>
+<td>拍平写入</td>
+<td><code>write_work</code> 改成平铺的 <code>modules</code>、<code>links</code>，嵌套从 6 层减到 4 层；<code>bounds</code> 写成 <code>[x, y, 宽, 高]</code>，默认字段可省略，连线只写模块 ID 时自动选边</td>
+<td>少写字段，也减少写错括号的机会</td>
+</tr>
+<tr>
+<td>坏 JSON 回传</td>
+<td>自己读流，把坏参数作为工具错误回给作者，由它改正后重发</td>
+<td>不用重来整轮思考，用量真实，原文留在 trace</td>
+</tr>
+</tbody></table></div>
+<p>上线前用真实上下文只重放第一稿那一轮，各跑一次、没有看画面，用来判断值不值得做：</p>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th>设置</th>
+<th>胸痛输出</th>
+<th>Redis 输出</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>现状（medium）</td>
+<td>17,202</td>
+<td>10,830</td>
+</tr>
+<tr>
+<td>medium + 不排坐标</td>
+<td>7,319（−57%）</td>
+<td>8,711（−20%）</td>
+</tr>
+</tbody></table></div>
+</section>
+<section class="block prose-wide" id="money"><h2>钱花在哪里</h2><div class="tablewrap"><table>
+<thead>
+<tr>
+<th>Opus 费用构成</th>
+<th>第 1 轮</th>
+<th>第 2 轮</th>
+<th>第 3 轮</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>输出（$20/M）</td>
+<td>$1.436</td>
+<td>$1.289</td>
+<td>$0.872</td>
+</tr>
+<tr>
+<td>缓存写入（$5/M）</td>
+<td>$1.424</td>
+<td>$1.173</td>
+<td>$0.912</td>
+</tr>
+<tr>
+<td>缓存读取和未缓存输入</td>
+<td>$0.183</td>
+<td>$0.157</td>
+<td>$0.099</td>
+</tr>
+<tr>
+<td>失败尝试</td>
+<td>$0</td>
+<td>$0.038</td>
+<td>$0.092</td>
+</tr>
+<tr>
+<td><strong>合计</strong></td>
+<td><strong>$3.043</strong></td>
+<td><strong>$2.657</strong></td>
+<td><strong>$1.976</strong></td>
+</tr>
+</tbody></table></div>
+<ul>
+<li><strong>输出和缓存写入是一回事的两面：</strong> 这一轮的输出，下一轮大多要写进缓存，所以实际接近 $25/M。第 3 轮两项合计仍占 90%。</li>
+<li><strong>思考仍是输出的主体：</strong> 第 3 轮约占 76%（估算）。</li>
+<li><strong>缓存读取已经很便宜：</strong> 未缓存输入几乎为零，继续优化读取省不了多少。</li>
+</ul>
+</section>
+<section class="block prose-wide" id="json"><h2>无效 JSON</h2><p>工具参数是模型逐字生成的，走 OpenRouter 也没有语法保证：我们测过 <code>strict</code>，连明确违规的 schema 都被接受，说明它没有生效。</p>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th>范围</th>
+<th>写入次数</th>
+<th>写坏 JSON</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>旧代码 Opus（线上 28 次 + 第 1 轮 12 次）</td>
+<td>40</td>
+<td>0</td>
+</tr>
+<tr>
+<td>第 2 轮</td>
+<td>16</td>
+<td>1（水獭，当时靠重试接住）</td>
+</tr>
+<tr>
+<td>一轮已删除的实验（第 3 轮之前）</td>
+<td>未留存</td>
+<td>1（胸痛，当时整次运行失败）</td>
+</tr>
+<tr>
+<td>第 3 轮</td>
+<td>10</td>
+<td>0</td>
+</tr>
+</tbody></table></div>
+<p>样本太小，还不能说第 3 轮解决了问题，只能说现在写坏时代价更小。回传这条路也只有单元测试和一次手动构造的实验，真实运行里还没被触发过。第 3 轮 Redis 那次失败尝试是网络断流，由原有的重试接住，白等了 67 秒，花了 $0.092。</p>
+</section>
+<section class="block prose-wide" id="quality"><h2>画面质量</h2><p>每张成品都看过，数字类内容按图上的数值复算过。</p>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th>题材</th>
+<th>第 1 轮</th>
+<th>第 2 轮</th>
+<th>第 3 轮</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>郑和</td>
+<td>路线细、港口多</td>
+<td>路线和次序清楚，加了麒麟</td>
+<td>分色清楚，宝船偏卡通</td>
+</tr>
+<tr>
+<td>胸痛</td>
+<td>分层细，时间轴和节点有冲突</td>
+<td><strong>最好</strong>：查过指南，分层完整</td>
+<td>变简略，时间轴有偏差</td>
+</tr>
+<tr>
+<td>咖啡</td>
+<td>算得对，配小图好看，摊销条件没写在图上</td>
+<td>条件写明，算得对</td>
+<td>条件写明，算得对，也最清爽</td>
+</tr>
+<tr>
+<td>水獭</td>
+<td>窝里有小水獭，画面最完整</td>
+<td>动物多，窝是空的</td>
+<td>画面完整，窝是空的</td>
+</tr>
+<tr>
+<td>Redis</td>
+<td>插图生动，时序靠编号</td>
+<td>阶梯线表达库存，准确</td>
+<td><strong>最好</strong>：事故和修复上下对照</td>
+</tr>
+</tbody></table></div>
+</section>
+<section class="block prose-wide" id="open"><h2>还没解决的问题</h2><ul>
+<li><strong>胸痛时间轴：</strong> 第 3 轮“hs-cTn 复测”落在“≤90 分钟”刻度下，“1–2 小时”却压在它后面的结果上方，溶栓也没有标时限。这正是检查该防的问题，作者写的 4 条 <code>claims</code> 没覆盖到。</li>
+<li><strong>坏 JSON 回传未经真实触发：</strong> 要继续积累数据。写坏时原文现在会留在 trace，可以分析。</li>
+<li><strong>断流重试没有优化：</strong> Redis 一次就白花 $0.092，只能减少损失，防不住。</li>
+<li><strong>第一稿仍是最大单项：</strong> 第 3 轮 5 题的第一稿合计 19.4k 输出，占 45%。</li>
+</ul>
+</section>
+<section class="block prose-wide" id="matrix"><h2>运行一览</h2><p>每格是“Opus 费用 / 耗时 / 轮次 / 生图张数”。</p>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th>案例</th>
+<th>第 1 轮</th>
+<th>第 2 轮</th>
+<th>第 3 轮</th>
+<th>第 3 轮比基线</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>郑和下西洋</td>
+<td>$0.667 / 176s / 8 / 1</td>
+<td>$0.424 / 124s / 7 / 2</td>
+<td><strong>$0.360</strong> / 104s / 5 / 1</td>
+<td>−46%</td>
+</tr>
+<tr>
+<td>胸痛接诊</td>
+<td>$0.678 / 160s / 7 / 4</td>
+<td>$0.811 / 236s / 7 / 2</td>
+<td><strong>$0.449</strong> / 115s / 6 / 4</td>
+<td>−34%</td>
+</tr>
+<tr>
+<td>咖啡店赚钱</td>
+<td>$0.765 / 222s / 8 / 6</td>
+<td>$0.445 / 110s / 6 / 0</td>
+<td><strong>$0.344</strong> / 85s / 4 / 0</td>
+<td>−55%</td>
+</tr>
+<tr>
+<td>小水獭</td>
+<td>$0.327 / 100s / 5 / 6</td>
+<td>$0.465 / 141s / 7 / 7</td>
+<td><strong>$0.268</strong> / 81s / 5 / 6</td>
+<td>−18%</td>
+</tr>
+<tr>
+<td>Redis 超卖</td>
+<td>$0.606 / 164s / 5 / 5</td>
+<td>$0.513 / 147s / 4 / 0</td>
+<td><strong>$0.555</strong> / 198s / 5 / 0</td>
+<td>−8%</td>
+</tr>
+<tr>
+<td><strong>合计</strong></td>
+<td><strong>$3.043 / 822s / 33 / 22</strong></td>
+<td><strong>$2.657 / 759s / 31 / 11</strong></td>
+<td><strong>$1.976 / 583s / 25 / 11</strong></td>
+<td><strong>−35%</strong></td>
+</tr>
+</tbody></table></div>
+</section>
+<section class="block prose-wide" id="method"><h2>方法与口径</h2><ul>
+<li><strong>部署：</strong> 本地 Docker（<code>docker compose up -d --build</code>）。</li>
+<li><strong>账号：</strong> 每轮一个账号。第 2、3 轮都是新账号，没有私人素材，不会复用前面生成的图。</li>
+<li><strong>提示词：</strong> 5 句完全相同：郑和下西洋路线图、胸痛接诊流程、咖啡店怎么赚钱、小水獭的河边世界、Redis 超卖事故复盘。不追问，不手动修改。</li>
+<li><strong>运行方式：</strong> 第 1 轮顺序运行，第 2、3 轮 5 题并发（整轮分别用时 236 秒和 198 秒）。并发时每题都要写一次系统前缀（约 18k token），约 $0.45；第 1 轮是 3 次、每次约 15k，约 $0.22。这项差额对后两轮不利，没有从数字里扣除。</li>
+<li><strong>没有计入的实验：</strong> 中间还跑过一轮同账号重跑和一轮新账号实验。前者复用了基线的图，费用偏低，不可比；后者的数据已按要求清空，只留下那次 JSON 报错。</li>
+<li><strong>费用：</strong> token 来自运行记录，按 Opus 5.5 的 OpenRouter 配置价计算：输入 $4/M、缓存读取 $0.2/M、缓存写入 $5/M、输出 $20/M。生图 flare 按文字输入 $5/M、图片输入 $8/M、图片输出 $30/M。</li>
+<li><strong>失败尝试：</strong> 中断的流拿不到输出量，按已收到的字符数除以 3 估算，不含未显示的思考，所以偏低。第 2 轮水獭和第 3 轮 Redis 的失败费用都是这样算的。</li>
+<li><strong>思考和参数的拆分：</strong> 接口只报告输出总量。工具参数按“字符数 ÷ 3.3”估算，其余算思考，只能看趋势。</li>
+<li><strong>第一稿出现：</strong> 运行开始到第一次保存成功的时间。第 3 轮 Redis 含断流的 67 秒。</li>
+<li><strong>截图：</strong> 作者最后一次查看时的全图，缩放到 1200px 宽。</li>
+</ul>
+<hr>
+</section>
+<section class="case prose-wide" id="zheng"><h2>郑和下西洋路线图</h2><div class="tablewrap"><table>
+<thead>
+<tr>
+<th>轮次</th>
+<th>Opus 费用</th>
+<th>耗时</th>
+<th>第一稿</th>
+<th>轮次</th>
+<th>写入 / 查看</th>
+<th>截图</th>
+<th>输出</th>
+<th>生图</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>第 1 轮</td>
+<td>$0.667</td>
+<td>176s</td>
+<td>93s</td>
+<td>8</td>
+<td>3 / 3</td>
+<td>16</td>
+<td>12.8k</td>
+<td>1</td>
+</tr>
+<tr>
+<td>第 2 轮</td>
+<td>$0.424</td>
+<td>124s</td>
+<td>81s</td>
+<td>7</td>
+<td>3 / 3</td>
+<td>3</td>
+<td>9.2k</td>
+<td>2</td>
+</tr>
+<tr>
+<td>第 3 轮</td>
+<td>$0.360</td>
+<td>104s</td>
+<td>75s</td>
+<td>5</td>
+<td>2 / 2</td>
+<td>3</td>
+<td>8.0k</td>
+<td>1</td>
+</tr>
+</tbody></table></div>
+<p>省得最明显的是截图：第 1 轮每次查看都带 4 张网格局部，第 3 轮只有 3 张。第 2 轮多画了一张麒麟，算额外的主题表达。</p>
+<div class="gallery"><div class="col"><div class="colhead"><span class="tier t-r1">第 1 轮 基线</span></div><figure><a href="img/zheng-r1.webp" class="zoom"><img src="img/zheng-r1.webp" alt="郑和 第 1 轮" loading="lazy" width="1200" height="750"></a></figure></div><div class="col"><div class="colhead"><span class="tier t-r2">第 2 轮</span></div><figure><a href="img/zheng-r2.webp" class="zoom"><img src="img/zheng-r2.webp" alt="郑和 第 2 轮" loading="lazy" width="1200" height="750"></a></figure></div><div class="col"><div class="colhead"><span class="tier t-r3">第 3 轮</span></div><figure><a href="img/zheng-r3.webp" class="zoom"><img src="img/zheng-r3.webp" alt="郑和 第 3 轮" loading="lazy" width="1200" height="750"></a></figure></div></div>
+</section>
+<section class="case prose-wide" id="chest"><h2>胸痛接诊流程</h2><div class="tablewrap"><table>
+<thead>
+<tr>
+<th>轮次</th>
+<th>Opus 费用</th>
+<th>耗时</th>
+<th>第一稿</th>
+<th>轮次</th>
+<th>写入 / 查看</th>
+<th>截图</th>
+<th>输出</th>
+<th>搜索</th>
+<th>生图</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>第 1 轮</td>
+<td>$0.678</td>
+<td>160s</td>
+<td>102s</td>
+<td>7</td>
+<td>2 / 2</td>
+<td>11</td>
+<td>16.5k</td>
+<td>0</td>
+<td>4</td>
+</tr>
+<tr>
+<td>第 2 轮</td>
+<td>$0.811</td>
+<td>236s</td>
+<td>199s</td>
+<td>7</td>
+<td>3 / 3</td>
+<td>4</td>
+<td>22.5k</td>
+<td>3</td>
+<td>2</td>
+</tr>
+<tr>
+<td>第 3 轮</td>
+<td>$0.449</td>
+<td>115s</td>
+<td>83s</td>
+<td>6</td>
+<td>2 / 2</td>
+<td>2</td>
+<td>10.2k</td>
+<td>2</td>
+<td>4</td>
+</tr>
+</tbody></table></div>
+<p>这一题最能说明取舍。第 2 轮第一稿那一轮输出 17.2k、用时 164 秒，内容也最丰富；第 3 轮同一轮只有 4.8k、45 秒，但分层细节少了，时间轴也出现偏差。省下的钱有一部分是用内容换的。</p>
+<div class="gallery"><div class="col"><div class="colhead"><span class="tier t-r1">第 1 轮 基线</span></div><figure><a href="img/chest-r1.webp" class="zoom"><img src="img/chest-r1.webp" alt="胸痛 第 1 轮" loading="lazy" width="1200" height="750"></a></figure></div><div class="col"><div class="colhead"><span class="tier t-r2">第 2 轮</span></div><figure><a href="img/chest-r2.webp" class="zoom"><img src="img/chest-r2.webp" alt="胸痛 第 2 轮" loading="lazy" width="1200" height="750"></a></figure></div><div class="col"><div class="colhead"><span class="tier t-r3">第 3 轮</span></div><figure><a href="img/chest-r3.webp" class="zoom"><img src="img/chest-r3.webp" alt="胸痛 第 3 轮" loading="lazy" width="1200" height="750"></a></figure></div></div>
+</section>
+<section class="case prose-wide" id="coffee"><h2>咖啡店怎么赚钱</h2><div class="tablewrap"><table>
+<thead>
+<tr>
+<th>轮次</th>
+<th>Opus 费用</th>
+<th>耗时</th>
+<th>第一稿</th>
+<th>轮次</th>
+<th>写入 / 查看</th>
+<th>截图</th>
+<th>输出</th>
+<th>生图</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>第 1 轮</td>
+<td>$0.765</td>
+<td>222s</td>
+<td>100s</td>
+<td>8</td>
+<td>3 / 3</td>
+<td>3</td>
+<td>20.2k</td>
+<td>6</td>
+</tr>
+<tr>
+<td>第 2 轮</td>
+<td>$0.445</td>
+<td>110s</td>
+<td>75s</td>
+<td>6</td>
+<td>4 / 4</td>
+<td>7</td>
+<td>9.6k</td>
+<td>0</td>
+</tr>
+<tr>
+<td>第 3 轮</td>
+<td>$0.344</td>
+<td>85s</td>
+<td>63s</td>
+<td>4</td>
+<td>2 / 2</td>
+<td>2</td>
+<td>7.9k</td>
+<td>0</td>
+</tr>
+</tbody></table></div>
+<p>降幅最大，内容还变好了。第 1 轮没写摊销前提；后两轮都写明了每杯固定成本按多少销量摊。第 3 轮的账：各层合计 ¥30，固定 ¥14、变动 ¥12、利润 ¥4；每杯净落 ¥18，日固定 ¥2800，保本约 156 杯，200 杯日赚 ¥800，都对得上。第 2 轮花在反复微调标签上（3 次局部查看），第 3 轮没有再出现。小图没了是有意的，代价是第 1 轮那种图文并茂的感觉也没了。</p>
+<div class="gallery"><div class="col"><div class="colhead"><span class="tier t-r1">第 1 轮 基线</span></div><figure><a href="img/coffee-r1.webp" class="zoom"><img src="img/coffee-r1.webp" alt="咖啡 第 1 轮" loading="lazy" width="1200" height="750"></a></figure></div><div class="col"><div class="colhead"><span class="tier t-r2">第 2 轮</span></div><figure><a href="img/coffee-r2.webp" class="zoom"><img src="img/coffee-r2.webp" alt="咖啡 第 2 轮" loading="lazy" width="1200" height="750"></a></figure></div><div class="col"><div class="colhead"><span class="tier t-r3">第 3 轮</span></div><figure><a href="img/coffee-r3.webp" class="zoom"><img src="img/coffee-r3.webp" alt="咖啡 第 3 轮" loading="lazy" width="1200" height="750"></a></figure></div></div>
+</section>
+<section class="case prose-wide" id="otter"><h2>小水獭的河边世界</h2><div class="tablewrap"><table>
+<thead>
+<tr>
+<th>轮次</th>
+<th>Opus 费用</th>
+<th>耗时</th>
+<th>第一稿</th>
+<th>轮次</th>
+<th>写入 / 查看</th>
+<th>截图</th>
+<th>输出</th>
+<th>生图</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>第 1 轮</td>
+<td>$0.327</td>
+<td>100s</td>
+<td>35s</td>
+<td>5</td>
+<td>2 / 2</td>
+<td>10</td>
+<td>5.2k</td>
+<td>6</td>
+</tr>
+<tr>
+<td>第 2 轮</td>
+<td>$0.465</td>
+<td>141s</td>
+<td>69s</td>
+<td>7</td>
+<td>4 / 4</td>
+<td>5</td>
+<td>9.1k</td>
+<td>7</td>
+</tr>
+<tr>
+<td>第 3 轮</td>
+<td>$0.268</td>
+<td>81s</td>
+<td>37s</td>
+<td>5</td>
+<td>2 / 2</td>
+<td>2</td>
+<td>4.5k</td>
+<td>6</td>
+</tr>
+</tbody></table></div>
+<p>本来就是思考最少的题材，省得最少。第 2 轮含一次坏 JSON 重试（$0.038、20 秒）和多轮小改。第 1 轮的依赖图竞争让一张图生成失败，后两轮没有再出现。后两轮的窝都是空的，不如第 1 轮有故事感。</p>
+<div class="gallery"><div class="col"><div class="colhead"><span class="tier t-r1">第 1 轮 基线</span></div><figure><a href="img/otter-r1.webp" class="zoom"><img src="img/otter-r1.webp" alt="水獭 第 1 轮" loading="lazy" width="1200" height="750"></a></figure></div><div class="col"><div class="colhead"><span class="tier t-r2">第 2 轮</span></div><figure><a href="img/otter-r2.webp" class="zoom"><img src="img/otter-r2.webp" alt="水獭 第 2 轮" loading="lazy" width="1200" height="750"></a></figure></div><div class="col"><div class="colhead"><span class="tier t-r3">第 3 轮</span></div><figure><a href="img/otter-r3.webp" class="zoom"><img src="img/otter-r3.webp" alt="水獭 第 3 轮" loading="lazy" width="1200" height="750"></a></figure></div></div>
+</section>
+<section class="case prose-wide" id="redis"><h2>Redis 超卖事故复盘</h2><div class="tablewrap"><table>
+<thead>
+<tr>
+<th>轮次</th>
+<th>Opus 费用</th>
+<th>耗时</th>
+<th>第一稿</th>
+<th>轮次</th>
+<th>写入 / 查看</th>
+<th>截图</th>
+<th>输出</th>
+<th>生图</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>第 1 轮</td>
+<td>$0.606</td>
+<td>164s</td>
+<td>113s</td>
+<td>5</td>
+<td>2 / 2</td>
+<td>2</td>
+<td>17.0k</td>
+<td>5</td>
+</tr>
+<tr>
+<td>第 2 轮</td>
+<td>$0.513</td>
+<td>147s</td>
+<td>124s</td>
+<td>4</td>
+<td>2 / 2</td>
+<td>2</td>
+<td>14.1k</td>
+<td>0</td>
+</tr>
+<tr>
+<td>第 3 轮</td>
+<td>$0.555</td>
+<td>198s</td>
+<td>160s</td>
+<td>5</td>
+<td>2 / 2</td>
+<td>2</td>
+<td>13.1k</td>
+<td>0</td>
+</tr>
+</tbody></table></div>
+<p>第 3 轮唯一比第 2 轮贵的题，也是耗时唯一超过基线的题：一次网络断流白等 67 秒、花 $0.092，之后第二次写入还改了 4.5k 字符。扣掉断流，它的费用约 $0.463，比基线低 24%。内容是三轮里最好的。</p>
+<div class="gallery"><div class="col"><div class="colhead"><span class="tier t-r1">第 1 轮 基线</span></div><figure><a href="img/redis-r1.webp" class="zoom"><img src="img/redis-r1.webp" alt="Redis 第 1 轮" loading="lazy" width="1200" height="750"></a></figure></div><div class="col"><div class="colhead"><span class="tier t-r2">第 2 轮</span></div><figure><a href="img/redis-r2.webp" class="zoom"><img src="img/redis-r2.webp" alt="Redis 第 2 轮" loading="lazy" width="1200" height="750"></a></figure></div><div class="col"><div class="colhead"><span class="tier t-r3">第 3 轮</span></div><figure><a href="img/redis-r3.webp" class="zoom"><img src="img/redis-r3.webp" alt="Redis 第 3 轮" loading="lazy" width="1200" height="750"></a></figure></div></div>
+</section>
+
+</main>
+</div>
+<dialog id="lb"><button type="button" id="lbclose">关闭</button><img id="lbimg" alt=""></dialog>
+<script>
+(function () {
+  var lb = document.getElementById('lb'), img = document.getElementById('lbimg');
+  document.addEventListener('click', function (ev) {
+    var a = ev.target.closest && ev.target.closest('a.zoom');
+    if (!a) return;
+    ev.preventDefault();
+    img.src = a.getAttribute('href');
+    img.alt = (a.querySelector('img') || {}).alt || '';
+    if (lb.showModal) lb.showModal();
+  });
+  document.getElementById('lbclose').addEventListener('click', function () { lb.close(); });
+  lb.addEventListener('click', function (ev) { if (ev.target === lb) lb.close(); });
+})();
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fixture } from "../runtime/fixture.ts";
 import { validateWork } from "../workspace/index.ts";
-import type { MaterialUse, Work, WorkEdit } from "../contracts/index.ts";
+import { workEditSchema, type MaterialUse, type Work, type WorkEdit } from "../contracts/index.ts";
 import {
   add,
   addScene,
@@ -16,7 +16,9 @@ import {
   fieldsOf,
   fork,
   group,
+  labelOf,
   linkLook,
+  moduleRecord,
   moveParts,
   paste,
   reattach,
@@ -48,16 +50,8 @@ import {
 /** The work an edit leaves, checked as the workspace checks every commit. */
 function apply(work: Work, edit: WorkEdit | null): Work {
   expect(edit).not.toBeNull();
-  expect(edit!.baseRevision).toBe(work.revision);
-  const next = structuredClone(work);
-  for (const s of edit!.scenes ?? []) next.scenes[s.id] = s;
-  for (const d of edit!.drawings ?? []) next.drawings[d.id] = d;
-  for (const i of edit!.interactions ?? []) next.interactions[i.id] = i;
-  for (const d of edit!.details ?? []) next.details[d.id] = d;
-  for (const k of edit!.remove?.scenes ?? []) delete next.scenes[k];
-  for (const k of edit!.remove?.interactions ?? []) delete next.interactions[k];
-  for (const k of edit!.remove?.details ?? []) delete next.details[k];
-  if (edit!.style) next.style = edit!.style;
+  const parsed = workEditSchema.parse(edit);
+  const next = applied(work, parsed);
   next.revision++;
   validateWork(next);
   return next;
@@ -148,16 +142,14 @@ describe("hand edits", () => {
     ]);
   });
 
-  it("retypes words held in the module's data, there and in its label", () => {
+  it("retypes words held in the module's data, and it is called by them", () => {
     const work = fixture();
     const next = apply(
       work,
       replace(work, "root", "level-1", "text", "尊重需求", "被尊重"),
     );
-    expect(module(next, "level-1")).toMatchObject({
-      label: "被尊重",
-      data: { label: "被尊重", tip: "自尊与认可" },
-    });
+    expect(module(next, "level-1").data).toMatchObject({ label: "被尊重", tip: "自尊与认可" });
+    expect(labelOf(module(next, "level-1"))).toBe("被尊重");
     expect(next.drawings).toEqual(work.drawings);
     // One line of several is replaced on its own.
     work.scenes.root.modules[0].data.tip = "发挥\n潜能";
@@ -265,7 +257,7 @@ describe("hand edits", () => {
     expect(module(apply(work, inData), "level-0").data.material).toBe("pear");
     work.drawings.title.source = `return api.material('sun')`;
     const inCode = replace(work, "root", "heading", "picture", "sun", "moon")!;
-    expect(inCode.drawings![0].source).toBe(`return api.material('moon')`);
+    expect(apply(work, inCode).drawings.title.source).toBe(`return api.material('moon')`);
   });
 
   it("takes modules out with the links and checks that need them", () => {
@@ -273,8 +265,8 @@ describe("hand edits", () => {
     work.scenes.root.links.push({
       id: "line",
       drawingId: "connector",
-      from: { moduleId: "level-0", anchor: "right" },
-      to: { moduleId: "level-4", anchor: "right" },
+      from: { moduleId: "level-0", at: "right" },
+      to: { moduleId: "level-4", at: "right" },
       data: {},
     });
     const next = apply(work, removeParts(work, "root", ["level-4", "control"]));
@@ -294,16 +286,16 @@ describe("hand edits", () => {
     work.scenes.root.links.push({
       id: "line",
       drawingId: "connector",
-      from: { moduleId: "level-0", anchor: "right" },
-      to: { moduleId: "level-1", anchor: "right" },
+      from: { moduleId: "level-0", at: "right" },
+      to: { moduleId: "level-1", at: "right" },
       data: {},
     });
     const { edit, ids } = duplicate(work, "root", ["level-1", "level-0"], 20);
     const next = apply(work, edit);
     expect(ids).toEqual(["level-5", "level-6"]);
     const [a, b] = ids.map((id) => module(next, id));
+    expect(labelOf(a)).toBe("自我实现");
     expect(a).toMatchObject({
-      label: "自我实现",
       group: "pyramid-2",
       bounds: { x: 320, y: 130 },
       target: { kind: "detail", id: "explanation" },
@@ -360,13 +352,9 @@ describe("hand edits", () => {
     const withWords = apply(work, words.edit);
     expect(module(withWords, words.id)).toEqual({
       id: "text",
-      label: "你好",
       drawingId: "label",
       data: { text: "你好", size: 20 },
       bounds: { x: 28, y: 78, width: 144, height: 44 },
-      anchors: {},
-      group: null,
-      target: null,
     });
     const picture = add(
       work,
@@ -402,14 +390,14 @@ describe("hand edits", () => {
       copy,
     ).edit;
     expect(own.drawings).toEqual([{ id: "picture-2", ...copy }]);
-    expect(own.scenes![0].modules.at(-1)).toMatchObject({
+    expect(own.modules!.at(-1)).toMatchObject({
       id: "picture",
       drawingId: "picture-2",
     });
-    expect(picture.edit.scenes![0].modules.at(-1)).toMatchObject({
+    expect(picture.edit.modules!.at(-1)).toMatchObject({
       drawingId: "picture",
       data: { material: "apple" },
-      bounds: { x: -100, y: -50, width: 200, height: 100 },
+      bounds: [-100, -50, 200, 100],
     });
   });
 
@@ -443,13 +431,13 @@ describe("hand edits", () => {
           moved: ["heading"],
           restacked: false,
           retitled: false,
+          scriptChanged: false,
           checksChanged: true,
         },
       ],
       addedScenes: [],
       removedScenes: [],
       drawings: { added: [], changed: [], removed: [] },
-      interactions: { added: [], changed: [], removed: [] },
       details: { added: [], changed: [], removed: [] },
       style: true,
     });
@@ -459,7 +447,6 @@ describe("hand edits", () => {
       addedScenes: [],
       removedScenes: [],
       drawings: none,
-      interactions: none,
       details: none,
       style: false,
     });
@@ -474,10 +461,9 @@ describe("hand edits", () => {
     expect(report.addedScenes).toEqual(["more"]);
     expect(report.removedScenes).toEqual(["child"]);
     expect(report.scenes).toEqual([
-      expect.objectContaining({ id: "root", retitled: true, changed: ["heading"] }),
+      expect.objectContaining({ id: "root", retitled: true, scriptChanged: true, changed: ["heading"] }),
     ]);
     expect(report.details.changed).toEqual(["explanation"]);
-    expect(report.interactions.changed).toEqual(["explore"]);
     expect(report.drawings.changed).toEqual(["title"]);
   });
 });
@@ -494,7 +480,7 @@ describe("hand edits reach what the author writes", () => {
       scene(grouped).modules.filter((m) => m.group === g.group).map((m) => m.id),
     ).toEqual(["level-0", "level-1", "level-2", "level-3", "level-4", "heading"]);
     const apart = apply(grouped, ungroup(grouped, "root", ["level-3"]));
-    expect(scene(apart).modules.every((m) => m.group === null)).toBe(true);
+    expect(scene(apart).modules.every((m) => m.group === undefined)).toBe(true);
   });
 
   it("steps modules forward and back past what they overlap, and restacks them by the layers list", () => {
@@ -510,7 +496,7 @@ describe("hand edits reach what the author writes", () => {
       "level-0",
     ]);
     // The topmost cannot go further forward.
-    expect(ids(apply(work, arrange(work, "root", ["control"], "forward")))).toEqual(ids(work));
+    expect(arrange(work, "root", ["control"], "forward")).toBeNull();
     expect(ids(apply(work, restack(work, "root", ["control"], "level-0"))).slice(0, 2)).toEqual([
       "control",
       "level-0",
@@ -554,7 +540,7 @@ describe("hand edits reach what the author writes", () => {
     expect(s.guides).toEqual([{ axis: "x", at: 100, from: 0, to: 340 }]);
   });
 
-  it("links one module's side to another's through anchors, drawn like the scene's links", () => {
+  it("links one module's side to another's, drawn like the scene's links, touching no module", () => {
     const work = fixture();
     expect(linkLook(work, "root")).toBeNull();
     const first = connect(
@@ -569,27 +555,26 @@ describe("hand edits reach what the author writes", () => {
     expect(link).toMatchObject({
       id: "heading-to-level-0",
       drawingId: "connector",
-      from: { moduleId: "heading", anchor: "bottom" },
-      to: { moduleId: "level-0", anchor: "top" },
+      from: { moduleId: "heading", at: "bottom" },
+      to: { moduleId: "level-0", at: "top" },
     });
-    expect(module(linked, "heading").anchors.bottom).toEqual({ x: 0.5, y: 1 });
-    // An anchor already at that point is used rather than doubled.
+    expect(scene(linked).modules).toEqual(scene(work).modules);
     const again = connect(linked, "root", { moduleId: "level-1", side: "left" }, { moduleId: "level-2", side: "right" }, linkLook(linked, "root")!);
     const twice = apply(linked, again.edit);
     expect(scene(twice).links[1]).toMatchObject({
-      from: { anchor: "left" },
-      to: { anchor: "right" },
+      from: { at: "left" },
+      to: { at: "right" },
       data: { color: "#000" },
     });
-    expect(Object.keys(module(twice, "level-1").anchors)).toEqual(["left", "right"]);
     const moved = apply(twice, reattach(twice, "root", link.id, "to", "left"));
-    expect(scene(moved).links[0].to.anchor).toBe("left");
+    expect(scene(moved).links[0].to.at).toBe("left");
+    // Without a side it goes back to following the side facing the other end.
+    expect(scene(apply(twice, reattach(twice, "root", link.id, "to", undefined))).links[0].to).toEqual({ moduleId: "level-0" });
     const turned = apply(moved, reverse(moved, "root", link.id));
     expect(scene(turned).links[0].from.moduleId).toBe("level-0");
     // An end dragged onto another module goes to the side it was dropped on.
     const elsewhere = apply(turned, reattach(turned, "root", link.id, "to", "right", "level-3"));
-    expect(scene(elsewhere).links[0].to).toEqual({ moduleId: "level-3", anchor: "right" });
-    expect(module(elsewhere, "level-3").anchors.right).toEqual({ x: 1, y: 0.5 });
+    expect(scene(elsewhere).links[0].to).toEqual({ moduleId: "level-3", at: "right" });
     // A link never ends at the module it starts from.
     expect(() => reattach(turned, "root", link.id, "to", "left", "level-0")).toThrow();
     // A link's words are changed in its data.
@@ -616,24 +601,23 @@ describe("hand edits reach what the author writes", () => {
     next = apply(next, nested.edit);
     next = apply(next, removeScene(next, s.id));
     expect(Object.keys(next.scenes).sort()).toEqual(["child", "root"]);
-    expect(module(next, "heading").target).toBeNull();
+    expect(module(next, "heading").target).toBeUndefined();
     expect(() => removeScene(work, "root")).toThrow();
     const d = setDetail(next, { title: "More", html: "<p>x</p>" });
     next = apply(next, d.edit);
     expect(next.details.more.html).toBe("<p>x</p>");
     next = apply(next, removeDetail(next, "explanation"));
     expect(next.details.explanation).toBeUndefined();
-    expect(module(next, "level-0").target).toBeNull();
+    expect(module(next, "level-0").target).toBeUndefined();
   });
 
-  it("writes interactions and drawing code only when they parse", () => {
+  it("writes scripts and drawing code only when they parse", () => {
     const work = fixture();
     expect(() => setInteraction(work, "child", "api.on(")).toThrow();
     const scripted = apply(work, setInteraction(work, "child", "api.on('mermaid','x',()=>{})"));
-    expect(scripted.scenes.child.interactionId).toBe("child-script");
+    expect(scripted.scenes.child.interaction).toBe("api.on('mermaid','x',()=>{})");
     const cleared = apply(scripted, setInteraction(scripted, "child", "  "));
-    expect(cleared.scenes.child.interactionId).toBeNull();
-    expect(setInteraction(scripted, "child", "").remove).toEqual({ interactions: ["child-script"] });
+    expect(cleared.scenes.child.interaction).toBeUndefined();
     expect(() => setDrawing(work, { ...work.drawings.title, source: "return (" })).toThrow();
     expect(() => setDrawing(work, { ...work.drawings.title, source: "" })).toThrow();
     const recoded = apply(work, setDrawing(work, { ...work.drawings.title, source: "return api.svg('<svg/>')" }));
@@ -642,19 +626,19 @@ describe("hand edits reach what the author writes", () => {
 
   it("copies a shared drawing for one module, swaps drawings and rewrites a module in full", () => {
     const work = fixture();
-    const f = fork(work, "root", ["level-2"], work.drawings.tier, "tier");
+    const f = fork(work, "root", ["level-2"], "tier");
     const forked = apply(work, f.edit);
     expect(f.id).toBe("tier-2");
+    expect(forked.drawings["tier-2"].source).toBe(work.drawings.tier.source);
     expect(module(forked, "level-2").drawingId).toBe("tier-2");
     expect(module(forked, "level-1").drawingId).toBe("tier");
     const swapped = useDrawing(work, "root", ["heading"], "label");
     expect(swapped.materials).toEqual(["label"]);
-    expect(swapped.scenes![0].modules.find((m) => m.id === "heading")!.drawingId).toBe("label");
+    expect(swapped.modules).toEqual([{ id: "heading", scene: "root", drawingId: "label" }]);
     const rewritten = apply(
       work,
       setModule(work, "root", "heading", {
-        ...module(work, "heading"),
-        id: "ignored",
+        ...moduleRecord(module(work, "heading")),
         label: "新的",
         data: { x: [1, 2] },
       }),
@@ -679,9 +663,9 @@ describe("hand edits reach what the author writes", () => {
     );
     expect(r.id).toBe("bars");
     expect(r.edit.materials).toEqual(["bars"]);
-    expect(r.edit.scenes![0].modules.at(-1)).toMatchObject({
+    expect(r.edit.modules!.at(-1)).toMatchObject({
       drawingId: "bars",
-      bounds: { x: -100, y: -50, width: 200, height: 100 },
+      bounds: [-100, -50, 200, 100],
       data: { items: [1] },
     });
   });
@@ -691,8 +675,8 @@ describe("hand edits reach what the author writes", () => {
     work.scenes.root.links.push({
       id: "l1",
       drawingId: "connector",
-      from: { moduleId: "level-0", anchor: "right" },
-      to: { moduleId: "level-1", anchor: "right" },
+      from: { moduleId: "level-0", at: "right" },
+      to: { moduleId: "level-1", at: "right" },
       data: {},
     });
     work.materials.apple = {
@@ -733,13 +717,13 @@ describe("hand edits reach what the author writes", () => {
     other.id = "other";
     other.drawings.tier = { ...other.drawings.tier, source: "return api.svg('<svg/>')" };
     delete other.details.explanation;
-    for (const m of other.scenes.root.modules) m.target = null;
+    for (const m of other.scenes.root.modules) delete m.target;
     const there = paste(other, "child", clip, { centre: { x: 0, y: 0 } });
     // The connector is the same code in both works, so it is used as it is.
     expect(there.edit.drawings!.map((d) => d.id)).toEqual(["tier-2"]);
-    const into = there.edit.scenes![0].modules.slice(-2);
+    const into = there.edit.modules!.slice(-2);
     expect(into.map((m) => m.drawingId)).toEqual(["tier-2", "tier-2"]);
-    expect(into.map((m) => m.target)).toEqual([null, null]);
+    expect(into.map((m) => m.target)).toEqual([undefined, undefined]);
     expect(there.edit.materials).toEqual(["apple"]);
   });
 
@@ -759,29 +743,25 @@ describe("hand edits reach what the author writes", () => {
     const other = fixture();
     other.id = "other";
     other.drawings.label = { ...other.drawings.title, id: "label" };
-    const r = paste(other, "root", clip, { labels: { text: "文字" } });
+    const r = paste(other, "root", clip);
     const pasted = apply(other, r.edit);
     const words = module(pasted, r.ids[0]);
     expect(words.drawingId).toBe("label-2");
     expect(pasted.drawings["label-2"]).toEqual({
       id: "label-2",
       name: "标签",
-      params: {
-        text: { type: "text", label: "文字" },
-        size: { type: "number", min: 8, max: 72, step: 1, label: "size" },
-        align: { type: "choice", options: ["start", "center", "end"], label: "align" },
-        color: { type: "color", label: "color" },
-      },
-      source: label.source,
+      params: label.kind === "drawing" ? label.params : undefined,
+      defaults: label.kind === "drawing" ? label.defaults : undefined,
+      source: label.kind === "drawing" ? label.source : undefined,
     });
-    // The library filled in its defaults; the work's own copy has them in the data.
-    expect(words.data).toEqual({ size: 20, align: "center", text: "你好" });
+    // Its defaults came along on the copy, so the part's data stays as it was.
+    expect(words.data).toEqual({ text: "你好", size: 20 });
     expect(r.edit.materials).toBeUndefined();
     expect(pasted.drawings.label).toEqual(other.drawings.label);
     // A work without such a drawing uses the library drawing as it is.
     const plain = paste(fixture(), "root", clip, {});
     expect(plain.edit.drawings).toBeUndefined();
-    expect(plain.edit.scenes![0].modules.at(-1)).toMatchObject({
+    expect(plain.edit.modules!.at(-1)).toMatchObject({
       drawingId: "label",
       data: { text: "你好", size: 20 },
     });
@@ -791,7 +771,7 @@ describe("hand edits reach what the author writes", () => {
   it("takes a style's colours, keeping tokens the style does not have", () => {
     const work = fixture();
     work.style = { ink: "#111", stroke: "2" };
-    expect(setStyles(work, { ink: "#222", accent: "#f00" }).style).toEqual({
+    expect(applied(work, setStyles(work, { ink: "#222", accent: "#f00" })).style).toEqual({
       ink: "#222",
       stroke: "2",
       accent: "#f00",
@@ -813,124 +793,7 @@ describe("hand edits reach what the author writes", () => {
     expect(gone.details.explanation).toBeUndefined();
     // An edit taking in a material the work does not hold waits for the workspace.
     expect(showable(work, edit)).toBe(true);
-    expect(showable(work, { baseRevision: work.revision, materials: ["arrow"] })).toBe(false);
-  });
-});
-
-describe("changing part of a scene", () => {
-  const work = () => {
-    const w = fixture();
-    const [a, b] = w.scenes.root.modules;
-    w.scenes.root.links = [
-      {
-        id: "a-b",
-        drawingId: a.drawingId,
-        from: { moduleId: a.id, anchor: Object.keys(a.anchors)[0] },
-        to: { moduleId: b.id, anchor: Object.keys(b.anchors)[0] },
-        data: { label: "旧", rows: [{ v: 1 }, { v: 2 }] },
-      },
-    ];
-    a.data = { ...a.data, rows: [{ v: 1 }, { v: 2 }, { v: 3 }], names: { "St. Louis": "x" } };
-    return w;
-  };
-  const edit = (w: Work, sceneEdits: WorkEdit["sceneEdits"]): WorkEdit => ({
-    baseRevision: w.revision,
-    sceneEdits,
-  });
-  it("changes only the fields and values it names", () => {
-    const w = work();
-    const [a, b, ...rest] = w.scenes.root.modules;
-    const next = applied(
-      w,
-      edit(w, [
-        {
-          id: "root",
-          modules: [
-            {
-              id: a.id,
-              bounds: { x: 1, y: 2, width: 3, height: 4 },
-              dataChanges: [
-                { path: ["rows", 1, "v"], value: 20 },
-                { path: ["rows", 3], value: { v: 4 } },
-                { path: ["rows", 0] },
-                { path: ["names", "St. Louis"], value: "圣路易斯" },
-              ],
-            },
-          ],
-          links: [{ id: "a-b", dataChanges: [{ path: ["label"], value: "新" }] }],
-        },
-      ]),
-    );
-    const changed = next.scenes.root.modules[0];
-    expect(changed.bounds).toEqual({ x: 1, y: 2, width: 3, height: 4 });
-    expect(changed.label).toBe(a.label);
-    expect(changed.data.rows).toEqual([{ v: 20 }, { v: 3 }, { v: 4 }]);
-    expect(changed.data.names).toEqual({ "St. Louis": "圣路易斯" });
-    expect(next.scenes.root.modules[1]).toEqual(b);
-    expect(next.scenes.root.modules.slice(2)).toEqual(rest);
-    expect(next.scenes.root.links[0].data).toEqual({ label: "新", rows: [{ v: 1 }, { v: 2 }] });
-    // The work it started from is untouched.
-    expect(w.scenes.root.modules[0].data.rows).toHaveLength(3);
-    validateWork(next);
-  });
-  it("adds a new part whole, on top, and refuses one without every field", () => {
-    const w = work();
-    const fresh = {
-      id: "fresh",
-      label: "新",
-      bounds: { x: 0, y: 0, width: 10, height: 10 },
-      drawingId: w.scenes.root.modules[0].drawingId,
-      group: null,
-      target: null,
-      anchors: {},
-      data: {},
-    };
-    const next = applied(w, edit(w, [{ id: "root", modules: [fresh] }]));
-    expect(next.scenes.root.modules.at(-1)).toEqual(fresh);
-    expect(() =>
-      applied(w, edit(w, [{ id: "root", modules: [{ id: "typo", data: {} }] }])),
-    ).toThrow(/模块 typo 是新增的/);
-    expect(() =>
-      applied(w, edit(w, [{ id: "root", links: [{ id: "typo", data: {} }] }])),
-    ).toThrow(/连线 typo 是新增的/);
-  });
-  it("removes a module with its links and checks, and refuses what is not there", () => {
-    const w = work();
-    const id = w.scenes.root.modules[0].id;
-    w.scenes.root.checks = [{ moduleId: id, selector: "button" }];
-    const next = applied(w, edit(w, [{ id: "root", removeModules: [id] }]));
-    expect(next.scenes.root.modules.some((m) => m.id === id)).toBe(false);
-    expect(next.scenes.root.links).toEqual([]);
-    expect(next.scenes.root.checks).toEqual([]);
-    validateWork(next);
-    expect(() => applied(w, edit(w, [{ id: "nowhere", title: "x" }]))).toThrow(/场景 nowhere 不存在/);
-    expect(() =>
-      applied(w, edit(w, [{ id: "root", modules: [{ id, dataChanges: [{ path: ["no", "such"], value: 1 }] }] }])),
-    ).toThrow(/没有 no\.such/);
-    expect(() =>
-      applied(w, edit(w, [{ id: "root", modules: [{ id, dataChanges: [{ path: ["rows", 9], value: 1 }] }] }])),
-    ).toThrow(/没有 rows\.9/);
-  });
-  it("restacks only the modules it lists, among the places they hold", () => {
-    const w = work();
-    const ids = w.scenes.root.modules.map((m) => m.id);
-    const [first, second, third, ...rest] = ids;
-    const next = applied(w, edit(w, [{ id: "root", order: [third, first] }]));
-    expect(next.scenes.root.modules.map((m) => m.id)).toEqual([third, second, first, ...rest]);
-    expect(() => applied(w, edit(w, [{ id: "root", order: ["nope"] }]))).toThrow(/order 里的模块 nope/);
-  });
-  it("changes a scene's own fields and lays edits over records in the same write", () => {
-    const w = work();
-    const next = applied(w, {
-      baseRevision: w.revision,
-      scenes: [{ id: "extra", title: "新", parentId: "root", modules: [], links: [], interactionId: null, checks: [] }],
-      sceneEdits: [
-        { id: "extra", title: "新场景" },
-        { id: "root", title: "改名", interactionId: null },
-      ],
-    });
-    expect(next.scenes.extra.title).toBe("新场景");
-    expect(next.scenes.root.title).toBe("改名");
-    expect(next.scenes.root.interactionId).toBeNull();
+    expect(showable(work, { materials: ["arrow"] })).toBe(false);
+    expect(showable(work, { drawings: [{ id: "mine", from: "arrow" }] })).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,7 +11,7 @@ import { restore, writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { CutOff, generate } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
-import { boxOf, costOf, modelCatalogSchema, type Run, type Work } from "../contracts/index.ts";
+import { boxOf, costOf, labelOf, modelCatalogSchema, type Run, type Work } from "../contracts/index.ts";
 import { removeParts, setData } from "../editing/index.ts";
 import { tracer } from "../trace/index.ts";
 import { library as client } from "../materials/index.ts";
@@ -85,7 +85,7 @@ it("feeds canvas images into the author conversation and requires another look a
     const calls = [
       ["finish", { message: "premature" }],
       ["view_canvas", {}],
-      ["write_work", { baseRevision: 1, title: "edited" }],
+      ["write_work", { title: "edited" }],
       ["finish", { message: "stale" }],
       ["view_canvas", {}],
       ["finish", { message: "done" }],
@@ -190,9 +190,7 @@ it("lays out streamed modules on the write step before the write is saved", asyn
     store.saveRun(run);
     const scene = work.scenes.root,
       flat = scene.modules.map(({ bounds, ...m }) => ({ ...m, bounds: boxOf(bounds) })),
-      args = JSON.stringify({
-        baseRevision: 1,
-        modules: flat,
+      args = JSON.stringify({ modules: flat,
         links: scene.links,
         drawings: Object.values(work.drawings),
       }),
@@ -278,9 +276,9 @@ it("lays out streamed modules on the write step before the write is saved", asyn
       scenes: [
         {
           id: "root",
-          modules: scene.modules.map(({ id, label, bounds }) => ({
+          modules: scene.modules.map(({ id, label, bounds, data }) => ({
             id,
-            label,
+            label: labelOf({ id: "", label, data }),
             bounds,
           })),
         },
@@ -705,9 +703,9 @@ it("thinks at the configured effort on every turn", async () => {
     const seen: any[][] = [];
     script(
       [
-        ["write_work", { baseRevision: 1, title: "edited" }],
+        ["write_work", { title: "edited" }],
         ["view_canvas", {}],
-        ["write_work", { baseRevision: 2, title: "again" }],
+        ["write_work", { title: "again" }],
         ["view_canvas", {}],
         ["finish", { message: "done" }],
       ],
@@ -777,9 +775,7 @@ it("settles a brief only on the user's own words, then applies its style and sho
         ],
         [
           "write_work",
-          {
-            baseRevision: 2,
-            drawings: [
+          { drawings: [
               {
                 id: "fruit",
                 name: "苹果",
@@ -926,13 +922,10 @@ it("develops pictures while the author composes and holds the end until they wer
       store,
       work.id,
       {
-        baseRevision: 1,
         drawings: [
           { id: "whale", name: "鲸", source: `return api.material("${id}")` },
         ],
-      },
-      { kind: "edit" },
-    );
+      }, { cause: { kind: "edit" } });
     expect(written.materials[id]).toMatchObject({ status: "developing" });
     await vi.waitFor(() => expect(seen.length).toBe(3));
     // Closing words while a picture develops are answered with what is missing.
@@ -1203,16 +1196,14 @@ it("tells the author what the user changed themselves since its last turn", asyn
     await writeWork(
       store,
       work.id,
-      { baseRevision: 1, title: "drawn" },
-      { kind: "run", runId: "earlier", prompt: "draw" },
-    );
+      { title: "drawn" }, { cause: { kind: "run", runId: "earlier", prompt: "draw" } });
     for (const edit of [
       (w: Work) => setData(w, "root", "level-0", { color: "#000000" }),
       (w: Work) => removeParts(w, "root", ["control"]),
     ])
-      await writeWork(store, work.id, edit(store.work(work.id)), {
+      await writeWork(store, work.id, edit(store.work(work.id)), { cause: {
         kind: "edit",
-      });
+      } });
     vi.mocked(generate).mockImplementation(async () => ({
       items: [
         {
@@ -1246,9 +1237,7 @@ it("tells the author what the user changed themselves since its last turn", asyn
     await writeWork(
       store,
       work.id,
-      { baseRevision: work2.revision, title: "again" },
-      { kind: "run", runId: run.id, prompt: "Continue" },
-    );
+      { title: "again" }, { cause: { kind: "run", runId: run.id, prompt: "Continue" } });
     const next = await agent.start(store, work.id, "root", "More");
     await vi.waitFor(() => expect(store.run(next.id).status).toBe("waiting"));
     const latest = store
@@ -1353,7 +1342,7 @@ it("hands a continuing conversation only what the user changed since", async () 
       (w: Work) => setData(w, "root", "level-0", { color: "#000000" }),
       (w: Work) => removeParts(w, "root", ["control"]),
     ])
-      await writeWork(store, work.id, edit(store.work(work.id)), { kind: "edit" });
+      await writeWork(store, work.id, edit(store.work(work.id)), { cause: { kind: "edit" } });
     const told = await ask("Continue");
     expect(told).toMatch(
       /^Since your last turn the user changed the work themselves \(revision 1 to 3\)\.[^\n]*\n- scene root: changed level-0; removed control; interaction checks changed\n/,
@@ -1377,10 +1366,7 @@ it("hands a continuing conversation only what the user changed since", async () 
     // Restoring a draft can change only the checks; the author still needs their new value.
     const beforeChecks = store.work(work.id);
     const checks = [{ moduleId: "level-0", selector: ".inspect" }];
-    await writeWork(store, work.id, {
-      baseRevision: beforeChecks.revision,
-      sceneEdits: [{ id: "root", checks }],
-    }, { kind: "edit" });
+    await writeWork(store, work.id, { scenes: [{ id: "root", checks }] }, { cause: { kind: "edit" } });
     const checksTold = await ask("Check this");
     expect(checksTold).toContain("interaction checks changed");
     const delta = (text: string) => JSON.parse(text.match(/\nChanged: (.*)\nCurrent scene: root$/)![1]);
@@ -1755,9 +1741,7 @@ it("reminds the author of the guides after the brief and of unread cards after a
       cast: [],
       basis: { subject: "苹果", intent: "苹果" },
     };
-    const uses = (revision: number) => ({
-      baseRevision: revision,
-      scenes: [{ id: "root", clear: true }],
+    const uses = (revision: number) => ({ scenes: [{ id: "root", clear: true }],
       modules: [{ id: "a", label: "a", bounds: [0, 0, 10, 10], drawingId: "plot" }],
     });
     script(
@@ -1809,9 +1793,7 @@ it("points out an unread card once, not after every write", async () => {
       cast: [],
       basis: { subject: "苹果", intent: "苹果" },
     };
-    const uses = (revision: number) => ({
-      baseRevision: revision,
-      scenes: [{ id: "root", clear: true }],
+    const uses = (revision: number) => ({ scenes: [{ id: "root", clear: true }],
       modules: [{ id: "a", label: "a", bounds: [0, 0, 10, 10], drawingId: "plot" }],
     });
     script(
@@ -1862,9 +1844,7 @@ it("does not remind the author of guides and cards it asks for in the same messa
       cast: [],
       basis: { subject: "苹果", intent: "苹果" },
     };
-    const uses = (revision: number) => ({
-      baseRevision: revision,
-      scenes: [{ id: "root", clear: true }],
+    const uses = (revision: number) => ({ scenes: [{ id: "root", clear: true }],
       modules: [{ id: "a", label: "a", bounds: [0, 0, 10, 10], drawingId: "plot" }],
     });
     script(
@@ -2045,7 +2025,7 @@ it("returns to the configured effort after a turn asked again with less thought"
         });
       const [name, args] = (
         turn === 2
-          ? ["write_work", { baseRevision: 1, title: "edited" }]
+          ? ["write_work", { title: "edited" }]
           : turn === 3
             ? ["view_canvas", {}]
             : ["finish", { message: "done" }]
@@ -2188,12 +2168,10 @@ it("saves a partial write, showing only what it changed and laying out what move
     const ctx = { input: [] as any[], settings: store.settings(), generations: 0 };
     const bounds = { x: 5, y: 6, width: 70, height: 80 };
     const turns = [
-      called("write_work", {
-        baseRevision: 1,
-        scenes: [{ id: "root", order: [second.id, first.id] }],
+      called("write_work", { scenes: [{ id: "root", order: [second.id, first.id] }],
         modules: [
           { id: first.id, bounds: boxOf(bounds) },
-          { id: second.id, dataChanges: [{ path: ["extra"], value: 1 }] },
+          { id: second.id, data: { extra: 1 } },
         ],
       }),
       called("view_canvas", {}),
@@ -2230,17 +2208,13 @@ it("takes a hand edit in the same partial form, with the same checks", async () 
     const { work: saved } = await writeWork(
       store,
       work.id,
-      { baseRevision: 1, sceneEdits: [{ id: "root", modules: [{ id, label: "手改" }] }] },
-      { kind: "edit" },
-    );
+      { modules: [{ id, label: "手改" }] }, { cause: { kind: "edit" } });
     expect(saved.scenes.root.modules[0].label).toBe("手改");
     await expect(
       writeWork(
         store,
         work.id,
-        { baseRevision: 2, sceneEdits: [{ id: "root", modules: [{ id, drawingId: "no-such-drawing" }] }] },
-        { kind: "edit" },
-      ),
+        { modules: [{ id, drawingId: "no-such-drawing" }] }, { cause: { kind: "edit" } }),
     ).rejects.toThrow("no-such-drawing");
   } finally {
     db.close();
@@ -2343,7 +2317,7 @@ it("answers tool input written broken as a failed call, which the model corrects
     const run = run_(work);
     store.saveRun(run);
     const ctx = { input: [] as any[], settings: store.settings(), generations: 0 };
-    const broken = '{"baseRevision":1,"modules":[{"id":"x"}]}],"links":[]}';
+    const broken = '{"modules":[{"id":"x"}]}],"links":[]}';
     let turn = 0;
     const seen: any[][] = [];
     vi.mocked(generate).mockImplementation(async (_role, { input, onEvent }) => {
@@ -2366,7 +2340,7 @@ it("answers tool input written broken as a failed call, which the model corrects
       if (turn === 2)
         return {
           items: [
-            { type: "function_call", name: "write_work", arguments: '{"baseRevision":1,"title":"改好了"}', call_id: "w2" },
+            { type: "function_call", name: "write_work", arguments: '{"title":"改好了"}', call_id: "w2" },
             { type: "function_call", name: "view_canvas", arguments: "{}", call_id: "v2" },
           ],
           usage: { input_tokens: 200, output_tokens: 20 },
@@ -2391,6 +2365,186 @@ it("answers tool input written broken as a failed call, which the model corrects
     expect(run.usage).toMatchObject({ input: 300, output: 60 });
     expect(run.usage!.failed).toMatchObject({ attempts: 0, invalidCalls: 1 });
     expect(store.work(work.id).title).toBe("改好了");
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+describe("a write that is refused", () => {
+  const module = (id: string, x = 0) => ({ id, bounds: [x, 0, 100, 60], drawingId: "tier", data: { color: "#000", label: id, tip: "" } });
+  /** Runs a scripted conversation of tool calls, returning what each turn saw. */
+  async function script(store: any, work: Work, turns: unknown[]) {
+    const run = run_(work);
+    store.saveRun(run);
+    const ctx: any = { input: [] as any[], settings: store.settings(), generations: 0, format: 2 };
+    const seen: any[][] = [];
+    let turn = 0;
+    vi.mocked(generate).mockImplementation(async (_role, { input }) => {
+      seen.push(structuredClone(input));
+      return turns[turn++] as never;
+    });
+    await new Agent(() => {}).execute(store, run, ctx, "request");
+    return { run, ctx, seen, outputs: (n: number) => seen[n].filter((i) => i.type === "function_call_output").map((i) => i.output) };
+  }
+  const setting = () => {
+    const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+      db = new Storage(dir);
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    return { store, work, done: () => (db.close(), rmSync(dir, { recursive: true })) };
+  };
+  it("lists every problem and is finished by sending only the correction, as one revision", async () => {
+    const { store, work, done } = setting();
+    try {
+      const big = {
+        modules: Array.from({ length: 12 }, (_, i) => module(`m${i}`, i * 120)),
+        links: [
+          { id: "ok", from: "m0", to: "m1" },
+          { id: "a", from: "m1", to: "ghost" },
+          { id: "b", from: "gone", to: "m2" },
+        ],
+      };
+      const correction = {
+        amend: true,
+        links: [
+          { id: "a", to: "m3" },
+          { id: "b", from: "m4" },
+        ],
+      };
+      const { run, outputs } = await script(store, work, [
+        called("write_work", big),
+        called("write_work", correction),
+        called("view_canvas", {}),
+        said("好了"),
+      ]);
+      expect(run.status).toBe("completed");
+      const refusal = JSON.parse(outputs(1)[0]);
+      expect(refusal.problems.map((p: any) => p.at)).toEqual(["links.a.to", "links.b.from"]);
+      expect(refusal.problems[0].problem).toContain("ghost");
+      expect(refusal.note).toContain("amend: true");
+      expect(refusal.note).toContain("m11");
+      // The correction costs what the mistake was worth.
+      expect(JSON.stringify(correction).length).toBeLessThan(JSON.stringify(big).length / 10);
+      // Both saved as one revision, on top of the one before.
+      expect(store.revisions(work.id).map((r: any) => r.revision)).toEqual([2, 1]);
+      const scene = store.work(work.id).scenes.root;
+      expect(scene.modules.filter((m: any) => /^m\d+$/.test(m.id))).toHaveLength(12);
+      expect(scene.links.map((l: any) => [l.id, l.from.moduleId, l.to.moduleId])).toEqual([
+        ["ok", "m0", "m1"],
+        ["a", "m1", "m3"],
+        ["b", "m4", "m2"],
+      ]);
+      expect(store.work(work.id).scenes.root.modules[0]).toEqual(work.scenes.root.modules[0]);
+    } finally {
+      done();
+    }
+  });
+  it("can be corrected in several steps, and a later whole write replaces what was held", async () => {
+    const { store, work, done } = setting();
+    try {
+      const { outputs } = await script(store, work, [
+        called("write_work", { links: [{ id: "a", from: "x", to: "y" }] }),
+        called("write_work", { amend: true, modules: [module("x")] }),
+        called("write_work", { title: "另写" }),
+        called("view_canvas", {}),
+        said("好了"),
+      ]);
+      expect(JSON.parse(outputs(2)[1]).problems.map((p: any) => p.at)).toEqual(["links.a.to"]);
+      // The third write did not amend, so what was held is gone.
+      const saved = store.work(work.id);
+      expect(saved.title).toBe("另写");
+      expect(saved.scenes.root.modules.some((m: any) => m.id === "x")).toBe(false);
+    } finally {
+      done();
+    }
+  });
+  it("says there is nothing to amend when nothing was refused", async () => {
+    const { store, work, done } = setting();
+    try {
+      const { outputs } = await script(store, work, [
+        called("write_work", { amend: true, title: "x" }),
+        called("view_canvas", {}),
+        said("好了"),
+      ]);
+      expect(outputs(1)[0]).toContain("没有等待修正的写入");
+    } finally {
+      done();
+    }
+  });
+  it("holds the records of broken JSON that arrived whole", async () => {
+    const { store, work, done } = setting();
+    try {
+      const first = JSON.stringify(module("first"));
+      const second = JSON.stringify(module("second", 200));
+      const broken = `{"modules":[${first},${second},{"id":"third","bounds":[0,0,1,1],"drawingId":"tier","data":{"label":"bad "quote""}}],"links":[]}`;
+      expect(() => JSON.parse(broken)).toThrow();
+      const { outputs, run } = await script(store, work, [
+        { items: [{ type: "function_call", name: "write_work", arguments: broken, call_id: "w" }], usage: { input_tokens: 10, output_tokens: 10 }, response: {} },
+        called("write_work", { amend: true, modules: [module("third", 400)] }),
+        called("view_canvas", {}),
+        said("好了"),
+      ]);
+      const refusal = JSON.parse(outputs(1)[0]);
+      expect(refusal.note).toContain("modules: first, second");
+      expect(refusal.note).not.toContain("third");
+      expect(run.usage!.failed).toMatchObject({ invalidCalls: 1 });
+      const ids = store.work(work.id).scenes.root.modules.map((m: any) => m.id);
+      expect(ids.slice(-3)).toEqual(["first", "second", "third"]);
+      expect(store.revisions(work.id)).toHaveLength(2);
+    } finally {
+      done();
+    }
+  });
+  it("reports a removal of what is not there without refusing the rest", async () => {
+    const { store, work, done } = setting();
+    try {
+      const { outputs } = await script(store, work, [
+        called("write_work", { title: "新", remove: { modules: ["ghost"] } }),
+        called("view_canvas", {}),
+        said("好了"),
+      ]);
+      expect(JSON.parse(outputs(1)[0]).notThere).toContain("ghost");
+      expect(store.work(work.id).title).toBe("新");
+    } finally {
+      done();
+    }
+  });
+});
+it("starts over from what was asked when the saved conversation is in an older format", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    const earlier = { ...run_(work), id: "earlier", status: "completed" as const };
+    earlier.steps = [{ kind: "message", role: "user", text: "画需求层次", materials: [] }];
+    store.saveRun(earlier);
+    store.context("earlier", {
+      input: [{ type: "function_call", name: "write_work", arguments: '{"baseRevision":1}', call_id: "old" }],
+      known: 1,
+      settings: store.settings(),
+      generations: 3,
+    });
+    const seen: any[][] = [];
+    vi.mocked(generate).mockImplementation(async (_role, { input }) => {
+      seen.push(structuredClone(input));
+      throw Error("看过就够了");
+    });
+    const run = await new Agent(() => {}).start(store, work.id, "root", "再加一层");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("failed"));
+    const input = seen[0];
+    expect(input.some((i) => i.type === "function_call")).toBe(false);
+    const words = JSON.stringify(input);
+    expect(words).toContain("Earlier requests on this work");
+    expect(words).toContain("画需求层次");
+    expect(words).toContain("Current work:");
+    expect((store.context(run.id) as any).format).toBe(2);
   } finally {
     db.close();
     rmSync(dir, { recursive: true });

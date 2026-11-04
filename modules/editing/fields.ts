@@ -1,9 +1,10 @@
-import type {
-  Instance,
-  Link,
-  Param,
-  ParamType,
-  Work,
+import {
+  drawingOf,
+  type Instance,
+  type Link,
+  type Param,
+  type ParamType,
+  type Work,
 } from "../contracts/index.ts";
 
 /* The values of a part a person can change in plain controls: those its drawing declares,
@@ -23,8 +24,8 @@ export interface Field {
   value: unknown;
   /** Whether the part sets it itself rather than taking its drawing's default. */
   set: boolean;
-  /** Whether the drawing still draws without it: a library drawing's default, or for a
-   * colour the work's style. Only such a value can be given back. */
+  /** Whether the drawing still draws without it: a default it has, or for a library
+   * drawing's colour the work's style. Only such a value can be given back. */
   optional: boolean;
 }
 const COLOR = /^(#[0-9a-f]{3,8}|(rgb|hsl)a?\([^)]*\))$/i;
@@ -84,25 +85,15 @@ function fits(type: ParamType, value: unknown) {
       return typeof value === "string";
   }
 }
-/** The drawing a module or link is drawn with: the work's own, or a library drawing. */
-function drawingOf(work: Work, drawingId: string) {
-  const own = work.drawings[drawingId];
-  const use = work.materials[drawingId];
-  return {
-    own,
-    library: !own && use?.kind === "drawing" ? use : undefined,
-  };
-}
-/** The values of a module or link a person can change: those its drawing declares, then
- * the other plain values in its data, words first and switches last. */
+/** The values of a module or link a person can change: those its drawing declares or has a
+ * default for, then the other plain values in its data, words first and switches last. */
 export function fieldsOf(work: Work, part: Instance | Link): Field[] {
-  const { own, library } = drawingOf(work, part.drawingId);
-  const declared: Record<string, Omit<Param, "label"> & { label?: string }> =
-    own?.params ?? library?.params ?? {};
-  const defaults = library?.defaults ?? {};
+  const drawing = drawingOf(work, part.drawingId);
+  const declared: Record<string, Param> = drawing?.params ?? {};
+  const defaults = drawing?.defaults ?? {};
   const fields: Field[] = [];
   const optional = (key: string, type: ParamType) =>
-    !!library && (key in defaults || type === "color");
+    key in defaults || (!!drawing && !drawing.own && type === "color");
   for (const [key, p] of Object.entries(declared)) {
     const value = part.data[key] ?? defaults[key];
     if (fits(p.type, value))
@@ -114,7 +105,7 @@ export function fieldsOf(work: Work, part: Instance | Link): Field[] {
         optional: optional(key, p.type),
       });
   }
-  for (const [key, value] of Object.entries(part.data)) {
+  for (const [key, value] of Object.entries({ ...defaults, ...part.data })) {
     if (key in declared) continue;
     const type = guess(key, value, work);
     if (type)
@@ -122,7 +113,7 @@ export function fieldsOf(work: Work, part: Instance | Link): Field[] {
         key,
         type,
         value,
-        set: true,
+        set: part.data[key] !== undefined,
         optional: optional(key, type),
       });
   }

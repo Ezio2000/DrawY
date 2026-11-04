@@ -18,7 +18,6 @@ import {
   modelCatalogSchema,
   settingsChangeSchema,
   pickWith,
-  workEditSchema,
   type Account,
   type Work,
   menuFor,
@@ -414,12 +413,13 @@ export function createApp(storage: Storage) {
     const store = c.get("store"),
       workId = c.req.param("id");
     idle(store, workId);
-    const { work } = await writeWork(
-      store,
-      workId,
-      workEditSchema.parse(await c.req.json()),
-      { kind: "edit" },
-    );
+    const { baseRevision, edit } = z
+      .object({ baseRevision: z.number().int(), edit: z.unknown() })
+      .parse(await c.req.json());
+    const { work } = await writeWork(store, workId, edit, {
+      base: baseRevision,
+      cause: { kind: "edit" },
+    });
     publish(store.userId, { type: "work", work });
     return c.json(work);
   });

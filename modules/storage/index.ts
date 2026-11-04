@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   id,
@@ -25,6 +25,7 @@ import {
   type Cause,
   type RevisionSummary,
 } from "../contracts/index.ts";
+import { upgradeWork, WORK_FORMAT, type OldWork } from "./upgrade.ts";
 export class Storage {
   db: DatabaseSync;
   dir: string;
@@ -46,9 +47,46 @@ export class Storage {
  CREATE TABLE IF NOT EXISTS invites(code TEXT PRIMARY KEY,created_by TEXT,created_at INTEGER NOT NULL,used_by TEXT,used_at INTEGER);`);
     const columns = this.db.prepare("PRAGMA table_info(revisions)").all();
     if (!columns.some((c) => c.name === "cause")) this.recordCauses();
+    this.upgradeWorks();
     this.recordRoles();
     if (!this.db.prepare("SELECT 1 FROM system WHERE key='models'").get())
       this.saveModels(defaultCatalog());
+  }
+  /** Brings every saved work and revision to the form this code reads, as one transaction
+   * after a copy of the database is put aside: it either all happens or the app does not
+   * start, and the copy stays in `backups/` to go back to. An empty database just starts at
+   * the current format. */
+  private upgradeWorks() {
+    const db = this.db;
+    const { user_version: format } = db.prepare("PRAGMA user_version").get() as { user_version: number };
+    if (format >= WORK_FORMAT) return;
+    const { n } = db.prepare("SELECT COUNT(*) AS n FROM revisions").get() as { n: number };
+    if (n) {
+      mkdirSync(join(this.dir, "backups"), { recursive: true });
+      const backup = join(this.dir, "backups", `drawy-format-${format}.sqlite`);
+      if (!existsSync(backup)) db.exec(`VACUUM INTO '${backup.replaceAll("'", "''")}'`);
+    }
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const upgrade = (table: "works" | "revisions", key: string) => {
+        const write = db.prepare(`UPDATE ${table} SET data=? WHERE rowid=?`);
+        for (const row of db.prepare(`SELECT rowid,${key} AS id,data FROM ${table}`).all()) {
+          try {
+            const work = upgradeWork(JSON.parse(row.data as string) as OldWork);
+            write.run(JSON.stringify(work), row.rowid as number);
+          } catch (e) {
+            throw Error(`作品数据升级失败（${table} ${row.id}）：${e instanceof Error ? e.message : e}`);
+          }
+        }
+      };
+      upgrade("works", "id");
+      upgrade("revisions", "work_id || ':' || revision");
+      db.exec(`PRAGMA user_version=${WORK_FORMAT}`);
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
   }
   /** Gives the app its two built-in roles and every account one: accounts made before
    * roles existed are members, except the first, who set the app up and administers it. */

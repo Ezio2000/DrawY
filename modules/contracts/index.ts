@@ -18,14 +18,14 @@ export const paramTypes = [
   "picture",
   "choice",
 ] as const;
-/** How a person changes one value of a drawing's instance data without touching code. */
+/** How a person changes one value of a drawing's instance data without touching code. A
+ * value in `defaults` gets a control without one; this names it and bounds it. */
 export const paramSchema = z.object({
   label: z
     .string()
     .min(1)
-    .describe(
-      "What a person editing the work calls it, in the user's language",
-    ),
+    .optional()
+    .describe("What a person editing the work calls it, in the user's language"),
   type: z.enum(paramTypes),
   options: z
     .array(z.string().min(1))
@@ -36,53 +36,58 @@ export const paramSchema = z.object({
   max: z.number().optional(),
   step: z.number().positive().optional(),
 });
+const dataSchema = z.record(z.string(), z.unknown());
 export const drawingSchema = z.object({
   id: key,
   name: key,
-  params: z
-    .record(z.string(), paramSchema)
-    .optional()
-    .describe(
-      "The instance data a person may change by hand, by data key; left out when there is nothing to change",
-    ),
+  params: z.record(z.string(), paramSchema).optional(),
+  defaults: dataSchema.optional(),
   source: z.string().min(1),
+});
+/** One of the sides of a module, each at the middle of that side. */
+export const sideNames = ["left", "right", "top", "bottom"] as const;
+export type Side = (typeof sideNames)[number];
+/** Where a link meets a module: a side, or a point as a share of the module's size. */
+export const endAtSchema = z.union([
+  z.enum(sideNames),
+  z.array(z.number()).length(2),
+]);
+/** One end of a link. It belongs to the link: nothing is declared on the module, and without
+ * `at` it takes the side facing the other end wherever the two modules are. */
+export const linkEndSchema = z.object({
+  moduleId: key,
+  at: endAtSchema.optional(),
 });
 // Layout comes before content, in the order writes stream, so a composition can be
 // sketched while its drawing code is still arriving.
 export const instanceSchema = z.object({
   id: key,
-  label: z.string().describe("What a person editing the work calls this module, in the user's language"),
-  bounds: boundsSchema.describe("Position and size in scene units"),
-  drawingId: key.describe("A drawing defined in the work, or a library drawing used as it is"),
-  group: z.string().nullable().describe("Modules with the same group move together; it draws nothing"),
-  target: targetSchema.nullable().describe("Where clicking this module leads; null for most modules"),
-  anchors: z
-    .record(z.string(), pointSchema)
-    .describe("Named points links attach to, normalized to the module (0..1)"),
-  data: z.record(z.string(), z.unknown()).describe("The drawing's parameters for this instance"),
+  /** Set only when a person or the author names it; otherwise `labelOf` reads its words. */
+  label: z.string().optional(),
+  bounds: boundsSchema,
+  drawingId: key,
+  group: z.string().optional(),
+  target: targetSchema.optional(),
+  data: dataSchema,
 });
-const endpointSchema = z.object({ moduleId: key, anchor: key });
 export const linkSchema = z.object({
   id: key,
-  drawingId: key.describe("A link drawing, usually the library's arrow"),
-  from: endpointSchema.describe("A module id and one of its anchors"),
-  to: endpointSchema.describe("A module id and one of its anchors"),
-  data: z.record(z.string(), z.unknown()).describe("The drawing's parameters for this link"),
+  drawingId: key,
+  from: linkEndSchema,
+  to: linkEndSchema,
+  data: dataSchema,
 });
+export const checkSchema = z.object({ moduleId: key, selector: key });
 export const sceneSchema = z.object({
   id: key,
   title: key,
-  parentId: z.string().nullable().describe("The scene this one opens from; null for a top-level scene"),
-  modules: z.array(instanceSchema).describe("In stacking and drawing order, first at the bottom"),
+  parentId: z.string().nullable(),
+  /** Stacking and drawing order, first at the bottom. */
+  modules: z.array(instanceSchema),
   links: z.array(linkSchema),
-  interactionId: z.string().nullable(),
-  checks: z
-    .array(z.object({ moduleId: key, selector: key }))
-    .describe("Important buttons view_canvas should try, by module and CSS selector"),
-});
-export const interactionSchema = z.object({
-  id: key,
-  source: z.string().min(1),
+  /** The script that runs in this scene. */
+  interaction: z.string().optional(),
+  checks: z.array(checkSchema),
 });
 export const detailSchema = z.object({ id: key, title: key, html: z.string() });
 /** What the work is meant to be, settled before drawing. Each basis quotes the user's own
@@ -161,8 +166,8 @@ export type ParamType = Param["type"];
 export type Drawing = z.infer<typeof drawingSchema>;
 export type Instance = z.infer<typeof instanceSchema>;
 export type Link = z.infer<typeof linkSchema>;
+export type LinkEnd = z.infer<typeof linkEndSchema>;
 export type Scene = z.infer<typeof sceneSchema>;
-export type Interaction = z.infer<typeof interactionSchema>;
 export type Detail = z.infer<typeof detailSchema>;
 export type Brief = z.infer<typeof briefSchema>;
 /** The style tokens of a work before its brief chooses a style. */
@@ -178,7 +183,6 @@ export interface Work {
   rootSceneId: string;
   drawings: Record<string, Drawing>;
   scenes: Record<string, Scene>;
-  interactions: Record<string, Interaction>;
   details: Record<string, Detail>;
   brief: Brief | null;
   materials: Record<string, MaterialUse>;
@@ -224,87 +228,23 @@ export function stepBefore(
       at--;
   return at > 1 ? at - 1 : undefined;
 }
-/** One value inside a part's data, so changing a row of a long list does not resend it. */
-export const dataChangeSchema = z.object({
-  path: z
-    .array(z.union([z.string().min(1), z.number().int().min(0)]))
-    .min(1)
-    .describe('Keys and list positions from data down to the value, such as ["rows", 2, "value"]'),
-  value: z
-    .unknown()
-    .optional()
-    .describe("The new value; leave out to delete it. The position just past a list's end appends"),
-});
-const dataChanges = z
-  .array(dataChangeSchema)
-  .optional()
-  .describe("Single values to change inside data, applied in order after data, when sent");
-// Fields stay in the order of a whole record: layout streams before content.
-export const modulePatchSchema = instanceSchema
-  .partial()
-  .required({ id: true })
-  .extend({ dataChanges });
-export const linkPatchSchema = linkSchema
-  .partial()
-  .required({ id: true })
-  .extend({ dataChanges });
-/** Part of an existing scene changed, leaving everything it does not name as it is. */
-export const sceneEditSchema = z.object({
-  id: key,
-  title: key.optional(),
-  parentId: z.string().nullable().optional(),
-  interactionId: z.string().nullable().optional(),
-  checks: sceneSchema.shape.checks.optional(),
-  modules: z
-    .array(modulePatchSchema)
-    .optional()
-    .describe("A module with a known id changes only the fields sent; a new id needs every field and goes on top"),
-  links: z
-    .array(linkPatchSchema)
-    .optional()
-    .describe("A link with a known id changes only the fields sent; a new id needs every field"),
-  removeModules: z.array(key).optional().describe("Modules to delete, with their links and checks"),
-  removeLinks: z.array(key).optional(),
-  order: z
-    .array(key)
+/* A change to a work, the one form the author's write_work and every hand edit share. Each
+ * record names what it changes by id and says nothing about the rest:
+ * - a record with a known id changes only the fields it gives, a new id adds the record;
+ * - objects (data, defaults, params, style) merge key by key, null deleting a key;
+ * - a list given whole replaces the list; given as an object keyed by position it changes
+ *   those items (see mergeValue);
+ * - long text (a drawing's source, a script, a detail's page) changes whole or by edits;
+ * - remove goes first and takes along what can no longer stand without what it removed.
+ * The workspace commits it as one revision (editing/apply.ts lays it on the work). */
+const dataPatch = (what: string) =>
+  z
+    .record(z.string(), z.unknown())
     .optional()
     .describe(
-      "Modules to restack: they take the stacking places they already hold among them, in this order from the bottom, and no other module moves",
-    ),
-});
-export const workEditSchema = z.object({
-  baseRevision: z.number().int().describe("The work's current revision, as the last set_brief or write_work returned it"),
-  title: z.string().optional(),
-  scenes: z
-    .array(sceneSchema)
-    .optional()
-    .describe("New scenes, or whole recompositions: each replaces the scene with its id, and modules and links left out are deleted"),
-  sceneEdits: z
-    .array(sceneEditSchema)
-    .optional()
-    .describe("Changes to parts of existing scenes; everything not named stays as it is"),
-  drawings: z.array(drawingSchema).optional(),
-  interactions: z.array(interactionSchema).optional(),
-  details: z.array(detailSchema).optional(),
-  /** Material ids to take into the work besides those its drawings name literally. */
-  materials: z
-    .array(key)
-    .optional()
-    .describe("Material ids to take into the work besides those its drawings and data name literally"),
-  style: z.record(z.string(), z.string()).optional().describe("Style tokens to change"),
-  remove: z
-    .object({
-      drawings: z.array(key).optional(),
-      scenes: z.array(key).optional(),
-      interactions: z.array(key).optional(),
-      details: z.array(key).optional(),
-      materials: z.array(key).optional(),
-    })
-    .optional(),
-});
-export type WorkEdit = z.infer<typeof workEditSchema>;
-export type SceneEdit = z.infer<typeof sceneEditSchema>;
-/** A box in scene units, as the author reads and writes it. */
+      `${what}; keys you give change, others stay, null deletes one. A list you give replaces the list; {"2":{"value":5}} changes its item 2 alone, and position = its length appends`,
+    );
+/** A boxed position and size as every edit and the author's reading of a work write it. */
 export const boxSchema = z
   .array(z.number())
   .length(4)
@@ -312,56 +252,69 @@ export const boxSchema = z
   .describe("[x, y, width, height] in scene units");
 export const boxOf = ({ x, y, width, height }: Bounds) => [x, y, width, height];
 export const boundsOf = ([x, y, width, height]: number[]): Bounds => ({ x, y, width, height });
-/* What the author writes: every part a flat record that changes only what it names, so a
- * write is as long as the change and shallow enough that its brackets stay in hand. The
- * workspace takes it as a `WorkEdit` (workspace/author.ts). */
-const authorModuleSchema = z
+/** A change to long text, so a small one does not rewrite the rest. */
+export const textEditSchema = z
+  .object({
+    find: z.string().min(1).describe("Text as it stands now, long enough to occur only once"),
+    replace: z.string(),
+    all: z.boolean().optional().describe("Change every occurrence instead of requiring one"),
+  })
+  .strict();
+const partScene = key
+  .optional()
+  .describe("The scene a new part goes in; leave out for the current scene. A known id is found wherever it is");
+const linkEndEdit = z
+  .union([key, linkEndSchema.strict()])
+  .describe(
+    'A module id, which meets it on the side facing the other end and follows as they move; or {moduleId, at} with a side (left, right, top, bottom) or a point [x, y] on it, each 0..1',
+  );
+// Fields stay in the order of a whole record: layout streams before content.
+const moduleEditSchema = z
   .object({
     id: key,
-    scene: key.optional().describe("The scene it belongs to; leave out for the current scene"),
+    scene: partScene,
     label: z
       .string()
+      .nullable()
       .optional()
-      .describe("What a person editing the work calls this module, in the user's language; leave out when the words in its data say it"),
+      .describe("What a person editing the work calls it; only when the words in its data do not say it"),
     bounds: boxSchema.optional().describe("[x, y, width, height] in scene units; a new module needs it"),
-    drawingId: key.optional().describe("A drawing defined in the work, or a library drawing used as it is; a new module needs it"),
-    group: z.string().nullable().optional().describe("Modules with the same group move together; it draws nothing"),
+    drawingId: key
+      .optional()
+      .describe("A drawing in the work or the library; a new module needs it. Others that use the same drawing change with it"),
+    group: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("Modules with the same group move together; it draws nothing"),
     target: targetSchema.nullable().optional().describe("Where clicking this module leads"),
-    anchors: z
-      .record(z.string(), pointSchema)
-      .optional()
-      .describe("Named points links attach to, normalized to the module (0..1); only for a point other than the middle of a side"),
-    data: z
-      .record(z.string(), z.unknown())
-      .optional()
-      .describe("The drawing's parameters for this instance; replaces all of them"),
-    dataChanges,
+    data: dataPatch("The drawing's parameters for this module"),
   })
   .strict();
-const authorEndSchema = z.union([key, endpointSchema]);
-const authorLinkSchema = z
+const linkEditSchema = z
   .object({
     id: key,
-    scene: key.optional().describe("The scene it belongs to; leave out for the current scene"),
+    scene: partScene,
     drawingId: key.optional().describe("A link drawing; a new link defaults to the library's arrow"),
-    from: authorEndSchema
-      .optional()
-      .describe("A module id, which joins the side facing the other end, or {moduleId, anchor} with one of its anchors or a side (left, right, top, bottom); a new link needs it"),
-    to: authorEndSchema.optional().describe("As from"),
-    data: z
-      .record(z.string(), z.unknown())
-      .optional()
-      .describe("The drawing's parameters for this link; replaces all of them"),
-    dataChanges,
+    from: linkEndEdit.optional().describe("Where it starts; a new link needs it. " + (linkEndEdit.description ?? "")),
+    to: linkEndEdit.optional().describe("Where it ends; a new link needs it"),
+    data: dataPatch("The drawing's parameters for this link"),
   })
   .strict();
-const authorSceneSchema = z
+const sceneEditSchema = z
   .object({
     id: key,
     title: key.optional().describe("A new scene needs it"),
-    parentId: z.string().optional().describe("The scene this one opens from; a new scene defaults to the current scene"),
-    interactionId: z.string().nullable().optional(),
-    checks: sceneSchema.shape.checks.optional(),
+    parentId: z
+      .string()
+      .optional()
+      .describe("The scene this one opens from; a new scene defaults to the current scene"),
+    interaction: z.string().nullable().optional().describe("The script that runs in this scene, whole; null takes it out"),
+    interactionEdits: z.array(textEditSchema).optional().describe("Small changes to that script"),
+    checks: z
+      .array(checkSchema)
+      .optional()
+      .describe("Important buttons view_canvas should try, by module and CSS selector; replaces the list"),
     clear: z
       .boolean()
       .optional()
@@ -372,42 +325,69 @@ const authorSceneSchema = z
       .describe("Modules to restack: they take the stacking places they already hold among them, in this order from the bottom, and no other module moves"),
   })
   .strict();
-export const authorWriteSchema = z
+const drawingEditSchema = z
   .object({
-    baseRevision: workEditSchema.shape.baseRevision,
+    id: key,
+    from: key
+      .optional()
+      .describe("A new drawing starts as a copy of this one, in the work or the library: name, params, defaults and source"),
+    name: key.optional(),
+    params: z
+      .record(z.string(), paramSchema.nullable())
+      .optional()
+      .describe("Names and bounds for the controls a person gets for data keys; null takes one out"),
+    defaults: dataPatch("Values every module drawn with it has unless its own data says otherwise: the place for sizes, colours and words it reads"),
+    source: z.string().min(1).optional().describe("Its code, whole; a new drawing needs it unless it has from"),
+    edits: z.array(textEditSchema).optional().describe("Small changes to its code, applied in order"),
+  })
+  .strict();
+const detailEditSchema = z
+  .object({
+    id: key,
+    title: key.optional().describe("A new detail needs it"),
+    html: z.string().optional().describe("Its page, whole; a new detail needs it"),
+    edits: z.array(textEditSchema).optional().describe("Small changes to its page"),
+  })
+  .strict();
+export const workEditSchema = z
+  .object({
     title: z.string().optional(),
-    scenes: z
-      .array(authorSceneSchema)
-      .optional()
-      .describe("New scenes, and changes to a scene's own fields; leave out when only its parts change"),
+    scenes: z.array(sceneEditSchema).optional().describe("New scenes, and changes to a scene's own fields"),
     modules: z
-      .array(authorModuleSchema)
+      .array(moduleEditSchema)
       .optional()
-      .describe("In stacking and drawing order, first at the bottom. A known id changes only the fields sent; a new id goes on top"),
-    links: z
-      .array(authorLinkSchema)
+      .describe("In stacking and drawing order, first at the bottom; a new module goes on top"),
+    links: z.array(linkEditSchema).optional(),
+    drawings: z.array(drawingEditSchema).optional(),
+    details: z.array(detailEditSchema).optional(),
+    materials: z
+      .array(key)
       .optional()
-      .describe("A known id changes only the fields sent"),
-    drawings: workEditSchema.shape.drawings,
-    interactions: workEditSchema.shape.interactions,
-    details: workEditSchema.shape.details,
-    materials: workEditSchema.shape.materials,
-    style: workEditSchema.shape.style,
+      .describe("Material ids to take into the work besides those its drawings and data name literally"),
+    style: z
+      .record(z.string(), z.string().nullable())
+      .optional()
+      .describe("Style tokens to change; null deletes one"),
     remove: z
       .object({
         modules: z.array(key).optional().describe("Also deletes their links and checks"),
         links: z.array(key).optional(),
         drawings: z.array(key).optional(),
-        scenes: z.array(key).optional(),
-        interactions: z.array(key).optional(),
-        details: z.array(key).optional(),
+        scenes: z.array(key).optional().describe("Also deletes the scenes under them; modules that led there lead nowhere"),
+        details: z.array(key).optional().describe("Modules that opened them open nothing"),
         materials: z.array(key).optional(),
       })
       .strict()
       .optional(),
   })
   .strict();
-export type AuthorWrite = z.infer<typeof authorWriteSchema>;
+export type WorkEdit = z.infer<typeof workEditSchema>;
+export type ModuleEdit = z.infer<typeof moduleEditSchema>;
+export type LinkEdit = z.infer<typeof linkEditSchema>;
+export type SceneEdit = z.infer<typeof sceneEditSchema>;
+export type DrawingEdit = z.infer<typeof drawingEditSchema>;
+export type TextEdit = z.infer<typeof textEditSchema>;
+export * from "./edit.ts";
 export interface Selection {
   moduleId: string;
   label: string;
@@ -674,13 +654,5 @@ export interface RunServices {
   /** The search service's name, when it searched with one. */
   searchBy?: string;
   image: string;
-}
-export class DomainError extends Error {
-  constructor(
-    message: string,
-    public status = 400,
-  ) {
-    super(message);
-  }
 }
 export const id = () => crypto.randomUUID();

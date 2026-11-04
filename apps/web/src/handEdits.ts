@@ -12,6 +12,7 @@ import {
   duplicate,
   group,
   isClip,
+  labelOf,
   linkLook,
   moveParts,
   paste,
@@ -80,33 +81,32 @@ const typing = (target: EventTarget | null) =>
     "input,textarea,select,[contenteditable]",
   );
 
-/** A library drawing as a drawing of the work's own, its values named in the app's words. */
-export function ownCopy(
-  m: Material,
-  t: Words,
-  locale: "zh" | "en",
-): Omit<Drawing, "id"> {
+/** A library drawing as a drawing of the work's own. */
+function ownCopy(m: Material, locale: "zh" | "en"): Omit<Drawing, "id"> {
   if (m.kind !== "drawing") throw Error(m.id);
-  const named = t.edit.params as Record<string, string>;
+  const editable = Object.entries(m.params).filter(([, p]) =>
+    (paramTypes as readonly string[]).includes(p.type),
+  );
+  const defaults = Object.entries(m.params).filter(([, p]) => p.default !== undefined);
   return {
     name: m.name[locale],
-    params: Object.fromEntries(
-      Object.entries(m.params).flatMap(([k, { type, options, min, max, step }]) =>
-        (paramTypes as readonly string[]).includes(type)
-          ? [
-              [
-                k,
-                {
-                  label: named[k] ?? k,
-                  type: type as (typeof paramTypes)[number],
-                  ...(options ? { options } : {}),
-                  ...(min !== undefined ? { min, max, step } : {}),
-                },
-              ],
-            ]
-          : [],
-      ),
-    ),
+    ...(editable.length
+      ? {
+          params: Object.fromEntries(
+            editable.map(([k, { type, options, min, max, step }]) => [
+              k,
+              {
+                type: type as (typeof paramTypes)[number],
+                ...(options ? { options } : {}),
+                ...(min !== undefined ? { min, max, step } : {}),
+              },
+            ]),
+          ),
+        }
+      : {}),
+    ...(defaults.length
+      ? { defaults: Object.fromEntries(defaults.map(([k, p]) => [k, p.default])) }
+      : {}),
     source: m.source,
   };
 }
@@ -278,7 +278,6 @@ export function useHandEdits({
           sceneId,
           clip,
           {
-            labels: t.edit.params as Record<string, string>,
             ...(home
               ? { offset: (24 / scale()) * pasted.current.n }
               : view
@@ -300,7 +299,7 @@ export function useHandEdits({
           let id = "";
           // A work whose own drawing uses the library drawing's id gets a copy of it.
           const copy = shadowed(work, what)
-            ? ownCopy(await api<Material>("/materials/" + drawingFor(what)), t, locale)
+            ? ownCopy(await api<Material>("/materials/" + drawingFor(what)), locale)
             : undefined;
           await change((w) => {
             const r = add(w, sceneId, centre, what, copy);
@@ -363,7 +362,7 @@ export function useHandEdits({
         // already uses its id.
         const own =
           !like && work.drawings.arrow
-            ? ownCopy(await api<Material>("/materials/arrow"), t, locale)
+            ? ownCopy(await api<Material>("/materials/arrow"), locale)
             : undefined;
         await change((w) => connect(w, sceneId, from, to, look, own).edit);
       });
@@ -429,7 +428,7 @@ export function useHandEdits({
       e.clipboardData?.setData(CLIP_TYPE, JSON.stringify(clip));
       e.clipboardData?.setData(
         "text/plain",
-        clip.modules.map((m) => m.label).filter(Boolean).join("\n"),
+        clip.modules.map(labelOf).join("\n"),
       );
       if (e.type === "cut") latest.current.ops.remove();
     };
@@ -446,7 +445,7 @@ export function useHandEdits({
       const text = data?.getData("text/plain")?.trim() ?? "";
       const mine = kept();
       // The words written beside a clip mean the clip itself.
-      if (mine && text === mine.modules.map((m) => m.label).filter(Boolean).join("\n"))
+      if (mine && text === mine.modules.map(labelOf).join("\n"))
         return latest.current.ops.paste(mine);
       if (text) return latest.current.ops.words(text.slice(0, 2000));
       if (mine) latest.current.ops.paste(mine);

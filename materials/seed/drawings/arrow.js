@@ -1,7 +1,7 @@
 // An arrow with a head sized to its line, between api.from and api.to (as a link) or
 // between data.from and data.to (normalized points of the module). It runs as a curve
 // (straight unless bent), or at right angles as flowcharts do: elbow leaves and arrives
-// along the sides its anchors face, corner turns once.
+// along the sides its ends meet, corner turns once.
 const d = api.data,
   t = api.theme;
 const W = api.width,

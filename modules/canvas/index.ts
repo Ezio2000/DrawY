@@ -1,5 +1,6 @@
 import { SceneRenderer } from "../runtime/scene.ts";
 import { fit, union, zoom, type Camera } from "../contracts/geometry.ts";
+import { labelOf } from "../contracts/index.ts";
 import { plan, play, gesture, hatching } from "./ink.ts";
 import {
   facing,
@@ -887,7 +888,7 @@ export class Canvas {
         handle.style.display = "none";
         continue;
       }
-      const p = this.renderer.endpoint(link[end]);
+      const p = this.renderer.ends(link)[end];
       Object.assign(handle.style, {
         display: "grid",
         left: x + p.x * scale + "px",
@@ -941,8 +942,7 @@ export class Canvas {
       }
     }
     if (!lines.length && !boxes.length) {
-      const a = this.renderer.endpoint(link.from),
-        b = this.renderer.endpoint(link.to);
+      const { from: a, to: b } = this.renderer.ends(link);
       lines.push([a, b]);
     }
     const trace = { drawn, renderer: this.renderer, lines, boxes };
@@ -1147,7 +1147,7 @@ export class Canvas {
     this.options.select(
       this.selection.map((id) => {
         const m = this.renderer.instances.get(id)!;
-        return { moduleId: m.id, label: m.label, data: m.data };
+        return { moduleId: m.id, label: labelOf(m), data: m.data };
       }),
     );
     this.paint();
@@ -1611,9 +1611,9 @@ export class Canvas {
     };
     next();
   }
-  /** The side of a module facing a point on screen, and where its anchor is on screen. */
+  /** The side of a module facing a point on screen, and where its middle is on screen. */
   private sideToward(m: Instance, clientX: number, clientY: number) {
-    const side = facing(m, this.toScene(clientX, clientY)),
+    const side = facing(m.bounds, this.toScene(clientX, clientY)),
       a = sidePoint[side],
       { x, y, scale } = this.camera,
       b = this.ghost.get(m.id) ?? m.bounds;
@@ -1770,10 +1770,10 @@ export class Canvas {
     } else if (g.kind === "relink") {
       const link = this.renderer.links.get(g.linkId);
       if (!link) return;
-      const fixed = link[g.end === "from" ? "to" : "from"],
-        p = this.renderer.endpoint(fixed),
+      const far = g.end === "from" ? "to" : "from",
+        p = this.renderer.ends(link)[far],
         { x, y } = this.camera;
-      this.drawLine({ x: x + p.x * scale, y: y + p.y * scale }, e, fixed.moduleId);
+      this.drawLine({ x: x + p.x * scale, y: y + p.y * scale }, e, link[far].moduleId);
     }
     this.paint();
   }
@@ -1805,7 +1805,7 @@ export class Canvas {
     }
     if ((g.kind === "connect" || g.kind === "relink") && g.moved) {
       const to = this.moduleAt(e.clientX, e.clientY);
-      const at = to && { moduleId: to.id, side: facing(to, this.toScene(e.clientX, e.clientY)) };
+      const at = to && { moduleId: to.id, side: facing(to.bounds, this.toScene(e.clientX, e.clientY)) };
       if (g.kind === "connect" && at && at.moduleId !== g.from.moduleId)
         this.options.connect?.(g.from, at);
       if (g.kind === "relink" && at) {

@@ -1,10 +1,11 @@
 import {
   id,
   DomainError,
-  authorWriteSchema,
+  EditRejected,
   boundsOf,
-  boxOf,
   boxSchema,
+  labelOf,
+  type Problem,
   type Run,
   type Step,
   type ToolActivity,
@@ -12,7 +13,6 @@ import {
   guideTopics,
   type Sketch,
   type Work,
-  type Instance,
   type Picture,
   type Question,
   type Cause,
@@ -25,8 +25,9 @@ import {
   effortFor,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
-import { fromAuthor, writeWork, setBrief } from "../workspace/index.ts";
-import { changesBetween } from "../editing/index.ts";
+import { forAuthor, shortLink, shortModule, writeWork, setBrief } from "../workspace/index.ts";
+import { changesBetween, composed } from "../editing/index.ts";
+import { MIN_TEXT } from "../contracts/geometry.ts";
 import {
   attached,
   candidate,
@@ -68,7 +69,7 @@ import {
   openSchema,
 } from "./tools.ts";
 import { searchWeb, readPage } from "../search/index.ts";
-import { partialJson } from "./partial.ts";
+import { partialJson, completedRecords } from "./partial.ts";
 import { tracer } from "../trace/index.ts";
 import type { MessageLocale } from "../contracts/messages.ts";
 /** The tools a run offers: the drawing tools, and the one way it searches, if any. A run
@@ -137,8 +138,6 @@ function hostedActivity(item: Item): ToolActivity {
 /** Web searches a request may make in all, and once its first draft is saved: the
  * research belongs before the drawing, and a look needs at most one targeted follow-up.
  * The search service counts each query; a provider's own search counts each call. */
-/** The smallest text, in screenshot pixels of the opening view, a reader can read. */
-export const MIN_TEXT = 14;
 export const SEARCH_LIMIT = 8,
   SEARCH_AFTER_DRAFT = 2;
 /** The web searches this request may still make. */
@@ -229,17 +228,39 @@ const failedOf = (run: Run) =>
     invalidCalls: 0,
     images: 0,
   });
+/** A write's input that could not be read, kept as far as whole records go, so a correction
+ * need only carry the rest. */
+class BrokenWrite extends Error {
+  constructor(
+    message: string,
+    public kept: Record<string, unknown>,
+  ) {
+    super(message);
+  }
+}
 /** A tool call's arguments. Input the model wrote broken is its to correct, as it can see
  * what it wrote: the call fails like any other, without another pass over the whole turn. */
-function parsedArguments(run: Run, text: string) {
+function parsedArguments(run: Run, call: Item) {
   try {
-    return JSON.parse(text);
+    return JSON.parse(call.arguments);
   } catch (e) {
     failedOf(run).invalidCalls++;
-    throw Error(
-      `工具参数不是有效的 JSON（${e instanceof Error ? e.message : e}），没有保存。请改正后把完整参数重发`,
-    );
+    const why = e instanceof Error ? e.message : e;
+    const kept = call.name === "write_work" ? completedRecords(call.arguments) : undefined;
+    if (kept && Object.keys(kept).length)
+      throw new BrokenWrite(`工具参数不是有效的 JSON（${why}），没有保存`, kept);
+    throw Error(`工具参数不是有效的 JSON（${why}），没有保存。请改正后把完整参数重发`);
   }
+}
+const idsIn = (list: unknown) =>
+  Array.isArray(list) ? list.flatMap((r) => (typeof r?.id === "string" ? [r.id] : [])) : [];
+/** What is held of a write that was not saved, and how to finish it. */
+function heldNote(held: Record<string, unknown>) {
+  const parts = (["scenes", "modules", "links", "drawings", "details"] as const)
+    .map((k) => [k, idsIn(held[k])] as const)
+    .filter(([, ids]) => ids.length)
+    .map(([k, ids]) => `${k}: ${ids.join(", ")}`);
+  return `Nothing was saved, and this write is held as it stands. To finish it, call write_work with amend: true and only what corrects it: a record with a held id changes only the fields you give, and remove drops a held record. Held: ${parts.join("; ") || "(no records)"}.`;
 }
 /** Adds to what a run has spent. */
 function spend(run: Run, usage: Item) {
@@ -343,7 +364,8 @@ function activity(name: string, args: any, sceneId: string): ToolActivity {
         if (bounds)
           scene.modules.push({
             id: m.id,
-            label: m.label ?? "",
+            // Its words, as far as they have arrived; a bare id says nothing to the viewer.
+            label: labelOf({ id: "", label: m.label, data: m.data ?? {} }),
             bounds,
             ...(m.drawingId ? { drawingId: m.drawingId } : {}),
           });
@@ -356,14 +378,14 @@ function activity(name: string, args: any, sceneId: string): ToolActivity {
       return {
         name,
         drawings: (args.drawings || [])
-          .filter((d: any) => d?.id && typeof d.source === "string")
+          .filter((d: any) => d?.id && (typeof d.source === "string" || d.edits))
           .map((d: any) => d.id),
         writing: (args.drawings || []).findLast(
-          (d: any) => d?.id && typeof d.source !== "string",
+          (d: any) => d?.id && typeof d.source !== "string" && !d.edits,
         )?.id,
         scenes: [...scenes.values()],
         ...(changed ? { changed } : {}),
-        details: (args.details || []).map((d: any) => d.title),
+        details: (args.details || []).flatMap((d: any) => d?.title ?? []),
         materials: [],
         removed: Object.values(args.remove || {}).flat().length,
       };
@@ -413,45 +435,9 @@ function cardsUnread(work: Work, input: Item[], batch: Item[] = []) {
       }
     : {};
 }
-/** A module as the author writes it: its box in short form, and what it has by default
- * left out. */
-const shortModule = ({ bounds, group, target, anchors, ...m }: Instance) => ({
-  ...m,
-  bounds: boxOf(bounds),
-  ...(group ? { group } : {}),
-  ...(target ? { target } : {}),
-  ...(Object.keys(anchors).length ? { anchors } : {}),
-});
-/** The work as the author reads it, in the terms it writes: boxes in their short form,
- * what a part has by default left out, and library code and effect definitions named, not
- * repeated. */
-function forAuthor(work: Work) {
-  return {
-    ...work,
-    scenes: Object.fromEntries(
-      Object.values(work.scenes).map((scene) => [
-        scene.id,
-        { ...scene, modules: scene.modules.map(shortModule) },
-      ]),
-    ),
-    materials: Object.fromEntries(
-      Object.values(work.materials).map((m) => [
-        m.id,
-        m.kind === "picture"
-          ? {
-              kind: m.kind,
-              name: m.name,
-              role: m.role,
-              style: m.style,
-              size: `${m.width}×${m.height}`,
-              anchors: Object.keys(m.anchors),
-              ...(m.recolor ? { recolor: true } : {}),
-            }
-          : { kind: m.kind, name: m.name },
-      ]),
-    ),
-  };
-}
+/** What this code reads a saved conversation as. A conversation from before the current
+ * work format is not continued: its tool calls and guides describe another format. */
+const CONTEXT_FORMAT = 2;
 interface Context {
   /** Resolved once for this run, including connections and prices, and persisted across answers. */
   settings: Settings;
@@ -466,6 +452,9 @@ interface Context {
   known?: number;
   /** The user's standing preferences as this conversation was last told them. */
   preferences?: string;
+  /** A write that was refused, as it stands, waiting for `amend`. */
+  held?: Record<string, unknown>;
+  format?: number;
 }
 /** The user's standing preferences as the author is told them: in the conversation rather
  * than the instructions, so the instructions stay the same for everyone and are cached once. */
@@ -500,8 +489,7 @@ const workMessage = (sceneId: string, work: Work, changes = ""): Item => ({
 });
 /** The list of what changed between two revisions, one line per scene or kind of record. */
 function changeLines(changes: ReturnType<typeof changesBetween>) {
-  const { scenes, addedScenes, removedScenes, drawings, interactions, details, style } =
-    changes;
+  const { scenes, addedScenes, removedScenes, drawings, details, style } = changes;
   const list = (label: string, ids: string[]) =>
     ids.length ? [`${label} ${ids.join(", ")}`] : [];
   const records = (
@@ -524,14 +512,14 @@ function changeLines(changes: ReturnType<typeof changesBetween>) {
           ...list("added", s.added),
           ...list("removed", s.removed),
           ...(s.restacked ? ["stacking order changed"] : []),
-          ...(s.retitled ? ["its title, parent or interaction changed"] : []),
+          ...(s.retitled ? ["its title or parent changed"] : []),
+          ...(s.scriptChanged ? ["its script changed"] : []),
           ...(s.checksChanged ? ["interaction checks changed"] : []),
         ].join("; ")}`,
     ),
     ...list("- scenes added", addedScenes),
     ...list("- scenes removed", removedScenes),
     ...records("drawings", drawings),
-    ...records("interactions", interactions),
     ...records("details", details),
     ...(style ? ["- the work's style tokens"] : []),
   ];
@@ -551,14 +539,15 @@ function changedRecords(
     ...changes.scenes.map((c) => {
       const scene = after.scenes[c.id];
       const parts = new Set([...c.changed, ...c.moved, ...c.added]);
-      const { modules, links, ...fields } = scene;
+      const { modules, links, interaction, ...fields } = scene;
       return [
         c.id,
         {
           ...fields,
+          ...(c.scriptChanged ? { interaction: interaction ?? null } : {}),
           order: modules.map((m) => m.id),
           modules: modules.filter((m) => parts.has(m.id)).map(shortModule),
-          links: links.filter((l) => parts.has(l.id)),
+          links: links.filter((l) => parts.has(l.id)).map(shortLink),
           ...(c.removed.length ? { removed: c.removed } : {}),
         },
       ];
@@ -573,7 +562,6 @@ function changedRecords(
   const removed = {
     scenes: changes.removedScenes,
     drawings: changes.drawings.removed,
-    interactions: changes.interactions.removed,
     details: changes.details.removed,
     materials: Object.keys(was).filter((id) => !(id in now)),
   };
@@ -589,7 +577,7 @@ function changedRecords(
     ...(changes.style ? { style: after.style } : {}),
     ...(Object.keys(scenes).length ? { scenes } : {}),
     ...Object.fromEntries(
-      (["drawings", "interactions", "details"] as const)
+      (["drawings", "details"] as const)
         .map((k) => [k, pick(after[k], touched(changes[k]))] as const)
         .filter(([, r]) => Object.keys(r).length),
     ),
@@ -826,6 +814,16 @@ function said(store: UserStore, workId: string, preferences: string) {
       ),
   ];
 }
+/** Where a conversation starts when the one before it cannot be continued: what the user has
+ * asked of this work so far. The whole work follows it. */
+function earlierRequests(store: UserStore, workId: string): Item[] {
+  const asked = store
+    .runs(workId)
+    .flatMap((r) => r.steps.flatMap((s) => (s.kind === "message" && s.role === "user" ? [s.text] : [])));
+  return asked.length
+    ? [{ role: "user", content: `Earlier requests on this work, oldest first:\n${asked.map((a) => `- ${a}`).join("\n")}` }]
+    : [];
+}
 /** Every revision a run saves belongs to the request that started it. */
 const causeOf = (run: Run): Cause => ({
   kind: "run",
@@ -913,15 +911,17 @@ export class Agent {
       startedAt: Date.now(),
     };
     const previous = store.runs(workId).at(-1);
-    const before = previous && (store.context(previous.id) as Context);
+    const saved = previous && (store.context(previous.id) as Context | null);
+    const before = saved?.format === CONTEXT_FORMAT ? saved : undefined;
     const ctx: Context = {
       settings,
-      input: before ? before.input : [],
+      input: before ? before.input : earlierRequests(store, workId),
       generations: 0,
       ...(before?.measured ? { measured: before.measured } : {}),
       ...(before?.reported ? { reported: before.reported } : {}),
       known: work.revision,
       preferences: preferencesOf(settings),
+      format: CONTEXT_FORMAT,
     };
     ctx.input.push(
       // Told again only when they changed since this conversation last heard them.
@@ -955,6 +955,21 @@ export class Agent {
     const run = store.run(runId);
     if (run.status !== "waiting") throw new DomainError("当前任务没有等待回答");
     const ctx = store.context(runId) as Context;
+    if (ctx.format !== CONTEXT_FORMAT) {
+      const work = store.work(run.workId);
+      const asked = run.steps.findLast((s) => s.kind === "message" && s.asked);
+      ctx.input = [
+        ...earlierRequests(store, run.workId),
+        ...(asked?.kind === "message"
+          ? [{ role: "user", content: `You then asked the user:\n${asked.text}` }]
+          : []),
+        workMessage(run.sceneId, work),
+      ];
+      ctx.known = work.revision;
+      ctx.measured = undefined;
+      ctx.reported = undefined;
+      ctx.format = CONTEXT_FORMAT;
+    }
     ctx.input.push(await userMessage(store, answer, materials, locale));
     run.steps.push({ kind: "message", role: "user", text: answer, materials });
     run.questions = undefined;
@@ -1535,7 +1550,7 @@ export class Agent {
       (s): s is ToolStep => s.kind === "tool" && s.id === call.call_id,
     );
     try {
-      const args = parsedArguments(run, call.arguments);
+      const args = parsedArguments(run, call);
       if (!silent.has(call.name)) {
         if (step) Object.assign(step, activity(call.name, args, run.sceneId));
         else {
@@ -1766,12 +1781,17 @@ export class Agent {
           break;
         }
         case "write_work": {
-          const { work, added, keptTitle } = await writeWork(
-            store,
-            run.workId,
-            fromAuthor(store.work(run.workId), authorWriteSchema.parse(args), run.sceneId),
-            causeOf(run),
-          );
+          const { amend, ...written } = args;
+          if (amend && !ctx.held)
+            throw new DomainError("没有等待修正的写入：amend 只用在一次写入被拒绝之后；这次把要改的内容直接写出来");
+          // A correction lays over the write it corrects, and the two save as one revision.
+          const edit = amend ? composed(ctx.held, written) : written;
+          ctx.held = edit;
+          const { work, added, keptTitle, absent } = await writeWork(store, run.workId, edit, {
+            cause: causeOf(run),
+            scene: run.sceneId,
+          });
+          ctx.held = undefined;
           ctx.known = work.revision;
           run.firstSceneMs ??= Date.now() - start;
           this.publish(store.userId, { type: "work", work });
@@ -1781,9 +1801,12 @@ export class Agent {
             ...(keptTitle
               ? { title: `Kept the user's title "${work.title}".` }
               : {}),
+            ...(absent.length
+              ? { notThere: `Asked to remove what the work does not have: ${absent.join(", ")}.` }
+              : {}),
             ...cardsUnread(work, ctx.input, batch),
           };
-          Object.assign(step!, { revision: work.revision, materials: added });
+          Object.assign(step!, { revision: work.revision, materials: added, writing: undefined });
           break;
         }
         case "view_canvas": {
@@ -1848,6 +1871,26 @@ export class Agent {
       const error = e instanceof Error ? e.message : String(e);
       if (step) Object.assign(step, { status: "failed", error });
       if (e instanceof Unavailable) throw e;
+      if (e instanceof BrokenWrite) {
+        // Only the records that arrived whole carry over; whatever came after is the author's to send.
+        const { amend, ...kept } = e.kept;
+        ctx.held = amend && ctx.held ? composed(ctx.held, kept) : kept;
+        return {
+          done: false,
+          output: { error, note: heldNote(ctx.held) },
+          images: [],
+          error,
+        };
+      }
+      if (call.name === "write_work" && ctx.held && e instanceof DomainError) {
+        const problems: Problem[] = e instanceof EditRejected ? e.problems : [{ at: "", problem: e.message }];
+        return {
+          done: false,
+          output: { error: `${problems.length} problem${problems.length > 1 ? "s" : ""} in this write`, problems, note: heldNote(ctx.held) },
+          images: [],
+          error,
+        };
+      }
       return { done: false, output: { error }, images: [], error };
     }
   }

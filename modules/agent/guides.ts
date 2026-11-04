@@ -18,12 +18,12 @@ Drawing API:
 - api.svg('<svg viewBox="0 0 ...">...</svg>') returns an SVG element. api.html('<style>...</style><div>...</div>') returns local DOM. Normal DOM methods and event handlers work.
 - api.material(id, {width, height, fit, align, color}) returns a picture material fitted by its visible content into the module or the given box, standing on the box's bottom edge unless align is "center" or "top"; color inks a recolourable icon.
 - api.materials[id] gives {url, width, height, anchors} of each picture in the work, for compositions such as <image href> inside your own SVG; anchors are named points normalized to the visible content.
-- await api.draw(id, data, {width, height}) returns a library drawing's element, sized to the module unless a size is given. Read its card first.
+- await api.draw(id, data, {width, height}) returns another drawing's element, the work's own or the library's, sized to the module unless a size is given. Read a library drawing's card first.
 - api.effect(id) returns "url(#…)" for a filter, fill or marker attribute. await api.mermaid(source) returns a rendered diagram.
 - api.emit(event, value) sends an event to the scene interaction. api.animate(seconds => ...) starts a frame loop. api.cleanup(fn) registers cleanup.
-- Link drawings also receive api.from and api.to in local coordinates, and api.fromSide and api.toSide, the edge of its module each anchor sits on (left, right, top, bottom, or null inside), so a link can leave and arrive square to it.
+- Link drawings also receive api.from and api.to in local coordinates, and api.fromSide and api.toSide, the side of its module each end meets (left, right, top, bottom, or null inside), so a link can leave and arrive square to it.
 
-Editable by hand. People who do not code edit works by hand, and they can change only what the work exposes. Declare in the drawing's params each instance data key a person may want to change, with a short label in the user's language and a type (text; number, with min, max and step for a slider; boolean; color; picture, holding a picture material id; choice, with its options); the app shows these as plain controls. Keep the words shown, colours, sizes and pictures in instance data read through params rather than written into the source: words in the source can be retyped only where they occur once, and words or colours the code computes cannot be changed by hand at all. Give an svg that holds words style="overflow:visible", as the library drawings do, so words a person lengthens run past the module's edge instead of being cut off.
+Values, not code. Read every word, colour, size and picture through api.data, and give the drawing its usual values in defaults: {size: 18, color: "#c4372c"} sits under each module's own data, so one write of defaults changes every module drawn with it, one write of data changes one of them, and neither touches the code. The same values are what people who do not code can change: each default gets a plain control in the editor, chosen from its value. Add params only where a control needs more, by data key: a short label in the user's language, and a type (text; number, with min, max and step for a slider; boolean; color; picture, holding a picture material id; choice, with its options). Words or colours written into the source can be retyped only where they occur once, and those the code computes cannot be changed by hand at all. Give an svg that holds words style="overflow:visible", as the library drawings do, so words a person lengthens run past the module's edge instead of being cut off.
 
 Materials are taken into the work when a drawing or interaction names them literally (api.material("apple"), api.draw("arrow"), api.effect("pencil-grain")), a module or link uses one as its drawingId, or a module's data holds their id as a string. List any others in write_work.materials, because an id built at runtime cannot be found by reading the source.
 
@@ -33,7 +33,7 @@ Looks. Use the style's tokens for ink, colours, stroke and font, and its effects
     when: "when the figure is or contains a flowchart, system diagram, hierarchy, matrix, table, chart or other conventional structured form",
     text: `Build a conventional form from the library's drawing for it (# Library lists them: hierarchy, layers, quadrant, compare, pyramid, venn, mindmap, steps, swimlanes, fishbone, sequence, concentric, gantt, bars, donut, gauge, stat, radar, checklist, callout). They already have balanced spacing, a type scale and the style's colours, which boxes placed by hand rarely reach. Ask for the cards of the ones you use in the same draw_guide call as this guide when you can. They can also be one part of a larger idea, such as a gauge on a drawn machine or a sequence beside the two machines it connects.
 Use one of these as the whole figure only when the user names it or the subject has exactly that structure, since it is the picture every other author would draw.
-Draw a flowchart or system diagram as one node module per block, joined by arrow links with route elbow (first set to the axis the source anchor faces), with blocks of one kind the same size and aligned on shared rows and columns, so the user can move a block and its connections follow. A node's outline is notation the reader expects, so it is the one box the visual language allows.
+Draw a flowchart or system diagram as one node module per block, joined by arrow links with route elbow, with blocks of one kind the same size and aligned on shared rows and columns, so the user can move a block and its connections follow. A node's outline is notation the reader expects, so it is the one box the visual language allows.
 Keep api.mermaid for UML class or state diagrams the library does not provide, since its generic look ignores the style. Structure drawings take one of the style's effects as their effect parameter, which gives them the style's texture.`,
   },
   maps: {
@@ -51,14 +51,14 @@ A map's edge is where the ground was cut. When the map is the figure's ground an
     when: "before adding controls, animation, click behaviour, subscenes or detail pages",
     text: `Exploration is optional. Give a module a detail target only when there is substantial content the drawing cannot show, such as a mechanism, worked example or comparison; give it a scene target only when that part deserves its own figure. Most modules have no target, so leave it out, and a detail never restates a label. Detail content is separately opened HTML prose, never the main diagram. Empty subscenes can be created for later expansion.
 
-Scene interactions are JavaScript function bodies receiving api:
+A scene's script is its interaction field, a JavaScript function body receiving api:
 - api.on(moduleId, event, callback) subscribes to module events; drawings send them with api.emit, and the slider and choice library drawings send "change".
-- api.set(moduleId, dataPatch) changes instance data. api.move(moduleId, x, y) moves a module and its connected anchors.
+- api.set(moduleId, dataPatch) changes instance data. api.move(moduleId, x, y) moves a module and the links on it.
 - api.animate(seconds => ...) coordinates animation. api.cleanup(fn) disposes resources.
 - api.openScene(id) and api.openDetail(id) navigate. A module target navigates without code.
 
 These states are transient, since the saved work is what reopens, so the default state belongs in instance data. When a control changes values, keep the scales they are read against (axes, reference lines, maxima) fixed over the control's range, so a change shows as a change, with ticks on round numbers. Register async handlers as async functions so preview waits for them.
-Give the scene's record checks [{moduleId, selector}] for important buttons: view_canvas then shows them pressed. Test a sequence with view_canvas actions in a specified scene, because an interaction you have not seen run is unverified.`,
+Give the scene checks [{moduleId, selector}] for important buttons: view_canvas then shows them pressed. Test a sequence with view_canvas actions in a specified scene, because an interaction you have not seen run is unverified.`,
   },
   formats: {
     when: "when the user names a medium that carries its own words and shape: a poster, flyer, social-media card, cover or slide",

@@ -1,5 +1,6 @@
 import type { Browser, Page } from "playwright";
 import type { Bounds, Scene } from "../contracts/index.ts";
+import { MIN_TEXT, OPENING_VIEW } from "../contracts/geometry.ts";
 
 export interface CaptureRequest {
   scenes: {
@@ -20,6 +21,9 @@ export interface CaptureRequest {
  * a picture: the smallest text and any cut off by what holds it or by the view. */
 export interface TextReport {
   smallest?: { moduleId: string; text: string; px: number };
+  /** The smallest text of each part below `MIN_TEXT`, smallest first, so one write can raise
+   * them all. */
+  small: { moduleId: string; text: string; px: number }[];
   clipped: { moduleId: string; text: string }[];
 }
 export interface Shot {
@@ -27,7 +31,6 @@ export interface Shot {
   /** The scene's modules, on its opening view; other views show the same scene. */
   modules?: {
     id: string;
-    label: string;
     bounds: Bounds;
     /** Where each picture's visible content actually is, in scene units. */
     pictures?: ({ material: string } & Bounds)[];
@@ -45,9 +48,10 @@ export interface Shot {
 }
 /** Runs in the page, so its helpers live inside it: reads every part's text. A size is the
  * font's own, scaled as the camera and any viewBox or transform above it scale it. */
-export function readText(): TextReport {
-  const report: TextReport = { clipped: [] };
+export function readText(limit: number): TextReport {
+  const report: TextReport = { small: [], clipped: [] };
   const seen = new Set<string>();
+  const least = new Map<string, { moduleId: string; text: string; px: number }>();
   const view = { right: innerWidth, bottom: innerHeight };
   const scaleOf = (element: Element) => {
     let scale = 1;
@@ -80,6 +84,8 @@ export function readText(): TextReport {
       const px = Math.round(size);
       if (!report.smallest || px < report.smallest.px)
         report.smallest = { moduleId, text: text.slice(0, 30), px };
+      if (px < limit && px < (least.get(moduleId)?.px ?? Infinity))
+        least.set(moduleId, { moduleId, text: text.slice(0, 30), px });
       // A text box reaches past its glyphs, by about this much above and below, and a tight
       // line height lets it pass its own container without cutting anything.
       const top = box.top + size * 0.2,
@@ -102,6 +108,7 @@ export function readText(): TextReport {
       }
     }
   }
+  report.small = [...least.values()].sort((a, b) => a.px - b.px).slice(0, 12);
   return report;
 }
 async function ready(page: Page) {
@@ -124,8 +131,7 @@ export async function capture(
   ]);
   const shots: Shot[] = [];
   try {
-    const width = 1440,
-      height = 900;
+    const { width, height } = OPENING_VIEW;
     for (const scene of request.scenes) {
       const page = await context.newPage();
       const errors: string[] = [];
@@ -155,7 +161,7 @@ export async function capture(
           return {
             camera,
             modules: [...window.drawyView.renderer.instances.values()].map(
-              ({ id, label, bounds }) => {
+              ({ id, bounds }) => {
                 const host = document.querySelector(
                   `[data-module-id="${CSS.escape(id)}"]`,
                 );
@@ -186,7 +192,6 @@ export async function capture(
                 });
                 return {
                   id,
-                  label,
                   bounds,
                   ...(pictures.length ? { pictures } : {}),
                 };
@@ -215,7 +220,7 @@ export async function capture(
         shots.push({
           camera: geometry.camera,
           ...(overview
-            ? { modules: geometry.modules, text: await page.evaluate(readText) }
+            ? { modules: geometry.modules, text: await page.evaluate(readText, MIN_TEXT) }
             : {}),
           sceneId: await page.evaluate(() => window.drawyData.sceneId),
           label: `${size.width}px / ${label}`,

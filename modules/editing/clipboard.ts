@@ -9,7 +9,9 @@ import type {
   WorkEdit,
 } from "../contracts/index.ts";
 import { union } from "../contracts/geometry.ts";
-import { drawingIds, edit, fresh, partIds, sceneOf } from "./shared.ts";
+import { materialsOfPart } from "../contracts/index.ts";
+import { drawingIds, fresh, partIds, sceneOf } from "./shared.ts";
+import { newModule } from "./parts.ts";
 
 /* Copying parts and pasting them into the same scene, another scene or another work. A
  * clip carries everything the parts need to draw the same way: the links between them,
@@ -18,7 +20,7 @@ import { drawingIds, edit, fresh, partIds, sceneOf } from "./shared.ts";
 type LibraryDrawing = Extract<MaterialUse, { kind: "drawing" }>;
 
 export interface Clip {
-  kind: "drawy/parts";
+  kind: "drawy/clip";
   workId: string;
   sceneId: string;
   modules: Instance[];
@@ -32,25 +34,8 @@ export interface Clip {
 export const isClip = (v: unknown): v is Clip =>
   !!v &&
   typeof v === "object" &&
-  (v as Clip).kind === "drawy/parts" &&
+  (v as Clip).kind === "drawy/clip" &&
   Array.isArray((v as Clip).modules);
-/** The materials a part shows: its library drawing, the pictures its data names and those
- * its own drawing's code quotes. */
-function materialsOf(work: Work, part: Instance | Link) {
-  const ids = new Set<string>();
-  const known = (id: string) => !!work.materials[id] && ids.add(id);
-  known(part.drawingId);
-  const scan = (v: unknown) => {
-    if (typeof v === "string") known(v);
-    else if (Array.isArray(v)) v.forEach(scan);
-    else if (v && typeof v === "object") Object.values(v).forEach(scan);
-  };
-  scan(part.data);
-  const source = work.drawings[part.drawingId]?.source ?? "";
-  for (const [, id] of source.matchAll(/["'`]([a-z0-9]+(?:-+[a-z0-9]+)*)["'`]/g))
-    known(id);
-  return [...ids];
-}
 /** What copying these modules takes along. Null when none of them is in the scene. */
 export function copy(work: Work, sceneId: string, ids: string[]): Clip | null {
   const scene = sceneOf(work, sceneId);
@@ -62,7 +47,7 @@ export function copy(work: Work, sceneId: string, ids: string[]): Clip | null {
   );
   const parts = [...modules, ...links];
   return structuredClone({
-    kind: "drawy/parts" as const,
+    kind: "drawy/clip" as const,
     workId: work.id,
     sceneId,
     modules,
@@ -79,7 +64,7 @@ export function copy(work: Work, sceneId: string, ids: string[]): Clip | null {
         ),
       ),
     ].map((id) => work.materials[id] as LibraryDrawing),
-    materials: [...new Set(parts.flatMap((p) => materialsOf(work, p)))],
+    materials: [...new Set(parts.flatMap((p) => materialsOfPart(work, p)))],
   });
 }
 /** The box around what a clip holds. */
@@ -89,9 +74,8 @@ export const clipBounds = (clip: Clip): Bounds =>
  * `offset`, or centred on `centre`, or where it was. Parts get ids of their own; a drawing
  * the work has under the same id with other code comes in under a new id; a library
  * drawing whose id one of the work's own drawings uses comes in as a drawing of the work's
- * own under a new id, its defaults written into the parts' data since only library
- * drawings fill them in (`labels` names its values for the editor); targets the work does
- * not have lead nowhere. Returns the pasted modules' ids. */
+ * own under a new id; targets the work does not have lead nowhere. Returns the pasted
+ * modules' ids. */
 export function paste(
   work: Work,
   sceneId: string,
@@ -99,10 +83,9 @@ export function paste(
   {
     offset = 0,
     centre,
-    labels = {},
-  }: { offset?: number; centre?: Point; labels?: Record<string, string> } = {},
+  }: { offset?: number; centre?: Point } = {},
 ): { edit: WorkEdit; ids: string[] } {
-  const scene = sceneOf(work, sceneId);
+  sceneOf(work, sceneId);
   const ids = partIds(work),
     groups = new Set(
       Object.values(work.scenes).flatMap((s) =>
@@ -125,39 +108,29 @@ export function paste(
     drawings.push({ ...d, id });
   }
   // Library drawings shadowed by one of the work's own: taken as the work's own.
-  const defaultsOf = new Map<string, Record<string, unknown>>();
+  const copied = new Set<string>();
   for (const use of clip.libraries ?? []) {
     if (!work.drawings[use.id]) continue;
     const id = fresh(use.id, names);
     names.add(id);
     drawingOf.set(use.id, id);
-    defaultsOf.set(use.id, use.defaults);
-    const params = Object.entries(use.params);
+    copied.add(use.id);
     drawings.push({
       id,
       name: use.name,
-      ...(params.length
-        ? {
-            params: Object.fromEntries(
-              params.map(([k, p]) => [k, { ...p, label: labels[k] ?? k }]),
-            ),
-          }
-        : {}),
+      ...(Object.keys(use.params).length ? { params: use.params } : {}),
+      ...(Object.keys(use.defaults).length ? { defaults: use.defaults } : {}),
       source: use.source,
     });
   }
-  const dataOf = (p: Instance | Link) => ({
-    ...structuredClone(defaultsOf.get(p.drawingId) ?? {}),
-    ...structuredClone(p.data),
-  });
   const box = clipBounds(clip);
   const dx = centre ? centre.x - (box.x + box.width / 2) : offset,
     dy = centre ? centre.y - (box.y + box.height / 2) : offset;
   const moduleOf = new Map<string, string>(),
     groupOf = new Map<string, string>();
-  const has = (t: Instance["target"]) =>
-    !!t && (t.kind === "scene" ? !!work.scenes[t.id] : !!work.details[t.id]);
-  const modules = clip.modules.map((m) => {
+  const has = (t: NonNullable<Instance["target"]>) =>
+    t.kind === "scene" ? !!work.scenes[t.id] : !!work.details[t.id];
+  const modules = clip.modules.map((m): Instance => {
     const id = fresh(m.id, ids);
     ids.add(id);
     moduleOf.set(m.id, id);
@@ -170,13 +143,13 @@ export function paste(
       }
       group = groupOf.get(group)!;
     }
+    const { target, ...rest } = structuredClone(m);
     return {
-      ...structuredClone(m),
+      ...rest,
       id,
-      group,
+      ...(group ? { group } : {}),
       drawingId: drawingOf.get(m.drawingId) ?? m.drawingId,
-      data: dataOf(m),
-      target: has(m.target) ? m.target : null,
+      ...(target && has(target) ? { target } : {}),
       bounds: { ...m.bounds, x: m.bounds.x + dx, y: m.bounds.y + dy },
     };
   });
@@ -186,29 +159,21 @@ export function paste(
     return {
       ...structuredClone(l),
       id,
+      scene: sceneId,
       drawingId: drawingOf.get(l.drawingId) ?? l.drawingId,
-      data: dataOf(l),
       from: { ...l.from, moduleId: moduleOf.get(l.from.moduleId)! },
       to: { ...l.to, moduleId: moduleOf.get(l.to.moduleId)! },
     };
   });
   // A library drawing taken as the work's own is not taken from the library too.
-  const materials = clip.materials.filter((id) => !defaultsOf.has(id));
+  const materials = clip.materials.filter((id) => !copied.has(id));
   return {
-    edit: edit(
-      work,
-      [
-        {
-          ...scene,
-          modules: [...scene.modules, ...modules],
-          links: [...scene.links, ...links],
-        },
-      ],
-      {
-        ...(drawings.length ? { drawings } : {}),
-        ...(materials.length ? { materials } : {}),
-      },
-    ),
+    edit: {
+      modules: modules.map((m) => newModule(sceneId, m)),
+      ...(links.length ? { links } : {}),
+      ...(drawings.length ? { drawings } : {}),
+      ...(materials.length ? { materials } : {}),
+    },
     ids: modules.map((m) => m.id),
   };
 }

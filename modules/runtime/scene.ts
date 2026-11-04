@@ -5,25 +5,13 @@ import type {
   Link,
   Point,
   Bounds,
+  Side,
   Target,
   MaterialUse,
 } from "../contracts/index.ts";
-import { union } from "../contracts/geometry.ts";
+import { drawingOf, labelOf } from "../contracts/index.ts";
+import { linkEnds, union } from "../contracts/geometry.ts";
 
-type Side = "left" | "right" | "top" | "bottom";
-/** The edge of a module a normalized anchor sits on, if it sits on one. */
-function sideOf(a: Point): Side | null {
-  const edges: [Side, number][] = [
-    ["left", a.x],
-    ["right", 1 - a.x],
-    ["top", a.y],
-    ["bottom", 1 - a.y],
-  ];
-  const [side, distance] = edges.reduce((best, e) =>
-    e[1] < best[1] ? e : best,
-  );
-  return distance <= 0.05 ? side : null;
-}
 export interface SceneOptions {
   open: (target: Target) => void;
   error: (message: string) => void;
@@ -35,7 +23,7 @@ export interface DrawingAPI {
   theme: Record<string, string>;
   from?: Point;
   to?: Point;
-  /** The edge of its module each end's anchor sits on; null for an anchor inside. */
+  /** The side of its module each end meets; null for a point inside it. */
   fromSide?: Side | null;
   toSide?: Side | null;
   svg: (source: string) => SVGElement;
@@ -145,7 +133,7 @@ export class SceneRenderer {
     if (this.disposed) return;
     await this.drawLinks();
     if (this.disposed) return;
-    if (this.scene.interactionId) {
+    if (this.scene.interaction) {
       const api = {
         on: (id: string, event: string, fn: Listener) => {
           const key = JSON.stringify([id, event]);
@@ -168,9 +156,7 @@ export class SceneRenderer {
         animate: (fn: (seconds: number) => void) =>
           this.animate(fn, this.interactionCleanup),
       };
-      await this.track(
-        execute(this.work.interactions[this.scene.interactionId].source, api),
-      );
+      await this.track(execute(this.scene.interaction, api));
       if (this.disposed)
         for (const fn of this.interactionCleanup.splice(0)) fn();
     }
@@ -407,7 +393,8 @@ export class SceneRenderer {
           material: (id, options) => this.picture(id, size, options),
           materials: this.pictures,
           draw: (id, data = {}, at = size) => {
-            const m = this.use(id, "drawing");
+            const m = drawingOf(this.work, id);
+            if (!m) throw Error(`画法 ${id} 不在作品中：在 drawings 里定义它，或用库里画法素材的 id`);
             return execute(
               m.source,
               apiFor({ ...m.defaults, ...data }, at),
@@ -424,11 +411,11 @@ export class SceneRenderer {
         });
         try {
           // The work's own definition, or a library drawing used as it is.
-          const own = this.work.drawings[drawingId],
-            library = own ? undefined : this.use(drawingId, "drawing");
+          const drawing = drawingOf(this.work, drawingId);
+          if (!drawing) throw Error(`画法 ${drawingId} 不在作品中：在 drawings 里定义它，或用库里画法素材的 id`);
           const result = await execute(
-            own ? own.source : library!.source,
-            apiFor(own ? data : { ...library!.defaults, ...data }, {
+            drawing.source,
+            apiFor({ ...drawing.defaults, ...data }, {
               width: bounds.width,
               height: bounds.height,
             }),
@@ -465,7 +452,7 @@ export class SceneRenderer {
           host.removeAttribute("data-error");
           if (kind === "module") {
             const m = this.instances.get(id)!;
-            host.title = m.label;
+            host.title = labelOf(m);
             host.toggleAttribute("data-explorable", !!m.target);
           }
         } catch (e) {
@@ -482,19 +469,13 @@ export class SceneRenderer {
   private drawModule(m: Instance) {
     return this.draw(m.id, m.drawingId, m.bounds, m.data, "module");
   }
-  /** Where an end of a link meets its module, in scene units, and the side it is on. */
-  endpoint(end: { moduleId: string; anchor: string }) {
-    const m = this.instances.get(end.moduleId)!,
-      a = m.anchors[end.anchor] ?? { x: 0.5, y: 0.5 };
-    return {
-      x: m.bounds.x + a.x * m.bounds.width,
-      y: m.bounds.y + a.y * m.bounds.height,
-      side: sideOf(a),
-    };
+  /** Where a link's ends meet their modules as they are now, in scene units, and the side
+   * each is on. */
+  ends(l: Pick<Link, "from" | "to">) {
+    return linkEnds(l, (id) => this.instances.get(id)!.bounds);
   }
   private drawLink(l: Link) {
-    const from = this.endpoint(l.from),
-      to = this.endpoint(l.to);
+    const { from, to } = this.ends(l);
     const x = Math.min(from.x, to.x) - 48,
       y = Math.min(from.y, to.y) - 48;
     const bounds = {
@@ -590,9 +571,7 @@ export class SceneRenderer {
     if (this.disposed || scene.id !== this.scene.id) return false;
     if (JSON.stringify(work.style) !== JSON.stringify(this.work.style))
       return false;
-    const script = (w: Work, s: Scene) =>
-      s.interactionId ? (w.interactions[s.interactionId]?.source ?? "") : "";
-    if (script(work, scene) !== script(this.work, this.scene)) return false;
+    if ((scene.interaction ?? "") !== (this.scene.interaction ?? "")) return false;
     for (const [id, m] of Object.entries(work.materials)) {
       const was = this.work.materials[id];
       if (was && JSON.stringify(was) !== JSON.stringify(m)) return false;
@@ -653,7 +632,7 @@ export class SceneRenderer {
         left: m.bounds.x + "px",
         top: m.bounds.y + "px",
       });
-      host.title = m.label;
+      host.title = labelOf(m);
       host.toggleAttribute("data-explorable", !!m.target);
     }
     // The modules' order on the page is their stacking order.

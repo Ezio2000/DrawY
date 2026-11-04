@@ -1,5 +1,5 @@
-import type { Drawing, Instance, Work, WorkEdit } from "../contracts/index.ts";
-import { compiles, drawingIds, edit, fresh, sceneOf } from "./shared.ts";
+import { diffValue, usersOf, type Work, type WorkEdit } from "../contracts/index.ts";
+import { drawingIds, fresh, sceneOf, syntaxError } from "./shared.ts";
 
 /* Words or a picture a person pointed at, changed where they come from: the module's data
  * when it holds them, otherwise the one place its drawing's code names them. */
@@ -75,29 +75,24 @@ export function replace(
   if (from === to) return null;
   const scene = sceneOf(work, sceneId);
   const module = scene.modules.find((m) => m.id === moduleId);
+  const extra: Partial<WorkEdit> = kind === "picture" ? { materials: [to] } : {};
   // A link's words and pictures are changed in its data; its drawing is left alone.
   const link = !module && scene.links.find((l) => l.id === moduleId);
   if (link) {
     const r = replaceIn(link.data, from, to);
     if (!r.done) return null;
-    return edit(
-      work,
-      [
+    return {
+      links: [
         {
-          ...scene,
-          links: scene.links.map((l) =>
-            l.id === link.id ? { ...l, data: r.value as Instance["data"] } : l,
-          ),
+          id: link.id,
+          scene: sceneId,
+          data: diffValue(link.data, r.value as Record<string, unknown>),
         },
       ],
-      kind === "picture" ? { materials: [to] } : {},
-    );
+      ...extra,
+    };
   }
   if (!module) return null;
-  const extra: Partial<WorkEdit> =
-    kind === "picture" ? { materials: [to] } : {};
-  // A label that is the words themselves follows them.
-  const label = kind === "text" && module.label === from ? to : module.label;
   const first = replaceIn(module.data, from, to);
   // A renamed entry (a place on a map) takes the references to it along: routes and
   // areas that list it by name would otherwise lose it.
@@ -105,20 +100,16 @@ export function replace(
     ? { ...first, value: replaceAll(first.value, from, to) }
     : first;
   if (inData.done)
-    return edit(
-      work,
-      [
+    return {
+      modules: [
         {
-          ...scene,
-          modules: scene.modules.map((m) =>
-            m.id === moduleId
-              ? { ...m, label, data: inData.value as Instance["data"] }
-              : m,
-          ),
+          id: moduleId,
+          scene: sceneId,
+          data: diffValue(module.data, inData.value as Record<string, unknown>),
         },
       ],
-      extra,
-    );
+      ...extra,
+    };
   const drawing = work.drawings[module.drawingId];
   if (!drawing) return null;
   const forms =
@@ -136,33 +127,16 @@ export function replace(
     kind === "picture"
       ? found[0][0] + to + found[0][0]
       : escapeJs(markup ? escapeXml(to) : to);
-  const source =
-    drawing.source.slice(0, at) +
-    written +
-    drawing.source.slice(at + found[0].length);
-  if (!compiles(source)) return null;
-  const shared = Object.values(work.scenes).some((s) =>
-    [...s.modules, ...s.links].some(
-      (p) => p.drawingId === drawing.id && p.id !== moduleId,
-    ),
-  );
-  const changed: Drawing = shared
-    ? {
-        ...drawing,
-        id: fresh(drawing.id, drawingIds(work)),
-        source,
-      }
-    : { ...drawing, source };
-  return edit(
-    work,
-    [
-      {
-        ...scene,
-        modules: scene.modules.map((m) =>
-          m.id === moduleId ? { ...m, label, drawingId: changed.id } : m,
-        ),
-      },
-    ],
-    { ...extra, drawings: [changed] },
-  );
+  if (syntaxError(drawing.source.replace(found[0], () => written))) return null;
+  const change = { find: found[0], replace: written };
+  // A drawing others share is copied for this module first, so only what was pointed at changes.
+  if (usersOf(work, drawing.id).some((p) => p.id !== moduleId)) {
+    const id = fresh(drawing.id, drawingIds(work));
+    return {
+      drawings: [{ id, from: drawing.id, edits: [change] }],
+      modules: [{ id: moduleId, scene: sceneId, drawingId: id }],
+      ...extra,
+    };
+  }
+  return { drawings: [{ id: drawing.id, edits: [change] }], ...extra };
 }

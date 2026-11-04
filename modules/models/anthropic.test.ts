@@ -69,7 +69,7 @@ it("streams a Claude turn as Responses events and items", async () => {
         { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Drawing." } },
         { type: "content_block_stop", index: 1 },
         { type: "content_block_start", index: 2, content_block: { type: "tool_use", id: "toolu_1", name: "write_work", input: {} } },
-        { type: "content_block_delta", index: 2, delta: { type: "input_json_delta", partial_json: '{"baseRevision":' } },
+        { type: "content_block_delta", index: 2, delta: { type: "input_json_delta", partial_json: '{"title":' } },
         { type: "content_block_delta", index: 2, delta: { type: "input_json_delta", partial_json: "1}" } },
         { type: "content_block_stop", index: 2 },
         ...end("tool_use"),
@@ -92,7 +92,7 @@ it("streams a Claude turn as Responses events and items", async () => {
   ]);
   expect(result.items.map((i) => i.type)).toEqual(["reasoning", "message", "function_call"]);
   expect(result.items[0].anthropic).toEqual({ type: "thinking", thinking: "Plan it.", signature: "sig" });
-  expect(result.items[2]).toMatchObject({ call_id: "toolu_1", name: "write_work", arguments: '{"baseRevision":1}' });
+  expect(result.items[2]).toMatchObject({ call_id: "toolu_1", name: "write_work", arguments: '{"title":1}' });
   expect(result.usage).toMatchObject({ input_tokens: 100, input_tokens_details: { cached_tokens: 90 }, output_tokens: 20 });
   const b = body();
   expect(b.model).toBe("claude-sonnet-5-5");
@@ -116,13 +116,13 @@ it("streams a Claude turn as Responses events and items", async () => {
     content: [
       { type: "thinking", thinking: "Plan it.", signature: "sig" },
       { type: "text", text: "Drawing." },
-      { type: "tool_use", id: "toolu_1", name: "write_work", input: { baseRevision: 1 } },
+      { type: "tool_use", id: "toolu_1", name: "write_work", input: { title: 1 } },
     ],
   });
   // Other APIs read the same items without Claude's blocks.
   expect(forResponses(result.items)).toEqual([
     { type: "message", role: "assistant", content: result.items[1].content },
-    { type: "function_call", call_id: "toolu_1", name: "write_work", arguments: '{"baseRevision":1}' },
+    { type: "function_call", call_id: "toolu_1", name: "write_work", arguments: '{"title":1}' },
   ]);
   expect(toMessages("", result.items).filter((m) => m.role === "assistant")).toHaveLength(1);
 });
