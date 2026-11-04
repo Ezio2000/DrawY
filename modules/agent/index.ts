@@ -252,8 +252,8 @@ function spend(run: Run, usage: Item) {
 type ToolStep = Extract<Step, { kind: "tool" }>;
 const pictures = (shots: { name: string; url: string }[]) =>
   shots.map(({ name, url }) => ({ name, url }));
-/** Tools that run alone and are not shown as steps of their own. */
-const silent = new Set(["ask_user", "finish"]);
+/** Tools not shown as steps of their own. */
+const silent = new Set(["ask_user"]);
 /** A box the author wrote, if enough of it has arrived to show. */
 const boxed = (box: unknown) => {
   const parsed = boxSchema.safeParse(box);
@@ -1373,9 +1373,9 @@ export class Agent {
       this.emit(store, run);
       const calls = result.items.filter((i) => i.type === "function_call");
       if (!calls.length) {
-        // Words saying the work is done, when it is: that is what finish would say, and
-        // asking for the call only pays for the same message twice.
-        if (text && this.done(store, run) === undefined) {
+        // Words with no call end the run once the work is done: they are its closing words.
+        const blocked = this.done(store, run);
+        if (text && blocked === undefined) {
           run.status = "completed";
           store.context(run.id, ctx);
           this.developments.delete(run.id);
@@ -1383,8 +1383,9 @@ export class Agent {
         }
         ctx.input.push({
           role: "user",
-          content:
-            "Your last message had no tool call, so the work did not move. Take the next step now with a tool, keeping any note to the user in the same message. Call ask_user only if nothing can move without them, and finish once you have seen the latest saved revision and it holds.",
+          content: blocked
+            ? `The work is not done yet: ${blocked}. Take the next step with a tool, keeping any note to the user in the same message.`
+            : "Your last message had neither closing words nor a tool call. Write your closing words if the work is done, or take the next step with a tool.",
         });
         continue;
       }
@@ -1497,7 +1498,7 @@ export class Agent {
         }
         this.emit(store, run);
       }
-      if (["ask_user", "finish"].includes(call.name) && batch.length !== 1)
+      if (call.name === "ask_user" && batch.length !== 1)
         throw Error(`${call.name} must be the only tool call`);
       if (call.name === "view_canvas") {
         if (
@@ -1784,24 +1785,6 @@ export class Agent {
             run.status = "running";
           }
           break;
-        }
-        case "finish": {
-          const blocked = this.done(store, run);
-          if (blocked) throw new DomainError(blocked);
-          run.status = "completed";
-          run.steps.push({
-            kind: "message",
-            role: "assistant",
-            text: args.message,
-          });
-          ctx.input.push({
-            type: "function_call_output",
-            call_id: call.call_id,
-            output: "Completed",
-          });
-          store.context(run.id, ctx);
-          this.developments.delete(run.id);
-          return { done: true, output: null, images: [] };
         }
         default:
           throw Error("Unknown tool " + call.name);

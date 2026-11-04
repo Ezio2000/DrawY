@@ -40,7 +40,27 @@ vi.mock("../observation/index.ts", async (original) => ({
       { type: "input_image", image_url: "data:image/png;base64,dmlzaWJsZQ==" },
     ],
   })),
-}));
+}));/** What a scripted turn says: a tool call, or for `finish` the closing words of a turn
+ * without calls, which is how a run ends. */
+const answer = (name: string, args: unknown, call_id: string) =>
+  name === "finish"
+    ? {
+        type: "message",
+        role: "assistant",
+        content: [
+          {
+            type: "output_text",
+            text: (typeof args === "string" ? JSON.parse(args) : (args as { message: string })).message,
+          },
+        ],
+      }
+    : {
+        type: "function_call",
+        name,
+        arguments: typeof args === "string" ? args : JSON.stringify(args),
+        call_id,
+      };
+
 it("feeds canvas images into the author conversation and requires another look after edits", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
@@ -95,21 +115,10 @@ it("feeds canvas images into the author conversation and requires another look a
           sawImage = input.some(
             (x) =>
               x.role === "user" &&
-              x.content?.some((v: any) => v.type === "input_image"),
+              Array.isArray(x.content) && x.content.some((v: any) => v.type === "input_image"),
           );
         const [name, args] = calls[turn++];
-        return {
-          items: [
-            {
-              type: "function_call",
-              name,
-              arguments: JSON.stringify(args),
-              call_id: "c" + turn,
-            },
-          ],
-          usage: {},
-          response: {},
-        };
+        return { items: [answer(name, args, "c" + turn)], usage: {}, response: {} };
       },
     );
     await new Agent(() => {}).execute(store, run, ctx, "request");
@@ -121,25 +130,27 @@ it("feeds canvas images into the author conversation and requires another look a
       ),
     ).toEqual([
       ["thinking", "**Checking the canvas**"],
+      ["message", "premature"],
       ["view_canvas", "done"],
       ["write_work", "done"],
+      ["message", "stale"],
       ["view_canvas", "done"],
       ["message", "done"],
     ]);
-    expect(run.steps[2]).toMatchObject({ revision: 2, removed: 0 });
+    expect(run.steps[3]).toMatchObject({ revision: 2, removed: 0 });
     expect(run.observations.map((o) => o.revision)).toEqual([1, 2]);
-    const errors = ctx.input.filter(
-      (x) =>
-        x.type === "function_call_output" && x.output.startsWith('{"error":'),
+    // Closing words before the latest revision was seen are answered with what is missing.
+    const held = ctx.input.filter(
+      (x) => x.role === "user" && String(x.content).startsWith("The work is not done yet: "),
     );
-    expect(errors).toHaveLength(2);
+    expect(held).toHaveLength(2);
     expect(
       store
         .context("run")
         .input.some(
           (x: any) =>
             x.role === "user" &&
-            x.content?.some((v: any) => v.type === "input_image"),
+            Array.isArray(x.content) && x.content.some((v: any) => v.type === "input_image"),
         ),
     ).toBe(true);
   } finally {
@@ -238,12 +249,7 @@ it("lays out streamed modules on the write step before the write is saved", asyn
                   },
                 ]
               : []),
-            {
-              type: "function_call",
-              name,
-              arguments: value,
-              call_id: "c" + turn++,
-            },
+            answer(name, value, "c" + turn++),
           ],
           usage: {},
           response: {},
@@ -626,7 +632,6 @@ it("goes on without old pictures when a summary fails, and sizes the context by 
   }
 });
 
-const FINISH_AS_WORDS = false;
 type Call = [string, unknown];
 /** Answers each model turn with the next scripted tool call, or with several calls when a
  * turn is a list of them. A scripted `finish` is the closing words of a turn without calls. */
@@ -639,7 +644,7 @@ function script(turns: (Call | Call[])[], seen: any[][] = []) {
       const calls = (Array.isArray(step[0]) ? step : [step]) as Call[];
       return {
         items: calls.map(([name, args], i) =>
-          name === "finish" && FINISH_AS_WORDS
+          name === "finish"
             ? {
                 type: "message",
                 role: "assistant",
@@ -816,7 +821,7 @@ it("settles a brief only on the user's own words, then applies its style and sho
     rmSync(dir, { recursive: true });
   }
 });
-it("develops pictures while the author composes and holds finish until they were seen", async () => {
+it("develops pictures while the author composes and holds the end until they were seen", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
   try {
@@ -905,7 +910,8 @@ it("develops pictures while the author composes and holds finish until they were
     );
     expect(written.materials[id]).toMatchObject({ status: "developing" });
     await vi.waitFor(() => expect(seen.length).toBe(3));
-    expect(outputs(seen[2]).at(-1)).toContain("图片仍在生成");
+    // Closing words while a picture develops are answered with what is missing.
+    expect(String(seen[2].at(-1).content)).toContain("图片仍在生成");
     await new Promise((r) => setTimeout(r, 50));
     paint();
     await done;
@@ -1267,7 +1273,7 @@ it.each(["api", "oauth"] as const)("keeps hosted searches in the %s conversation
       expect(input).toContainEqual(message);
       expect(input.some(i => i.type === "function_call_output" && i.call_id === "ws_1")).toBe(false);
       const name = turn === 2 ? "view_canvas" : "finish";
-      return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(name === "finish" ? { message: "done" } : {}) }], usage: {}, response: {} };
+      return { items: [answer(name, name === "finish" ? { message: "done" } : {}, "c" + turn)], usage: {}, response: {} };
     });
     await new Agent((_user, event: any) => {
       const step = event.run?.steps.find((s: any) => s.name === "web_search");
@@ -1305,7 +1311,7 @@ it("shows any hosted tool as a step, records it under its turn and adds up what 
         return { items: [code, search], usage: usage(100), response: {} };
       }
       const name = turn === 2 ? "view_canvas" : "finish";
-      return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(name === "finish" ? { message: "done" } : {}) }], usage: usage(200), response: {} };
+      return { items: [answer(name, name === "finish" ? { message: "done" } : {}, "c" + turn)], usage: usage(200), response: {} };
     });
     await tracer.within(run.id, () => new Agent(() => {}).execute(store, run, { input: [], settings: store.settings(), generations: 0 }, "request"));
     expect(run.status).toBe("completed");
@@ -1392,7 +1398,7 @@ it("searches through the search service for a model without its own, counting ea
       const last = input.findLast((i) => i.type === "function_call_output");
       if (last) outputs.push(JSON.parse(last.output));
       const [name, args] = script[turn++];
-      return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(args) }], usage: {}, response: {} };
+      return { items: [answer(name, args, "c" + turn)], usage: {}, response: {} };
     });
     const ctx = { input: [], settings: store.settings(), generations: 0 };
     store.saveOwnSettings({ ...store.ownSettings(), web: "off" });
@@ -1457,7 +1463,7 @@ it("keeps a Responses model without tool limits to the search budget by refusing
       const last = input.findLast((i) => i.type === "function_call_output");
       if (last) outputs.push(JSON.parse(last.output));
       const [name, args] = script[turn++];
-      return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(args) }], usage: {}, response: {} };
+      return { items: [answer(name, args, "c" + turn)], usage: {}, response: {} };
     });
     await new Agent(() => {}).execute(store, run, { input: [], settings: store.settings(), generations: 0 }, "request");
     // The request never carries fields the service rejects, and drawing carries on.
@@ -1726,7 +1732,7 @@ it("answers every call of a batch before showing its pictures", async () => {
         call("draw_guide", { topics: ["copy"] }, "b"),
       ],
       [call("view_canvas", {}, "d")],
-      [call("finish", { message: "done" }, "e")],
+      [answer("finish", { message: "done" }, "e")],
     ];
     vi.mocked(generate).mockImplementation(async (_role, { input }) => {
       seen.push(structuredClone(input));
@@ -1835,7 +1841,7 @@ it("returns to the configured effort after a turn asked again with less thought"
             : ["finish", { message: "done" }]
       ) as [string, unknown];
       return {
-        items: [{ type: "function_call", call_id: `c${turn}`, name, arguments: JSON.stringify(args) }],
+        items: [answer(name, args, `c${turn}`)],
         usage: {},
         response: {},
       };
@@ -1910,7 +1916,7 @@ it("takes closing words as the end when the latest revision has been seen, witho
     expect(turn).toBe(3);
     expect(run.status).toBe("completed");
     // The words before the look were not taken for the end; the ones after it were, once.
-    expect(ctx.input.some((i) => String(i.content).includes("no tool call"))).toBe(true);
+    expect(ctx.input.some((i) => String(i.content).startsWith("The work is not done yet: "))).toBe(true);
     expect(
       run.steps.filter((s) => s.kind === "message" && s.role === "assistant").map((s) => (s as { text: string }).text),
     ).toEqual(["还没看过就说完了", "画好了，看图吧。"]);
@@ -1943,7 +1949,7 @@ it("saves a partial write, showing only what it changed and laying out what move
         ],
       }),
       called("view_canvas", {}),
-      called("finish", { message: "好了" }),
+      said("好了"),
     ];
     let turn = 0;
     vi.mocked(generate).mockImplementation(async () => turns[turn++] as never);
@@ -2030,7 +2036,7 @@ it("asks again when the stream breaks off, and bills the attempt that failed", a
       }
       return (turn === 2
         ? { ...called("view_canvas", {}), usage: { input_tokens: 50, output_tokens: 5 } }
-        : called("finish", { message: "好了" })) as never;
+        : said("好了")) as never;
     });
     const going = new Agent(() => {}).execute(store, run, ctx, "request");
     await vi.advanceTimersByTimeAsync(3000);
@@ -2118,7 +2124,7 @@ it("answers tool input written broken as a failed call, which the model corrects
           usage: { input_tokens: 200, output_tokens: 20 },
           response: {},
         } as never;
-      return called("finish", { message: "好了" }) as never;
+      return said("好了") as never;
     });
     await new Agent(() => {}).execute(store, run, ctx, "request");
     expect(turn).toBe(3);

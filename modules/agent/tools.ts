@@ -150,22 +150,6 @@ export const tools = [
     "See current saved scenes as images in this conversation, with geometry: the camera, modules changed since the last look with the materials they use and where a picture's visible content is, the smallest text, any words cut off, and any runtime errors. Shows each scene's opening view and declared interaction checks. Optionally add close-ups of up to three regions, annotate object ids and bounds, or perform a sequence of CSS-selector clicks in one scene; a close-up of a revision you have already seen whole returns just the close-up. Waits for developing pictures first. Call it alone or last after write_work calls: saves run in order before the screenshot, and a failed save skips it so you do not judge an older version.",
     schema(viewSchema),
   ),
-  fn(
-    "finish",
-    "End the run. It succeeds only when you have seen the latest saved revision of every populated scene with every picture developed; otherwise it says what is missing and the run goes on. A write invalidates earlier observations. Call it alone, as soon as the last look holds, with your closing words in message.",
-    {
-      type: "object",
-      properties: {
-        message: {
-          type: "string",
-          description:
-            "What the finished work shows, for the user in their language: a few plain sentences, with any values you assumed listed so they can correct them",
-        },
-      },
-      required: ["message"],
-      additionalProperties: false,
-    },
-  ),
 ];
 export const searchSchema = z.object({
   /** Several facts are looked up together, one query each. */
