@@ -443,6 +443,7 @@ describe("hand edits", () => {
           moved: ["heading"],
           restacked: false,
           retitled: false,
+          checksChanged: true,
         },
       ],
       addedScenes: [],

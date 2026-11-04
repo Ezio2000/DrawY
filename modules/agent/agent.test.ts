@@ -7,7 +7,7 @@ import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { Agent, steering, SEARCH_LIMIT, withLessThought } from "./index.ts";
 import { settleSchema } from "./tools.ts";
-import { writeWork } from "../workspace/index.ts";
+import { restore, writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { CutOff, generate } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
@@ -15,7 +15,7 @@ import { boxOf, costOf, modelCatalogSchema, type Run, type Work } from "../contr
 import { removeParts, setData } from "../editing/index.ts";
 import { tracer } from "../trace/index.ts";
 import { library as client } from "../materials/index.ts";
-import { serveLibrary, picture } from "@drawy/materials/testing";
+import { serveLibrary, picture, solid } from "@drawy/materials/testing";
 let library: ReturnType<typeof serveLibrary>;
 beforeEach(() => {
   library = serveLibrary(client.base);
@@ -41,6 +41,27 @@ vi.mock("../observation/index.ts", async (original) => ({
     ],
   })),
 }));
+/** What a scripted turn says: a tool call, or for `finish` the closing words of a turn
+ * without calls, which is how a run ends. */
+const answer = (name: string, args: unknown, call_id: string) =>
+  name === "finish"
+    ? {
+        type: "message",
+        role: "assistant",
+        content: [
+          {
+            type: "output_text",
+            text: (typeof args === "string" ? JSON.parse(args) : (args as { message: string })).message,
+          },
+        ],
+      }
+    : {
+        type: "function_call",
+        name,
+        arguments: typeof args === "string" ? args : JSON.stringify(args),
+        call_id,
+      };
+
 it("feeds canvas images into the author conversation and requires another look after edits", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
@@ -95,21 +116,10 @@ it("feeds canvas images into the author conversation and requires another look a
           sawImage = input.some(
             (x) =>
               x.role === "user" &&
-              x.content?.some((v: any) => v.type === "input_image"),
+              Array.isArray(x.content) && x.content.some((v: any) => v.type === "input_image"),
           );
         const [name, args] = calls[turn++];
-        return {
-          items: [
-            {
-              type: "function_call",
-              name,
-              arguments: JSON.stringify(args),
-              call_id: "c" + turn,
-            },
-          ],
-          usage: {},
-          response: {},
-        };
+        return { items: [answer(name, args, "c" + turn)], usage: {}, response: {} };
       },
     );
     await new Agent(() => {}).execute(store, run, ctx, "request");
@@ -121,25 +131,27 @@ it("feeds canvas images into the author conversation and requires another look a
       ),
     ).toEqual([
       ["thinking", "**Checking the canvas**"],
+      ["message", "premature"],
       ["view_canvas", "done"],
       ["write_work", "done"],
+      ["message", "stale"],
       ["view_canvas", "done"],
       ["message", "done"],
     ]);
-    expect(run.steps[2]).toMatchObject({ revision: 2, removed: 0 });
+    expect(run.steps[3]).toMatchObject({ revision: 2, removed: 0 });
     expect(run.observations.map((o) => o.revision)).toEqual([1, 2]);
-    const errors = ctx.input.filter(
-      (x) =>
-        x.type === "function_call_output" && x.output.startsWith('{"error":'),
+    // Closing words before the latest revision was seen are answered with what is missing.
+    const held = ctx.input.filter(
+      (x) => x.role === "user" && String(x.content).startsWith("The work is not done yet: "),
     );
-    expect(errors).toHaveLength(2);
+    expect(held).toHaveLength(2);
     expect(
       store
         .context("run")
         .input.some(
           (x: any) =>
             x.role === "user" &&
-            x.content?.some((v: any) => v.type === "input_image"),
+            Array.isArray(x.content) && x.content.some((v: any) => v.type === "input_image"),
         ),
     ).toBe(true);
   } finally {
@@ -238,12 +250,7 @@ it("lays out streamed modules on the write step before the write is saved", asyn
                   },
                 ]
               : []),
-            {
-              type: "function_call",
-              name,
-              arguments: value,
-              call_id: "c" + turn++,
-            },
+            answer(name, value, "c" + turn++),
           ],
           usage: {},
           response: {},
@@ -500,14 +507,24 @@ it("compacts at the budget with original references and closes interrupted tool 
     };
     let turn = 0;
     const agent = new Agent(() => {});
+    const requests: { instructions: string; tools: unknown; cacheKey?: string }[] = [];
+    const before = structuredClone(ctx.input);
     vi.mocked(generate).mockImplementation(
-      async (role, { input, tools, budget }) => {
+      async (role, { input, tools, budget, instructions, cacheKey }) => {
+        requests.push({ instructions, tools, cacheKey });
         if (turn++ === 0) {
-          expect(tools).toEqual([]);
-          // A summary is made with little reasoning and room to finish.
-          expect(role.effort).toBe("low");
+          // A summary is asked of the conversation as it stands, after it, so the cached
+          // prefix is read rather than paid for again; with room to finish.
+          expect(input.slice(0, before.length)).toEqual(before);
+          expect(input.at(-1)).toMatchObject({ role: "user" });
+          expect(String(input.at(-1)!.content)).toContain("Summarize this drawing conversation");
           expect(budget).toBe(16384);
-          expect(input.some((i: any) => i.type === "configuration_update")).toBe(false);
+          // With little reasoning: in the conversation where its format takes that, else on the request.
+          const lowered = input.at(-2)!;
+          if (lowered.type === "configuration_update") {
+            expect(lowered.reasoning.effort).not.toBe("max");
+            expect(role.effort).toBe(store.settings().author.effort);
+          } else expect(role.effort).toBe("low");
           return {
             items: [
               {
@@ -519,10 +536,12 @@ it("compacts at the budget with original references and closes interrupted tool 
             response: {},
           };
         }
-        expect(input[0].content[0].text).toContain("Keep five panels");
-        expect(input[0].content[1].text).toContain(reference.id);
-        expect(input[0].content[2].image_url).toMatch(/^data:image\/webp/);
-        expect(input[1].content).toContain(work.id);
+        // The standing preferences, then the summary, then the work.
+        expect(input[0].content).toBe("User preferences: none");
+        expect(input[1].content[0].text).toContain("Keep five panels");
+        expect(input[1].content[1].text).toContain(reference.id);
+        expect(input[1].content[2].image_url).toMatch(/^data:image\/webp/);
+        expect(input[2].content).toContain(work.id);
         agent.cancel(store, run.id);
         return {
           items: ["one", "two"].map((call_id) => ({
@@ -537,6 +556,10 @@ it("compacts at the budget with original references and closes interrupted tool 
       },
     );
     await agent.execute(store, run, ctx, "request");
+    // The same instructions, tools and cache key as the turns around it.
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toEqual(requests[1]);
+    expect((requests[0].tools as unknown[]).length).toBeGreaterThan(0);
     expect(store.run(run.id).status).toBe("cancelled");
     expect(
       store
@@ -587,8 +610,8 @@ it("goes on without old pictures when a summary fails, and sizes the context by 
     const agent = new Agent(() => {});
     const seen: any[][] = [];
     let summaries = 0;
-    vi.mocked(generate).mockImplementation(async (_role, { input, tools = [] }) => {
-      if (!tools.length) {
+    vi.mocked(generate).mockImplementation(async (_role, { input }) => {
+      if (String(input.at(-1)?.content).includes("Summarize this drawing conversation")) {
         summaries++;
         throw Error("模型输出被截断");
       }
@@ -626,28 +649,45 @@ it("goes on without old pictures when a summary fails, and sizes the context by 
   }
 });
 
-/** Answers each model turn with the next scripted tool call. */
-function script(calls: [string, unknown][], seen: any[][] = []) {
+type Call = [string, unknown];
+/** Answers each model turn with the next scripted tool call, or with several calls when a
+ * turn is a list of them. A scripted `finish` is the closing words of a turn without calls. */
+function script(turns: (Call | Call[])[], seen: any[][] = []) {
   let turn = 0;
   vi.mocked(generate).mockImplementation(
     async (_role, { input }) => {
       seen.push(structuredClone(input));
-      const [name, args] = calls[turn++];
+      const step = turns[turn++];
+      const calls = (Array.isArray(step[0]) ? step : [step]) as Call[];
       return {
-        items: [
-          {
-            type: "function_call",
-            name,
-            arguments: JSON.stringify(args),
-            call_id: "c" + turn,
-          },
-        ],
+        items: calls.map(([name, args], i) =>
+          name === "finish"
+            ? {
+                type: "message",
+                role: "assistant",
+                content: [{ type: "output_text", text: (args as { message: string }).message }],
+              }
+            : {
+                type: "function_call",
+                name,
+                arguments: JSON.stringify(args),
+                call_id: "c" + turn + (i ? "-" + i : ""),
+              },
+        ),
         usage: {},
         response: {},
       };
     },
   );
 }
+/** A call's output read back: JSON where it is, text otherwise (guides are text). */
+const parsed = (output: string) => {
+  try {
+    return JSON.parse(output);
+  } catch {
+    return output;
+  }
+};
 const outputs = (input: any[]) =>
   input
     .filter((x) => x.type === "function_call_output")
@@ -806,7 +846,7 @@ it("settles a brief only on the user's own words, then applies its style and sho
     rmSync(dir, { recursive: true });
   }
 });
-it("develops pictures while the author composes and holds finish until they were seen", async () => {
+it("develops pictures while the author composes and holds the end until they were seen", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
   try {
@@ -895,7 +935,8 @@ it("develops pictures while the author composes and holds finish until they were
     );
     expect(written.materials[id]).toMatchObject({ status: "developing" });
     await vi.waitFor(() => expect(seen.length).toBe(3));
-    expect(outputs(seen[2]).at(-1)).toContain("图片仍在生成");
+    // Closing words while a picture develops are answered with what is missing.
+    expect(String(seen[2].at(-1).content)).toContain("图片仍在生成");
     await new Promise((r) => setTimeout(r, 50));
     paint();
     await done;
@@ -921,6 +962,70 @@ it("develops pictures while the author composes and holds finish until they were
       imageInput: 1200,
       textOutput: 0,
     });
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it.each([false, true])("bills the first picture and its opaque retry even when the retry fails: %s", async (fails) => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-image-bill-")), db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id), work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const catalog = db.models();
+    Object.assign(catalog.painters[0], { credential: "test", baseUrl: "https://example.invalid" });
+    catalog.painters[0].models[0].prices = {
+      image: 1, textInput: 5, imageInput: 8, output: 30, textOutput: 0,
+    };
+    db.saveModels(catalog);
+    const png = await solid();
+    let paints = 0;
+    library.route(async () => {
+      if (++paints === 2 && fails) return new Response("failed", { status: 400 });
+      return Response.json({
+        data: [{ b64_json: png.toString("base64") }],
+        usage: {
+          input_tokens: 10,
+          input_tokens_details: { text_tokens: 4, image_tokens: 6 },
+          output_tokens: 100,
+        },
+      });
+    });
+    const agent = new Agent(() => {});
+    let turn = 0;
+    vi.mocked(generate).mockImplementation(async () => {
+      if (turn++ === 0)
+        return {
+          items: [answer("generate_images", {
+            images: [{ name: { zh: "船", en: "boat" }, role: "object", depicts: "a boat" }],
+          }, "paint")],
+          usage: {}, response: {},
+        };
+      await Promise.all((agent.developments.get("retry-bill") ?? []).map((d) => d.done));
+      return {
+        items: [answer(turn === 2 ? "view_canvas" : "finish", turn === 2 ? {} : { message: "done" }, "c" + turn)],
+        usage: {}, response: {},
+      };
+    });
+    const run: Run = {
+      id: "retry-bill", workId: work.id, sceneId: "root", status: "running",
+      steps: [], observations: [], startedAt: Date.now(),
+    };
+    store.saveRun(run);
+    await agent.execute(store, run, { input: [], settings: store.settings(), generations: 0 }, "request");
+    const count = fails ? 1 : 2;
+    expect(paints).toBe(2);
+    expect(run.status).toBe("completed");
+    expect(run.usage?.images).toEqual({
+      count, input: 10 * count, output: 100 * count,
+      textInput: 4 * count, imageInput: 6 * count, textOutput: 0,
+    });
+    expect(run.usage?.failed?.images ?? 0).toBe(fails ? 1 : 0);
+    expect(costOf(run.usage, run.prices)?.image).toBeCloseTo(count * (1 + 3068 / 1e6), 8);
+    expect(store.run(run.id).usage).toEqual(run.usage);
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
@@ -1131,9 +1236,9 @@ it("tells the author what the user changed themselves since its last turn", asyn
     const agent = new Agent(() => {});
     const run = await agent.start(store, work.id, "root", "Continue");
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
-    const told = store.context(run.id).input[1].content as string;
+    const told = store.context(run.id).input.find((i: any) => String(i.content).includes("Current scene:")).content as string;
     expect(told).toMatch(
-      /^Since your last turn the user changed the work themselves \(revision 2 to 4\)\.[^\n]*\n- scene root: changed level-0; removed control\nCurrent scene: root\n/,
+      /^Since your last turn the user changed the work themselves \(revision 2 to 4\)\.[^\n]*\n- scene root: changed level-0; removed control; interaction checks changed\nCurrent scene: root\n/,
     );
     // With nothing changed since, the work is given as it is.
     const work2 = store.work(work.id);
@@ -1153,6 +1258,137 @@ it("tells the author what the user changed themselves since its last turn", asyn
           typeof i.content === "string" && i.content.includes("Current work:"),
       );
     expect(latest.content).toMatch(/^Current scene: root\n/);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("tells a conversation the user's preferences, out of the instructions, and again only when they change", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    const instructions: string[] = [];
+    vi.mocked(generate).mockImplementation(async (_role, turn) => {
+      instructions.push(turn.instructions);
+      return {
+        items: [
+          {
+            type: "function_call",
+            name: "ask_user",
+            call_id: crypto.randomUUID(),
+            arguments: JSON.stringify({ questions: [{ id: "q", text: "Which?", options: [{ label: "A" }, { label: "B" }] }] }),
+          },
+        ],
+        usage: {},
+        response: {},
+      };
+    });
+    const agent = new Agent(() => {});
+    const told = async (prompt: string) => {
+      const run = await agent.start(store, work.id, "root", prompt);
+      await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
+      agent.cancel(store, run.id);
+      return store.context(run.id).input.filter((i: any) => String(i.content).startsWith("User preferences: ")).map((i: any) => i.content);
+    };
+    store.saveOwnSettings({ ...store.ownSettings(), preferences: "用中文标注" });
+    expect(await told("Draw")).toEqual(["User preferences: 用中文标注"]);
+    expect(await told("Again")).toEqual(["User preferences: 用中文标注"]);
+    store.saveOwnSettings({ ...store.ownSettings(), preferences: "少用红色" });
+    expect(await told("Once more")).toEqual(["User preferences: 用中文标注", "User preferences: 少用红色"]);
+    // The instructions are the same whatever the user prefers.
+    expect(new Set(instructions).size).toBe(1);
+    expect(instructions[0]).not.toContain("用中文标注");
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("hands a continuing conversation only what the user changed since", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    vi.mocked(generate).mockImplementation(async () => ({
+      items: [
+        {
+          type: "function_call",
+          name: "ask_user",
+          call_id: crypto.randomUUID(),
+          arguments: JSON.stringify({
+            questions: [
+              { id: "q", text: "Which?", options: [{ label: "A" }, { label: "B" }] },
+            ],
+          }),
+        },
+      ],
+      usage: {},
+      response: {},
+    }));
+    const agent = new Agent(() => {});
+    const ask = async (prompt: string) => {
+      const run = await agent.start(store, work.id, "root", prompt);
+      await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
+      agent.cancel(store, run.id);
+      return store
+        .context(run.id)
+        .input.findLast(
+          (i: any) => typeof i.content === "string" && i.content.includes("Current scene:"),
+        ).content as string;
+    };
+    expect(await ask("Draw")).toContain("Current work:");
+    // Nothing changed: the conversation already holds the work.
+    expect(await ask("Again")).toBe(
+      "Current scene: root\nThe work is as you last saw it (revision 1).",
+    );
+    for (const edit of [
+      (w: Work) => setData(w, "root", "level-0", { color: "#000000" }),
+      (w: Work) => removeParts(w, "root", ["control"]),
+    ])
+      await writeWork(store, work.id, edit(store.work(work.id)), { kind: "edit" });
+    const told = await ask("Continue");
+    expect(told).toMatch(
+      /^Since your last turn the user changed the work themselves \(revision 1 to 3\)\.[^\n]*\n- scene root: changed level-0; removed control; interaction checks changed\n/,
+    );
+    expect(told).not.toContain("Current work:");
+    const changed = JSON.parse(told.match(/\nChanged: (.*)\nCurrent scene: root$/)![1]);
+    const now = store.work(work.id).scenes.root;
+    // Changed parts come in the short form the author writes.
+    const level = now.modules.find((m) => m.id === "level-0")!;
+    expect(changed.scenes.root.modules).toEqual([
+      expect.objectContaining({
+        id: "level-0",
+        data: level.data,
+        bounds: [level.bounds.x, level.bounds.y, level.bounds.width, level.bounds.height],
+      }),
+    ]);
+    expect(changed.scenes.root.order).toEqual(now.modules.map((m) => m.id));
+    expect(changed.scenes.root.removed).toEqual(["control"]);
+    expect(changed.drawings).toBeUndefined();
+
+    // Restoring a draft can change only the checks; the author still needs their new value.
+    const beforeChecks = store.work(work.id);
+    const checks = [{ moduleId: "level-0", selector: ".inspect" }];
+    await writeWork(store, work.id, {
+      baseRevision: beforeChecks.revision,
+      sceneEdits: [{ id: "root", checks }],
+    }, { kind: "edit" });
+    const checksTold = await ask("Check this");
+    expect(checksTold).toContain("interaction checks changed");
+    const delta = (text: string) => JSON.parse(text.match(/\nChanged: (.*)\nCurrent scene: root$/)![1]);
+    expect(delta(checksTold).scenes.root.checks).toEqual(checks);
+    restore(store, work.id, beforeChecks.revision);
+    const restored = delta(await ask("Continue from the earlier draft"));
+    expect(restored.scenes.root.checks).toEqual(beforeChecks.scenes.root.checks);
+    expect(restored.scenes.root.modules).toEqual([]);
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
@@ -1187,7 +1423,7 @@ it.each(["api", "oauth"] as const)("keeps hosted searches in the %s conversation
       expect(input).toContainEqual(message);
       expect(input.some(i => i.type === "function_call_output" && i.call_id === "ws_1")).toBe(false);
       const name = turn === 2 ? "view_canvas" : "finish";
-      return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(name === "finish" ? { message: "done" } : {}) }], usage: {}, response: {} };
+      return { items: [answer(name, name === "finish" ? { message: "done" } : {}, "c" + turn)], usage: {}, response: {} };
     });
     await new Agent((_user, event: any) => {
       const step = event.run?.steps.find((s: any) => s.name === "web_search");
@@ -1225,7 +1461,7 @@ it("shows any hosted tool as a step, records it under its turn and adds up what 
         return { items: [code, search], usage: usage(100), response: {} };
       }
       const name = turn === 2 ? "view_canvas" : "finish";
-      return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(name === "finish" ? { message: "done" } : {}) }], usage: usage(200), response: {} };
+      return { items: [answer(name, name === "finish" ? { message: "done" } : {}, "c" + turn)], usage: usage(200), response: {} };
     });
     await tracer.within(run.id, () => new Agent(() => {}).execute(store, run, { input: [], settings: store.settings(), generations: 0 }, "request"));
     expect(run.status).toBe("completed");
@@ -1312,7 +1548,7 @@ it("searches through the search service for a model without its own, counting ea
       const last = input.findLast((i) => i.type === "function_call_output");
       if (last) outputs.push(JSON.parse(last.output));
       const [name, args] = script[turn++];
-      return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(args) }], usage: {}, response: {} };
+      return { items: [answer(name, args, "c" + turn)], usage: {}, response: {} };
     });
     const ctx = { input: [], settings: store.settings(), generations: 0 };
     store.saveOwnSettings({ ...store.ownSettings(), web: "off" });
@@ -1377,7 +1613,7 @@ it("keeps a Responses model without tool limits to the search budget by refusing
       const last = input.findLast((i) => i.type === "function_call_output");
       if (last) outputs.push(JSON.parse(last.output));
       const [name, args] = script[turn++];
-      return { items: [{ type: "function_call", name, call_id: "c" + turn, arguments: JSON.stringify(args) }], usage: {}, response: {} };
+      return { items: [answer(name, args, "c" + turn)], usage: {}, response: {} };
     });
     await new Agent(() => {}).execute(store, run, { input: [], settings: store.settings(), generations: 0 }, "request");
     // The request never carries fields the service rejects, and drawing carries on.
@@ -1430,18 +1666,23 @@ it("gives the author guides and drawing cards on demand, and only once", async (
     );
     const run = await new Agent(() => {}).start(store, work.id, "root", "画");
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
-    const [first, second, empty] = outputs(seen.at(-1)!).map((o) => JSON.parse(o));
-    expect(first.guides.map((g: any) => g.topic)).toEqual(["maps", "copy"]);
-    expect(first.guides[0].text).toContain("geomap");
-    expect(first.drawings.map((d: any) => d.id)).toEqual(["geomap", "arrow"]);
-    expect(first.drawings[1]).toMatchObject({ use: "link", size: "200×60" });
-    expect(first.drawings[1].params.route).toBeTruthy();
-    expect(first.drawings[1].example.flow).toBe(true);
-    expect(first.unknown).toEqual(["no-such"]);
-    expect(second.guides).toBeUndefined();
-    expect(second.drawings.map((d: any) => d.id)).toEqual(["plot"]);
-    expect(second.alreadyAbove).toEqual(["maps", "geomap", "arrow"]);
-    expect(empty.error).toBeTruthy();
+    const [first, second, empty] = outputs(seen.at(-1)!);
+    // Guides read as text under their topics, and cards one line of JSON each.
+    const cards = (text: string) =>
+      text.split("\n").filter((line) => line.startsWith("{")).map((line) => JSON.parse(line));
+    expect([...first.matchAll(/^## (\w+)$/gm)].map((m) => m[1])).toEqual(["maps", "copy"]);
+    expect(first.slice(0, first.indexOf("## copy"))).toContain("geomap");
+    expect(first).toContain("Real geography comes from data.");
+    const read = cards(first);
+    expect(read.map((d: any) => d.id)).toEqual(["geomap", "arrow"]);
+    expect(read[1]).toMatchObject({ use: "link", size: "200×60" });
+    expect(read[1].params.route).toBeTruthy();
+    expect(read[1].example.flow).toBe(true);
+    expect(first).toContain("Not library drawings: no-such.");
+    expect(second).not.toContain("## maps");
+    expect(cards(second).map((d: any) => d.id)).toEqual(["plot"]);
+    expect(second).toContain("Already above in this conversation: maps, geomap, arrow.");
+    expect(JSON.parse(empty).error).toBeTruthy();
     // A step in the studio says what was read.
     const steps = store.run(run.id).steps.filter((s) => s.kind === "tool" && s.name === "draw_guide");
     expect(steps[0]).toMatchObject({
@@ -1532,10 +1773,122 @@ it("reminds the author of the guides after the brief and of unread cards after a
     );
     const run = await new Agent(() => {}).start(store, work.id, "root", "画苹果");
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
-    const [settled, unread, , read] = outputs(seen.at(-1)!).map((o) => JSON.parse(o));
+    const [settled, unread, , read] = outputs(seen.at(-1)!).map(parsed);
     expect(settled.guides).toContain("draw_guide");
     expect(unread.cardsUnread).toEqual(["plot"]);
     expect(read.cardsUnread).toBeUndefined();
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("points out an unread card once, not after every write", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    work.materials = {};
+    store.commit(work, 0, { kind: "edit" });
+    const seen: any[][] = [];
+    const brief = {
+      subject: "苹果",
+      intent: "苹果",
+      audience: "学生",
+      ideas: [
+        { kind: "anatomy", idea: "切开的苹果" },
+        { kind: "change", idea: "一年里的苹果树" },
+      ],
+      concept: "切开的苹果居中",
+      register: "formal",
+      style: "textbook",
+      direction: "安静的线条",
+      cast: [],
+      basis: { subject: "苹果", intent: "苹果" },
+    };
+    const uses = (revision: number) => ({
+      baseRevision: revision,
+      scenes: [{ id: "root", clear: true }],
+      modules: [{ id: "a", label: "a", bounds: [0, 0, 10, 10], drawingId: "plot" }],
+    });
+    script(
+      [
+        ["set_brief", brief],
+        ["write_work", uses(2)],
+        ["write_work", { ...uses(3), title: "again" }],
+        ["view_canvas", {}],
+        ["finish", { message: "done" }],
+      ],
+      seen,
+    );
+    const run = await new Agent(() => {}).start(store, work.id, "root", "画苹果");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    const [, first, second] = outputs(seen.at(-1)!).map(parsed);
+    expect(first.cardsUnread).toEqual(["plot"]);
+    expect(second.revision).toBe(4);
+    expect(second.cardsUnread).toBeUndefined();
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("does not remind the author of guides and cards it asks for in the same message", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    work.materials = {};
+    store.commit(work, 0, { kind: "edit" });
+    const seen: any[][] = [];
+    const brief = {
+      subject: "苹果",
+      intent: "苹果",
+      audience: "学生",
+      ideas: [
+        { kind: "anatomy", idea: "切开的苹果" },
+        { kind: "change", idea: "一年里的苹果树" },
+      ],
+      concept: "切开的苹果居中",
+      register: "formal",
+      style: "textbook",
+      direction: "安静的线条",
+      cast: [],
+      basis: { subject: "苹果", intent: "苹果" },
+    };
+    const uses = (revision: number) => ({
+      baseRevision: revision,
+      scenes: [{ id: "root", clear: true }],
+      modules: [{ id: "a", label: "a", bounds: [0, 0, 10, 10], drawingId: "plot" }],
+    });
+    script(
+      [
+        [
+          ["set_brief", brief],
+          ["draw_guide", { topics: ["diagrams"] }],
+        ],
+        [
+          ["write_work", uses(2)],
+          ["draw_guide", { drawings: ["plot"] }],
+        ],
+        ["view_canvas", {}],
+        ["finish", { message: "done" }],
+      ],
+      seen,
+    );
+    const run = await new Agent(() => {}).start(store, work.id, "root", "画苹果");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    const [settled, , written] = outputs(seen.at(-1)!).map(parsed);
+    expect(settled.revision).toBe(2);
+    expect(settled.guides).toBeUndefined();
+    expect(written.revision).toBe(3);
+    expect(written.cardsUnread).toBeUndefined();
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
@@ -1555,14 +1908,16 @@ it("keeps the instructions to what every work needs, with the rest listed and re
     expect(AUTHOR).toContain(`- ${topic}: ${guides[topic].when}.`);
   // The instructions are not to be read as shouting.
   expect(AUTHOR + Object.values(guides).map((g) => g.text).join("")).not.toMatch(/\b(MUST|NEVER|ALWAYS|IMPORTANT|CRITICAL)\b/);
-  // Parameters and examples stay on the cards; the index is one short line per drawing.
+  // Examples stay on the cards; the index is one short line per drawing.
   const index = catalogue(seed("styles"), [...seed("drawings"), ...seed("effects")]);
   expect(index).not.toContain("e.g. ");
   for (const d of seed("drawings")) {
     expect(index).toContain(`- ${d.id}`);
     expect(gist(d.about).length).toBeLessThan(170);
   }
-  expect(AUTHOR.length + index.length).toBeLessThan(30000);
+  // The index names each drawing's parameters, so the common ones need no card, and the
+  // rules on composing pictures, which nearly every work reads, live here and not in a guide.
+  expect(AUTHOR.length + index.length).toBeLessThan(32000);
 });
 
 it("answers every call of a batch before showing its pictures", async () => {
@@ -1587,7 +1942,7 @@ it("answers every call of a batch before showing its pictures", async () => {
         call("draw_guide", { topics: ["copy"] }, "b"),
       ],
       [call("view_canvas", {}, "d")],
-      [call("finish", { message: "done" }, "e")],
+      [answer("finish", { message: "done" }, "e")],
     ];
     vi.mocked(generate).mockImplementation(async (_role, { input }) => {
       seen.push(structuredClone(input));
@@ -1696,7 +2051,7 @@ it("returns to the configured effort after a turn asked again with less thought"
             : ["finish", { message: "done" }]
       ) as [string, unknown];
       return {
-        items: [{ type: "function_call", call_id: `c${turn}`, name, arguments: JSON.stringify(args) }],
+        items: [answer(name, args, `c${turn}`)],
         usage: {},
         response: {},
       };
@@ -1771,10 +2126,48 @@ it("takes closing words as the end when the latest revision has been seen, witho
     expect(turn).toBe(3);
     expect(run.status).toBe("completed");
     // The words before the look were not taken for the end; the ones after it were, once.
-    expect(ctx.input.some((i) => String(i.content).includes("no tool call"))).toBe(true);
+    expect(ctx.input.some((i) => String(i.content).startsWith("The work is not done yet: "))).toBe(true);
     expect(
       run.steps.filter((s) => s.kind === "message" && s.role === "assistant").map((s) => (s as { text: string }).text),
     ).toEqual(["还没看过就说完了", "画好了，看图吧。"]);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+it("holds the end once for text too small to read, then takes the closing words", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const run = run_(work);
+    store.saveRun(run);
+    const ctx = { input: [] as any[], settings: store.settings(), generations: 0 };
+    vi.mocked(observe).mockImplementationOnce(async (s: any, workId: string) => ({
+      observation: {
+        at: Date.now(),
+        revision: s.work(workId).revision,
+        sceneIds: ["root"],
+        overview: true,
+        screenshots: [],
+        errors: [],
+        smallestText: { root: 11 },
+      },
+      content: [],
+    }));
+    const turns = [called("view_canvas", {}), said("画好了。"), said("地图上的小字是底图自带的地名，画好了。")];
+    let turn = 0;
+    vi.mocked(generate).mockImplementation(async () => turns[turn++] as never);
+    await new Agent(() => {}).execute(store, run, ctx, "request");
+    expect(turn).toBe(3);
+    expect(run.status).toBe("completed");
+    const held = ctx.input.filter((i) => String(i.content).startsWith("The work is not done yet: "));
+    expect(held).toHaveLength(1);
+    expect(held[0].content).toContain("root 11px");
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
@@ -1804,7 +2197,7 @@ it("saves a partial write, showing only what it changed and laying out what move
         ],
       }),
       called("view_canvas", {}),
-      called("finish", { message: "好了" }),
+      said("好了"),
     ];
     let turn = 0;
     vi.mocked(generate).mockImplementation(async () => turns[turn++] as never);
@@ -1891,7 +2284,7 @@ it("asks again when the stream breaks off, and bills the attempt that failed", a
       }
       return (turn === 2
         ? { ...called("view_canvas", {}), usage: { input_tokens: 50, output_tokens: 5 } }
-        : called("finish", { message: "好了" })) as never;
+        : said("好了")) as never;
     });
     const going = new Agent(() => {}).execute(store, run, ctx, "request");
     await vi.advanceTimersByTimeAsync(3000);
@@ -1979,7 +2372,7 @@ it("answers tool input written broken as a failed call, which the model corrects
           usage: { input_tokens: 200, output_tokens: 20 },
           response: {},
         } as never;
-      return called("finish", { message: "好了" }) as never;
+      return said("好了") as never;
     });
     await new Agent(() => {}).execute(store, run, ctx, "request");
     expect(turn).toBe(3);

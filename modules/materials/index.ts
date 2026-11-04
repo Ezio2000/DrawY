@@ -447,8 +447,17 @@ export function upload(
   );
 }
 /** The catalogue of drawing code and effects, for the author's instructions. */
+/** Every library drawing and effect. All of them, not a page: which would make a page
+ * changes as they are used, and the author's index, cached as the start of every
+ * request, would change with it. */
 export async function kit() {
-  return (await library.browse("", 1, undefined, ["drawing", "effect"])).items;
+  const first = await library.browse("", 1, undefined, ["drawing", "effect"], 200);
+  const rest = await Promise.all(
+    Array.from({ length: first.pages - 1 }, (_, i) =>
+      library.browse("", i + 2, undefined, ["drawing", "effect"], 200),
+    ),
+  );
+  return [first, ...rest].flatMap((page) => page.items);
 }
 
 /** The work with pictures that were developing when it was saved brought up to date, so it

@@ -63,7 +63,7 @@ const host = (url: string) => {
 const toolName = (name: string) => name.replace(/[_-]+/g, " ");
 /** What a guide step read, in the reader's words; a library drawing goes by its id. */
 const guideNames = (step: Extract<ToolStep, { name: "draw_guide" }>, t: Words) => [
-  ...step.topics.map((topic) => t.steps.guideTopics[topic]),
+  ...step.topics.map((topic) => t.steps.guideTopics[topic] ?? topic),
   ...step.drawings,
 ];
 /** What the author is doing, in a word or two. */

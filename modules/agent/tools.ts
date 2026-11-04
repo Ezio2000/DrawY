@@ -9,7 +9,11 @@ const fn = (name: string, description: string, parameters: object) => ({
   parameters,
   strict: false,
 });
-const schema = (s: z.ZodType) => z.toJSONSchema(s, { io: "input" });
+/** A tool's parameters as JSON Schema, without the draft's URL, which only adds tokens. */
+const schema = (s: z.ZodType) => {
+  const { $schema: _, ...rest } = z.toJSONSchema(s, { io: "input" });
+  return rest;
+};
 export const askSchema = z.object({
   questions: z
     .array(
@@ -112,7 +116,7 @@ export const guideSchema = z
 export const tools = [
   fn(
     "ask_user",
-    "Ask the user what their words leave open (which sense of the subject, what aspect or purpose, how serious or personal) and wait for the answer. Use it only for choices that would lead to visibly different works, because the run stops until they answer. Put every open question in one call, each with 2–4 concrete options; to show a look, attach a style id (it shows that style's samples) or picture ids to an option. Call it alone.",
+    "Ask the user what their words leave open and wait for the answer: which of several things they mean, or a purpose that would make a different work. Use it only for choices that would lead to visibly different works, because the run stops until they answer. Put every open question in one call, each with 2–4 concrete options; to show a look, attach a style id (it shows that style's samples) or picture ids to an option. Call it alone.",
     schema(askSchema),
   ),
   fn(
@@ -132,7 +136,7 @@ export const tools = [
   ),
   fn(
     "generate_images",
-    "Have pictures made in the brief's style, in the background. Ask for every missing picture in one call, as early as you can, since they develop while you lay out. Each is painted beside the work's own pictures in that style and the style's samples, shown to the picture model as style references, so a new picture matches the ones already placed. A picture that references a key in the same request starts when that one has developed; the rest run side by side. Fails before anything is painted when a reference does not exist or references form a circle. Returns material ids at once: use them in drawings immediately. view_canvas waits until they have developed, and you are shown each one as it arrives.",
+    "Have pictures made in the brief's style, in the background. Ask for every missing picture in one call as soon as you know what is missing, before working out the layout, since they develop while you lay out with their ids. Each is painted beside the work's own pictures in that style and the style's samples, shown to the picture model as style references, so a new picture matches the ones already placed; a picture carries no words, so names and numbers belong in your labels. A picture that references a key in the same request starts when that one has developed, taking about twice as long; the rest run side by side. A cut-out that comes out with a background is painted once more, and you are told when it still has one. Fails before anything is painted when a reference does not exist or references form a circle. Returns material ids at once: use them in drawings immediately. view_canvas waits until they have developed, and you are shown each one as it arrives; replace one that came out wrong (wrong subject, words in it, a clashing style), since a label cannot rescue it.",
     schema(generateSchema),
   ),
   fn(
@@ -149,22 +153,6 @@ export const tools = [
     "view_canvas",
     "See current saved scenes as images in this conversation, with geometry: the camera, modules changed since the last look with the materials they use and where a picture's visible content is, the smallest text, any words cut off, and any runtime errors. Shows each scene's opening view and declared interaction checks. Optionally add close-ups of up to three regions, annotate object ids and bounds, or perform a sequence of CSS-selector clicks in one scene; a close-up of a revision you have already seen whole returns just the close-up. Waits for developing pictures first. Call it alone or last after write_work calls: saves run in order before the screenshot, and a failed save skips it so you do not judge an older version.",
     schema(viewSchema),
-  ),
-  fn(
-    "finish",
-    "End the run. It succeeds only when you have seen the latest saved revision of every populated scene with every picture developed; otherwise it says what is missing and the run goes on. A write invalidates earlier observations. Call it alone, as soon as the last look holds, with your closing words in message.",
-    {
-      type: "object",
-      properties: {
-        message: {
-          type: "string",
-          description:
-            "What the finished work shows, for the user in their language: a few plain sentences, with any values you assumed listed so they can correct them",
-        },
-      },
-      required: ["message"],
-      additionalProperties: false,
-    },
   ),
 ];
 export const searchSchema = z.object({

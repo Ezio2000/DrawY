@@ -381,7 +381,7 @@ export class SceneRenderer {
           top: bounds.y + "px",
           width: bounds.width + "px",
           height: bounds.height + "px",
-          zIndex: kind === "module" ? "1" : "0",
+          zIndex: this.layer(kind, id),
         });
         for (const fn of view.cleanup.splice(0)) fn();
         const cleanup: (() => void)[] = [];
@@ -561,6 +561,7 @@ export class SceneRenderer {
           top: m.bounds.y + "px",
         });
     }
+    this.relayer();
     // Only the links that meet a moved module follow it.
     await Promise.all([...jobs, this.drawLinks(moved)]);
   }
@@ -597,6 +598,23 @@ export class SceneRenderer {
       if (was && JSON.stringify(was) !== JSON.stringify(m)) return false;
     }
     return true;
+  }
+  /** Where a drawn thing sits in depth: links above a backdrop and below every other
+   * module, so a picture laid under the whole figure does not hide its arrows. */
+  private layer(kind: "module" | "link", id: string) {
+    if (kind === "link") return "1";
+    return id === backdropOf(this.currentModules()) ? "0" : "2";
+  }
+  /** The scene's modules in stacking order, where they are now. */
+  private currentModules() {
+    return this.scene.modules.map((m) => this.instances.get(m.id) ?? m);
+  }
+  /** Sets every module's depth again, after the modules moved or changed order. */
+  private relayer() {
+    for (const m of this.scene.modules) {
+      const host = this.views.get("module:" + m.id)?.host;
+      if (host) host.style.zIndex = this.layer("module", m.id);
+    }
   }
   /** Lays another revision of the scene over this one in place: modules whose drawing,
    * data and size are unchanged stay as they are drawn (moved if they moved), the rest are
@@ -648,6 +666,7 @@ export class SceneRenderer {
     );
     if (shown.some((el, i) => el !== hosts[i]))
       for (const host of hosts) this.element.append(host);
+    this.relayer();
     for (const l of scene.links) this.links.set(l.id, structuredClone(l));
     // Links are cheap and follow their modules wherever they went.
     jobs.push(this.drawLinks());
@@ -675,4 +694,21 @@ export class SceneRenderer {
     this.listeners.clear();
     this.element.remove();
   }
+}
+
+/** The scene's backdrop, if it has one: its bottom module, when that module lies under at
+ * least nine tenths of the whole figure, as a painted world behind the parts does. Links
+ * are drawn over a backdrop and under every other module. */
+export function backdropOf(modules: Pick<Instance, "id" | "bounds">[]): string | undefined {
+  const [bottom] = modules;
+  if (!bottom || modules.length < 2) return undefined;
+  const all = union(modules.map((m) => m.bounds)),
+    b = bottom.bounds;
+  const across =
+    Math.min(b.x + b.width, all.x + all.width) - Math.max(b.x, all.x);
+  const down =
+    Math.min(b.y + b.height, all.y + all.height) - Math.max(b.y, all.y);
+  return across > 0 && down > 0 && across * down >= 0.9 * all.width * all.height
+    ? bottom.id
+    : undefined;
 }

@@ -83,9 +83,17 @@ export class MaterialsClient {
       body: JSON.stringify(input),
     });
   }
-  develop(id: string, bytes: Uint8Array, mediaType: string, user: string) {
+  /** Stores a reserved picture's file. A cut-out (`transparent`) with nothing clear in it
+   * is refused with 422 and stays developing, so it can be painted again. */
+  develop(
+    id: string,
+    bytes: Uint8Array,
+    mediaType: string,
+    user: string,
+    transparent = false,
+  ) {
     return this.call<Material>(
-      `/materials/${encodeURIComponent(id)}/file`,
+      `/materials/${encodeURIComponent(id)}/file${transparent ? "?transparent=1" : ""}`,
       user,
       {
         method: "PUT",

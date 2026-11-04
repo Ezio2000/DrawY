@@ -25,7 +25,7 @@ import {
 export class LibraryError extends Error {
   constructor(
     message: string,
-    public status: 400 | 404 | 409 | 410 | 504 = 400,
+    public status: 400 | 404 | 409 | 410 | 422 | 504 = 400,
   ) {
     super(message);
   }
@@ -327,11 +327,16 @@ export class Library {
     bytes: Uint8Array,
     mediaType: string,
     user: string,
+    /** A cut-out: refused, and left developing, when nothing in it is clear. */
+    transparent = false,
   ) {
     const m = this.picture(id, user);
     if (m.status !== "developing")
       throw new LibraryError("素材不在生成中", 409);
-    const done = await this.store(m, await measure(bytes, mediaType));
+    const measured = await measure(bytes, mediaType);
+    if (transparent && measured.background === "opaque")
+      throw new LibraryError("图片背景不透明", 422);
+    const done = await this.store(m, measured);
     this.wake(id);
     return done;
   }

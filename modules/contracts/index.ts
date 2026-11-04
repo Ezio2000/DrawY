@@ -112,7 +112,7 @@ export const briefSchema = z.object({
     .describe("Recognizable things that will appear, one per entry"),
   basis: z.object({
     subject: z.string().min(1).describe("The user's words, verbatim, that say which thing"),
-    intent: z.string().min(1).describe("The user's words, verbatim, that say which aspect or purpose"),
+    intent: z.string().min(1).describe("The user's words, verbatim, that say what to show or why; the topic itself when they leave the aspect to you"),
     register: z
       .string()
       .min(1)
@@ -472,6 +472,8 @@ export interface Observation {
   overview: boolean;
   screenshots: Capture[];
   errors: string[];
+  /** The smallest text of each scene seen whole, in screenshot pixels. */
+  smallestText?: Record<string, number>;
 }
 export interface Picture {
   name: string;
@@ -510,7 +512,6 @@ export interface Citation {
 }
 /** The guides the author can read on demand with draw_guide. */
 export const guideTopics = [
-  "pictures",
   "drawing",
   "diagrams",
   "maps",

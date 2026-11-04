@@ -12,6 +12,7 @@ import {
   guideTopics,
   type Sketch,
   type Work,
+  type Instance,
   type Picture,
   type Question,
   type Cause,
@@ -136,6 +137,8 @@ function hostedActivity(item: Item): ToolActivity {
 /** Web searches a request may make in all, and once its first draft is saved: the
  * research belongs before the drawing, and a look needs at most one targeted follow-up.
  * The search service counts each query; a provider's own search counts each call. */
+/** The smallest text, in screenshot pixels of the opening view, a reader can read. */
+export const MIN_TEXT = 14;
 export const SEARCH_LIMIT = 8,
   SEARCH_AFTER_DRAFT = 2;
 /** The web searches this request may still make. */
@@ -251,8 +254,8 @@ function spend(run: Run, usage: Item) {
 type ToolStep = Extract<Step, { kind: "tool" }>;
 const pictures = (shots: { name: string; url: string }[]) =>
   shots.map(({ name, url }) => ({ name, url }));
-/** Tools that run alone and are not shown as steps of their own. */
-const silent = new Set(["ask_user", "finish"]);
+/** Tools not shown as steps of their own. */
+const silent = new Set(["ask_user"]);
 /** A box the author wrote, if enough of it has arrived to show. */
 const boxed = (box: unknown) => {
   const parsed = boxSchema.safeParse(box);
@@ -386,10 +389,22 @@ function activity(name: string, args: any, sceneId: string): ToolActivity {
 }
 /** Library drawings the work uses whose cards the author has not read: parameters it
  * guessed draw something other than it meant, or nothing. */
-function cardsUnread(work: Work, input: Item[]) {
-  const { drawings } = guidesRead(input);
+function cardsUnread(work: Work, input: Item[], batch: Item[] = []) {
+  const { drawings } = guidesRead(input, batch);
+  // Each drawing is pointed out once: an author that went on without its card had a reason.
+  const told = new Set(
+    input.flatMap((i) => {
+      if (i.type !== "function_call_output" || typeof i.output !== "string" || !i.output.includes('"cardsUnread"'))
+        return [];
+      try {
+        return (JSON.parse(i.output).cardsUnread ?? []) as string[];
+      } catch {
+        return [];
+      }
+    }),
+  );
   const unread = Object.values(work.materials)
-    .filter((m) => m.kind === "drawing" && !drawings.has(m.id))
+    .filter((m) => m.kind === "drawing" && !drawings.has(m.id) && !told.has(m.id))
     .map((m) => m.id);
   return unread.length
     ? {
@@ -398,6 +413,15 @@ function cardsUnread(work: Work, input: Item[]) {
       }
     : {};
 }
+/** A module as the author writes it: its box in short form, and what it has by default
+ * left out. */
+const shortModule = ({ bounds, group, target, anchors, ...m }: Instance) => ({
+  ...m,
+  bounds: boxOf(bounds),
+  ...(group ? { group } : {}),
+  ...(target ? { target } : {}),
+  ...(Object.keys(anchors).length ? { anchors } : {}),
+});
 /** The work as the author reads it, in the terms it writes: boxes in their short form,
  * what a part has by default left out, and library code and effect definitions named, not
  * repeated. */
@@ -407,16 +431,7 @@ function forAuthor(work: Work) {
     scenes: Object.fromEntries(
       Object.values(work.scenes).map((scene) => [
         scene.id,
-        {
-          ...scene,
-          modules: scene.modules.map(({ bounds, group, target, anchors, ...m }) => ({
-            ...m,
-            bounds: boxOf(bounds),
-            ...(group ? { group } : {}),
-            ...(target ? { target } : {}),
-            ...(Object.keys(anchors).length ? { anchors } : {}),
-          })),
-        },
+        { ...scene, modules: scene.modules.map(shortModule) },
       ]),
     ),
     materials: Object.fromEntries(
@@ -446,7 +461,19 @@ interface Context {
   measured?: { tokens: number; items: number };
   /** The module geometry the conversation holds, so a look repeats only what changed. */
   reported?: Reported;
+  /** The revision of the work this conversation already holds: the last one the author
+   * saved, read or was handed whole. A later request sends only what changed since. */
+  known?: number;
+  /** The user's standing preferences as this conversation was last told them. */
+  preferences?: string;
 }
+/** The user's standing preferences as the author is told them: in the conversation rather
+ * than the instructions, so the instructions stay the same for everyone and are cached once. */
+const preferencesOf = (settings: Settings) => settings.preferences.trim() || "none";
+const preferencesMessage = (preferences: string): Item => ({
+  role: "user",
+  content: `User preferences: ${preferences}`,
+});
 async function userMessage(
   store: UserStore,
   text: string,
@@ -471,14 +498,10 @@ const workMessage = (sceneId: string, work: Work, changes = ""): Item => ({
   role: "user",
   content: `${changes}Current scene: ${sceneId}\nCurrent work: ${JSON.stringify(forAuthor(work))}`,
 });
-/** What the user changed in the work themselves (by hand, by undoing or by bringing back
- * an earlier version) since the author last saved it, so its next turn builds on that. */
-function ownChanges(store: UserStore, work: Work) {
-  const history = store.revisions(work.id);
-  const last = history.find((r) => r.cause.kind === "run");
-  if (!last || last.revision === work.revision) return "";
+/** The list of what changed between two revisions, one line per scene or kind of record. */
+function changeLines(changes: ReturnType<typeof changesBetween>) {
   const { scenes, addedScenes, removedScenes, drawings, interactions, details, style } =
-    changesBetween(store.revision(work.id, last.revision), work);
+    changes;
   const list = (label: string, ids: string[]) =>
     ids.length ? [`${label} ${ids.join(", ")}`] : [];
   const records = (
@@ -492,7 +515,7 @@ function ownChanges(store: UserStore, work: Work) {
     ];
     return parts.length ? [`- ${kind}: ${parts.join("; ")}`] : [];
   };
-  const lines = [
+  return [
     ...scenes.map(
       (s) =>
         `- scene ${s.id}: ${[
@@ -502,6 +525,7 @@ function ownChanges(store: UserStore, work: Work) {
           ...list("removed", s.removed),
           ...(s.restacked ? ["stacking order changed"] : []),
           ...(s.retitled ? ["its title, parent or interaction changed"] : []),
+          ...(s.checksChanged ? ["interaction checks changed"] : []),
         ].join("; ")}`,
     ),
     ...list("- scenes added", addedScenes),
@@ -511,6 +535,124 @@ function ownChanges(store: UserStore, work: Work) {
     ...records("details", details),
     ...(style ? ["- the work's style tokens"] : []),
   ];
+}
+/** The records that changed between two revisions, as they are now, in the terms the author
+ * reads the work in. A changed scene carries its own fields, the order of all its modules
+ * and the parts that changed or were added; the rest of it is as it was. */
+function changedRecords(
+  before: Work,
+  after: Work,
+  changes: ReturnType<typeof changesBetween>,
+) {
+  const pick = (all: Record<string, unknown>, ids: string[]) =>
+    Object.fromEntries(ids.map((id) => [id, all[id]]));
+  const whole = forAuthor(after);
+  const scenes = Object.fromEntries([
+    ...changes.scenes.map((c) => {
+      const scene = after.scenes[c.id];
+      const parts = new Set([...c.changed, ...c.moved, ...c.added]);
+      const { modules, links, ...fields } = scene;
+      return [
+        c.id,
+        {
+          ...fields,
+          order: modules.map((m) => m.id),
+          modules: modules.filter((m) => parts.has(m.id)).map(shortModule),
+          links: links.filter((l) => parts.has(l.id)),
+          ...(c.removed.length ? { removed: c.removed } : {}),
+        },
+      ];
+    }),
+    ...changes.addedScenes.map((id) => [id, whole.scenes[id]]),
+  ]);
+  const was = forAuthor(before).materials,
+    now = whole.materials;
+  const materials = Object.keys(now).filter(
+    (id) => JSON.stringify(was[id]) !== JSON.stringify(now[id]),
+  );
+  const removed = {
+    scenes: changes.removedScenes,
+    drawings: changes.drawings.removed,
+    interactions: changes.interactions.removed,
+    details: changes.details.removed,
+    materials: Object.keys(was).filter((id) => !(id in now)),
+  };
+  const touched = (r: { added: string[]; changed: string[] }) => [
+    ...r.changed,
+    ...r.added,
+  ];
+  return {
+    ...(before.title !== after.title ? { title: after.title } : {}),
+    ...(JSON.stringify(before.brief) !== JSON.stringify(after.brief)
+      ? { brief: after.brief }
+      : {}),
+    ...(changes.style ? { style: after.style } : {}),
+    ...(Object.keys(scenes).length ? { scenes } : {}),
+    ...Object.fromEntries(
+      (["drawings", "interactions", "details"] as const)
+        .map((k) => [k, pick(after[k], touched(changes[k]))] as const)
+        .filter(([, r]) => Object.keys(r).length),
+    ),
+    ...(materials.length ? { materials: pick(now, materials) } : {}),
+    ...(Object.values(removed).some((r) => r.length)
+      ? {
+          removed: Object.fromEntries(
+            Object.entries(removed).filter(([, r]) => r.length),
+          ),
+        }
+      : {}),
+  };
+}
+/** The work as a new request hands it to an author whose conversation already holds it:
+ * nothing but the scene when it is as the author left it; otherwise what the user changed
+ * themselves (by hand, by undoing or by bringing back an earlier version), listed and
+ * given as records, so the author keeps those changes without being sent the whole work
+ * again. The whole work is sent when the conversation does not hold a revision of it, or
+ * when the changes come to more than half of it. */
+function catchUp(
+  store: UserStore,
+  sceneId: string,
+  work: Work,
+  known: number | undefined,
+): Item {
+  const unchanged: Item = {
+    role: "user",
+    content: `Current scene: ${sceneId}\nThe work is as you last saw it (revision ${work.revision}).`,
+  };
+  if (known === work.revision) return unchanged;
+  const before = known === undefined ? undefined : store.revision(work.id, known);
+  // Only the user changes a work between requests; a revision the author saved that this
+  // conversation does not know of means it does not hold the work.
+  const between = store
+    .revisions(work.id)
+    .filter((r) => r.revision > (known ?? 0) && r.revision <= work.revision);
+  if (!before || between.some((r) => r.cause.kind === "run"))
+    return workMessage(sceneId, work, ownChanges(store, work));
+  const changes = changesBetween(before, work);
+  const records = JSON.stringify(changedRecords(before, work, changes));
+  if (records === "{}") return unchanged;
+  const head = `Since your last turn the user changed the work themselves (revision ${known} to ${work.revision}).`,
+    list = changeLines(changes).join("\n");
+  if (records.length * 2 > JSON.stringify(forAuthor(work)).length)
+    return workMessage(
+      sceneId,
+      work,
+      `${head} The current work below includes these changes; keep them unless the user asks otherwise:\n${list}\n`,
+    );
+  return {
+    role: "user",
+    content: `${head} Keep these changes unless the user asks otherwise, since they are the user's own decisions:\n${list}\nOnly what changed is below, as it is now; everything else is as you last saw or saved it. A changed scene lists the order of all its modules (bottom to top) and only its changed or added parts. Call read_work if you need the whole work.\nChanged: ${records}\nCurrent scene: ${sceneId}`,
+  };
+}
+/** What the user changed in the work themselves (by hand, by undoing or by bringing back
+ * an earlier version) since the author last saved it, so its next turn builds on that. */
+function ownChanges(store: UserStore, work: Work) {
+  const history = store.revisions(work.id);
+  const last = history.find((r) => r.cause.kind === "run");
+  if (!last || last.revision === work.revision) return "";
+  const lines = changeLines(
+    changesBetween(store.revision(work.id, last.revision), work),
+  );
   return lines.length
     ? `Since your last turn the user changed the work themselves (revision ${last.revision} to ${work.revision}). The current work below includes these changes; keep them unless the user asks otherwise:\n${lines.join("\n")}\n`
     : "";
@@ -562,38 +704,51 @@ function withoutOldPictures(input: Item[]): Item[] {
       : item,
   );
 }
+/** What a summary is asked to keep, at the end of the conversation it summarizes. */
+const SUMMARY_REQUEST =
+  "Summarize this drawing conversation so the author can continue from your notes alone, since everything else in it is about to be dropped. Keep: what the user asked and every requirement or correction, in their words; the brief and its basis; what each reference image is for; the material ids chosen or generated and what each depicts; decisions and why they were made; facts and sources found by research; what is unfinished; tool failures still unresolved. Leave out drawing code, module lists and guide text, because the latest saved work and the original reference images are supplied separately and guides can be read again. Call no tool and write only the notes; do not continue the work.";
 async function compact(
   store: UserStore,
   run: Run,
   ctx: Context,
   signal: AbortSignal,
+  instructions: string,
+  tools: Item[],
 ) {
   const size = contextSize(ctx);
   if (size < 200000) return;
   await tracer.span("compact", "context", { size }, async (span) => {
     const author = ctx.settings.author;
     const began = Date.now();
-    let result: Awaited<ReturnType<typeof generate>>;
+    // A summary needs little thought: at the author's effort, xhigh reasoning used up the
+    // output budget and the cut-off summary failed the whole run. Where the effort changes
+    // in the conversation, the summary is asked of the same request as every turn, so it
+    // reads the whole conversation from the cache instead of paying for all of it again.
+    const inConversation = adapterFor(author.protocol).effortControl(author) === "conversation";
+    let summary = "",
+      answered = false;
     try {
-      result = await generate(
-        // A summary needs little thought: at the author's effort, xhigh reasoning used up
-        // the output budget and the cut-off summary failed the whole run.
-        { ...author, effort: "low" },
-        {
-          instructions:
-            "Summarize this drawing conversation so the author can continue from your notes alone, since everything else in it is about to be dropped. Keep: what the user asked and every requirement or correction, in their words; the brief and its basis; what each reference image is for; the material ids chosen or generated and what each depicts; decisions and why they were made; facts and sources found by research; what is unfinished; tool failures still unresolved. Leave out drawing code, module lists and guide text, because the latest saved work and the original reference images are supplied separately and guides can be read again. Write only the notes; do not continue the work.",
-          // Effort changes made for the author's turns would override the summary's own.
-          input: ctx.input.filter((i) => i.type !== "configuration_update"),
-          // Without tools the calls and results so far are told in words.
-          tools: [],
-          signal,
-          budget: 16384,
-          // A summary asks with other instructions; it keeps off the author's cached prefix.
-          cacheKey: store.userId + ":compact",
-        },
-      );
+      const result = await generate(inConversation ? author : { ...author, effort: "low" }, {
+        instructions,
+        input: [
+          ...ctx.input,
+          ...(inConversation
+            ? [{ type: "configuration_update", reasoning: { effort: lowestEffort(author.efforts) ?? "low" } }]
+            : []),
+          { role: "user", content: SUMMARY_REQUEST },
+        ],
+        tools,
+        signal,
+        budget: 16384,
+        cacheKey: store.userId,
+      });
+      spend(run, result.usage);
+      answered = true;
+      summary = textOf(result.items);
+      span.set({ usage: result.usage, response: result.response });
+      if (!summary) throw Error("摘要是空的");
     } catch (e) {
-      spendFailed(run, { ms: Date.now() - began });
+      if (!answered) spendFailed(run, { ms: Date.now() - began });
       if (signal.aborted) throw e;
       // Without a summary the run goes on with less to read rather than stopping.
       ctx.input = withoutOldPictures(ctx.input);
@@ -616,24 +771,20 @@ async function compact(
       ),
     ];
     ctx.input = [
+      preferencesMessage((ctx.preferences = preferencesOf(ctx.settings))),
       await userMessage(
         store,
-        "Conversation summary. Guides and drawing cards read earlier are no longer above, so read again with draw_guide what you still need.\n" + textOf(result.items),
+        "Conversation summary. Guides and drawing cards read earlier are no longer above, so read again with draw_guide what you still need.\n" + summary,
         references,
       ),
       workMessage(run.sceneId, store.work(run.workId)),
     ];
+    ctx.known = store.work(run.workId).revision;
     ctx.measured = undefined;
     ctx.reported = undefined;
     store.context(run.id, ctx);
-    spend(run, result.usage);
     // The next turn starts from this summary alone.
-    span.set({
-      summary: textOf(result.items),
-      usage: result.usage,
-      response: result.response,
-      replaced: true,
-    });
+    span.set({ summary, replaced: true });
   });
 }
 /** Every turn thinks at the configured effort. A configuration_update lasts until the next
@@ -725,6 +876,8 @@ async function questions(
 }
 export class Agent {
   active = new Map<string, AbortController>();
+  /** Runs already held once for text too small to read. */
+  private heldForText = new Set<string>();
   /** Pictures each run has asked for, developing in the background. */
   developments = new Map<string, (Development & { reported?: boolean })[]>();
   constructor(public publish: (user: string, event: object) => void) {}
@@ -767,10 +920,16 @@ export class Agent {
       generations: 0,
       ...(before?.measured ? { measured: before.measured } : {}),
       ...(before?.reported ? { reported: before.reported } : {}),
+      known: work.revision,
+      preferences: preferencesOf(settings),
     };
     ctx.input.push(
+      // Told again only when they changed since this conversation last heard them.
+      ...(before?.preferences === ctx.preferences ? [] : [preferencesMessage(ctx.preferences!)]),
       message,
-      workMessage(sceneId, work, ownChanges(store, work)),
+      before
+        ? catchUp(store, sceneId, work, before.known)
+        : workMessage(sceneId, work, ownChanges(store, work)),
     );
     this.emit(store, run);
     store.context(run.id, ctx);
@@ -846,7 +1005,11 @@ export class Agent {
     );
     const lines = fresh.map((d) =>
       d.settled!.status === "ready"
-        ? `${d.id} (${d.name}) developed; visible content ${sizes.get(d.id) ?? "unknown"}.`
+        ? `${d.id} (${d.name}) developed; visible content ${sizes.get(d.id) ?? "unknown"}.${
+            d.settled!.opaque
+              ? " It came out with a background around it, painted twice, so it shows as a box: use it as a scene, or generate it again."
+              : ""
+          }`
         : `${d.id} (${d.name}) failed: ${d.settled!.error}. Generate it again or draw another way.`,
     );
     return [
@@ -913,7 +1076,6 @@ export class Agent {
               const instructions = [
                 AUTHOR,
                 catalogue(await styleList(), await kit()),
-                "User preferences: " + (settings.preferences || "none"),
               ].join("\n\n");
               // Where this execution starts from; each turn records what it adds.
               execution.set({
@@ -1004,7 +1166,7 @@ export class Agent {
       let said: Extract<Step, { kind: "message" }> | undefined;
       abort.signal.throwIfAborted();
       ctx.input.push(...(await this.developed(store, run)));
-      await compact(store, run, ctx, abort.signal);
+      await compact(store, run, ctx, abort.signal, instructions, availableTools);
       if (seen > ctx.input.length) seen = 0;
       holdEffort(ctx.input, settings.author);
       const turnStart = Date.now();
@@ -1247,18 +1409,20 @@ export class Agent {
       this.emit(store, run);
       const calls = result.items.filter((i) => i.type === "function_call");
       if (!calls.length) {
-        // Words saying the work is done, when it is: that is what finish would say, and
-        // asking for the call only pays for the same message twice.
-        if (text && this.done(store, run) === undefined) {
+        // Words with no call end the run once the work is done: they are its closing words.
+        const blocked = this.done(store, run);
+        if (text && blocked === undefined) {
           run.status = "completed";
           store.context(run.id, ctx);
           this.developments.delete(run.id);
+          this.heldForText.delete(run.id);
           return;
         }
         ctx.input.push({
           role: "user",
-          content:
-            "Your last message had no tool call, so the work did not move. Take the next step now with a tool, keeping any note to the user in the same message. Call ask_user only if nothing can move without them, and finish once you have seen the latest saved revision and it holds.",
+          content: blocked
+            ? `The work is not done yet: ${blocked}. Take the next step with a tool, keeping any note to the user in the same message.`
+            : "Your last message had neither closing words nor a tool call. Write your closing words if the work is done, or take the next step with a tool.",
         });
         continue;
       }
@@ -1298,7 +1462,10 @@ export class Agent {
         ctx.input.push({
           type: "function_call_output",
           call_id: call.call_id,
-          output: JSON.stringify(outcome.output),
+          output:
+            typeof outcome.output === "string"
+              ? outcome.output
+              : JSON.stringify(outcome.output),
         });
         if (outcome.images.length) shown.push({ role: "user", content: outcome.images });
         store.context(run.id, ctx);
@@ -1330,9 +1497,20 @@ export class Agent {
     const unseen = developments.filter(
       (d) => work.materials[d.id] && d.settled!.at > looked,
     );
-    return unseen.length
-      ? `图片 ${unseen.map((d) => d.id).join(", ")} 在最后一次查看之后才显影，请再看一次画布`
-      : undefined;
+    if (unseen.length)
+      return `图片 ${unseen.map((d) => d.id).join(", ")} 在最后一次查看之后才显影，请再看一次画布`;
+    // Text too small to read holds the end once: some of it, such as the names a map
+    // draws, is not the author's to change, and it can say so and end.
+    if (this.heldForText.has(run.id)) return undefined;
+    const small = Object.values(work.scenes).flatMap((scene) => {
+      const px = run.observations
+        .filter((o) => o.revision === work.revision && o.overview && o.smallestText?.[scene.id] !== undefined)
+        .at(-1)?.smallestText?.[scene.id];
+      return px !== undefined && px < MIN_TEXT ? [`${scene.id} ${px}px`] : [];
+    });
+    if (!small.length) return undefined;
+    this.heldForText.add(run.id);
+    return `最小的字小于 ${MIN_TEXT} 像素（${small.join("，")}），读者看不清：放大或删减这些字再看一次；如果这些字不由你决定（比如地图自带的地名），说明原因后结束`;
   }
   /** Runs one tool call. `done` ends this execution: the run finished or waits for the user. */
   private async call(
@@ -1371,7 +1549,7 @@ export class Agent {
         }
         this.emit(store, run);
       }
-      if (["ask_user", "finish"].includes(call.name) && batch.length !== 1)
+      if (call.name === "ask_user" && batch.length !== 1)
         throw Error(`${call.name} must be the only tool call`);
       if (call.name === "view_canvas") {
         if (
@@ -1453,6 +1631,7 @@ export class Agent {
         case "read_work": {
           const work = store.work(run.workId);
           output = forAuthor(work);
+          ctx.known = work.revision;
           Object.assign(step!, { revision: work.revision });
           break;
         }
@@ -1491,6 +1670,7 @@ export class Agent {
             said(store, run.workId, ctx.settings.preferences),
             causeOf(run),
           );
+          ctx.known = work.revision;
           this.publish(store.userId, { type: "work", work });
           const effects = await library.get(style.effects, store.userId, true);
           const cast = work.brief!.cast.length
@@ -1515,7 +1695,7 @@ export class Agent {
             },
             ...(cast ? { cast: cast.output } : {}),
             ...(research(run) ? { research: research(run) } : {}),
-            ...(guidesRead(ctx.input).topics.size
+            ...(guidesRead(ctx.input, batch).topics.size
               ? {}
               : { guides: "Read what this work needs with draw_guide before drawing: see # Guides." }),
           };
@@ -1554,17 +1734,18 @@ export class Agent {
           for (const [i, d] of made.entries())
             void d.done.then(async (r) => {
               shown[i].status = r.status;
-              if (r.status === "ready") {
+              if (r.count) {
                 const u = usageOf(run);
                 const images = (u.images ??= { count: 0, input: 0, output: 0 });
                 const t = imageTokensOf(r.usage);
-                images.count++;
+                images.count += r.count;
                 images.input += t.input;
                 images.output += t.output;
                 images.textInput = (images.textInput ?? 0) + t.textInput;
                 images.imageInput = (images.imageInput ?? 0) + t.imageInput;
                 images.textOutput = (images.textOutput ?? 0) + t.textOutput;
-              } else failedOf(run).images++;
+              }
+              if (r.status === "failed") failedOf(run).images++;
               this.emit(store, run);
               // An open canvas redraws the picture with its measured content.
               const work = store.works().find((w) => w.id === run.workId);
@@ -1591,6 +1772,7 @@ export class Agent {
             fromAuthor(store.work(run.workId), authorWriteSchema.parse(args), run.sceneId),
             causeOf(run),
           );
+          ctx.known = work.revision;
           run.firstSceneMs ??= Date.now() - start;
           this.publish(store.userId, { type: "work", work });
           output = {
@@ -1599,7 +1781,7 @@ export class Agent {
             ...(keptTitle
               ? { title: `Kept the user's title "${work.title}".` }
               : {}),
-            ...cardsUnread(work, ctx.input),
+            ...cardsUnread(work, ctx.input, batch),
           };
           Object.assign(step!, { revision: work.revision, materials: added });
           break;
@@ -1655,24 +1837,6 @@ export class Agent {
             run.status = "running";
           }
           break;
-        }
-        case "finish": {
-          const blocked = this.done(store, run);
-          if (blocked) throw new DomainError(blocked);
-          run.status = "completed";
-          run.steps.push({
-            kind: "message",
-            role: "assistant",
-            text: args.message,
-          });
-          ctx.input.push({
-            type: "function_call_output",
-            call_id: call.call_id,
-            output: "Completed",
-          });
-          store.context(run.id, ctx);
-          this.developments.delete(run.id);
-          return { done: true, output: null, images: [] };
         }
         default:
           throw Error("Unknown tool " + call.name);

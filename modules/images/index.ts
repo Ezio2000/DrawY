@@ -4,6 +4,7 @@ import type { UserStore } from "../storage/index.ts";
 import { DomainError, type Work, type ImageRole } from "../contracts/index.ts";
 import type { Material, StyleMaterial } from "@drawy/materials/schema";
 import { library, styleOf } from "../materials/index.ts";
+import { MaterialsError } from "@drawy/materials/client";
 import { tracer } from "../trace/index.ts";
 
 /** A picture the author wants made. */
@@ -13,22 +14,27 @@ export const pictureRequestSchema = z.object({
   role: z
     .enum(["object", "figure", "scene", "texture", "icon"])
     .describe(
-      "object, figure and icon are cut-outs on transparency; scene is a vignette fading into paper; texture is a seamless surface",
+      "How the picture will be used: object, figure and icon are cut-outs on transparency to place, move and label; scene is a vignette whose edges fade into paper; texture is a seamless surface",
     ),
   depicts: z
     .string()
     .min(1)
-    .describe("What is in the frame: the subject, its state, view and details; not the style"),
-  aspect: z.enum(["square", "landscape", "portrait"]).default("square"),
+    .describe(
+      "For a picture model that knows nothing about the work: the subject, its state, the view (side, from above, cut away), pose, gaze and what it holds or touches, and the materials and details that identify it; for a person or animal, how much of the body shows (\"full body, feet included\"), since the model crops otherwise. Not the style, which is added to every picture, and no words, which the picture cannot carry",
+    ),
+  aspect: z
+    .enum(["square", "landscape", "portrait"])
+    .default("square")
+    .describe("The shape that fits the thing; size its module to it"),
   key: z
     .string()
     .optional()
-    .describe("A name other pictures in the same request can refer to in their references"),
+    .describe("A name other pictures in the same request can refer to in their references, such as the first picture of a character the others must match"),
   references: z
     .array(z.string())
     .default([])
     .describe(
-      "Pictures to work from, to restyle, vary or keep consistent with: material ids, or keys of pictures in the same request, which this one then waits for",
+      "Pictures this one must be made from, to restyle, vary or keep one character consistent, since a description alone drifts between pictures: material ids, or keys of pictures in the same request, which this one then waits for. The work's pictures in its style are already sent as style references",
     ),
 });
 export type PictureRequest = z.input<typeof pictureRequestSchema>;
@@ -45,6 +51,29 @@ type ImageUsage = {
   input_tokens_details?: { text_tokens?: number; image_tokens?: number };
   output_tokens_details?: { text_tokens?: number; image_tokens?: number };
 };
+/** Two paintings' token counts as one. */
+function added(a: ImageUsage | undefined, b: ImageUsage | undefined): ImageUsage | undefined {
+  if (!a || !b) return a ?? b;
+  const sum = (x?: number, y?: number) => (x ?? 0) + (y ?? 0);
+  const details = (
+    x?: { text_tokens?: number; image_tokens?: number },
+    y?: { text_tokens?: number; image_tokens?: number },
+  ) =>
+    x || y
+      ? {
+          text_tokens: sum(x?.text_tokens, y?.text_tokens),
+          image_tokens: sum(x?.image_tokens, y?.image_tokens),
+        }
+      : undefined;
+  const input = details(a.input_tokens_details, b.input_tokens_details),
+    output = details(a.output_tokens_details, b.output_tokens_details);
+  return {
+    input_tokens: sum(a.input_tokens, b.input_tokens),
+    output_tokens: sum(a.output_tokens, b.output_tokens),
+    ...(input ? { input_tokens_details: input } : {}),
+    ...(output ? { output_tokens_details: output } : {}),
+  };
+}
 /** A picture being made in the background. */
 export interface Development {
   id: string;
@@ -52,11 +81,16 @@ export interface Development {
   done: Promise<{
     status: "ready" | "failed";
     error?: string;
+    /** Pictures returned by the model, including discarded opaque attempts, even if a
+     * later retry fails. Each is billable by the picture. */
+    count: number;
     /** The picture model's token counts, when it reports them (`imageTokensOf` splits
      * them as they are priced). */
     usage?: ImageUsage;
+    /** A cut-out that came out with nothing clear around it, twice: it shows as a box. */
+    opaque?: boolean;
   }>;
-  settled?: { status: "ready" | "failed"; error?: string; at: number };
+  settled?: { status: "ready" | "failed"; error?: string; opaque?: boolean; at: number };
 }
 
 /** Pictures sent only for their look, so a new picture matches the style's samples and
@@ -356,6 +390,8 @@ export async function develop(
     if (known) return known;
     const { r, id, prompt, styled, width, height } = reserved[i];
     const transparent = r.role !== "scene" && r.role !== "texture";
+    let count = 0;
+    let usage: ImageUsage | undefined;
     const development: Development = {
       id,
       name: r.name.zh,
@@ -387,25 +423,44 @@ export async function develop(
                       Buffer.from(b).toString("base64"),
                   ),
                 });
-              const { bytes, usage } = await paint(
-                role,
-                prompt,
-                `${width}x${height}`,
-                transparent,
-                references,
-              );
-              const made = await library.develop(
-                id,
-                bytes,
-                "image/png",
-                store.userId,
-              );
+              const painting = async () => {
+                const result = await paint(role, prompt, `${width}x${height}`, transparent, references);
+                count++;
+                usage = added(usage, result.usage);
+                // Preserve the charge in the trace before validation or a retry can fail.
+                span.set({ count, ...(usage ? { usage } : {}) });
+                return result.bytes;
+              };
+              let bytes = await painting();
+              // A cut-out that came out with a background around it is painted once more,
+              // since a label cannot rescue a box; a second one is kept, and said to be one.
+              let opaque = false;
+              const keep = (cutOut: boolean) =>
+                library.develop(id, bytes, "image/png", store.userId, cutOut);
+              let made: Material;
+              try {
+                made = await keep(transparent);
+              } catch (e) {
+                if (!(transparent && e instanceof MaterialsError && e.status === 422)) throw e;
+                tracer.note("opaque cut-out", { id }, "painted again");
+                bytes = await painting();
+                try {
+                  made = await keep(true);
+                } catch (e) {
+                  if (!(e instanceof MaterialsError && e.status === 422)) throw e;
+                  opaque = true;
+                  made = await keep(false);
+                }
+              }
               span.set({
                 bytes: bytes.length,
                 url: made.kind === "picture" ? made.file.url : undefined,
-                ...(usage ? { usage } : {}),
+                ...(opaque ? { opaque } : {}),
               });
-              return { status: "ready" as const, ...(usage ? { usage } : {}) };
+              return {
+                status: "ready" as const,
+                ...(opaque ? { opaque } : {}),
+              };
             },
           );
         })
@@ -417,8 +472,9 @@ export async function develop(
           return { status: "failed" as const, error };
         })
         .then((result) => {
-          development.settled = { ...result, at: Date.now() };
-          return result;
+          const billed = { ...result, count, ...(usage ? { usage } : {}) };
+          development.settled = { ...billed, at: Date.now() };
+          return billed;
         }),
     };
     developments.set(i, development);

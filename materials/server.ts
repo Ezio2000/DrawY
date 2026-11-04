@@ -88,6 +88,7 @@ export function createServer(
         new Uint8Array(await c.req.arrayBuffer()),
         c.req.header("content-type") || "application/octet-stream",
         owner(c),
+        c.req.query("transparent") === "1",
       ),
     ),
   );

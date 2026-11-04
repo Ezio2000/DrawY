@@ -19,7 +19,7 @@ const painting = (c: ModelCatalog, r: Partial<ImageRole>) => {
     },
   ];
 };
-import { serveLibrary, picture } from "@drawy/materials/testing";
+import { serveLibrary, picture, solid } from "@drawy/materials/testing";
 
 let dir: string, db: Storage, library: ReturnType<typeof serveLibrary>;
 beforeEach(() => {
@@ -70,7 +70,7 @@ for (const channel of ["api", "oauth"] as const)
     ]);
     expect(made.id).toMatch(/^g-microscope-/);
 
-    expect(await made.done).toEqual({ status: "ready" });
+    expect(await made.done).toEqual({ status: "ready", count: 1 });
     expect(made.settled?.status).toBe("ready");
     const m = await library.library.ready(made.id, store.userId, 0);
     expect(m).toMatchObject({
@@ -151,11 +151,50 @@ it("retries a dropped connection or a busy server before giving up", async () =>
       { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
     ]);
     while (!made.settled) await vi.advanceTimersByTimeAsync(1000);
-    expect(await made.done).toEqual({ status: "ready" });
+    expect(await made.done).toEqual({ status: "ready", count: 1 });
     expect(calls).toBe(3);
   } finally {
     vi.useRealTimers();
   }
+});
+it("paints a cut-out again when it comes out with a background, and says so when it does twice", async () => {
+  const store = db.scoped(register(db, "author", "abcdef").id);
+  store.storage.saveModels({
+    ...store.storage.models(),
+    painters: painting(store.storage.models(), { credential: "test", baseUrl: "https://example.invalid" }),
+  });
+  const [clear, boxed] = [await picture(), await solid()];
+  const usage = { input_tokens: 10, output_tokens: 100 };
+  let answers = [boxed, clear];
+  let calls = 0;
+  library.route(async () => {
+    const png = answers[calls++] ?? boxed;
+    return Response.json({ data: [{ b64_json: png.toString("base64") }], usage });
+  });
+  const ask = (en: string, role: "object" | "scene" = "object") => ({
+    name: { zh: en, en },
+    role,
+    depicts: "a " + en,
+  });
+  const [ship] = await develop(store, store.settings().image, fixture(), [ask("ship")]);
+  // Both paintings are paid for.
+  expect(await ship.done).toEqual({ status: "ready", count: 2, usage: { input_tokens: 20, output_tokens: 200 } });
+  expect(calls).toBe(2);
+  const kept = await library.library.ready(ship.id, store.userId, 0);
+  expect(kept).toMatchObject({ form: { background: "transparent" } });
+
+  answers = [];
+  calls = 0;
+  const [boat] = await develop(store, store.settings().image, fixture(), [ask("boat")]);
+  expect(await boat.done).toMatchObject({ status: "ready", opaque: true });
+  expect(boat.settled).toMatchObject({ status: "ready", opaque: true });
+  expect(calls).toBe(2);
+
+  // A scene is whole by its role, and is not painted again for it.
+  calls = 0;
+  const [sea] = await develop(store, store.settings().image, fixture(), [ask("sea", "scene")]);
+  expect(await sea.done).toMatchObject({ status: "ready" });
+  expect(calls).toBe(1);
 });
 it("records a failed picture so the work and the author both learn of it", async () => {
   const store = db.scoped(register(db, "author", "abcdef").id);
@@ -175,6 +214,7 @@ it("records a failed picture so the work and the author both learn of it", async
   ]);
   expect(await made.done).toMatchObject({
     status: "failed",
+    count: 0,
     error: expect.stringContaining("400"),
   });
   await expect(library.library.ready(made.id, store.userId, 0)).rejects.toThrow(

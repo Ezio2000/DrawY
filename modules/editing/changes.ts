@@ -17,7 +17,7 @@ function same(a: unknown, b: unknown): boolean {
 }
 /** What changed in a work between two of its revisions: per scene, the parts added,
  * removed, changed in what they show, and only moved or resized, and whether the scene
- * itself (its title, parent or interaction) changed; the scenes added and removed whole;
+ * itself (its title, parent, interaction or checks) changed; the scenes added and removed whole;
  * the drawings, interactions and details added, changed or removed; and whether its
  * shared style changed. */
 export function changesBetween(before: Work, after: Work) {
@@ -58,13 +58,15 @@ export function changesBetween(before: Work, after: Work) {
       was.title !== scene.title ||
       was.parentId !== scene.parentId ||
       was.interactionId !== scene.interactionId;
+    const checksChanged = !same(was.checks, scene.checks);
     return added.length ||
       removed.length ||
       changed.length ||
       moved.length ||
       restacked ||
-      retitled
-      ? [{ id: scene.id, added, removed, changed, moved, restacked, retitled }]
+      retitled ||
+      checksChanged
+      ? [{ id: scene.id, added, removed, changed, moved, restacked, retitled, checksChanged }]
       : [];
   });
   const records = <T>(a: Record<string, T>, b: Record<string, T>) => ({
