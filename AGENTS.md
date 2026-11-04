@@ -176,6 +176,6 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 **测试要验证真实行为。** `agent.test.ts` 用 `vi.mock` 替换掉 `models` 和 `observation`，按脚本逐轮返回工具调用。素材相关的测试用 `@drawy/materials/testing` 的 `serveLibrary`，在临时目录里起一个带种子数据的真实素材库，并拦截 fetch。新测试沿用这两种方式，不要另写素材库的 mock。测试失败时，先判断是实现错了还是测试过时了，不要为了让测试通过去改断言或写特例。
 
-**`promo/` 是独立工程。** 它是 60 秒宣传片，有自己的 npm 依赖和 `build.sh`，不属于主程序的构建和测试；只有任务明确涉及时才去动它。
+**`promo/` 是独立工程。** 它放着两部宣传片（60 秒的 `src/` 和 55 秒的《请勿触摸》`touch/`），有自己的 npm 依赖和 `build.sh`（`build.sh touch` 生成后者），不属于主程序的构建和测试；只有任务明确涉及时才去动它。
 
 Responses 服务是否接受 `max_tool_calls` 和 `tool_choice: allowed_tools` 记在绘制模型的 `toolLimits`（默认 `true`，旧目录读出时补上），经 `settingsFor` 进入 `Role.toolLimits`，`responses.ts` 的 `narrow` 只读它，不按地址判断。DeepSeek 等不支持的服务由管理员关掉，请求不发送这两项，独立搜索仍在 DrawY 执行时按预算拒绝超额调用，工具列表保持不变。

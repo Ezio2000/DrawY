@@ -5,6 +5,8 @@
 //   node render.mjs stills 0 5.5 12            → out/stills/t-0.000.png …
 //   node render.mjs cues                        → out/cues.json
 //   node render.mjs frames [fps] [workers]      → out/frames/00000.jpg …
+//
+// FILM picks the film: src (the sixty seconds, default) or touch (请勿触摸, written to out/touch).
 import { createRequire } from "node:module";
 import http from "node:http";
 import fs from "node:fs";
@@ -15,7 +17,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // the pre-installed Playwright, which ESM resolution alone does not find
 const { chromium } = createRequire(import.meta.url)("playwright");
 const root = path.resolve(here, "..");
-const out = path.join(here, "out");
+const FILM = process.env.FILM || "src";
+const out = FILM === "src" ? path.join(here, "out") : path.join(here, "out", FILM);
 fs.mkdirSync(out, { recursive: true });
 
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".webp": "image/webp", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".woff": "font/woff", ".json": "application/json" };
@@ -29,7 +32,7 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
-const URL_ = `http://127.0.0.1:${server.address().port}/promo/src/index.html?still`;
+const URL_ = `http://127.0.0.1:${server.address().port}/promo/${FILM}/index.html?still`;
 
 const browser = await chromium.launch({ args: ["--force-color-profile=srgb", "--disable-lcd-text", "--font-render-hinting=none"] });
 async function openPage() {

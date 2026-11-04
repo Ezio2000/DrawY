@@ -1,0 +1,330 @@
+/* 《请勿触摸》 — what this film adds to the shared look in ../src/video.css. */
+
+/* ---------- the gallery ---------- */
+.wall {
+  position: absolute;
+  left: -3000px;
+  top: -2400px;
+  width: 8000px;
+  height: 3400px;
+  background: linear-gradient(#ece7dd, #e4ded2 78%, #ddd6c9);
+}
+.spot {
+  position: absolute;
+  left: 160px;
+  top: -260px;
+  width: 1600px;
+  height: 1240px;
+  background: radial-gradient(50% 50% at 50% 50%, rgba(255, 247, 228, 0.85), rgba(255, 247, 228, 0.35) 45%, transparent 72%);
+  pointer-events: none;
+}
+.floor {
+  position: absolute;
+  left: -3000px;
+  top: 1000px;
+  width: 8000px;
+  height: 2000px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 238px, rgba(90, 64, 34, 0.12) 238px 240px),
+    linear-gradient(#cdb796, #bea583);
+}
+.baseboard {
+  position: absolute;
+  left: -3000px;
+  top: 982px;
+  width: 8000px;
+  height: 18px;
+  background: #f1ede4;
+  box-shadow: 0 1px 0 rgba(60, 45, 20, 0.12), 0 -1px 0 rgba(60, 45, 20, 0.06);
+}
+.frame {
+  position: absolute;
+  background: linear-gradient(135deg, #3a332d, #221e1a);
+  box-shadow: 0 2px 3px rgba(40, 28, 12, 0.25), 0 34px 60px rgba(40, 28, 12, 0.26);
+}
+.frame .mat {
+  position: absolute;
+  inset: 22px;
+  background: #fbfaf6;
+  box-shadow: inset 0 2px 6px rgba(40, 28, 12, 0.18);
+}
+.frame .bevel {
+  position: absolute;
+  left: 56px;
+  top: 56px;
+  right: 56px;
+  bottom: 56px;
+  box-shadow: 0 0 0 1.5px #e2ddd2, 0 0 0 4px #f4f1ea;
+}
+.walllabel {
+  position: absolute;
+  width: 230px;
+  padding: 16px 18px;
+  background: #fbfaf6;
+  box-shadow: 0 1px 2px rgba(40, 28, 12, 0.12), 0 8px 18px rgba(40, 28, 12, 0.08);
+  font-family: var(--serif-zh);
+  color: var(--ink);
+}
+.walllabel b { display: block; font-weight: 600; font-size: 15px; line-height: 1.4; }
+.walllabel span { display: block; margin-top: 6px; font-family: var(--sans); font-size: 11.5px; color: var(--text-2); line-height: 1.5; }
+
+/* the sign under the work */
+.plaque {
+  position: absolute;
+  background: linear-gradient(#fdfcf9, #f6f3ec);
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(60, 45, 20, 0.1), 0 2px 3px rgba(40, 28, 12, 0.12), 0 14px 26px rgba(40, 28, 12, 0.12);
+}
+.plaque .screw {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #f2e6c8, #b49a62);
+  box-shadow: 0 0 0 1px rgba(60, 45, 20, 0.18);
+}
+.plaque .icon { position: absolute; left: 128px; top: 10px; width: 44px; height: 44px; overflow: visible; }
+.plaque .zh {
+  position: absolute;
+  left: 0;
+  top: 53px;
+  width: 300px;
+  height: 48px;
+  text-align: center;
+  white-space: nowrap;
+  font-family: var(--serif-zh);
+  font-weight: 600;
+  font-size: 40px;
+  line-height: 48px;
+  color: var(--ink);
+}
+.zh .ch { display: inline-block; width: 1.08em; text-align: center; }
+.plaque .hl { position: absolute; top: 53px; height: 48px; background: rgba(217, 119, 87, 0.3); border-radius: 2px; }
+.plaque .caret { position: absolute; top: 57px; width: 2.6px; height: 40px; background: var(--ink); }
+.plaque .en {
+  position: absolute;
+  left: 0;
+  top: 109px;
+  width: 300px;
+  text-align: center;
+  white-space: nowrap;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 12.5px;
+  letter-spacing: 0.24em;
+  color: var(--text-2);
+}
+.plaque .en .dn { display: inline-block; overflow: hidden; vertical-align: bottom; }
+
+/* ---------- editing marks over the canvas ---------- */
+.selbox {
+  position: absolute;
+  border: 2.5px solid var(--ai);
+  border-radius: 4px;
+}
+.selbox.hover { border-style: dashed; border-width: 2px; }
+.selbox i {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  margin: -8.5px 0 0 -8.5px;
+  background: #fff;
+  border: 2.5px solid var(--ai);
+  border-radius: 3px;
+}
+.selbar {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 60px;
+  padding: 0 8px;
+  border-radius: 30px;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px var(--line), 0 10px 26px rgba(60, 45, 20, 0.14);
+  white-space: nowrap;
+}
+.selbar .b { width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; }
+.selbar .ask {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 16px 0 12px;
+  border-radius: 22px;
+  font-size: 21px;
+  color: var(--ai-deep);
+  background: rgba(217, 119, 87, 0.1);
+}
+.selbar .sep { width: 1.5px; height: 26px; background: var(--line); margin: 0 4px; }
+
+.toolbar {
+  position: absolute;
+  left: 1560px;
+  top: 34px;
+  display: flex;
+  gap: 6px;
+}
+.toolbar .b {
+  width: 56px;
+  height: 56px;
+  border-radius: 28px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 0 0 1.5px var(--line);
+}
+.toolbar .b.on { background: #fff; box-shadow: 0 0 0 2px var(--ai); }
+
+.menu {
+  position: absolute;
+  left: 1404px;
+  top: 104px;
+  width: 460px;
+  padding: 8px 10px 12px;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px var(--line), 0 18px 44px rgba(60, 45, 20, 0.16);
+  transform-origin: 370px 0;
+}
+.menu .head { height: 52px; line-height: 52px; padding: 0 14px; font-size: 22px; font-weight: 500; color: var(--ink); }
+.menu .row {
+  position: relative;
+  height: 68px;
+  padding: 10px 14px 0 66px;
+  border-radius: 14px;
+}
+.menu .row svg { position: absolute; left: 18px; top: 19px; }
+.menu .row b { display: block; font-weight: 500; font-size: 21px; line-height: 26px; color: var(--ink); }
+.menu .row span { display: block; font-size: 16px; line-height: 22px; color: var(--text-3); }
+.menu .row.solo { padding-top: 21px; }
+.menu .more { height: 44px; line-height: 50px; padding: 0 14px; font-size: 16px; color: var(--text-3); border-top: 1.5px solid var(--line); margin-top: 4px; }
+.menu .row.hot { background: rgba(217, 119, 87, 0.1); }
+
+/* the composer, asked about a selection */
+.composer .ask { position: absolute; inset: 0; }
+.composer .quote {
+  position: absolute;
+  left: 22px;
+  top: 18px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 0 12px;
+  border-radius: 22px;
+  background: rgba(217, 119, 87, 0.1);
+  color: var(--ai-deep);
+  font-size: 20px;
+  white-space: nowrap;
+}
+.composer .askfield {
+  position: absolute;
+  left: 34px;
+  top: 82px;
+  right: 110px;
+  font-size: 30px;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+/* ---------- the file, and the phone it goes to ---------- */
+.filecard {
+  position: absolute;
+  background: #fff;
+  border-radius: 26px;
+  box-shadow: 0 2px 4px rgba(60, 45, 20, 0.08), 0 30px 70px rgba(60, 45, 20, 0.18);
+  transform-origin: 0 0;
+}
+.filecard .name {
+  position: absolute;
+  left: 92px;
+  font-size: 30px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.filecard .sub { position: absolute; left: 92px; font-size: 21px; color: var(--text-2); white-space: nowrap; }
+.filecard .ico { position: absolute; left: 30px; }
+
+.phone {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1240px;
+  height: 600px;
+  border-radius: 84px;
+  background: linear-gradient(135deg, #2c2926, #161412);
+  box-shadow: inset 0 0 0 3px #45403a, 0 3px 6px rgba(30, 20, 10, 0.2), 0 40px 90px rgba(30, 20, 10, 0.3);
+  transform-origin: 620px 300px;
+}
+.phone .screen {
+  position: absolute;
+  left: 22px;
+  top: 22px;
+  width: 1196px;
+  height: 556px;
+  border-radius: 64px;
+  overflow: hidden;
+  background: var(--paper);
+}
+.phone .cam {
+  position: absolute;
+  left: 44px;
+  top: 282px;
+  width: 14px;
+  height: 36px;
+  border-radius: 7px;
+  background: #0d0c0b;
+}
+.touch {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(60, 50, 40, 0.22);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.7);
+}
+
+/* ---------- end card ---------- */
+.endcard { position: absolute; inset: 0; background: var(--paper); }
+.endcard .zh,
+.endcard .name { position: absolute; white-space: nowrap; }
+.endcard .zh {
+  left: 0;
+  width: 1920px;
+  text-align: center;
+  font-family: var(--serif-zh);
+  font-weight: 600;
+  font-size: 96px;
+  line-height: 115.2px;
+  color: var(--ink);
+}
+.endcard .name {
+  font-family: "Fraunces", var(--serif-zh);
+  font-weight: 500;
+  font-size: 150px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+.endcard .name span { display: inline-block; }
+.endcard .en {
+  position: absolute;
+  left: 0;
+  width: 1920px;
+  text-align: center;
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  font-size: 44px;
+  color: var(--text-3);
+}
+.endcard .url {
+  position: absolute;
+  left: 0;
+  width: 1920px;
+  text-align: center;
+  font-family: "Instrument Serif", serif;
+  font-size: 32px;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
