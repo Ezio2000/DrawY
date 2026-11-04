@@ -1057,6 +1057,7 @@ export class Agent {
     let flush: ReturnType<typeof setTimeout> | undefined;
     const settings = ctx.settings;
     run.services = {
+      label: settings.label,
       author: settings.authorName,
       model: settings.author.model,
       effort: settings.author.effort,

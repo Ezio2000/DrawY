@@ -22,6 +22,7 @@ import { useT, type Words } from "./i18n.tsx";
 import { Spinner, useLocale } from "@drawy/ui";
 import { localize } from "../../../modules/contracts/messages.ts";
 import { money } from "./money.ts";
+import { useCan } from "./account.tsx";
 import {
   costOf,
   type Run,
@@ -94,7 +95,7 @@ function doing(step: ToolStep, t: Words): string {
         .filter(Boolean)
         .join(" · ");
     case "write_work":
-      return step.revision ? w.writingRevision(step.revision) : w.writing;
+      return w.writing;
     case "view_canvas":
       return step.waiting
         ? w.waitingImages(step.waiting.join(w.list))
@@ -222,7 +223,7 @@ export function Now({
         </button>
         {ended?.clean !== undefined && (
           <button className={cx("now-action")} onClick={() => restore(ended.clean!)}>
-            {t.now.restore(ended.clean)}
+            {t.now.restore}
           </button>
         )}
         {ended && (
@@ -320,14 +321,10 @@ function Elapsed() {
   return s >= 8 ? <small className={cx("now-time")}>{t.now.seconds(s)}</small> : null;
 }
 
-/** A revision where it was made, by its number; the drafts panel looks at and restores it. */
-function Revision({ revision, label }: { revision: number; label?: string }) {
-  const t = useT();
-  return (
-    <span className={cx("revision")}>
-      {label ?? t.history.revision(revision)}
-    </span>
-  );
+/** The version a request ended in, by its number; the versions panel looks at and
+ * restores it. */
+function Revision({ label }: { label: string }) {
+  return <span className={cx("revision")}>{label}</span>;
 }
 
 /** A thumbnail of a picture, opened large when pressed. */
@@ -503,7 +500,6 @@ function ToolBody({
       return (
         <span className={cx("step-title")}>
           {w.read_work}
-          {step.revision !== undefined && <small> · {t.history.revision(step.revision)}</small>}
         </span>
       );
     case "draw_guide":
@@ -603,11 +599,6 @@ function Brief({
         </blockquote>
       )}
       {!!step.found?.length && <Found found={step.found} used={used} zoom={zoom} />}
-      {step.revision !== undefined && (
-        <div className={cx("draft-foot")}>
-          <Revision revision={step.revision} />
-        </div>
-      )}
     </div>
   );
 }
@@ -690,9 +681,8 @@ function Draft({ step }: { step: Tool<"write_work"> }) {
           </span>
         </div>
       ))}
-      {(!!facts.length || step.revision !== undefined) && (
+      {!!facts.length && (
         <div className={cx("draft-foot")}>
-          {step.revision !== undefined && <Revision revision={step.revision} />}
           <small>{facts.join(" · ")}</small>
         </div>
       )}
@@ -875,7 +865,8 @@ function usage(run: Run, t: Words) {
 }
 /** What the whole work has spent over every request, service by service. */
 function WorkUsage({ runs }: { runs: Run[] }) {
-  const t = useT();
+  const t = useT(),
+    manages = useCan()("models.manage");
   const [open, setOpen] = useState(false);
   const s = total(runs.map(spentBy));
   if (!s.input && !s.output && !s.searches && !s.pages && !s.images)
@@ -901,7 +892,7 @@ function WorkUsage({ runs }: { runs: Run[] }) {
       {open && (
         <Bill
           s={s}
-          by={{
+          by={!manages ? { author: names((r) => r.services?.label) } : {
             author: names((r) => r.services?.author),
             search: names((r) =>
               r.services?.search === "off" ? undefined : searchedBy(r, t),
@@ -925,11 +916,14 @@ export function Studio({
   restore,
   resume,
   openTrace,
+  versionOf,
 }: {
   runs: Run[];
   /** Whether the work's run history has arrived, so no runs means there are none. */
   loaded: boolean;
   work: Work;
+  /** The number of the version a revision belongs to. */
+  versionOf: (revision: number) => number | undefined;
   restore: (revision: number) => void;
   resume: () => void;
   /** Opens the record of a run. */
@@ -963,6 +957,7 @@ export function Studio({
           resume={resume}
           restore={restore}
           openTrace={openTrace}
+          versionOf={versionOf}
           locale={locale}
           t={t}
         />
@@ -982,6 +977,7 @@ function RunView({
   resume,
   restore,
   openTrace,
+  versionOf,
   locale,
   t,
 }: {
@@ -995,9 +991,11 @@ function RunView({
   resume: () => void;
   restore: (revision: number) => void;
   openTrace: (runId: string) => void;
+  versionOf: (revision: number) => number | undefined;
   locale: string;
   t: Words;
 }) {
+  const manages = useCan()("models.manage");
   const working = live(r);
   const reply =
     r.status === "completed" && r.steps.at(-1)?.kind === "message" ? r.steps.length - 1 : -1;
@@ -1085,7 +1083,7 @@ function RunView({
             <span>{working ? t.journal.working : t.journal.process}</span>
             <small>{facts.join(" · ")}</small>
           </button>
-          {unfolded && (
+          {unfolded && manages && (
             <a
               className={cx("run-trace")}
               href={"/traces/" + r.id}
@@ -1106,7 +1104,7 @@ function RunView({
         <Bill
           s={spentBy(r)}
           title={t.usage.thisRun}
-          by={{
+          by={!manages ? { author: r.services?.label } : {
             author:
               r.services &&
               [
@@ -1144,9 +1142,9 @@ function RunView({
           )}
         </div>
       )}
-      {!working && saved?.revision !== undefined && (
+      {!working && saved?.revision !== undefined && versionOf(saved.revision) !== undefined && (
         <div className={cx("run-result")}>
-          <Revision revision={saved.revision} label={t.journal.result(saved.revision)} />
+          <Revision label={t.journal.result(versionOf(saved.revision)!)} />
         </div>
       )}
       {r.status === "failed" && (
@@ -1156,7 +1154,7 @@ function RunView({
             <div className={cx("run-actions")}>
               {ended.clean !== undefined && (
                 <button className={cx("secondary small")} onClick={() => restore(ended.clean!)}>
-                  {t.now.restore(ended.clean)}
+                  {t.now.restore}
                 </button>
               )}
               <button className={cx("primary small")} onClick={resume}>

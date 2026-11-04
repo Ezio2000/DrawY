@@ -10,7 +10,7 @@ import {
   Shapes,
   PencilLine,
 } from "lucide-react";
-import { effortFor, type SettingsChange } from "../../../modules/contracts/index.ts";
+import type { SettingsChange } from "../../../modules/contracts/index.ts";
 import { Spinner, useLocale } from "@drawy/ui";
 import type { StyleMaterial } from "@drawy/materials/schema";
 import { api, type Models } from "./api.ts";
@@ -60,6 +60,8 @@ export function Composer({
   status,
   models,
   choose,
+  quota,
+  spent,
 }: {
   place: "home" | "dock" | "panel";
   value: string;
@@ -87,6 +89,10 @@ export function Composer({
    * author works. */
   models?: Models;
   choose: (change: SettingsChange) => void;
+  /** Requests left to make; null is no limit. */
+  quota?: number | null;
+  /** Whether no request is left, so a new one cannot be sent (answers still can). */
+  spent?: boolean;
 }) {
   const t = useT();
   const picker = useRef<HTMLInputElement>(null);
@@ -199,8 +205,12 @@ export function Composer({
                 className={cx("composer-send")}
                 aria-label={t.composer.send}
                 disabled={
-                  busy || !!uploading || !(value.trim() || attachments.length)
+                  busy ||
+                  spent ||
+                  !!uploading ||
+                  !(value.trim() || attachments.length)
                 }
+                data-tip={spent ? t.composer.quotaOut : undefined}
                 onClick={send}
               >
                 {busy ? <Spinner size={15} /> : <ArrowUp size={18} />}
@@ -209,48 +219,14 @@ export function Composer({
           </div>
         </div>
       </div>
-      {!!models?.writers.length && <ModelBar models={models} pick={choose} />}
+      {!!models?.labels.length && <ModelBar models={models} pick={choose} quota={quota} />}
     </div>
   );
 }
 
-/** The picks a change makes, shown at once while it is saved. */
+/** The pick a change makes, shown at once while it is saved. */
 export function chosen(m: Models, change: SettingsChange): Models {
-  const writer = m.writers.find(
-    (x) => x.id === (change.writer ?? m.chosen.writer),
-  );
-  // A model switched to comes with the effort and speed last picked for it.
-  const switched = !!writer && writer.id !== m.chosen.writer;
-  const effort = change.effort ?? (switched ? writer.effort : m.chosen.effort),
-    speed = change.speed ?? (switched ? writer.speed : m.chosen.speed),
-    web = change.web ?? m.chosen.web;
-  return {
-    ...m,
-    chosen: {
-      writer: writer?.id ?? m.chosen.writer,
-      ...(writer?.efforts.length
-        ? {
-            effort: effortFor(effort ?? writer.effort, writer.efforts) ?? writer.effort,
-          }
-        : {}),
-      ...(writer && writer.speeds.length > 1
-        ? {
-            speed:
-              speed && writer.speeds.includes(speed) ? speed : writer.speed,
-          }
-        : {}),
-      web,
-      search:
-        web === "off"
-          ? "off"
-          : web === "builtin"
-            ? writer?.builtinSearch
-              ? "builtin"
-              : "off"
-            : "service",
-      image: change.image ?? m.chosen.image,
-    },
-  };
+  return change.label ? { ...m, chosen: { label: change.label } } : m;
 }
 
 /** One pick beside the composer: what is picked, and a menu of the rest. */
@@ -333,193 +309,58 @@ function Option({
   );
 }
 
-/** The five picks a run is made with, each on its own: the drawing model, how hard it
- * thinks, how fast it is served, how it searches the web and which model paints. Effort
- * and speed show only where the model offers a choice. */
+/** The one pick a run is made with: a label, named by those who manage models, that stands
+ * for a whole combination of models; and how many requests are left to make. */
 export function ModelBar({
   models,
   pick,
+  quota,
 }: {
   models: Models;
   pick: (change: SettingsChange) => void;
+  quota?: number | null;
 }) {
   const t = useT(),
-    w = t.composer,
-    names = t.settings;
-  const c = models.chosen;
-  const writer =
-    models.writers.find((m) => m.id === c.writer) ?? models.writers[0];
-  const image = models.images.find((m) => m.id === c.image) ?? models.images[0];
-  const service = models.searches.find((s) => s.id === c.web);
-  if (!writer) return null;
-  const webName =
-    c.web === "builtin"
-      ? w.searchBuiltin
-      : service
-        ? service.name
-        : w.searchOff;
-  const providers = [...new Set(models.writers.map((m) => m.provider))];
-  const choose = (change: SettingsChange, close: () => void) => {
-    close();
-    pick(change);
-  };
-  const effortName = c.effort && writer.efforts.length > 1 ? names.efforts[c.effort] : undefined,
-    speedName = c.speed ? names.speeds[c.speed] : undefined;
+    w = t.composer;
+  const label =
+    models.labels.find((l) => l.id === models.chosen.label) ?? models.labels[0];
+  if (!label) return null;
+  const name = (l: { id: string; name: string }) =>
+    l.id === "default" && l.name === "默认" ? w.defaultLabel : l.name;
   return (
     <div className={cx("model-bar")}>
-      {/* The model, how hard it thinks and how fast it is served are one choice of how the
-          drawing is written: one button, and a panel that sets all three. */}
-      <Pick
-        label={w.authorSection}
-        value={[writer.name, effortName, speedName].filter(Boolean).join(" · ")}
-        shown={
-          <span className={cx("pick-writer")}>
-            <b>{writer.name}</b>
-            {effortName && <i>{effortName}</i>}
-            {speedName && <i>{speedName}</i>}
-          </span>
-        }
-        long
-        wide
-      >
-        {() => (
-          <>
-            <p className={cx("models-head")}>{w.authorSection}</p>
-            {providers.map((p) => (
-              <div key={p} className={cx("models-group")}>
-                {providers.length > 1 && <p className={cx("models-sub")}>{p}</p>}
-                {models.writers
-                  .filter((m) => m.provider === p)
-                  .map((m) => (
-                    <Option
-                      key={m.id}
-                      on={m.id === writer.id}
-                      disabled={!m.ready}
-                      note={m.ready ? m.description : w.modelUnconnected}
-                      pick={() => pick({ writer: m.id })}
-                    >
-                      {m.name}
-                    </Option>
-                  ))}
-              </div>
-            ))}
-            {c.effort && writer.efforts.length > 1 && (
-              <Segments
-                label={names.effort}
-                options={writer.efforts}
-                value={c.effort}
-                name={(e) => names.efforts[e]}
-                pick={(effort) => pick({ effort })}
-              />
-            )}
-            {c.speed && (
-              <Segments
-                label={names.speed}
-                options={writer.speeds}
-                value={c.speed}
-                name={(s) => names.speeds[s]}
-                hint={names.speedHints[c.speed]}
-                pick={(speed) => pick({ speed })}
-              />
-            )}
-          </>
-        )}
-      </Pick>
-      <Pick
-        label={w.searchSection}
-        value={webName}
-        off={c.web !== "off" && c.search === "off"}
-        long
-      >
-        {(close) => (
-          <>
-            <p className={cx("models-head")}>{w.searchSection}</p>
-            <Option
-              on={c.web === "off"}
-              pick={() => choose({ web: "off" }, close)}
-            >
-              {w.searchOff}
-            </Option>
-            <Option
-              on={c.web === "builtin"}
-              note={
-                writer.builtinSearch
-                  ? w.searchBuiltinBy(writer.name)
-                  : w.searchBuiltinNone(writer.name)
-              }
-              pick={() => choose({ web: "builtin" }, close)}
-            >
-              {w.searchBuiltin}
-            </Option>
-            {models.searches.map((s) => (
-              <Option
-                key={s.id}
-                on={c.web === s.id}
-                disabled={!s.ready}
-                pick={() => choose({ web: s.id }, close)}
-              >
-                {s.name}
-              </Option>
-            ))}
-          </>
-        )}
-      </Pick>
-      {image && (
-        <Pick label={w.imageSection} value={image.name} long>
+      {quota !== undefined && quota !== null && (
+        <span
+          className={cx("quota")}
+          data-out={quota <= 0 || undefined}
+          data-tip={w.quotaHint}
+        >
+          {w.quota(quota)}
+        </span>
+      )}
+      {models.labels.length > 1 && (
+        <Pick label={w.labelSection} value={name(label)}>
           {(close) => (
             <>
-              <p className={cx("models-head")}>{w.imageSection}</p>
-              {models.images.map((m) => (
+              <p className={cx("models-head")}>{w.labelSection}</p>
+              {models.labels.map((l) => (
                 <Option
-                  key={m.id}
-                  on={m.id === image.id}
-                  disabled={!m.ready}
-                  note={m.ready ? m.description : w.modelUnconnected}
-                  pick={() => choose({ image: m.id }, close)}
+                  key={l.id}
+                  on={l.id === label.id}
+                  disabled={!l.ready}
+                  note={l.ready ? l.description : w.modelUnconnected}
+                  pick={() => {
+                    close();
+                    pick({ label: l.id });
+                  }}
                 >
-                  {m.name}
+                  {name(l)}
                 </Option>
               ))}
             </>
           )}
         </Pick>
       )}
-    </div>
-  );
-}
-
-/** A setting of the drawing model with a few levels, picked side by side in its panel. */
-function Segments<T extends string>({
-  label,
-  options,
-  value,
-  name,
-  hint,
-  pick,
-}: {
-  label: string;
-  options: readonly T[];
-  value: T;
-  name: (v: T) => string;
-  hint?: string;
-  pick: (v: T) => void;
-}) {
-  return (
-    <div className={cx("models-setting")}>
-      <p className={cx("models-head")}>{label}</p>
-      <div className={cx("models-seg")} role="group" aria-label={label}>
-        {options.map((o) => (
-          <button
-            key={o}
-            role="menuitemradio"
-            aria-checked={o === value}
-            onClick={() => pick(o)}
-          >
-            {name(o)}
-          </button>
-        ))}
-      </div>
-      {hint && <small className={cx("models-hint")}>{hint}</small>}
     </div>
   );
 }

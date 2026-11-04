@@ -12,6 +12,7 @@ import {
   Copy,
   Ticket,
   Globe,
+  Tags,
 } from "lucide-react";
 import { Switch, Spinner, pageLocale } from "@drawy/ui";
 import {
@@ -29,10 +30,15 @@ import { useT, dictionaries } from "./i18n.tsx";
 import { AccountContext, useCan } from "./account.tsx";
 import { ago } from "./time.ts";
 import { Badge, Entry, Group, Head, Row } from "./SettingsParts.tsx";
-import { ImageSection, SearchSection, WriterSection } from "./ModelSettings.tsx";
+import { ImageSection, LabelSection, SearchSection, WriterSection } from "./ModelSettings.tsx";
 
 /** The section each model tab shows. */
-const sections = { author: WriterSection, search: SearchSection, image: ImageSection } as const;
+const sections = {
+  labels: LabelSection,
+  author: WriterSection,
+  search: SearchSection,
+  image: ImageSection,
+} as const;
 /** Settings changed and not yet saved, which leaving the page would lose. */
 let unsaved = false;
 /** Whether the page may be left: always, unless settings are unsaved and the user would
@@ -42,6 +48,7 @@ export const leaving = () =>
 
 type Tab =
   | "preferences"
+  | "labels"
   | "author"
   | "search"
   | "image"
@@ -110,6 +117,7 @@ export function Settings() {
   const tabs = (
     [
       ["preferences", UserRound, true],
+      ["labels", Tags, models],
       ["author", PenTool, models],
       ["search", Globe, models],
       ["image", ImageIcon, models],
@@ -160,7 +168,7 @@ export function Settings() {
             </Group>
           </section>
         )}
-        {(["author", "search", "image"] as const).map((k) => {
+        {(["labels", "author", "search", "image"] as const).map((k) => {
           const Section = sections[k];
           return (
             tab === k &&
@@ -300,6 +308,9 @@ function Accounts() {
           </div>
           <div className={cx("members-head")} aria-hidden>
             <span>{w.accountName}</span>
+            <span className={cx("members-quota-head")} title={w.quotaHint}>
+              {w.accountQuota}
+            </span>
             <span>{w.accountRole}</span>
           </div>
           <ul>
@@ -310,6 +321,25 @@ function Accounts() {
                   <b>{a.name}</b>
                   {a.id === me && <Badge tone="muted">{w.you}</Badge>}
                 </span>
+                <Quota
+                  key={a.id + ":" + a.quota}
+                  account={a}
+                  save={async (quota) => {
+                    E("");
+                    try {
+                      const changed = await api<Account>(
+                        "/admin/accounts/" + a.id,
+                        "PATCH",
+                        { quota },
+                      );
+                      setList((old) =>
+                        old!.map((x) => (x.id === a.id ? changed : x)),
+                      );
+                    } catch (err) {
+                      E(err instanceof Error ? err.message : String(err));
+                    }
+                  }}
+                />
                 <select
                   aria-label={w.accountRole + " · " + a.name}
                   value={a.role}
@@ -351,6 +381,38 @@ function Accounts() {
         </div>
       )}
     </section>
+  );
+}
+
+/** How many more requests an account may make, typed and kept on leaving the field; left
+ * empty, it has no limit. */
+function Quota({
+  account,
+  save,
+}: {
+  account: Account;
+  save: (quota: number | null) => void;
+}) {
+  const w = useT().settings;
+  const [value, set] = useState(account.quota === null ? "" : String(account.quota));
+  const commit = () => {
+    const n = value.trim() === "" ? null : Math.max(0, Math.floor(Number(value)));
+    if (n !== null && !Number.isFinite(n)) return set(account.quota === null ? "" : String(account.quota));
+    if (n !== account.quota) save(n);
+  };
+  return (
+    <input
+      className={cx("members-quota")}
+      aria-label={w.accountQuota + " · " + account.name}
+      inputMode="numeric"
+      placeholder={w.unlimited}
+      value={value}
+      onChange={(e) => set(e.target.value.replace(/[^0-9]/g, ""))}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+    />
   );
 }
 

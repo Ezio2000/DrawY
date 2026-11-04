@@ -406,8 +406,24 @@ export interface ModelCatalog {
   writers: WriterProvider[];
   painters: ImageProvider[];
   searches: SearchService[];
-  /** What anyone who has not picked uses. */
-  defaults: { writer: string; image: string; web: Web };
+  /** The only thing people pick: each label names a whole combination of drawing model,
+   * effort, speed, search and picture model, set by those who manage models. */
+  labels: ModelLabel[];
+  /** The combination used while no label is configured, and the label anyone who has not
+   * picked uses. */
+  defaults: { writer: string; image: string; web: Web; label: string };
+}
+/** A combination of models under one name: people pick the name, never what is in it. */
+export interface ModelLabel {
+  id: string;
+  name: string;
+  description: string;
+  writer: string;
+  /** Absent: the drawing model's own default. */
+  effort?: Effort;
+  speed?: Speed;
+  web: Web;
+  image: string;
 }
 
 const slug = z.string().regex(/^[a-z0-9][a-z0-9._-]*$/);
@@ -462,14 +478,27 @@ const searchServiceSchema = z.object({
   credential: z.string(),
   prices: z.object({ query: money, page: money }),
 });
+const labelSchema = z.object({
+  id: slug,
+  name: shortName,
+  description: z.string().max(200),
+  writer: z.string(),
+  effort: z.enum(efforts).optional(),
+  speed: z.enum(speeds).optional(),
+  web: z.string(),
+  image: z.string(),
+});
 const unique = (ids: string[]) => new Set(ids).size === ids.length;
+const knownWeb = (c: { searches: { id: string }[] }, web: Web) =>
+  web === OFF || web === BUILTIN || c.searches.some((s) => s.id === web);
 const modelIds = (list: Provider<{ id: string }>[]) => list.flatMap((p) => p.models.map((m) => m.id));
 export const modelCatalogSchema = z
   .object({
     writers: z.array(writerProviderSchema),
     painters: z.array(imageProviderSchema),
     searches: z.array(searchServiceSchema),
-    defaults: z.object({ writer: z.string(), image: z.string(), web: z.string() }),
+    labels: z.array(labelSchema).default([]),
+    defaults: z.object({ writer: z.string(), image: z.string(), web: z.string(), label: z.string().default("") }),
   })
   .refine((c) => modelIds(c.writers).length > 0, { message: "至少需要一个绘制模型" })
   .refine((c) => modelIds(c.painters).length > 0, { message: "至少需要一个生图模型" })
@@ -480,10 +509,12 @@ export const modelCatalogSchema = z
   .refine((c) => unique(c.searches.map((s) => s.id)), { message: "搜索服务 ID 重复" })
   .refine((c) => modelIds(c.writers).includes(c.defaults.writer), { message: "默认模型不存在" })
   .refine((c) => modelIds(c.painters).includes(c.defaults.image), { message: "默认生图模型不存在" })
-  .refine(
-    (c) => c.defaults.web === OFF || c.defaults.web === BUILTIN || c.searches.some((s) => s.id === c.defaults.web),
-    { message: "默认搜索方式不存在" },
-  );
+  .refine((c) => knownWeb(c, c.defaults.web), { message: "默认搜索方式不存在" })
+  .refine((c) => unique(c.labels.map((l) => l.id)), { message: "档位 ID 重复" })
+  .refine((c) => c.labels.every((l) => modelIds(c.writers).includes(l.writer)), { message: "档位的绘制模型不存在" })
+  .refine((c) => c.labels.every((l) => modelIds(c.painters).includes(l.image)), { message: "档位的生图模型不存在" })
+  .refine((c) => c.labels.every((l) => knownWeb(c, l.web)), { message: "档位的搜索方式不存在" })
+  .refine((c) => !c.labels.length || c.labels.some((l) => l.id === c.defaults.label), { message: "默认档位不存在" });
 export const defaultCatalog = (): ModelCatalog => {
   const writer = defaultWriter(),
     image = defaultImageModel();
@@ -495,49 +526,41 @@ export const defaultCatalog = (): ModelCatalog => {
       { id: "openai-images", name: "api", channel: "api", baseUrl: endpointFor("api"), credential: "", models: [image] },
     ],
     searches: [],
-    defaults: { writer: writer.id, image: image.id, web: BUILTIN },
+    labels: [],
+    defaults: { writer: writer.id, image: image.id, web: BUILTIN, label: "" },
   };
 };
+/** The labels people pick from: those configured, or while there are none, one made of
+ * the default models. */
+export function labelsOf(catalog: ModelCatalog): ModelLabel[] {
+  if (catalog.labels.length) return catalog.labels;
+  return [
+    {
+      id: "default",
+      name: "默认",
+      description: "",
+      writer: catalog.defaults.writer,
+      web: catalog.defaults.web,
+      image: catalog.defaults.image,
+    },
+  ];
+}
 
 // ---- What each person picks
 
-/** The effort and speed a person last picked for one drawing model. */
-export interface Tuning {
-  effort?: Effort;
-  speed?: Speed;
-}
-/** What each person keeps for themselves: their standing preferences, and each of the
- * five picks beside the composer, each falling back to the default when it is not set,
- * gone or not offered by the model picked. Effort and speed are kept for each drawing
- * model in `tunings`, so picking one model's effort leaves the others' as they were. */
+/** What each person keeps for themselves: their standing preferences and the label they
+ * picked, which falls back to the default label when it is not set or gone. */
 export interface UserSettings {
   preferences: string;
-  writer: string | null;
-  tunings: Record<string, Tuning>;
-  web: Web | null;
-  image: string | null;
+  label: string | null;
 }
-const tuningSchema = z.object({ effort: z.enum(efforts).optional(), speed: z.enum(speeds).optional() });
 export const userSettingsSchema = z.object({
   preferences: z.string(),
-  writer: z.string().nullable(),
-  tunings: z.record(z.string(), tuningSchema),
-  web: z.string().nullable(),
-  image: z.string().nullable(),
+  label: z.string().nullable(),
 });
-/** Picker commands carry effort and speed for the selected model, not global defaults. */
-export const settingsChangeSchema = userSettingsSchema.partial().extend({
-  effort: z.enum(efforts).optional(),
-  speed: z.enum(speeds).optional(),
-});
+export const settingsChangeSchema = userSettingsSchema.partial();
 export type SettingsChange = z.infer<typeof settingsChangeSchema>;
-export const emptySettings = (): UserSettings => ({
-  preferences: "",
-  writer: null,
-  tunings: {},
-  web: null,
-  image: null,
-});
+export const emptySettings = (): UserSettings => ({ preferences: "", label: null });
 const entries = <M extends { id: string }>(list: Provider<M>[]) =>
   list.flatMap((provider) => provider.models.map((model) => ({ provider, model })));
 /** The search a pick makes with a model: the one wanted if it is there, else none. */
@@ -551,62 +574,31 @@ export function webFor(
   const service = searches.find((s) => s.id === wanted);
   return service && searchReady(service) ? { mode: "service", service } : { mode: "off" };
 }
-/** What a person draws, searches and paints with: what they picked, or the defaults when
- * they have not or it was taken away, settled against what the model offers. */
-export function picked(catalog: ModelCatalog, own: UserSettings) {
+/** What a person draws, searches and paints with: what the label they picked holds, or
+ * the default label's when they have not or it was taken away, settled against what the
+ * model offers. */
+export function picked(catalog: ModelCatalog, own: Pick<UserSettings, "label">) {
+  const labels = labelsOf(catalog);
+  const label =
+    labels.find((l) => l.id === own.label) ??
+    labels.find((l) => l.id === catalog.defaults.label) ??
+    labels[0];
   const writers = entries(catalog.writers),
     painters = entries(catalog.painters);
   const w =
-    writers.find((x) => x.model.id === own.writer) ??
+    writers.find((x) => x.model.id === label.writer) ??
     writers.find((x) => x.model.id === catalog.defaults.writer) ??
     writers[0];
   const p =
-    painters.find((x) => x.model.id === own.image) ??
+    painters.find((x) => x.model.id === label.image) ??
     painters.find((x) => x.model.id === catalog.defaults.image) ??
     painters[0];
-  const { effort, speed } = tuningOf(w.model, own);
   const m = w.model;
-  const known = (web: Web | null) =>
-    web === OFF || web === BUILTIN || catalog.searches.some((s) => s.id === web);
-  const wanted = own.web !== null && known(own.web) ? own.web : catalog.defaults.web;
+  const effort = effortFor(label.effort ?? m.effort, m.efforts) ?? m.effort;
+  const speed = label.speed && m.speeds.includes(label.speed) ? label.speed : m.speed;
+  const wanted = knownWeb(catalog, label.web) ? label.web : catalog.defaults.web;
   const search = webFor({ channel: w.provider.channel, ...m }, wanted, catalog.searches);
-  return { writer: w, effort, speed, wanted, search, painter: p };
-}
-
-/** Initial user choices, named by API model rather than administrator-assigned ids.
- * Claude's direct and OpenRouter names differ only in their provider prefix and dots. */
-const tuningPresets: Record<string, Tuning> = {
-  "gpt-6-astra": { effort: "medium", speed: "default" },
-  "gpt-6-1-sol": { effort: "medium", speed: "default" },
-  "gpt-6-1-terra": { effort: "high", speed: "fast" },
-  "gpt-6-luna": { effort: "high", speed: "fast" },
-  "claude-sonnet-5-5": { effort: "medium" },
-  "claude-opus-5-5": { effort: "medium" },
-  "deepseek-flash": { effort: "high" },
-};
-/** A model keeps its user's choices, else its user preset, else its configured defaults. */
-export function tuningOf(m: WriterModel, own: UserSettings): { effort: Effort; speed: Speed } {
-  const t = own.tunings[m.id] ?? {};
-  const preset = tuningPresets[m.model.split("/").at(-1)!.replaceAll(".", "-")] ?? {};
-  const effort = effortFor(t.effort ?? preset.effort ?? m.effort, m.efforts) ?? m.effort;
-  const wanted = t.speed ?? preset.speed;
-  const speed = wanted && m.speeds.includes(wanted) ? wanted : m.speed;
-  return { effort, speed };
-}
-/** A person's settings after a change from the picker: an effort or speed picked is kept
- * for the drawing model it was picked with, so the other models keep their own. */
-export function pickWith(catalog: ModelCatalog, own: UserSettings, change: SettingsChange): UserSettings {
-  const { effort, speed, ...patch } = change;
-  const next = { ...own, ...patch, tunings: { ...own.tunings, ...patch.tunings } };
-  if (effort || speed) {
-    const model = picked(catalog, next).writer.model;
-    next.tunings[model.id] = {
-      ...tuningOf(model, next),
-      ...(effort ? { effort } : {}),
-      ...(speed ? { speed } : {}),
-    };
-  }
-  return next;
+  return { label, writer: w, effort, speed, search, painter: p };
 }
 
 /** What a run's spending is priced at, fixed when it starts: the drawing model's tokens at
@@ -655,6 +647,8 @@ export function costOf(usage: RunUsage | undefined, prices: RunPrices | undefine
 /** What one run is made with: the drawing model with the options picked, how it searches
  * and the picture model, each with the name it is shown by, and what it all costs. */
 export interface Settings {
+  /** The label picked, by name: all that people who do not manage models are shown. */
+  label: string;
   author: Role;
   authorName: string;
   search: { mode: SearchMode; service?: SearchService };
@@ -664,11 +658,12 @@ export interface Settings {
   preferences: string;
 }
 export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings {
-  const { writer, effort, speed, search, painter } = picked(catalog, own);
+  const { label, writer, effort, speed, search, painter } = picked(catalog, own);
   const { provider: p, model: m } = writer;
   const rate = m.speedRates[speed] ?? speedRates[speed];
   const scaled = (n: number) => n * rate;
   return {
+    label: label.name,
     author: {
       channel: p.channel,
       baseUrl: p.baseUrl,
@@ -713,81 +708,31 @@ export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings 
 
 // ---- The picker everyone sees
 
-/** A drawing model as the picker shows it, with the options it offers. */
-export interface WriterChoice {
-  id: string;
-  name: string;
-  /** Its provider's name, under which the picker groups it. */
-  provider: string;
-  description: string;
-  /** Whether it is connected (has a credential) and can call tools, so it can draw. */
-  ready: boolean;
-  vision: boolean;
-  efforts: Effort[];
-  speeds: Speed[];
-  /** The effort and speed it would run at for this person, so switching to it shows them. */
-  effort: Effort;
-  speed: Speed;
-  /** Whether it offers its own web search. */
-  builtinSearch: boolean;
-}
-export interface ServiceChoice {
+/** A label as the picker shows it: its name and what it is for, nothing of what is in it. */
+export interface LabelChoice {
   id: string;
   name: string;
   description: string;
+  /** Whether its drawing model is connected and can call tools, so it can draw. */
   ready: boolean;
 }
-/** Everything a person may pick from, without credentials or prices, and what their
- * picks settle to. */
+/** Everything a person may pick from, without models, credentials or prices. */
 export interface ModelMenu {
-  writers: WriterChoice[];
-  images: ServiceChoice[];
-  searches: ServiceChoice[];
-  chosen: {
-    writer: string;
-    /** Absent where the model offers no choice of it. */
-    effort?: Effort;
-    speed?: Speed;
-    /** The search wanted, and how the run will search with the model picked. */
-    web: Web;
-    search: SearchMode;
-    image: string;
-  };
+  labels: LabelChoice[];
+  chosen: { label: string };
 }
-export function menuFor(catalog: ModelCatalog, own: UserSettings): ModelMenu {
-  const { writer, effort, speed, wanted, search, painter } = picked(catalog, own);
+export function menuFor(catalog: ModelCatalog, own: Pick<UserSettings, "label">): ModelMenu {
+  const writers = entries(catalog.writers);
   return {
-    writers: entries(catalog.writers).map(({ provider: p, model: m }) => ({
-      id: m.id,
-      name: writerLabel(p, m),
-      provider: p.name,
-      description: m.description,
-      ready: !!p.credential && m.tools,
-      vision: m.vision,
-      efforts: m.efforts,
-      speeds: m.speeds,
-      ...tuningOf(m, own),
-      builtinSearch: m.builtinSearch && offersBuiltinSearch({ channel: p.channel, protocol: m.protocol }),
-    })),
-    images: entries(catalog.painters).map(({ provider: p, model: m }) => ({
-      id: m.id,
-      name: imageLabel(p, m),
-      description: m.description,
-      ready: !!p.credential,
-    })),
-    searches: catalog.searches.map((s) => ({
-      id: s.id,
-      name: s.name,
-      description: "",
-      ready: searchReady(s),
-    })),
-    chosen: {
-      writer: writer.model.id,
-      ...(writer.model.efforts.length ? { effort } : {}),
-      ...(writer.model.speeds.length > 1 ? { speed } : {}),
-      web: wanted,
-      search: search.mode,
-      image: painter.model.id,
-    },
+    labels: labelsOf(catalog).map((l) => {
+      const w = writers.find((x) => x.model.id === l.writer);
+      return {
+        id: l.id,
+        name: l.name,
+        description: l.description,
+        ready: !!w && !!w.provider.credential && w.model.tools,
+      };
+    }),
+    chosen: { label: picked(catalog, own).label.id },
   };
 }
