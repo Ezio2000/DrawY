@@ -41,7 +41,7 @@ import {
   preview,
 } from "../../modules/materials/index.ts";
 import { MaterialsError, viewerHeaders } from "@drawy/materials/client";
-import { kindSchema, shelfSchema } from "@drawy/materials/schema";
+import { kindSchema, shelfSchema, type Material } from "@drawy/materials/schema";
 import { Agent } from "../../modules/agent/index.ts";
 import { tracer, type TraceSummary } from "../../modules/trace/index.ts";
 import { picture } from "../../modules/observation/index.ts";
@@ -516,13 +516,18 @@ export function createApp(storage: Storage) {
       "Cache-Control": "private, max-age=86400",
     });
   });
-  /** Other users' private materials carry their owner's name, for those who see them. */
-  const named =
-    (me: string) =>
-    <T extends { owner: string | null }>(m: T) =>
-      m.owner && m.owner !== me
-        ? { ...m, ownerName: storage.accountName(m.owner) }
-        : m;
+  /** Material responses follow the same model visibility as runs, while keeping their
+   * provenance in the library. Other users' private materials carry their owner's name. */
+  const showMaterial = (user: Account) => (m: Material) => {
+    const { model, ...origin } = m.origin;
+    return {
+      ...m,
+      origin: user.permissions.includes("models.manage") ? m.origin : origin,
+      ...(m.owner && m.owner !== user.id
+        ? { ownerName: storage.accountName(m.owner) }
+        : {}),
+    };
+  };
   app.get("/api/materials", async (c) => {
     const page = await library.browse(
       c.req.query("q") || "",
@@ -538,11 +543,11 @@ export function createApp(storage: Storage) {
       Number(c.req.query("size")) || undefined,
       shelfSchema.optional().parse(c.req.query("shelf") || undefined),
     );
-    return c.json({ ...page, items: page.items.map(named(c.get("user").id)) });
+    return c.json({ ...page, items: page.items.map(showMaterial(c.get("user"))) });
   });
   app.get("/api/materials/:id", async (c) => {
     const [m] = await library.get([c.req.param("id")], c.get("store").viewer);
-    return c.json(named(c.get("user").id)(m));
+    return c.json(showMaterial(c.get("user"))(m));
   });
   app.get("/api/materials/:id/preview", async (c) =>
     c.json(await preview(c.req.param("id"), c.get("store").viewer)),
@@ -554,7 +559,7 @@ export function createApp(storage: Storage) {
       .object({ published: z.boolean() })
       .parse(await c.req.json());
     const m = await library.publish(c.req.param("id"), published);
-    return c.json(named(c.get("user").id)(m));
+    return c.json(showMaterial(c.get("user"))(m));
   });
   app.post("/api/materials", async (c) => {
     const form = await c.req.formData(),
@@ -562,11 +567,13 @@ export function createApp(storage: Storage) {
     if (!(file instanceof File) || !file.type.startsWith("image/"))
       throw new DomainError("请选择图片");
     return c.json(
-      await upload(
-        new Uint8Array(await file.arrayBuffer()),
-        file.type,
-        file.name,
-        c.get("user").id,
+      showMaterial(c.get("user"))(
+        await upload(
+          new Uint8Array(await file.arrayBuffer()),
+          file.type,
+          file.name,
+          c.get("user").id,
+        ),
       ),
     );
   });

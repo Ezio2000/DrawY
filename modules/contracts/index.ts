@@ -262,16 +262,20 @@ export function versionsOf(history: Pick<RevisionSummary, "revision" | "cause" |
 export const versionOf = (versions: Version[], revision: number) =>
   versions.find((v) => v.revisions.includes(revision));
 /** The revision undoing goes back to from `revision`: the version before the one it is
- * in. A restored version stands for the one it brought back, so undoing twice keeps going
- * back instead of swinging between two versions. */
+ * in. Follow each restored revision's own target before finding its version: redo may
+ * point to an earlier restore inside the same version, whose last target is different. */
 export function stepBefore(history: RevisionSummary[], revision: number): number | undefined {
   const versions = versionsOf(history);
-  let v = versionOf(versions, revision);
-  const seen = new Set<Version>();
-  while (v?.cause.kind === "restore" && !seen.has(v)) {
-    seen.add(v);
-    v = versionOf(versions, v.cause.revision);
+  const causes = new Map(history.map((r) => [r.revision, r.cause]));
+  const seen = new Set<number>();
+  let at = revision;
+  let cause = causes.get(at);
+  while (cause?.kind === "restore" && !seen.has(at)) {
+    seen.add(at);
+    at = cause.revision;
+    cause = causes.get(at);
   }
+  const v = versionOf(versions, at);
   if (!v) return undefined;
   return versions[versions.indexOf(v) - 1]?.revision;
 }

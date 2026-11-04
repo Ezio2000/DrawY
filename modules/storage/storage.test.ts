@@ -203,6 +203,39 @@ describe("user owned works", () => {
     expect([kept.title, kept.named, keptTitle]).toEqual(["【high】我的标题", true, true]);
     expect(undo(store, work.id)).toMatchObject({ title: "【high】我的标题", named: true });
   });
+  it("keeps undo moving backward after undoing twice and redoing a restored revision", async () => {
+    const user = register(db, "author", "abcdef"),
+      store = db.scoped(user.id);
+    let work = createWork(store, "test");
+    for (const title of ["A", "B", "C"])
+      work = store.commit(
+        { ...work, scenes: { root: { ...work.scenes.root, title } } },
+        work.revision,
+        { kind: "run", runId: title, prompt: title },
+      );
+    const { app } = createApp(db),
+      cookie = "drawy_session=" + db.session(user.id);
+    const change = async (action: "undo" | "restore", revision?: number) => {
+      const response = await app.request(`/api/works/${work.id}/${action}`, {
+        method: "POST",
+        headers: { cookie, "Content-Type": "application/json" },
+        body: revision === undefined ? undefined : JSON.stringify({ revision }),
+      });
+      expect(response.status).toBe(200);
+      return (await response.json()) as Work;
+    };
+    const b = await change("undo");
+    expect(b.scenes.root.title).toBe("B");
+    expect((await change("undo")).scenes.root.title).toBe("A");
+    // Redo uses the revision saved by the first undo, inside the same restore group.
+    expect((await change("restore", b.revision)).scenes.root.title).toBe("B");
+    expect((await change("undo")).scenes.root.title).toBe("A");
+    expect((await change("undo")).scenes).toEqual(store.revision(work.id, 1).scenes);
+    // Restoring a previous restoration still follows its own target.
+    expect((await change("restore", b.revision)).scenes.root.title).toBe("B");
+    expect((await change("undo")).scenes.root.title).toBe("A");
+    expect(store.revision(work.id, 4).scenes.root.title).toBe("C");
+  });
   it("validates composition references together and permits atomic deletion", async () => {
     const store = db.scoped(register(db, "a", "abcdef").id);
     const work = createWork(store, "test"),
@@ -685,6 +718,57 @@ describe("roles and shared models", () => {
       role: "member",
       permissions: [],
     });
+  });
+  it("shows material model names only to accounts that manage models", async () => {
+    const admin = register(db, "admin", "abcdef"),
+      member = register(db, "member", "abcdef"),
+      { app } = createApp(db);
+    const made = await client.ingest(
+      await picture(),
+      "image/png",
+      {
+        role: "object",
+        name: { zh: "生成图", en: "Generated picture" },
+        style: null,
+        origin: { kind: "generated", model: "image-model", prompt: "A red square" },
+      },
+      member.id,
+    );
+    const cookies = [admin, member].map((a) => "drawy_session=" + db.session(a.id));
+    const read = async (cookie: string, path: string) => {
+      const response = await app.request("/api/materials" + path, { headers: { cookie } });
+      expect(response.status).toBe(200);
+      return response.json();
+    };
+    const withoutModel = ({ model, ...origin }: typeof made.origin) => origin;
+    for (const material of [
+      await read(cookies[1], "/" + made.id),
+      (await read(cookies[1], "?kind=picture&shelf=mine")).items[0],
+    ])
+      expect(material.origin).toEqual(withoutModel(made.origin));
+    expect((await read(cookies[0], "/" + made.id)).origin).toEqual(made.origin);
+    expect((await read(cookies[0], "?kind=picture&shelf=others")).items[0]).toMatchObject({
+      ownerName: "member",
+      origin: made.origin,
+    });
+    // Managing materials alone does not grant access to model names, including on publish.
+    db.saveRole({ id: "librarian", name: "Librarian", permissions: ["materials.manage"], builtin: false });
+    db.setRole(member.id, "librarian");
+    const published = await app.request(`/api/materials/${made.id}/publish`, {
+      method: "POST",
+      headers: { cookie: cookies[1], "Content-Type": "application/json" },
+      body: JSON.stringify({ published: true }),
+    });
+    expect(published.status).toBe(200);
+    expect((await published.json()).origin).toEqual(withoutModel(made.origin));
+    expect((await read(cookies[1], "?kind=picture&shelf=public")).items
+      .find((m: { id: string }) => m.id === made.id).origin)
+      .toEqual(withoutModel(made.origin));
+    // Filtering a response leaves provenance available in the library and to model managers.
+    expect((await client.get([made.id], { id: member.id }))[0].origin).toEqual(made.origin);
+    db.saveRole({ id: "model-editor", name: "Model editor", permissions: ["models.manage"], builtin: false });
+    db.setRole(member.id, "model-editor");
+    expect((await read(cookies[1], "/" + made.id)).origin).toEqual(made.origin);
   });
   it("shelves materials apart and lets those who manage them publish", async () => {
     const { app } = createApp(db);
