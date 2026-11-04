@@ -1,0 +1,144 @@
+/* 《请勿触摸》: a museum at night, a painted world inside one of its pictures, and one cool
+   blue for every mark the viewer's hand leaves on it. */
+:root {
+  --night: #17130f;
+  --wall: #26201b;
+  --paper: #f2e8d4;
+  --ink: #26180f;
+  --brass-1: #7d5f2f;
+  --brass-2: #d8b874;
+  --brass-3: #f0d99c;
+  --touch: #3b7bff;
+  --touch-soft: rgba(59, 123, 255, 0.28);
+  --zh-serif: "Noto Serif SC", serif;
+  --zh-sans: "Noto Sans SC", sans-serif;
+  --brush: "Ma Shan Zheng", serif;
+  --mono: "IBM Plex Mono", monospace;
+  --brand: "Bricolage Grotesque", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #000; }
+body { width: 1920px; height: 1080px; overflow: hidden; }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: var(--night); font-family: var(--zh-sans); -webkit-font-smoothing: antialiased; }
+.layer { position: absolute; inset: 0; overflow: hidden; }
+.world { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+.abs { position: absolute; left: 0; top: 0; }
+canvas.screen { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+
+/* ---------- the gallery ---------- */
+.wall { position: absolute; left: -4000px; top: -2600px; width: 10000px; height: 3560px; background-color: var(--wall); }
+.pool { position: absolute; border-radius: 50%; pointer-events: none; }
+.floor { position: absolute; left: -4000px; top: 960px; width: 10000px; height: 2400px; background: linear-gradient(#1c1713, #0f0c0a 40%); }
+.skirting { position: absolute; left: -4000px; top: 948px; width: 10000px; height: 12px; background: #120f0c; box-shadow: 0 -1px 0 rgba(255, 220, 170, 0.05); }
+.frame { position: absolute; background: linear-gradient(160deg, #2b241f, #110e0c); box-shadow: inset 0 1px 0 rgba(255, 230, 190, 0.16), 0 24px 50px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.4); }
+.frame .mat { position: absolute; background: #f1eadb; box-shadow: inset 0 3px 8px rgba(40, 28, 12, 0.3); }
+.frame .art { position: absolute; transform-origin: 0 0; overflow: visible; }
+.frame .art > canvas { position: absolute; left: 0; top: 0; }
+.frame .shade { position: absolute; pointer-events: none; }
+.frame .dark { position: absolute; inset: 0; background: #0a0806; pointer-events: none; }
+
+.plaque {
+  position: absolute;
+  border-radius: 3px;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, rgba(0, 0, 0, 0.03) 1px 2px, transparent 2px 3px),
+    linear-gradient(100deg, var(--brass-1), var(--brass-2) 30%, #a8843f 52%, var(--brass-3) 74%, #8d6a33);
+  box-shadow: inset 0 1px 0 rgba(255, 245, 210, 0.6), inset 0 -1px 0 rgba(60, 40, 10, 0.5), 0 6px 14px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.plaque .glint { position: absolute; top: -20px; bottom: -20px; width: 120px; background: linear-gradient(90deg, transparent, rgba(255, 250, 225, 0.75), transparent); transform: skewX(-20deg); }
+.plaque .zh {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  white-space: nowrap;
+  font-family: var(--zh-serif);
+  font-weight: 700;
+  color: #3a2a12;
+  text-shadow: 0 1px 0 rgba(255, 238, 190, 0.55), 0 -1px 0 rgba(40, 25, 5, 0.35);
+}
+.plaque .zh .ch { display: inline-block; text-align: center; }
+.plaque .zh .ch.typed { animation: none; }
+.plaque .en { position: absolute; left: 0; width: 100%; text-align: center; white-space: pre; font-family: var(--brand); font-weight: 600; color: #4a3616; text-shadow: 0 1px 0 rgba(255, 238, 190, 0.5); }
+.plaque .hl { position: absolute; background: rgba(59, 123, 255, 0.82); border-radius: 2px; }
+.plaque .caret { position: absolute; width: 2.2px; background: var(--touch); }
+.walltag { position: absolute; font-family: var(--zh-sans); color: rgba(240, 225, 200, 0.55); }
+
+/* ---------- marks of the hand ---------- */
+.edit { position: absolute; border: 2px solid var(--touch); border-radius: 3px; box-shadow: 0 0 0 4px rgba(59, 123, 255, 0.14); }
+.edit i { position: absolute; width: 12px; height: 12px; margin: -7px 0 0 -7px; background: #fff; border: 2px solid var(--touch); border-radius: 50%; }
+.brackets { position: absolute; }
+.brackets i { position: absolute; width: 34px; height: 34px; border: 0 solid var(--touch); }
+.brackets i:nth-child(1) { left: 0; top: 0; border-left-width: 3px; border-top-width: 3px; }
+.brackets i:nth-child(2) { right: 0; top: 0; border-right-width: 3px; border-top-width: 3px; }
+.brackets i:nth-child(3) { left: 0; bottom: 0; border-left-width: 3px; border-bottom-width: 3px; }
+.brackets i:nth-child(4) { right: 0; bottom: 0; border-right-width: 3px; border-bottom-width: 3px; }
+.chip {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 18px 0 14px;
+  border-radius: 22px;
+  background: var(--touch);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(20, 50, 140, 0.35);
+}
+.chip.ghost { background: rgba(255, 255, 255, 0.1); color: #f4ede2; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.28); backdrop-filter: blur(6px); }
+.prompt {
+  position: absolute;
+  left: 400px;
+  width: 1120px;
+  height: 92px;
+  border-radius: 46px;
+  background: rgba(252, 249, 243, 0.96);
+  box-shadow: 0 0 0 1.5px rgba(59, 123, 255, 0.35), 0 20px 60px rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 14px 0 30px;
+  font-size: 31px;
+  color: #1a140f;
+  white-space: nowrap;
+}
+.prompt .field { flex: 1; position: relative; overflow: hidden; height: 44px; line-height: 44px; }
+.prompt .ph { color: #9a9286; }
+.prompt .caret { display: inline-block; width: 2.6px; height: 34px; background: var(--touch); vertical-align: -6px; margin-left: 2px; }
+.prompt .send { width: 64px; height: 64px; border-radius: 50%; background: var(--touch); display: grid; place-items: center; }
+.prompt .tagq { height: 46px; padding: 0 16px; border-radius: 23px; background: rgba(59, 123, 255, 0.12); color: #2658c9; font-size: 21px; display: inline-flex; align-items: center; gap: 8px; }
+
+.sub {
+  position: absolute;
+  left: 0;
+  width: 1920px;
+  text-align: center;
+  font-family: var(--zh-sans);
+  font-weight: 500;
+  font-size: 40px;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.sub span { display: inline-block; }
+
+.touchdot { position: absolute; border-radius: 50%; background: rgba(255, 255, 255, 0.35); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8), 0 0 24px rgba(59, 123, 255, 0.6); }
+
+/* ---------- the phone ---------- */
+.phone { position: absolute; left: 0; top: 0; width: 1240px; height: 600px; border-radius: 92px; background: linear-gradient(140deg, #3a3631, #121110 60%, #2a2724); box-shadow: inset 0 0 0 2px #5a544c, inset 0 0 0 8px #0b0a09, 0 50px 120px rgba(0, 0, 0, 0.6); transform-origin: 0 0; }
+.phone canvas { position: absolute; left: 22px; top: 22px; width: 1196px; height: 556px; border-radius: 72px; }
+.phone .island { position: absolute; left: 50px; top: 262px; width: 20px; height: 76px; border-radius: 10px; background: #050505; }
+
+/* ---------- end card ---------- */
+.endcard { position: absolute; inset: 0; }
+.endcard canvas { position: absolute; left: 0; top: 0; }
+.endcard .zh { position: absolute; left: 0; width: 1920px; text-align: center; white-space: nowrap; font-family: var(--zh-serif); font-weight: 700; color: var(--ink); }
+.endcard .zh .ch { display: inline-block; text-align: center; }
+.endcard .brand { position: absolute; left: 0; width: 1920px; text-align: center; font-family: "Young Serif", serif; font-weight: 400; font-size: 176px; letter-spacing: -0.02em; color: #22150c; line-height: 1; }
+.endcard .brand span { display: inline-block; }
+.grain { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; pointer-events: none; mix-blend-mode: overlay; }
+.vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(125% 100% at 50% 45%, transparent 58%, rgba(0, 0, 0, 0.32) 100%); }

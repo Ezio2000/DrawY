@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><title>lab</title>
+<link rel="stylesheet" href="/node_modules/@fontsource/ma-shan-zheng/400.css" />
+<link rel="stylesheet" href="/node_modules/@fontsource/noto-sans-sc/400.css" />
+<link rel="stylesheet" href="/node_modules/@fontsource/ibm-plex-mono/500.css" />
+<style>html,body{margin:0;background:#1b1714}canvas{display:block;width:1920px;height:1080px}</style></head>
+<body><script type="module">
+import * as art from "./art.js";
+import * as J from "./journey.js";
+import * as R from "./roast.js";
+for (const f of ['400 40px "Ma Shan Zheng"', '400 30px "Noto Sans SC"', '500 26px "IBM Plex Mono"']) await document.fonts.load(f, "动手果实处理烘焙冲煮红透了才采摘洗去果皮，晒干火候决定风味热水带出香气01火候与风味细节分钟约脱水梅纳反应发展生豆转黄烤面包香一爆噼啪浅烘中烘深烘花香果酸焦糖坚果可可烟熏°C");
+const what = new URLSearchParams(location.search).get("what");
+let c;
+if (what === "cover") c = art.paintCover();
+else if (what === "hero") {
+  const h = art.paintHero();
+  c = document.createElement("canvas"); c.width = 1920; c.height = 1080;
+  const g = c.getContext("2d"); g.fillStyle = "#f2e8d4"; g.fillRect(0, 0, 1920, 1080);
+  g.drawImage(h.whole, 960 - h.whole.width / 2 * 0.5, 540 - h.whole.height / 2 * 0.5, h.whole.width * 0.5, h.whole.height * 0.5);
+} else if (what.startsWith("j")) {
+  const A = J.paintJourney();
+  c = document.createElement("canvas"); c.width = 1920; c.height = 1080;
+  const g = c.getContext("2d");
+  if (what === "jo") J.drawJourney(g, A, { cx: J.ANCHOR, cy: 540, z: 0.36 }, 10, { edges: true });
+  else { const t = parseFloat(what.slice(1)); J.drawJourney(g, A, { cx: J.walkCam(t), cy: 540, z: 1 }, t); }
+} else if (what.startsWith("r")) {
+  const A = R.paintRoast(); c = document.createElement("canvas"); c.width = 1920; c.height = 1080;
+  R.drawRoast(c.getContext("2d"), A, parseFloat(what.slice(1)));
+} else c = art.paintStudy(what, 1);
+document.body.appendChild(c);
+window.__ready = true;
+</script></body></html>
