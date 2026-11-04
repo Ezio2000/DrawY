@@ -386,8 +386,8 @@ function activity(name: string, args: any, sceneId: string): ToolActivity {
 }
 /** Library drawings the work uses whose cards the author has not read: parameters it
  * guessed draw something other than it meant, or nothing. */
-function cardsUnread(work: Work, input: Item[]) {
-  const { drawings } = guidesRead(input);
+function cardsUnread(work: Work, input: Item[], batch: Item[] = []) {
+  const { drawings } = guidesRead(input, batch);
   const unread = Object.values(work.materials)
     .filter((m) => m.kind === "drawing" && !drawings.has(m.id))
     .map((m) => m.id);
@@ -1515,7 +1515,7 @@ export class Agent {
             },
             ...(cast ? { cast: cast.output } : {}),
             ...(research(run) ? { research: research(run) } : {}),
-            ...(guidesRead(ctx.input).topics.size
+            ...(guidesRead(ctx.input, batch).topics.size
               ? {}
               : { guides: "Read what this work needs with draw_guide before drawing: see # Guides." }),
           };
@@ -1599,7 +1599,7 @@ export class Agent {
             ...(keptTitle
               ? { title: `Kept the user's title "${work.title}".` }
               : {}),
-            ...cardsUnread(work, ctx.input),
+            ...cardsUnread(work, ctx.input, batch),
           };
           Object.assign(step!, { revision: work.revision, materials: added });
           break;

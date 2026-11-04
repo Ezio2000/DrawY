@@ -98,11 +98,14 @@ function requested(call: Item) {
   }
 }
 /** What the author has already read and still has above in this conversation: a summary
- * replaces the conversation, and takes these with it. A call refused gave it nothing. */
-export function guidesRead(input: Item[]) {
-  const answered = new Set(
-    input.filter((i) => i.type === "function_call_output").map((i) => i.call_id),
-  );
+ * replaces the conversation, and takes these with it. A call refused gave it nothing.
+ * `pending` are calls of the batch being run whose results are still to come: a guide asked
+ * for beside set_brief is read, even though its answer follows the brief's. */
+export function guidesRead(input: Item[], pending: Item[] = []) {
+  const answered = new Set([
+    ...input.filter((i) => i.type === "function_call_output").map((i) => i.call_id),
+    ...pending.map((c) => c.call_id),
+  ]);
   const read = { topics: new Set<string>(), drawings: new Set<string>() };
   for (const item of input) {
     if (item.type !== "function_call" || item.name !== "draw_guide" || !answered.has(item.call_id))

@@ -626,22 +626,32 @@ it("goes on without old pictures when a summary fails, and sizes the context by 
   }
 });
 
-/** Answers each model turn with the next scripted tool call. */
-function script(calls: [string, unknown][], seen: any[][] = []) {
+const FINISH_AS_WORDS = false;
+type Call = [string, unknown];
+/** Answers each model turn with the next scripted tool call, or with several calls when a
+ * turn is a list of them. A scripted `finish` is the closing words of a turn without calls. */
+function script(turns: (Call | Call[])[], seen: any[][] = []) {
   let turn = 0;
   vi.mocked(generate).mockImplementation(
     async (_role, { input }) => {
       seen.push(structuredClone(input));
-      const [name, args] = calls[turn++];
+      const step = turns[turn++];
+      const calls = (Array.isArray(step[0]) ? step : [step]) as Call[];
       return {
-        items: [
-          {
-            type: "function_call",
-            name,
-            arguments: JSON.stringify(args),
-            call_id: "c" + turn,
-          },
-        ],
+        items: calls.map(([name, args], i) =>
+          name === "finish" && FINISH_AS_WORDS
+            ? {
+                type: "message",
+                role: "assistant",
+                content: [{ type: "output_text", text: (args as { message: string }).message }],
+              }
+            : {
+                type: "function_call",
+                name,
+                arguments: JSON.stringify(args),
+                call_id: "c" + turn + (i ? "-" + i : ""),
+              },
+        ),
         usage: {},
         response: {},
       };
@@ -1536,6 +1546,65 @@ it("reminds the author of the guides after the brief and of unread cards after a
     expect(settled.guides).toContain("draw_guide");
     expect(unread.cardsUnread).toEqual(["plot"]);
     expect(read.cardsUnread).toBeUndefined();
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("does not remind the author of guides and cards it asks for in the same message", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    work.materials = {};
+    store.commit(work, 0, { kind: "edit" });
+    const seen: any[][] = [];
+    const brief = {
+      subject: "苹果",
+      intent: "苹果",
+      audience: "学生",
+      ideas: [
+        { kind: "anatomy", idea: "切开的苹果" },
+        { kind: "change", idea: "一年里的苹果树" },
+      ],
+      concept: "切开的苹果居中",
+      register: "formal",
+      style: "textbook",
+      direction: "安静的线条",
+      cast: [],
+      basis: { subject: "苹果", intent: "苹果" },
+    };
+    const uses = (revision: number) => ({
+      baseRevision: revision,
+      scenes: [{ id: "root", clear: true }],
+      modules: [{ id: "a", label: "a", bounds: [0, 0, 10, 10], drawingId: "plot" }],
+    });
+    script(
+      [
+        [
+          ["set_brief", brief],
+          ["draw_guide", { topics: ["diagrams"] }],
+        ],
+        [
+          ["write_work", uses(2)],
+          ["draw_guide", { drawings: ["plot"] }],
+        ],
+        ["view_canvas", {}],
+        ["finish", { message: "done" }],
+      ],
+      seen,
+    );
+    const run = await new Agent(() => {}).start(store, work.id, "root", "画苹果");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    const [settled, , written] = outputs(seen.at(-1)!).map((o) => JSON.parse(o));
+    expect(settled.revision).toBe(2);
+    expect(settled.guides).toBeUndefined();
+    expect(written.revision).toBe(3);
+    expect(written.cardsUnread).toBeUndefined();
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
