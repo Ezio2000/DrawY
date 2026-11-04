@@ -62,7 +62,7 @@ A map's edge is where the ground was cut. When the map is the figure's ground an
   },
   exploration: {
     when: "before adding controls, animation, click behaviour, subscenes or detail pages",
-    text: `Exploration is optional. Give a module a detail target only when there is substantial content the drawing cannot show, such as a mechanism, worked example or comparison; give it a scene target only when that part deserves its own figure. Most modules have target null, and a detail never restates a label. Detail content is separately opened HTML prose, never the main diagram. Empty subscenes can be created for later expansion.
+    text: `Exploration is optional. Give a module a detail target only when there is substantial content the drawing cannot show, such as a mechanism, worked example or comparison; give it a scene target only when that part deserves its own figure. Most modules have no target, so leave it out, and a detail never restates a label. Detail content is separately opened HTML prose, never the main diagram. Empty subscenes can be created for later expansion.
 
 Scene interactions are JavaScript function bodies receiving api:
 - api.on(moduleId, event, callback) subscribes to module events; drawings send them with api.emit, and the slider and choice library drawings send "change".

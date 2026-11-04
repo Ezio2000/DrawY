@@ -137,6 +137,8 @@ function hostedActivity(item: Item): ToolActivity {
 /** Web searches a request may make in all, and once its first draft is saved: the
  * research belongs before the drawing, and a look needs at most one targeted follow-up.
  * The search service counts each query; a provider's own search counts each call. */
+/** The smallest text, in screenshot pixels of the opening view, a reader can read. */
+export const MIN_TEXT = 14;
 export const SEARCH_LIMIT = 8,
   SEARCH_AFTER_DRAFT = 2;
 /** The web searches this request may still make. */
@@ -844,6 +846,8 @@ async function questions(
 }
 export class Agent {
   active = new Map<string, AbortController>();
+  /** Runs already held once for text too small to read. */
+  private heldForText = new Set<string>();
   /** Pictures each run has asked for, developing in the background. */
   developments = new Map<string, (Development & { reported?: boolean })[]>();
   constructor(public publish: (user: string, event: object) => void) {}
@@ -1379,6 +1383,7 @@ export class Agent {
           run.status = "completed";
           store.context(run.id, ctx);
           this.developments.delete(run.id);
+          this.heldForText.delete(run.id);
           return;
         }
         ctx.input.push({
@@ -1457,9 +1462,20 @@ export class Agent {
     const unseen = developments.filter(
       (d) => work.materials[d.id] && d.settled!.at > looked,
     );
-    return unseen.length
-      ? `图片 ${unseen.map((d) => d.id).join(", ")} 在最后一次查看之后才显影，请再看一次画布`
-      : undefined;
+    if (unseen.length)
+      return `图片 ${unseen.map((d) => d.id).join(", ")} 在最后一次查看之后才显影，请再看一次画布`;
+    // Text too small to read holds the end once: some of it, such as the names a map
+    // draws, is not the author's to change, and it can say so and end.
+    if (this.heldForText.has(run.id)) return undefined;
+    const small = Object.values(work.scenes).flatMap((scene) => {
+      const px = run.observations
+        .filter((o) => o.revision === work.revision && o.overview && o.smallestText?.[scene.id] !== undefined)
+        .at(-1)?.smallestText?.[scene.id];
+      return px !== undefined && px < MIN_TEXT ? [`${scene.id} ${px}px`] : [];
+    });
+    if (!small.length) return undefined;
+    this.heldForText.add(run.id);
+    return `最小的字小于 ${MIN_TEXT} 像素（${small.join("，")}），读者看不清：放大或删减这些字再看一次；如果这些字不由你决定（比如地图自带的地名），说明原因后结束`;
   }
   /** Runs one tool call. `done` ends this execution: the run finished or waits for the user. */
   private async call(

@@ -40,7 +40,8 @@ vi.mock("../observation/index.ts", async (original) => ({
       { type: "input_image", image_url: "data:image/png;base64,dmlzaWJsZQ==" },
     ],
   })),
-}));/** What a scripted turn says: a tool call, or for `finish` the closing words of a turn
+}));
+/** What a scripted turn says: a tool call, or for `finish` the closing words of a turn
  * without calls, which is how a run ends. */
 const answer = (name: string, args: unknown, call_id: string) =>
   name === "finish"
@@ -1920,6 +1921,44 @@ it("takes closing words as the end when the latest revision has been seen, witho
     expect(
       run.steps.filter((s) => s.kind === "message" && s.role === "assistant").map((s) => (s as { text: string }).text),
     ).toEqual(["还没看过就说完了", "画好了，看图吧。"]);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+it("holds the end once for text too small to read, then takes the closing words", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const run = run_(work);
+    store.saveRun(run);
+    const ctx = { input: [] as any[], settings: store.settings(), generations: 0 };
+    vi.mocked(observe).mockImplementationOnce(async (s: any, workId: string) => ({
+      observation: {
+        at: Date.now(),
+        revision: s.work(workId).revision,
+        sceneIds: ["root"],
+        overview: true,
+        screenshots: [],
+        errors: [],
+        smallestText: { root: 11 },
+      },
+      content: [],
+    }));
+    const turns = [called("view_canvas", {}), said("画好了。"), said("地图上的小字是底图自带的地名，画好了。")];
+    let turn = 0;
+    vi.mocked(generate).mockImplementation(async () => turns[turn++] as never);
+    await new Agent(() => {}).execute(store, run, ctx, "request");
+    expect(turn).toBe(3);
+    expect(run.status).toBe("completed");
+    const held = ctx.input.filter((i) => String(i.content).startsWith("The work is not done yet: "));
+    expect(held).toHaveLength(1);
+    expect(held[0].content).toContain("root 11px");
   } finally {
     db.close();
     rmSync(dir, { recursive: true });

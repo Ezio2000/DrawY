@@ -157,6 +157,15 @@ export async function observe(
           overview: !closeUpOnly,
           screenshots,
           errors: [...new Set(shots.flatMap((s) => s.errors))],
+          ...(shots.some((s) => s.overview && s.text?.smallest)
+            ? {
+                smallestText: Object.fromEntries(
+                  shots.flatMap((s) =>
+                    s.overview && s.text?.smallest ? [[s.sceneId, s.text.smallest.px]] : [],
+                  ),
+                ),
+              }
+            : {}),
         };
         const content: Item[] = [
           // What the look is judged against, beside the pictures rather than far back in

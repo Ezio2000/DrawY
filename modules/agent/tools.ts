@@ -112,7 +112,7 @@ export const guideSchema = z
 export const tools = [
   fn(
     "ask_user",
-    "Ask the user what their words leave open (which sense of the subject, what aspect or purpose, how serious or personal) and wait for the answer. Use it only for choices that would lead to visibly different works, because the run stops until they answer. Put every open question in one call, each with 2–4 concrete options; to show a look, attach a style id (it shows that style's samples) or picture ids to an option. Call it alone.",
+    "Ask the user what their words leave open and wait for the answer: which of several things they mean, or a purpose that would make a different work. Use it only for choices that would lead to visibly different works, because the run stops until they answer. Put every open question in one call, each with 2–4 concrete options; to show a look, attach a style id (it shows that style's samples) or picture ids to an option. Call it alone.",
     schema(askSchema),
   ),
   fn(
