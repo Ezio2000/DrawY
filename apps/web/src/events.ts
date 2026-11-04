@@ -1,3 +1,5 @@
+const RETRY = 3000;
+
 /** The server's events for one user, over a single connection shared by all of this
  * browser's tabs. A browser keeps only a few connections open to a site, and each tab
  * listening on its own would use one up; the tab holding the lock listens and passes every
@@ -15,19 +17,29 @@ export function listen(
   const stop = new AbortController();
   const connect = () =>
     new Promise<void>((release) => {
-      const source = new EventSource("/api/events");
-      source.onmessage = (e) => {
-        const data = JSON.parse(e.data);
-        offline(false);
-        channel.postMessage({ offline: false });
-        event(data);
-        channel.postMessage({ event: data });
+      let source: EventSource;
+      let retry: ReturnType<typeof setTimeout>;
+      const open = () => {
+        source = new EventSource("/api/events");
+        source.onmessage = (e) => {
+          const data = JSON.parse(e.data);
+          offline(false);
+          channel.postMessage({ offline: false });
+          event(data);
+          channel.postMessage({ event: data });
+        };
+        source.onerror = () => {
+          offline(true);
+          channel.postMessage({ offline: true });
+          // A browser retries a dropped stream by itself, but gives up for good on an error
+          // response, such as the 502 from the proxy while the server restarts.
+          if (source.readyState === EventSource.CLOSED)
+            retry = setTimeout(open, RETRY);
+        };
       };
-      source.onerror = () => {
-        offline(true);
-        channel.postMessage({ offline: true });
-      };
+      open();
       stop.signal.addEventListener("abort", () => {
+        clearTimeout(retry);
         source.close();
         release();
       });
