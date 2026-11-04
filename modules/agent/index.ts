@@ -12,6 +12,7 @@ import {
   guideTopics,
   type Sketch,
   type Work,
+  type Instance,
   type Picture,
   type Question,
   type Cause,
@@ -398,6 +399,15 @@ function cardsUnread(work: Work, input: Item[], batch: Item[] = []) {
       }
     : {};
 }
+/** A module as the author writes it: its box in short form, and what it has by default
+ * left out. */
+const shortModule = ({ bounds, group, target, anchors, ...m }: Instance) => ({
+  ...m,
+  bounds: boxOf(bounds),
+  ...(group ? { group } : {}),
+  ...(target ? { target } : {}),
+  ...(Object.keys(anchors).length ? { anchors } : {}),
+});
 /** The work as the author reads it, in the terms it writes: boxes in their short form,
  * what a part has by default left out, and library code and effect definitions named, not
  * repeated. */
@@ -407,16 +417,7 @@ function forAuthor(work: Work) {
     scenes: Object.fromEntries(
       Object.values(work.scenes).map((scene) => [
         scene.id,
-        {
-          ...scene,
-          modules: scene.modules.map(({ bounds, group, target, anchors, ...m }) => ({
-            ...m,
-            bounds: boxOf(bounds),
-            ...(group ? { group } : {}),
-            ...(target ? { target } : {}),
-            ...(Object.keys(anchors).length ? { anchors } : {}),
-          })),
-        },
+        { ...scene, modules: scene.modules.map(shortModule) },
       ]),
     ),
     materials: Object.fromEntries(
@@ -446,6 +447,9 @@ interface Context {
   measured?: { tokens: number; items: number };
   /** The module geometry the conversation holds, so a look repeats only what changed. */
   reported?: Reported;
+  /** The revision of the work this conversation already holds: the last one the author
+   * saved, read or was handed whole. A later request sends only what changed since. */
+  known?: number;
 }
 async function userMessage(
   store: UserStore,
@@ -471,14 +475,10 @@ const workMessage = (sceneId: string, work: Work, changes = ""): Item => ({
   role: "user",
   content: `${changes}Current scene: ${sceneId}\nCurrent work: ${JSON.stringify(forAuthor(work))}`,
 });
-/** What the user changed in the work themselves (by hand, by undoing or by bringing back
- * an earlier version) since the author last saved it, so its next turn builds on that. */
-function ownChanges(store: UserStore, work: Work) {
-  const history = store.revisions(work.id);
-  const last = history.find((r) => r.cause.kind === "run");
-  if (!last || last.revision === work.revision) return "";
+/** The list of what changed between two revisions, one line per scene or kind of record. */
+function changeLines(changes: ReturnType<typeof changesBetween>) {
   const { scenes, addedScenes, removedScenes, drawings, interactions, details, style } =
-    changesBetween(store.revision(work.id, last.revision), work);
+    changes;
   const list = (label: string, ids: string[]) =>
     ids.length ? [`${label} ${ids.join(", ")}`] : [];
   const records = (
@@ -492,7 +492,7 @@ function ownChanges(store: UserStore, work: Work) {
     ];
     return parts.length ? [`- ${kind}: ${parts.join("; ")}`] : [];
   };
-  const lines = [
+  return [
     ...scenes.map(
       (s) =>
         `- scene ${s.id}: ${[
@@ -511,6 +511,124 @@ function ownChanges(store: UserStore, work: Work) {
     ...records("details", details),
     ...(style ? ["- the work's style tokens"] : []),
   ];
+}
+/** The records that changed between two revisions, as they are now, in the terms the author
+ * reads the work in. A changed scene carries its own fields, the order of all its modules
+ * and the parts that changed or were added; the rest of it is as it was. */
+function changedRecords(
+  before: Work,
+  after: Work,
+  changes: ReturnType<typeof changesBetween>,
+) {
+  const pick = (all: Record<string, unknown>, ids: string[]) =>
+    Object.fromEntries(ids.map((id) => [id, all[id]]));
+  const whole = forAuthor(after);
+  const scenes = Object.fromEntries([
+    ...changes.scenes.map((c) => {
+      const scene = after.scenes[c.id];
+      const parts = new Set([...c.changed, ...c.moved, ...c.added]);
+      const { modules, links, ...fields } = scene;
+      return [
+        c.id,
+        {
+          ...fields,
+          order: modules.map((m) => m.id),
+          modules: modules.filter((m) => parts.has(m.id)).map(shortModule),
+          links: links.filter((l) => parts.has(l.id)),
+          ...(c.removed.length ? { removed: c.removed } : {}),
+        },
+      ];
+    }),
+    ...changes.addedScenes.map((id) => [id, whole.scenes[id]]),
+  ]);
+  const was = forAuthor(before).materials,
+    now = whole.materials;
+  const materials = Object.keys(now).filter(
+    (id) => JSON.stringify(was[id]) !== JSON.stringify(now[id]),
+  );
+  const removed = {
+    scenes: changes.removedScenes,
+    drawings: changes.drawings.removed,
+    interactions: changes.interactions.removed,
+    details: changes.details.removed,
+    materials: Object.keys(was).filter((id) => !(id in now)),
+  };
+  const touched = (r: { added: string[]; changed: string[] }) => [
+    ...r.changed,
+    ...r.added,
+  ];
+  return {
+    ...(before.title !== after.title ? { title: after.title } : {}),
+    ...(JSON.stringify(before.brief) !== JSON.stringify(after.brief)
+      ? { brief: after.brief }
+      : {}),
+    ...(changes.style ? { style: after.style } : {}),
+    ...(Object.keys(scenes).length ? { scenes } : {}),
+    ...Object.fromEntries(
+      (["drawings", "interactions", "details"] as const)
+        .map((k) => [k, pick(after[k], touched(changes[k]))] as const)
+        .filter(([, r]) => Object.keys(r).length),
+    ),
+    ...(materials.length ? { materials: pick(now, materials) } : {}),
+    ...(Object.values(removed).some((r) => r.length)
+      ? {
+          removed: Object.fromEntries(
+            Object.entries(removed).filter(([, r]) => r.length),
+          ),
+        }
+      : {}),
+  };
+}
+/** The work as a new request hands it to an author whose conversation already holds it:
+ * nothing but the scene when it is as the author left it; otherwise what the user changed
+ * themselves (by hand, by undoing or by bringing back an earlier version), listed and
+ * given as records, so the author keeps those changes without being sent the whole work
+ * again. The whole work is sent when the conversation does not hold a revision of it, or
+ * when the changes come to more than half of it. */
+function catchUp(
+  store: UserStore,
+  sceneId: string,
+  work: Work,
+  known: number | undefined,
+): Item {
+  const unchanged: Item = {
+    role: "user",
+    content: `Current scene: ${sceneId}\nThe work is as you last saw it (revision ${work.revision}).`,
+  };
+  if (known === work.revision) return unchanged;
+  const before = known === undefined ? undefined : store.revision(work.id, known);
+  // Only the user changes a work between requests; a revision the author saved that this
+  // conversation does not know of means it does not hold the work.
+  const between = store
+    .revisions(work.id)
+    .filter((r) => r.revision > (known ?? 0) && r.revision <= work.revision);
+  if (!before || between.some((r) => r.cause.kind === "run"))
+    return workMessage(sceneId, work, ownChanges(store, work));
+  const changes = changesBetween(before, work);
+  const records = JSON.stringify(changedRecords(before, work, changes));
+  if (records === "{}") return unchanged;
+  const head = `Since your last turn the user changed the work themselves (revision ${known} to ${work.revision}).`,
+    list = changeLines(changes).join("\n");
+  if (records.length * 2 > JSON.stringify(forAuthor(work)).length)
+    return workMessage(
+      sceneId,
+      work,
+      `${head} The current work below includes these changes; keep them unless the user asks otherwise:\n${list}\n`,
+    );
+  return {
+    role: "user",
+    content: `${head} Keep these changes unless the user asks otherwise, since they are the user's own decisions:\n${list}\nOnly what changed is below, as it is now; everything else is as you last saw or saved it. A changed scene lists the order of all its modules (bottom to top) and only its changed or added parts. Call read_work if you need the whole work.\nChanged: ${records}\nCurrent scene: ${sceneId}`,
+  };
+}
+/** What the user changed in the work themselves (by hand, by undoing or by bringing back
+ * an earlier version) since the author last saved it, so its next turn builds on that. */
+function ownChanges(store: UserStore, work: Work) {
+  const history = store.revisions(work.id);
+  const last = history.find((r) => r.cause.kind === "run");
+  if (!last || last.revision === work.revision) return "";
+  const lines = changeLines(
+    changesBetween(store.revision(work.id, last.revision), work),
+  );
   return lines.length
     ? `Since your last turn the user changed the work themselves (revision ${last.revision} to ${work.revision}). The current work below includes these changes; keep them unless the user asks otherwise:\n${lines.join("\n")}\n`
     : "";
@@ -623,6 +741,7 @@ async function compact(
       ),
       workMessage(run.sceneId, store.work(run.workId)),
     ];
+    ctx.known = store.work(run.workId).revision;
     ctx.measured = undefined;
     ctx.reported = undefined;
     store.context(run.id, ctx);
@@ -767,10 +886,13 @@ export class Agent {
       generations: 0,
       ...(before?.measured ? { measured: before.measured } : {}),
       ...(before?.reported ? { reported: before.reported } : {}),
+      known: work.revision,
     };
     ctx.input.push(
       message,
-      workMessage(sceneId, work, ownChanges(store, work)),
+      before
+        ? catchUp(store, sceneId, work, before.known)
+        : workMessage(sceneId, work, ownChanges(store, work)),
     );
     this.emit(store, run);
     store.context(run.id, ctx);
@@ -1457,6 +1579,7 @@ export class Agent {
         case "read_work": {
           const work = store.work(run.workId);
           output = forAuthor(work);
+          ctx.known = work.revision;
           Object.assign(step!, { revision: work.revision });
           break;
         }
@@ -1495,6 +1618,7 @@ export class Agent {
             said(store, run.workId, ctx.settings.preferences),
             causeOf(run),
           );
+          ctx.known = work.revision;
           this.publish(store.userId, { type: "work", work });
           const effects = await library.get(style.effects, store.userId, true);
           const cast = work.brief!.cast.length
@@ -1595,6 +1719,7 @@ export class Agent {
             fromAuthor(store.work(run.workId), authorWriteSchema.parse(args), run.sceneId),
             causeOf(run),
           );
+          ctx.known = work.revision;
           run.firstSceneMs ??= Date.now() - start;
           this.publish(store.userId, { type: "work", work });
           output = {
