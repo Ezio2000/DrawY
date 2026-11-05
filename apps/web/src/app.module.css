@@ -9,10 +9,10 @@
   --rail: 56px;
   --rail-open: 272px;
   --journal: 520px;
-  --veil: rgba(255, 255, 255, 0.86);
+  --veil: rgba(255, 255, 255, 0.96);
   /* Card grounds: paper a shade darker. */
-  --oat: #f0eee6;
-  --oat-deep: #e8e4d9;
+  --oat: #f5f5f5;
+  --oat-deep: #ebebeb;
   /* Pencil hatching on paper: what stands in for a picture or a look still to come. */
   --hatch:
     linear-gradient(
@@ -67,14 +67,14 @@
   width: var(--rail-open);
   box-shadow:
     0.5px 0 0 var(--line),
-    28px 0 64px rgba(60, 45, 20, 0.08);
+    28px 0 64px rgba(0, 0, 0, 0.056);
 }
 
 .rail-scrim {
   position: fixed;
   inset: 0;
   z-index: 39;
-  background: rgba(20, 20, 19, 0.04);
+  background: rgba(0, 0, 0, 0.04);
   animation: fade-in 0.3s var(--ease) both;
 }
 
@@ -292,9 +292,10 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--ink);
-  color: var(--paper);
-  font-size: 13px;
+  background: var(--bg-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--text-2);
+  font-size: 12.5px;
   font-weight: 600;
 }
 
@@ -335,7 +336,7 @@
   background: var(--bg);
   box-shadow:
     0 0 0 0.5px var(--line-strong),
-    0 10px 32px rgba(60, 45, 20, 0.12);
+    0 10px 32px rgba(0, 0, 0, 0.084);
   transform-origin: top right;
   animation: menu-in 0.26s var(--ease-out) both;
 }
@@ -387,61 +388,66 @@
 
 /* ---------- Home ---------- */
 
-/* A plain question over three requests to start from; once there are works, they sit on
-   a shelf beneath, and the page scrolls under the composer. */
+/* Home, as a drawing tool's file browser: the page's title, a row of ways to start, and
+   the works last drawn on, in one column the composer sits under. */
 .home {
   display: flex;
   flex-direction: column;
   align-items: center;
   height: 100%;
-  padding: 32px 32px 0;
+  padding: 28px 40px 0;
   overflow-y: auto;
 }
 
-.hero {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 28px;
-  flex: 1;
-  width: min(760px, 100%);
-  padding-bottom: 24px;
+.home > * {
+  width: min(1040px, 100%);
 }
 
-.home[data-returning] .hero {
-  flex: none;
-  gap: 22px;
-  padding: max(40px, 9vh) 0 36px;
+.home-head {
+  padding: 8px 0 20px;
 }
 
-.hero-title {
+.home-head h1 {
   margin: 0;
 }
 
-/* Titles are set in the serif, like the rest of the page's headings. */
-.title {
-  display: inline-block;
-  font-family: var(--font-serif);
-  font-weight: 400;
-  letter-spacing: -0.01em;
-  line-height: 1.15;
-  color: var(--ink);
-  animation: rise 0.6s var(--ease-out) both;
+.home-section {
+  padding-bottom: 32px;
 }
 
-.title[data-size="hero"] {
-  font-size: clamp(30px, 4.2vw, 42px);
-  letter-spacing: -0.02em;
+.home-section h2 {
+  margin: 0 0 12px;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.home-empty {
+  margin: 0;
+  padding: 28px 0;
+  font-size: 13.5px;
+  color: var(--text-3);
+}
+
+/* Titles in the interface's own sans, semibold and small: the drawing is what is large. */
+.title {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--ink);
 }
 
 .title[data-size="page"] {
-  font-size: 32px;
+  font-size: 22px;
   letter-spacing: -0.015em;
 }
 
 .title[data-size="section"] {
-  font-size: 19px;
-  animation: none;
+  font-size: 15px;
+  letter-spacing: 0;
 }
 
 h1:has(> .title),
@@ -453,13 +459,13 @@ h2:has(> .title) {
   display: inline-flex;
   align-items: center;
   gap: 0.4em;
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   color: var(--ink);
   white-space: nowrap;
 }
 
 .brand b {
-  font-weight: 500;
+  font-weight: 650;
   letter-spacing: -0.02em;
 }
 
@@ -497,145 +503,89 @@ h2:has(> .title) {
   color: var(--text-2);
 }
 
-.examples {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  width: 100%;
-}
-
-.example {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  padding: 0;
-  text-align: left;
-  animation: rise 0.6s var(--ease-out) both;
-}
-
-/* Each example on its own sheet, like a page torn from the sketchbook. */
-.example-art {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  aspect-ratio: 16 / 10;
-  padding: 6px;
-  overflow: hidden;
-  border-radius: 10px;
-  background: var(--paper);
-  box-shadow: 0 0 0 1px var(--line);
-  transition:
-    box-shadow 0.2s var(--ease),
-    transform 0.3s var(--ease-out);
-}
-
-.home[data-returning] .example-art {
-  aspect-ratio: 16 / 8;
-}
-
-.example:hover .example-art {
-  box-shadow:
-    0 0 0 1px var(--line-strong),
-    var(--shadow-float);
-  transform: translateY(-2px);
-}
-
-.example:active .example-art {
-  transform: scale(0.98);
-  transition-duration: 0.1s;
-}
-
-.example-art > svg {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-}
-
-.example-text {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 2px;
-  font-size: 14px;
-  color: var(--text-2);
-  transition: color 0.2s var(--ease);
-}
-
-.example-text svg {
-  opacity: 0;
-  transform: translateX(-4px);
-  transition:
-    opacity 0.2s var(--ease),
-    transform 0.25s var(--ease-out);
-}
-
-.example:hover .example-text {
-  color: var(--text);
-}
-
-.example:hover .example-text svg {
-  opacity: 1;
-  transform: none;
-}
-
-/* The works last drawn on: a picture of each, its title and where it has got to. */
+/* Ways to start: a blank canvas, then the examples, each a small sheet with its name under it. */
+.starts,
 .recent {
-  width: min(760px, 100%);
-  padding-bottom: 8px;
-}
-
-.recent h2 {
-  margin: 0 0 12px;
-  padding-top: 18px;
-  border-top: 1px solid var(--separator);
-  font-family: var(--font);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-3);
-}
-
-.recent ul {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
   gap: 20px 16px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+.starts li,
 .recent li {
   min-width: 0;
-  animation: rise 0.5s var(--ease-out) both;
 }
 
+.start,
 .recent button {
   display: flex;
   flex-direction: column;
+  gap: 2px;
   width: 100%;
   text-align: left;
 }
 
+.start-art,
 .recent-cover {
   display: grid;
   place-items: center;
   width: 100%;
-  aspect-ratio: 4 / 3;
   margin-bottom: 8px;
   overflow: hidden;
   border-radius: 8px;
-  background: var(--paper) radial-gradient(var(--canvas-dots) 1px, transparent 1.3px) 0 0 / 12px 12px;
+  background: var(--paper);
   box-shadow: 0 0 0 1px var(--line);
-  transition:
-    box-shadow 0.2s var(--ease),
-    transform 0.3s var(--ease-out);
+  transition: box-shadow 0.15s var(--ease);
 }
 
+.start-art {
+  aspect-ratio: 16 / 9;
+  padding: 6px;
+}
+
+.start-art > svg {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.start[data-blank] .start-art > svg {
+  width: 24px;
+  height: 24px;
+}
+
+.start[data-blank] .start-art {
+  background: var(--bg-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--text-2);
+}
+
+.start:hover .start-art,
 .recent button:hover .recent-cover {
-  box-shadow:
-    0 0 0 1px var(--line-strong),
-    var(--shadow-float);
-  transform: translateY(-2px);
+  box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-float);
+}
+
+.start[data-blank]:hover .start-art {
+  color: var(--ai-deep);
+  box-shadow: inset 0 0 0 1px var(--ai);
+}
+
+.start-name,
+.recent b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.recent-cover {
+  aspect-ratio: 4 / 3;
+  background: var(--paper) radial-gradient(var(--canvas-dots) 1px, transparent 1.3px) 0 0 / 12px 12px;
 }
 
 .recent-cover img {
@@ -647,19 +597,10 @@ h2:has(> .title) {
 }
 
 .recent-cover i {
-  font-family: var(--font-serif);
   font-style: normal;
-  font-size: 34px;
+  font-size: 28px;
+  font-weight: 600;
   color: var(--line-strong);
-}
-
-.recent b {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text);
 }
 
 .work-state {
@@ -702,55 +643,44 @@ h2:has(> .title) {
   height: 44px;
 }
 
+/* Sign-in as a tool does it: a heading and a plain form on the page, left-aligned, not a
+   slogan over a floating card. */
 .auth-copy {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  width: min(440px, 100%);
+  width: min(360px, 100%);
   margin: auto;
   padding: 40px 0;
 }
 
 .auth-copy h1 {
-  margin: 0 0 36px;
-  text-align: center;
+  margin: 0 0 6px;
   text-wrap: balance;
-  font-family: var(--font-serif);
-  font-size: clamp(34px, 3.8vw, 46px);
-  font-weight: 400;
-  line-height: 1.12;
-  letter-spacing: -0.025em;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
   color: var(--ink);
-  animation: rise 0.8s var(--ease-out) both;
 }
 
 .auth-card {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  padding: 24px;
-  border-radius: 16px;
-  background: var(--bg);
-  box-shadow:
-    0 0 0 1px var(--line),
-    0 2px 6px rgba(60, 45, 20, 0.04),
-    0 18px 44px rgba(60, 45, 20, 0.07);
-  animation: rise 0.8s var(--ease-out) 0.1s both;
 }
 
 .auth-greeting {
-  margin: 0 0 4px;
-  text-align: center;
-  font-family: var(--font-serif);
-  font-size: 17px;
+  margin: 0 0 14px;
+  font-size: 14px;
   color: var(--text-2);
 }
 
 .auth-card input {
-  height: 46px;
-  padding: 0 16px;
-  border-radius: 12px;
-  font-size: 15px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 14.5px;
 }
 
 .auth-card .primary {
@@ -758,36 +688,34 @@ h2:has(> .title) {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 46px;
-  margin-top: 2px;
-  border-radius: 12px;
-  font-size: 15px;
+  height: 40px;
+  margin-top: 4px;
+  border-radius: 8px;
+  font-size: 14.5px;
 }
 
 .auth-card .error {
   padding: 9px 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: rgba(191, 77, 67, 0.08);
 }
 
 .auth-card hr {
   width: 100%;
-  margin: 4px 0;
+  margin: 8px 0 2px;
   border: 0;
   border-top: 1px solid var(--separator);
 }
 
 .auth-switch {
-  justify-self: center;
-  padding: 4px 10px;
-  border-radius: 8px;
+  justify-self: start;
+  padding: 4px 0;
   font-size: 13.5px;
   color: var(--text-2);
 }
 
 .auth-switch:hover {
-  background: var(--fill);
-  color: var(--text);
+  color: var(--link);
 }
 
 .auth-art {
@@ -796,9 +724,8 @@ h2:has(> .title) {
   height: calc(100vh - 24px);
   margin: 12px 12px 12px 0;
   overflow: hidden;
-  border-radius: 16px;
-  background: var(--oat);
-  animation: fade-in 1.2s var(--ease) 0.2s both;
+  border-radius: 12px;
+  background: var(--bg-2);
 }
 
 .auth-art img {
@@ -826,33 +753,30 @@ h2:has(> .title) {
   width: 100%;
   background: var(--bg);
   box-shadow:
-    0 0 0 1px var(--line),
-    0 2px 6px rgba(60, 45, 20, 0.04),
-    0 14px 36px rgba(60, 45, 20, 0.07);
-  transition: box-shadow 0.3s var(--ease);
+    0 0 0 1px var(--line-strong),
+    0 1px 2px rgba(0, 0, 0, 0.03),
+    0 6px 16px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.2s var(--ease);
 }
 
 .composer:focus-within {
   box-shadow:
-    0 0 0 1px rgba(20, 20, 19, 0.4),
-    0 2px 6px rgba(60, 45, 20, 0.05),
-    0 18px 44px rgba(60, 45, 20, 0.1);
+    0 0 0 1px rgba(0, 0, 0, 0.16),
+    0 1px 2px rgba(0, 0, 0, 0.03),
+    0 6px 16px rgba(0, 0, 0, 0.05);
 }
 
 .composer[data-place="home"] {
   position: relative;
   z-index: 2;
   padding: 12px 8px 8px 18px;
-  border-radius: 16px;
-  animation: rise 0.9s var(--ease-out) 0.1s both;
+  border-radius: 12px;
 }
 
 .composer[data-place="dock"] {
   padding: 7px 7px 7px 18px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: saturate(1.4) blur(18px);
-  -webkit-backdrop-filter: saturate(1.4) blur(18px);
+  border-radius: 12px;
+  background: var(--paper);
 }
 
 .composer-field {
@@ -918,7 +842,7 @@ h2:has(> .title) {
 
 .composer[data-place="dock"]:has(> .now, > .question) {
   padding-top: 9px;
-  border-radius: 16px;
+  border-radius: 12px;
 }
 
 .composer[data-place="dock"] .composer-gap {
@@ -934,7 +858,7 @@ h2:has(> .title) {
   min-width: 36px;
   height: 36px;
   padding: 0 9px;
-  border-radius: 18px;
+  border-radius: 12px;
   font-size: 13.5px;
   color: var(--text-2);
 }
@@ -969,14 +893,14 @@ h2:has(> .title) {
   border-radius: 50%;
 }
 
-/* Sending is the page's one primary action, so it is in ink like the others. */
+/* Sending is the page's one primary action, so it is in the accent like the others. */
 .composer-send {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--blue);
+  color: #fff;
 }
 
 .composer-send:hover:not(:disabled) {
-  background: var(--ink-hover);
+  background: var(--blue-hover);
 }
 
 .composer-send:disabled {
@@ -992,12 +916,12 @@ h2:has(> .title) {
 }
 
 .composer-stop {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--fill-2);
+  color: var(--ink);
 }
 
 .composer-stop:hover {
-  background: var(--ink-hover);
+  background: rgba(0, 0, 0, 0.11);
 }
 
 .composer-extras {
@@ -1035,7 +959,7 @@ h2:has(> .title) {
 }
 
 .quote button:hover {
-  background: rgba(42, 86, 189, 0.14);
+  background: rgba(44, 99, 212, 0.14);
 }
 
 .attached {
@@ -1410,7 +1334,7 @@ h2:has(> .title) {
   background: var(--bg);
   color: var(--text);
   font-weight: 500;
-  box-shadow: 0 0 0 0.5px var(--line-strong), 0 1px 2px rgba(60, 45, 20, 0.08);
+  box-shadow: 0 0 0 0.5px var(--line-strong), 0 1px 2px rgba(0, 0, 0, 0.056);
 }
 
 .models-hint {
@@ -1426,16 +1350,15 @@ h2:has(> .title) {
   border-top: 1px solid var(--separator);
 }
 
-/* The home page: the question and examples in the middle, the composer at the bottom,
-   where the shelf scrolls away beneath it. */
+/* The composer at the bottom of the home page, where the works scroll away beneath it. */
 .home-composer {
   position: sticky;
   bottom: 0;
   z-index: 2;
-  width: min(760px, 100%);
+  max-width: 760px;
   margin-top: auto;
-  padding: 20px 0;
-  background: linear-gradient(rgba(255, 255, 255, 0), var(--paper) 22px);
+  padding: 16px 0 20px;
+  background: linear-gradient(rgba(255, 255, 255, 0), var(--paper) 18px);
 }
 
 /* ---------- Workspace ---------- */
@@ -1474,7 +1397,7 @@ h2:has(> .title) {
 }
 
 .canvas [data-explorable]:hover {
-  filter: drop-shadow(0 6px 16px rgba(42, 86, 189, 0.22));
+  filter: drop-shadow(0 6px 16px rgba(44, 99, 212, 0.22));
 }
 
 /* A module that opens a scene or a page carries a small mark at its corner, laid over the
@@ -1491,10 +1414,10 @@ h2:has(> .title) {
   padding: 0 4.5px;
   border-radius: 999px;
   translate: -70% -45%;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--paper);
   box-shadow:
-    0 0 0 1px rgba(51, 102, 214, 0.45),
-    0 2px 6px rgba(60, 45, 20, 0.12);
+    0 0 0 1px rgba(61, 114, 224, 0.45),
+    0 2px 6px rgba(0, 0, 0, 0.084);
   color: var(--ai-deep);
   pointer-events: auto;
   cursor: pointer;
@@ -1573,8 +1496,9 @@ h2:has(> .title) {
   display: flex;
   align-items: center;
   min-width: 0;
-  font-family: var(--font-serif);
-  font-size: 16px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .crumbs > span {
@@ -1633,11 +1557,11 @@ h2:has(> .title) {
   flex-direction: column;
   min-width: 220px;
   padding: 6px;
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--bg);
   box-shadow:
     0 0 0 0.5px var(--line-strong),
-    0 12px 36px rgba(60, 45, 20, 0.12);
+    0 12px 36px rgba(0, 0, 0, 0.084);
   font-family: var(--font);
   transform-origin: top left;
   animation: menu-in 0.32s var(--spring) both;
@@ -1672,11 +1596,9 @@ h2:has(> .title) {
   display: flex;
   gap: 1px;
   padding: 4px;
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 0 0 1px rgba(60, 45, 20, 0.06);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.042);
   opacity: 0.72;
   transition: opacity 0.25s var(--ease);
 }
@@ -1734,11 +1656,11 @@ h2:has(> .title) {
   gap: 6px;
   max-width: calc(100% - 48px);
   text-align: center;
-  font-family: var(--font-serif);
-  font-size: 18px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 500;
   color: var(--text-2);
   pointer-events: none;
-  animation: fade-in 0.8s var(--ease) both;
 }
 
 .blank small {
@@ -1788,8 +1710,8 @@ h2:has(> .title) {
   border-radius: 6px;
   background: var(--bg);
   box-shadow:
-    0 1px 2px rgba(60, 45, 20, 0.08),
-    0 12px 28px rgba(60, 45, 20, 0.1);
+    0 1px 2px rgba(0, 0, 0, 0.056),
+    0 12px 28px rgba(0, 0, 0, 0.07);
   transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y)))
     rotate(var(--r));
   animation: pin 0.8s var(--spring) calc(var(--i) * 90ms) both;
@@ -1803,10 +1725,10 @@ h2:has(> .title) {
   gap: 8px;
   padding: 16px 18px 14px;
   border-radius: 4px;
-  background: #fffdf7;
+  background: #ffffff;
   box-shadow:
-    0 1px 2px rgba(60, 45, 20, 0.08),
-    0 14px 30px rgba(60, 45, 20, 0.1);
+    0 1px 2px rgba(0, 0, 0, 0.056),
+    0 14px 30px rgba(0, 0, 0, 0.07);
   transform: rotate(-1.5deg);
   animation: note-in 0.8s var(--spring) both;
 }
@@ -1823,9 +1745,9 @@ h2:has(> .title) {
 }
 
 .brief-note b {
-  font-family: var(--font-serif);
-  font-size: 18px;
-  font-weight: 500;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
   line-height: 1.4;
   color: var(--ink);
 }
@@ -1835,7 +1757,7 @@ h2:has(> .title) {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-size: 13.5px;
   line-height: 1.6;
   color: var(--text-2);
@@ -1932,7 +1854,7 @@ h2:has(> .title) {
 
 .annotation {
   position: absolute;
-  border: calc(1px / var(--zoom)) dashed rgba(42, 86, 189, 0.55);
+  border: calc(1px / var(--zoom)) dashed rgba(44, 99, 212, 0.55);
   border-radius: calc(5px / var(--zoom));
   animation: fade-in 0.4s var(--ease) calc(var(--i) * 35ms) both;
 }
@@ -2084,7 +2006,7 @@ button.now:hover .now-line {
   background: var(--paper);
   box-shadow:
     0 0 0 2px #fff,
-    0 1px 3px rgba(60, 45, 20, 0.12);
+    0 1px 3px rgba(0, 0, 0, 0.084);
   animation: pop 0.5s var(--spring) both;
 }
 
@@ -2103,7 +2025,7 @@ button.now:hover .now-line {
   filter: none;
   box-shadow:
     0 0 0 2px #fff,
-    0 0 0 3.5px rgba(51, 102, 214, 0.7);
+    0 0 0 3.5px rgba(61, 114, 224, 0.7);
 }
 
 .developing {
@@ -2146,8 +2068,9 @@ button.now:hover .now-line {
 
 .question section > p {
   margin: 2px 36px 8px 6px;
-  font-family: var(--font-serif);
-  font-size: 16px;
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 500;
   line-height: 1.5;
   color: var(--ink);
 }
@@ -2318,7 +2241,7 @@ button.now:hover .now-line {
   gap: 8px;
   max-width: 100%;
   padding: 8px 8px 8px 16px;
-  border-radius: 14px;
+  border-radius: 10px;
   background: #fdf1ee;
   box-shadow: 0 0 0 1px rgba(200, 30, 30, 0.1);
   color: var(--red-text);
@@ -2638,9 +2561,9 @@ body:has(.resizer[data-dragging]) {
   flex-wrap: wrap;
   gap: 6px;
   margin: 0;
-  font-family: var(--font-serif);
-  font-size: 17px;
-  font-weight: 500;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
   letter-spacing: 0;
   color: var(--text);
   overflow-wrap: anywhere;
@@ -2830,7 +2753,7 @@ body:has(.resizer[data-dragging]) {
 
 .field-choice button[aria-pressed="true"] {
   background: var(--bg);
-  box-shadow: 0 0.5px 2px rgba(60, 45, 20, 0.14);
+  box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.098);
   color: var(--text);
   font-weight: 500;
 }
@@ -2847,7 +2770,7 @@ body:has(.resizer[data-dragging]) {
   height: 26px;
   border-radius: 50%;
   background: var(--swatch);
-  box-shadow: inset 0 0 0 1px rgba(20, 20, 19, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
   cursor: pointer;
   transition: transform 0.15s var(--ease);
 }
@@ -2858,7 +2781,7 @@ body:has(.resizer[data-dragging]) {
 
 .swatch[aria-pressed="true"] {
   box-shadow:
-    inset 0 0 0 1px rgba(20, 20, 19, 0.12),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.12),
     0 0 0 2px var(--surface),
     0 0 0 3.5px var(--ai);
 }
@@ -3079,8 +3002,9 @@ body:has(.resizer[data-dragging]) {
   padding: 4px 8px;
   border: 0;
   border-radius: 8px;
-  font-family: var(--font-serif);
-  font-size: 17px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
   color: var(--text);
   background: transparent;
   box-shadow: none;
@@ -3517,7 +3441,7 @@ body:has(.resizer[data-dragging]) {
   width: 100%;
   padding: 9px 11px;
   border-radius: 9px;
-  background: #faf9f5;
+  background: #fafafa;
   box-shadow: inset 0 0 0 0.5px var(--line-strong);
   font-family: var(--font-mono);
   font-size: 12px;
@@ -3592,7 +3516,7 @@ body:has(.resizer[data-dragging]) {
   background: var(--swatch);
   box-shadow:
     0 0 0 1.5px var(--field),
-    inset 0 0 0 1px rgba(20, 20, 19, 0.12);
+    inset 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 
 .palettes span {
@@ -3908,7 +3832,7 @@ body:has(.resizer[data-dragging]) {
   background: var(--bg);
   box-shadow:
     0 0 0 0.5px var(--line-strong),
-    0 6px 20px rgba(60, 45, 20, 0.12);
+    0 6px 20px rgba(0, 0, 0, 0.084);
   transition: opacity 0.15s var(--ease);
 }
 
@@ -3953,13 +3877,11 @@ body:has(.resizer[data-dragging]) {
   align-items: center;
   gap: 1px;
   padding: 4px;
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   box-shadow:
-    0 0 0 1px rgba(60, 45, 20, 0.06),
-    0 6px 20px rgba(60, 45, 20, 0.08);
+    0 0 0 1px rgba(0, 0, 0, 0.042),
+    0 6px 20px rgba(0, 0, 0, 0.056);
   translate: -50% 0;
   animation: rise 0.35s var(--ease-out) both;
 }
@@ -4055,8 +3977,7 @@ body:has(.resizer[data-dragging]) {
 .journal-empty {
   padding: 40px 0;
   text-align: center;
-  font-family: var(--font-serif);
-  font-style: italic;
+  font-family: var(--font-display);
   color: var(--text-3);
 }
 
@@ -4065,28 +3986,28 @@ body:has(.resizer[data-dragging]) {
   flex-direction: column;
   gap: 12px;
   padding: 20px 0 24px;
-  animation: rise 0.5s var(--ease-out) both;
 }
 
 .run + .run {
   border-top: 1px solid var(--separator);
 }
 
+/* What was asked heads its run like an entry in a log: the person's words, quoted, on
+   the left like everything else, not a chat bubble across from the answer. */
 .prompt {
-  align-self: flex-end;
   display: grid;
-  justify-items: end;
+  justify-items: start;
   gap: 6px;
-  max-width: 88%;
   font-size: 14.5px;
+  font-weight: 500;
   line-height: 1.55;
+  color: var(--ink);
 }
 
 .prompt p {
   margin: 0;
-  padding: 9px 15px;
-  border-radius: 18px 18px 6px 18px;
-  background: var(--bg-2);
+  padding: 1px 0 1px 12px;
+  border-left: 2px solid var(--line-strong);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -4095,7 +4016,6 @@ body:has(.resizer[data-dragging]) {
 .prompt-pictures {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
   gap: 6px;
 }
 
@@ -4238,7 +4158,7 @@ body:has(.resizer[data-dragging]) {
 .step[data-status="running"] .step-icon {
   color: var(--ai-deep);
   background: var(--blue-soft);
-  box-shadow: inset 0 0 0 1px rgba(51, 102, 214, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(61, 114, 224, 0.45);
 }
 
 .step[data-status="running"] .step-icon::after {
@@ -4421,7 +4341,7 @@ body:has(.resizer[data-dragging]) {
   flex-wrap: wrap;
   gap: 8px;
   margin: 2px 0 0;
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-size: 15px;
   font-weight: 500;
   line-height: 1.4;
@@ -4452,8 +4372,7 @@ body:has(.resizer[data-dragging]) {
   padding: 8px 12px;
   border-radius: 4px 12px 12px 4px;
   border-left: 2px solid var(--ai);
-  background: #fbf3ee;
-  font-family: var(--font-serif);
+  background: #f7f7f7;
   font-size: 13.5px;
   line-height: 1.6;
   color: var(--ink);
@@ -4617,7 +4536,7 @@ body:has(.resizer[data-dragging]) {
   background: #fff;
   box-shadow:
     0 0 0 1px var(--line),
-    0 2px 6px rgba(60, 45, 20, 0.06);
+    0 2px 6px rgba(0, 0, 0, 0.042);
 }
 
 .looks .thumb img {
@@ -4755,7 +4674,7 @@ body:has(.resizer[data-dragging]) {
 
 .reply.asked {
   padding: 10px 14px;
-  border-radius: 6px 16px 16px 16px;
+  border-radius: 8px;
   background: var(--bg);
   box-shadow: inset 0 0 0 1px var(--line);
   font-size: 14.5px;
@@ -4835,7 +4754,7 @@ body:has(.resizer[data-dragging]) {
 .md a {
   color: var(--ai-deep);
   text-decoration: underline;
-  text-decoration-color: rgba(51, 102, 214, 0.35);
+  text-decoration-color: rgba(61, 114, 224, 0.35);
   text-underline-offset: 2px;
 }
 
@@ -4951,11 +4870,11 @@ body:has(.resizer[data-dragging]) {
   gap: 1px;
   width: 268px;
   padding: 8px;
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--bg);
   box-shadow:
     0 0 0 0.5px var(--line-strong),
-    0 18px 48px rgba(60, 45, 20, 0.16);
+    0 18px 48px rgba(0, 0, 0, 0.112);
   transform-origin: top right;
   animation: pop 0.3s var(--spring) both;
 }
@@ -5032,9 +4951,7 @@ body:has(.resizer[data-dragging]) {
   display: grid;
   place-items: center;
   padding: 48px;
-  background: rgba(20, 20, 19, 0.5);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(0, 0, 0, 0.5);
   cursor: zoom-out;
   animation: fade-in 0.3s var(--ease) both;
 }
@@ -5048,7 +4965,7 @@ body:has(.resizer[data-dragging]) {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--paper);
   color: var(--ink);
 }
 
@@ -5059,7 +4976,7 @@ body:has(.resizer[data-dragging]) {
 .lightbox img {
   max-width: 100%;
   max-height: 100%;
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--paper);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3);
   animation: pop 0.5s var(--spring) both;
@@ -5080,7 +4997,6 @@ body:has(.resizer[data-dragging]) {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 24px;
-  animation: rise 0.6s var(--ease-out) both;
 }
 
 .page-head {
@@ -5106,7 +5022,7 @@ body:has(.resizer[data-dragging]) {
 .page-search:focus-within {
   box-shadow:
     inset 0 0 0 1px var(--ink),
-    0 0 0 3px rgba(60, 45, 20, 0.08);
+    0 0 0 3px rgba(0, 0, 0, 0.056);
 }
 
 .page-search input {
@@ -5275,8 +5191,7 @@ body:has(.resizer[data-dragging]) {
   grid-column: 1 / -1;
   padding: 56px 0;
   text-align: center;
-  font-family: var(--font-serif);
-  font-style: italic;
+  font-family: var(--font-display);
   color: var(--text-3);
 }
 
@@ -5424,11 +5339,11 @@ body:has(.resizer[data-dragging]) {
   width: min(360px, calc(100vw - 24px));
   padding: 18px 18px 14px;
   overflow: hidden;
-  border-radius: 20px;
+  border-radius: 12px;
   background: var(--paper);
   box-shadow:
     0 0 0 0.5px var(--line-strong),
-    0 24px 64px rgba(20, 20, 19, 0.16);
+    0 24px 64px rgba(0, 0, 0, 0.16);
   animation: sheet-in 0.5s var(--ease-sheet) both;
 }
 
@@ -5440,9 +5355,9 @@ body:has(.resizer[data-dragging]) {
 }
 
 .inspector h2 {
-  font-family: var(--font-serif);
-  font-size: 22px;
-  font-weight: 400;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .inspector header p {
@@ -5458,7 +5373,7 @@ body:has(.resizer[data-dragging]) {
 
 .inspector-look .look {
   flex: 1;
-  border-radius: 14px;
+  border-radius: 10px;
 }
 
 .inspector-look .look > img {
@@ -5484,7 +5399,7 @@ body:has(.resizer[data-dragging]) {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(20, 20, 19, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 
 .inspector dl {
@@ -5569,7 +5484,6 @@ body:has(.resizer[data-dragging]) {
   grid-template-columns: 200px minmax(0, 720px);
   gap: 48px;
   margin-top: 28px;
-  animation: rise 0.6s var(--ease-out) both;
 }
 
 .settings-nav {
@@ -5707,9 +5621,9 @@ body:has(.resizer[data-dragging]) {
 }
 
 .section-head h2 {
-  font-family: var(--font-serif);
-  font-size: 22px;
-  font-weight: 500;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--text);
 }
@@ -5740,7 +5654,7 @@ body:has(.resizer[data-dragging]) {
 
 .group-card {
   padding: 0 20px;
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--bg);
   box-shadow: var(--shadow-1);
 }
@@ -5774,7 +5688,7 @@ body:has(.resizer[data-dragging]) {
 }
 
 .entry {
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--bg);
   box-shadow: var(--shadow-1);
   transition: box-shadow 0.25s var(--ease);
@@ -5783,7 +5697,7 @@ body:has(.resizer[data-dragging]) {
 .entry[data-open] {
   box-shadow:
     0 0 0 1px var(--line-strong),
-    0 6px 24px rgba(60, 45, 20, 0.07);
+    0 6px 24px rgba(0, 0, 0, 0.049);
 }
 
 .entry-row {
@@ -5792,7 +5706,7 @@ body:has(.resizer[data-dragging]) {
   gap: 14px;
   width: 100%;
   padding: 14px 16px 14px 14px;
-  border-radius: 14px;
+  border-radius: 10px;
   text-align: left;
 }
 
@@ -6127,11 +6041,11 @@ body:has(.resizer[data-dragging]) {
   align-items: center;
   gap: 8px;
   padding: 8px 8px 8px 18px;
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--bg);
   box-shadow:
     0 0 0 0.5px var(--line-strong),
-    0 12px 36px rgba(60, 45, 20, 0.14);
+    0 12px 36px rgba(0, 0, 0, 0.098);
   translate: -50% 0;
   animation: toast-in 0.5s var(--spring) both;
 }
@@ -6154,9 +6068,9 @@ body:has(.resizer[data-dragging]) {
   box-sizing: border-box;
   width: 100%;
   padding: 8px 8px 8px 16px;
-  border-radius: 14px;
-  background: var(--ink);
-  color: var(--paper);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--text);
   font-size: 13.5px;
   box-shadow: var(--shadow-float);
 }
@@ -6182,12 +6096,11 @@ body:has(.resizer[data-dragging]) {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  border: 1.5px dashed rgba(42, 86, 189, 0.6);
-  border-radius: 24px;
+  border: 1.5px dashed rgba(44, 99, 212, 0.6);
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(4px);
   color: var(--ai-deep);
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-size: 18px;
   pointer-events: none;
   animation: fade-in 0.2s var(--ease) both;
@@ -6268,7 +6181,7 @@ body:has(.resizer[data-dragging]) {
   background: var(--bg);
   box-shadow:
     0 0 0 1px var(--line),
-    0 2px 10px rgba(60, 45, 20, 0.06);
+    0 2px 10px rgba(0, 0, 0, 0.042);
 }
 
 .trace-row {
@@ -6323,8 +6236,7 @@ body:has(.resizer[data-dragging]) {
 
 .traces-empty {
   padding: 40px 24px;
-  font-family: var(--font-serif);
-  font-style: italic;
+  font-family: var(--font-display);
   color: var(--text-3);
 }
 
@@ -6390,9 +6302,9 @@ body:has(.resizer[data-dragging]) {
 
 .trace-title h2 {
   min-width: 0;
-  font-family: var(--font-serif);
-  font-size: 26px;
-  font-weight: 400;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
   line-height: 1.3;
 }
 
@@ -6442,7 +6354,7 @@ body:has(.resizer[data-dragging]) {
 
 .stat {
   padding: 14px 16px;
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--bg);
   box-shadow: 0 0 0 1px var(--line);
 }
@@ -6490,7 +6402,7 @@ body:has(.resizer[data-dragging]) {
 /* A part of the run on a card of its own: what it used, and its timeline. */
 .trace-card {
   margin-top: 14px;
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--bg);
   box-shadow: 0 0 0 1px var(--line);
   overflow: hidden;
@@ -6990,7 +6902,7 @@ body:has(.resizer[data-dragging]) {
   .side-panel[data-kind] {
     box-shadow:
       -0.5px 0 0 var(--line),
-      -24px 0 60px rgba(60, 45, 20, 0.1);
+      -24px 0 60px rgba(0, 0, 0, 0.07);
   }
 
   .dock {
@@ -7005,29 +6917,13 @@ body:has(.resizer[data-dragging]) {
 
 @media (max-width: 760px) {
   .home {
-    padding: 24px 16px 0;
+    padding: 20px 16px 0;
   }
 
-  .examples {
-    grid-template-columns: 1fr;
-  }
-
-  /* Coming back on a phone, the examples step aside for the works. */
-  .home[data-returning] .example-art {
-    display: none;
-  }
-
-  .home[data-returning] .examples {
-    gap: 4px;
-  }
-
-  .home[data-returning] .example-text svg {
-    opacity: 1;
-    transform: none;
-  }
-
-  .recent ul {
+  .starts,
+  .recent {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 12px;
   }
 
   .setting {
@@ -7183,16 +7079,6 @@ body:has(.resizer[data-dragging]) {
   }
 }
 
-.preview-bar .secondary {
-  background: transparent;
-  color: var(--paper);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
-}
-
-.preview-bar .primary {
-  background: var(--paper);
-  color: var(--ink);
-}
 
 @keyframes spin {
   to {
@@ -7204,11 +7090,11 @@ body:has(.resizer[data-dragging]) {
   margin-bottom: 0;
 }
 
+/* What the whole work has cost, as one quiet line over the runs: figures, not pills. */
 .work-usage {
-  margin: 0 0 12px;
-  padding: 7px 12px;
-  border-radius: 10px;
-  background: var(--fill);
+  margin: 0 0 4px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid var(--separator);
   font-size: 12.5px;
   color: var(--text-3);
 }
@@ -7216,6 +7102,7 @@ body:has(.resizer[data-dragging]) {
 .work-usage > button {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-start;
   align-items: baseline;
   gap: 2px 10px;
   width: 100%;
@@ -7416,8 +7303,6 @@ body:has(.resizer[data-dragging]) {
   padding: 2px 4px;
   border-radius: 10px;
   background: var(--veil);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
 /* Toggles where several can be on at once. */
@@ -7497,13 +7382,11 @@ body:has(.resizer[data-dragging]) {
   gap: 8px 14px;
   width: 100%;
   padding: 8px 8px 8px 16px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: saturate(1.4) blur(18px);
-  -webkit-backdrop-filter: saturate(1.4) blur(18px);
+  border-radius: 12px;
+  background: var(--paper);
   box-shadow:
-    0 0 0 1px rgba(51, 102, 214, 0.28),
-    0 10px 28px rgba(60, 45, 20, 0.08);
+    0 0 0 1px rgba(61, 114, 224, 0.28),
+    0 10px 28px rgba(0, 0, 0, 0.056);
   font-size: 13px;
   color: var(--text-2);
   animation: rise 0.35s var(--ease-out) both;
@@ -7512,7 +7395,7 @@ body:has(.resizer[data-dragging]) {
 .unsaved-bar[data-asking] {
   box-shadow:
     0 0 0 1.5px var(--ai),
-    0 12px 32px rgba(60, 45, 20, 0.12);
+    0 12px 32px rgba(0, 0, 0, 0.084);
 }
 
 .unsaved-text {
@@ -7593,8 +7476,8 @@ body:has(.resizer[data-dragging]) {
 
 .drafts-version[data-kind="unsaved"] {
   flex-wrap: wrap;
-  box-shadow: inset 0 0 0 1px rgba(51, 102, 214, 0.35);
-  background: rgba(51, 102, 214, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(61, 114, 224, 0.35);
+  background: rgba(61, 114, 224, 0.05);
 }
 
 .drafts-version[data-kind="unsaved"] .drafts-look > i {
@@ -7713,10 +7596,13 @@ body:has(.resizer[data-dragging]) {
   min-width: 0;
 }
 
+.usage-chips em + em::before {
+  content: "·";
+  margin-right: 4px;
+  color: var(--text-3);
+}
+
 .usage-chips em {
-  padding: 0 7px;
-  border-radius: 999px;
-  background: var(--bg);
   font-style: normal;
   font-size: 11.5px;
   line-height: 20px;
@@ -7733,7 +7619,7 @@ body:has(.resizer[data-dragging]) {
   gap: 12px;
   margin: 8px 0 12px;
   padding: 12px;
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--bg);
   box-shadow: inset 0 0 0 1px var(--line);
   font-size: 12.5px;

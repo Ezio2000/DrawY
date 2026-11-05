@@ -248,7 +248,7 @@
 }
 
 .sketch-pen {
-  filter: drop-shadow(0 3px 4px rgba(60, 45, 20, 0.18));
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.126));
 }
 
 .sketching[data-resting] .sketch-pen {

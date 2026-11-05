@@ -17,7 +17,7 @@ const zh = {
   retry: "重试",
   // Titles
   titles: {
-    hero: "想画点什么？",
+    home: "首页",
     library: "素材库",
     settings: "设置",
     traces: "运行记录",
@@ -85,8 +85,9 @@ const zh = {
       "红楼梦中的人物关系",
     ],
     styleLine: (name: string) => `画风：${name}`,
-    starters: "从一个例子开始",
+    create: "新建",
     recent: "最近的作品",
+    noWorks: "还没有作品。新建一张空白画布，选一个示例，或在下方写下想画的内容。",
   },
   // Composer
   composer: {
@@ -1179,7 +1180,7 @@ const en: Words = {
   cancel: "Cancel",
   retry: "Retry",
   titles: {
-    hero: "What do you want to draw?",
+    home: "Home",
     library: "Library",
     settings: "Settings",
     traces: "Run records",
@@ -1244,8 +1245,9 @@ const en: Words = {
       "The characters of Dream of the Red Chamber",
     ],
     styleLine: (name) => `Style: ${name}`,
-    starters: "Start from an example",
+    create: "New",
     recent: "Recent work",
+    noWorks: "No works yet. Start a blank canvas, pick an example, or describe what to draw below.",
   },
   composer: {
     describe: "Describe what you want to draw",

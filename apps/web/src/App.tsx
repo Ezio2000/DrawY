@@ -876,6 +876,16 @@ export function App() {
     at = at.parentId ? work?.scenes[at.parentId] : undefined;
   }
   const shownWorks = works.filter((w) => w.id !== trash?.id);
+  /** A blank canvas, made and opened: from the side bar and from the home page. */
+  const createBlank = () =>
+    void attempt(async () => {
+      const w = await api<Work>("/works", "POST", { title: t.rail.untitled });
+      W(w);
+      setRunsOf(w.id);
+      R([]);
+      go("/a/" + w.id);
+      await refreshList();
+    });
   const status = work &&
     (offline ||
       run?.status === "waiting" ||
@@ -984,16 +994,7 @@ export function App() {
             works={shownWorks}
             current={work?.id}
             go={go}
-            create={() =>
-              void attempt(async () => {
-                const w = await api<Work>("/works", "POST", { title: t.rail.untitled });
-                W(w);
-                setRunsOf(w.id);
-                R([]);
-                go("/a/" + w.id);
-                await refreshList();
-              })
-            }
+            create={createBlank}
             remove={remove}
             logout={() =>
               void attempt(async () => {
@@ -1054,6 +1055,7 @@ export function App() {
             <Home
               works={shownWorks}
               start={(text) => void attempt(() => send(text))}
+              blank={createBlank}
               open={(id) => go("/a/" + id)}
               composer={composer("home")}
             />

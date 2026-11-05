@@ -45,19 +45,19 @@
   min-height: 36px;
   padding: 8px 16px;
   border-radius: 8px;
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--blue);
+  color: #fff;
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
 }
 
 .primary:hover:not(:disabled) {
-  background: var(--ink-hover);
+  background: var(--blue-hover);
 }
 
 .primary:active:not(:disabled) {
-  background: #000;
+  background: var(--blue-press);
   transform: scale(0.97);
   transition-duration: 0.1s;
 }
@@ -162,7 +162,7 @@
   background: #fff;
   box-shadow:
     0 0 0 0.5px var(--line-strong),
-    0 1px 3px rgba(60, 45, 20, 0.08);
+    0 1px 3px rgba(0, 0, 0, 0.056);
   opacity: 0;
 }
 
@@ -220,7 +220,7 @@
   line-height: 1.35;
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: 0 6px 18px rgba(60, 45, 20, 0.18);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.126);
   animation: tip-in 0.16s var(--ease-out) both;
 }
 
@@ -248,7 +248,7 @@
   background: var(--bg);
   box-shadow:
     0 0 0 0.5px var(--line-strong),
-    0 8px 28px rgba(60, 45, 20, 0.1);
+    0 8px 28px rgba(0, 0, 0, 0.07);
   transform-origin: top right;
   animation: menu-in 0.34s var(--spring);
 }
@@ -314,7 +314,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(20, 20, 19, 0.32);
+  background: rgba(0, 0, 0, 0.32);
   transition: background-color 0.4s var(--ease);
   animation: fade-in 0.3s var(--ease) both;
 }
@@ -331,12 +331,12 @@
   width: min(560px, 100%);
   max-height: min(780px, calc(100vh - 48px));
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--paper);
   outline: none;
   box-shadow:
     0 0 0 0.5px var(--line-strong),
-    0 24px 64px rgba(20, 20, 19, 0.16);
+    0 24px 64px rgba(0, 0, 0, 0.16);
   animation: dialog-in 0.6s var(--spring) both;
 }
 
@@ -362,7 +362,7 @@
 }
 
 .dialog-header h2 {
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-size: 22px;
   font-weight: 500;
   line-height: 1.25;
@@ -490,7 +490,7 @@
   padding: 8px 8px 8px 16px;
   border-radius: 12px;
   background: var(--ink);
-  box-shadow: 0 12px 36px rgba(20, 20, 19, 0.22);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.22);
   font-size: 13px;
   color: var(--paper);
   animation: toast-in 0.6s var(--spring) both;

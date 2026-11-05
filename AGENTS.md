@@ -87,7 +87,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 提问次数：`users.quota`（`Account.quota`，`null` 为不限）。新账号是 `DEFAULT_QUOTA`（10），第一个账号不限；旧库加列时非管理员得 10、管理员不限。`POST /api/works/:id/runs` 先 `spendQuota`（原子地减一，用完时 403“提问次数已用完”），`agent.start` 失败就 `refundQuota` 退回；回答作者的问题（`/runs/:id/answer`）不扣。管理员在设置的“账号”页逐个改（`PATCH /api/admin/accounts/:id` 的 `{quota}`，可与 `role` 分开）。前端用 `user.quota` 显示剩余并在为 0 时禁用发送（等待回答时仍可回答），发出新请求后在本地减一。
 
-首页（`Home.tsx`）是标题、三个示例和“最近的作品”：`/api/works` 按 `updatedAt` 排前八个，封面用 `cover`（作者最近一次全图截图，空白作品不用），状态行和左侧栏共用 `Rail.tsx` 的 `progressOf`。左侧栏：首页下方是“新建空白画布”（建一个“未命名画布”并打开，没有简报也能直接手动编辑：`writeWork` 只要求作者的运行先有简报）；最近作品每项在标题下有一行状态，来自 `/api/works` 的 `progress`（`UserStore.progress`：最近一次运行的状态和提问开头、`versionsOf` 算出的当前版本号、是否空白）——正在绘制、等你回答、上次没有画完、已停止，或“第 N 版 · 时间”。收到 `run` 事件时前端先就地改状态，运行结束再重读列表。
+首页（`Home.tsx`）是文件页：标题，“新建”一行（空白画布加三个示例），和“最近的作品”：`/api/works` 按 `updatedAt` 排前十二个，封面用 `cover`（作者最近一次全图截图，空白作品不用），状态行和左侧栏共用 `Rail.tsx` 的 `progressOf`。左侧栏：首页下方是“新建空白画布”（建一个“未命名画布”并打开，没有简报也能直接手动编辑：`writeWork` 只要求作者的运行先有简报）；最近作品每项在标题下有一行状态，来自 `/api/works` 的 `progress`（`UserStore.progress`：最近一次运行的状态和提问开头、`versionsOf` 算出的当前版本号、是否空白）——正在绘制、等你回答、上次没有画完、已停止，或“第 N 版 · 时间”。收到 `run` 事件时前端先就地改状态，运行结束再重读列表。
 
 绘制模型的可选 `provider` 保存 OpenRouter 提供商标识。设置页的“固定提供商”留空时自动路由，填写后 Responses、Chat Completions 和 Messages 都传 `provider: { only: [标识], allow_fallbacks: false }`；不能切到其他提供商，渠道不可用时返回错误。轮次的 `request.provider` 同样记录这个限制。
 
@@ -172,7 +172,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 工具说明写清做什么、什么时候用、返回什么和失败时怎样；字段的含义写在 schema 的 `.describe` 里（JSDoc 模型看不到），不在系统提示词里重复。
 
-**界面像速写本，不像聊天机器人。** 颜色都在 `modules/ui/base.css` 的 token 里：墨色是文字和唯一的主要按钮（发送也是墨色），`--blue`/`--ai`/`--ai-deep` 是蓝色校对笔，用于选中、焦点、链接和进行中的标记，画布里的 `ACCENT` 与它相同；`--brand` 只给灯笼标志；还没出现的图片和截图用 `--hatch` 铅笔排线（`hatch` 动画），不要再加模糊色块、流光、闪烁星星这类“AI 生成中”的样子，图标里也不用 `Sparkles`。作者的回复用正文字体，衬线只留给标题。界面文案不必处处说“AI”：作者在做的事直接说“正在画”“等你回答”，生成图片的来源标注“AI 生成”保留。
+**界面像绘图工具，不像聊天机器人。** “AI 味”的界面有两波：第一波是靛紫渐变、居中大标语、三张圆角卡片；第二波是有人要求“去 AI 味”后模型给出的米色底、衬线标题、赤陶色点缀（正是 Claude 的配色）。两种都不要。颜色都在 `modules/ui/base.css` 的 token 里：白底和中性浅灰（不带暖色），文字近黑，`--blue`/`--ai`/`--ai-deep` 是唯一的强调色，用于选中、焦点、链接、进行中的标记和主要按钮（`.primary`、发送），画布里的 `ACCENT` 与它相同；`--brand` 只给灯笼标志；还没出现的图片和截图用 `--hatch` 铅笔排线（`hatch` 动画）。标题用 `--font-display` 无衬线半粗体，`--font-serif` 只留给作品里的内容；不用毛玻璃（`backdrop-filter`），页面加载时不做上浮动画，动效只回应用户的操作；卡片圆角 8～12px、阴影很轻，不加彩色色块底。不要加模糊色块、流光、闪烁星星这类“AI 生成中”的样子，图标里也不用 `Sparkles`。画室里用户的请求是左对齐的引文，不是对话气泡。界面文案不必处处说“AI”：作者在做的事直接说“正在画”“等你回答”，生成图片的来源标注“AI 生成”保留。
 
 **面向用户的文字要中英双语。** 前端文案在 `apps/web/src/i18n.tsx`，以 `zh` 为基准，`en` 必须有相同的键；共享组件的文案在 `modules/ui/src/words.ts`。服务端内部说中文，错误在离开服务时由 `modules/contracts/messages.ts` 按请求的语言翻译，所以新增的错误信息要在那里补上英文。写给模型的文字保持原样，不翻译。
 
