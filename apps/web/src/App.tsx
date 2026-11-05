@@ -894,11 +894,15 @@ export function App() {
       go("/a/" + w.id);
       await refreshList();
     });
+  // While drawing, the bar always shows how far it has got; with the studio open, which
+  // tells the rest, only the stages.
   const status = work &&
     (offline ||
       run?.status === "waiting" ||
-      (!journal && (working || run?.id !== dismissed))) && (
+      working ||
+      (!journal && run?.id !== dismissed)) && (
       <Now
+        compact={journal && working}
         run={run}
         work={work}
         offline={offline}

@@ -1,7 +1,7 @@
 import { detailElement } from "../../../modules/runtime/detail.ts";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { ZoomOut, ZoomIn, Scan } from "lucide-react";
+import { ZoomOut, ZoomIn, Scan, Lightbulb } from "lucide-react";
 import { reducedMotion, Spinner, useLocale } from "@drawy/ui";
 import {
   Canvas,
@@ -22,6 +22,7 @@ import type {
 import { cx } from "./cx.ts";
 import { styleList } from "./Composer.tsx";
 import { useT } from "./i18n.tsx";
+import { live, thinkingOf } from "./Studio.tsx";
 import type { StyleMaterial } from "@drawy/materials/schema";
 type ToolStep = Extract<Step, { kind: "tool" }>;
 /** What the canvas shows of a work: its revision and which pictures have developed. */
@@ -194,25 +195,35 @@ export function SceneView({
   const empty = !work.scenes[sceneId].modules.length;
   const [styles, setStyles] = useState<StyleMaterial[]>([]);
   useEffect(() => void styleList().then(setStyles, () => {}), []);
-  // What is being drawn, noted on the paper before the first stroke: the subject, who it is
-  // for and its style. The author's own reasoning (intent, concept) stays in the studio's
-  // folded process, not on the page.
+  // A note on the paper while the canvas is still blank, so there is something to watch
+  // before the first stroke: at first the request as it was written and what the author is
+  // thinking about now, as it thinks; once it settles what to draw, the subject, the ways
+  // of drawing it weighed and the idea it chose, with who it is for and the style.
   const briefing = steps.findLast(
     (s): s is Extract<ToolStep, { name: "set_brief" }> =>
       s.kind === "tool" && s.name === "set_brief",
   );
+  const request = steps.find(
+    (s): s is Extract<Step, { kind: "message" }> => s.kind === "message" && s.role === "user",
+  )?.text;
+  const thinking = thinkingOf(run, locale);
   const brief = work.brief ?? undefined;
-  const note = brief
-    ? {
-        subject: brief.subject,
-        tags: [
-          brief.audience,
-          styles.find((s) => s.id === brief.style)?.name[locale],
-        ].filter((x): x is string => !!x),
-      }
-    : briefing?.subject
-      ? { subject: briefing.subject, tags: [] as string[] }
-      : undefined;
+  const note =
+    brief || briefing?.subject
+      ? {
+          subject: briefing?.subject || brief!.subject,
+          ideas: briefing?.ideas ?? [],
+          concept: briefing?.concept || brief?.concept || "",
+          tags: brief
+            ? [
+                brief.audience,
+                styles.find((s) => s.id === brief.style)?.name[locale],
+              ].filter((x): x is string => !!x)
+            : [],
+        }
+      : request
+        ? { request, ideas: [] as string[], concept: "", tags: [] as string[] }
+        : undefined;
   // Before the first stroke, the references the author gathers are laid out on the paper.
   const references = steps
     .flatMap((s, i) =>
@@ -278,8 +289,26 @@ export function SceneView({
           data-leaving={!!draft.length || undefined}
         >
           {note && (
-            <figure className={cx("brief-note")}>
-              <b>{note.subject}</b>
+            <figure className={cx("brief-note")} data-asking={!("subject" in note) || undefined}>
+              {"subject" in note ? <b>{note.subject}</b> : <q>{note.request}</q>}
+              {!!note.ideas.length && (
+                <p data-weighed>
+                  {t.now.weighed}
+                  {note.ideas.join(" · ")}
+                </p>
+              )}
+              {note.concept && (
+                <p data-concept>
+                  <Lightbulb size={12} />
+                  {note.concept}
+                </p>
+              )}
+              {live(run) && !draft.length && (
+                <p data-thought key={thinking || "…"}>
+                  <small>{t.now.thinkingNow}</small>
+                  {thinking || t.now.thinking + "…"}
+                </p>
+              )}
               {!!note.tags.length && (
                 <span>
                   {note.tags.map((t) => (

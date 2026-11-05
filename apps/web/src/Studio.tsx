@@ -7,6 +7,7 @@ import {
   Compass,
   Eye,
   Globe,
+  Lightbulb,
   PenTool,
   Search,
   ImagePlus,
@@ -34,6 +35,50 @@ type ToolStep = Extract<Step, { kind: "tool" }>;
 type Tool<N extends ToolStep["name"]> = Extract<ToolStep, { name: N }>;
 export const live = (run?: Run) =>
   !!run && ["running", "viewing"].includes(run.status);
+/** Whether a text is written in the page's language: the model summarises its thoughts in
+ * a language of its own, which is not shown to a reader of another. */
+const readable = (text: string, locale: string) =>
+  /[㐀-鿿]/.test(text) === (locale === "zh");
+/** A thought's headline and the reasoning under it. */
+function thought(text: string) {
+  const closed = text.match(/^\*\*(.+?)\*\*\s*([\s\S]*)$/);
+  return closed
+    ? [closed[1], closed[2]]
+    : text.startsWith("**")
+      ? [text.slice(2), ""]
+      : [text.split("\n")[0], text.split("\n").slice(1).join("\n").trim()];
+}
+/** What a live run's author is thinking about right now, as the headline of its latest
+ * thought, when that is written in the reader's language. */
+export function thinkingOf(run: Run | undefined, locale: string) {
+  if (!live(run)) return "";
+  const last = run!.steps.findLast((s) => s.kind === "thinking");
+  if (!last || last.kind !== "thinking") return "";
+  const [headline] = thought(last.text);
+  return headline && readable(headline, locale) ? plain(headline) : "";
+}
+/** The stages a drawing goes through, and how far a run has got: thinking it over,
+ * settling what it shows, gathering pictures, the first strokes, then looking and
+ * revising. A run that skips a stage passes it. */
+export const STAGES = 5;
+export function stageOf(run: Run) {
+  let stage = 0;
+  for (const s of run.steps) {
+    if (s.kind !== "tool") continue;
+    const at =
+      s.name === "set_brief"
+        ? 1
+        : s.name === "find_materials" || s.name === "generate_images"
+          ? 2
+          : s.name === "write_work"
+            ? 3
+            : s.name === "view_canvas"
+              ? 4
+              : 0;
+    stage = Math.max(stage, at);
+  }
+  return stage;
+}
 const k = (n: number) =>
   n >= 1_000_000
     ? `${(n / 1_000_000).toFixed(1)}M`
@@ -149,7 +194,10 @@ export function Now({
   dismiss,
   resume,
   restore,
+  compact,
 }: {
+  /** Whether only the stages show, the studio being open to tell the rest. */
+  compact?: boolean;
   run?: Run;
   work: Work;
   offline: boolean;
@@ -248,8 +296,8 @@ export function Now({
     );
   return (
     <button className={cx("now")} data-tone="live" data-tip={t.now.open} onClick={reveal}>
-      <i className={cx("now-dot")} />
-      <Current run={run} />
+      <Stages run={run} />
+      {!compact && <Current run={run} />}
       {(!!board.length || painting) && (
         <span className={cx("board")}>
           {board.map((p, i) => (
@@ -268,39 +316,60 @@ export function Now({
 }
 /** One line on what a live run is doing, and for how long it has. */
 function Current({ run }: { run: Run }) {
-  const t = useT();
-  // A tool still at work outranks the notes that stream alongside it; the author's own
-  // thinking is never the line.
+  const t = useT(),
+    locale = useLocale();
+  // A tool still at work outranks the thoughts and notes that stream alongside it.
   const busy = run.steps.findLast(
       (s): s is ToolStep => s.kind === "tool" && s.status === "running",
     ),
-    tail = run.steps.at(-1);
+    tail = run.steps.at(-1),
+    headline = tail?.kind === "thinking" ? thinkingOf(run, locale) : "";
   const line = busy
     ? doing(busy, t)
-    : tail?.kind === "message" && tail.role === "assistant"
-      ? plain(tail.text)
-      : between(run.steps, t);
+    : headline
+      ? headline
+      : tail?.kind === "message" && tail.role === "assistant"
+        ? plain(tail.text)
+        : between(run.steps, t);
   const at = run.steps.indexOf((busy ?? tail)!);
   return (
     <>
-      <span key={at} className={cx("now-line")}>
+      <span key={at + line} className={cx("now-line")}>
         {line}
       </span>
-      <Elapsed key={at + line} />
+      <Clock since={run.startedAt} />
     </>
   );
 }
-/** How long the author has been at its current step, once that is long enough to wonder. */
-function Elapsed() {
-  const [since] = useState(Date.now()),
-    [now, setNow] = useState(since);
+/** Where the drawing has got to: a short bar a stage, the stages passed filled in, and the
+ * stage it is at named beside them. */
+function Stages({ run }: { run: Run }) {
+  const t = useT(),
+    at = stageOf(run);
+  return (
+    <span className={cx("stages")}>
+      <span className={cx("stage-bars")} aria-hidden>
+        {Array.from({ length: STAGES }, (_, i) => (
+          <i key={i} data-done={i < at || undefined} data-current={i === at || undefined} />
+        ))}
+      </span>
+      <b key={at}>{t.now.stages[at]}</b>
+    </span>
+  );
+}
+/** How long the run has been drawing, as minutes and seconds. */
+function Clock({ since }: { since: number }) {
+  const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
-  const t = useT();
-  const s = Math.round((now - since) / 1000);
-  return s >= 8 ? <small className={cx("now-time")}>{t.now.seconds(s)}</small> : null;
+  const s = Math.max(0, Math.round((now - since) / 1000));
+  return (
+    <small className={cx("now-time")}>
+      {Math.floor(s / 60)}:{String(s % 60).padStart(2, "0")}
+    </small>
+  );
 }
 
 /** The version a request ended in, by its number; the versions panel looks at and
@@ -375,7 +444,7 @@ function StepView({
         <Markdown text={step.text} citations={step.citations} className={cx("step-note")} />
       </li>
     );
-  if (step.kind === "thinking") return null;
+  if (step.kind === "thinking") return <Thoughts steps={[step]} live={live} />;
   const Icon = icons[step.name] ?? Wrench;
   const errors = [
     ...(step.name === "view_canvas" ? step.errors || [] : []),
@@ -394,6 +463,36 @@ function StepView({
           </small>
         ))}
       </div>
+    </li>
+  );
+}
+/** Thoughts in a row, as one line: the latest headline the reader can read, and every
+ * thought's headline and reasoning when opened. */
+function Thoughts({ steps, live }: { steps: Step[]; live: boolean }) {
+  const t = useT(),
+    locale = useLocale();
+  const parts = steps
+    .map((s) => thought(s.kind === "thinking" ? s.text : ""))
+    .filter(([title]) => title && readable(title, locale));
+  const headline = parts.at(-1)?.[0];
+  return (
+    <li className={cx("step")} data-kind="thinking" data-status={live ? "running" : "done"}>
+      <i className={cx("step-icon")}>
+        <Lightbulb size={13} />
+      </i>
+      <details className={cx("step-body")}>
+        <summary>
+          <span>{headline ? plain(headline) : t.now.thinking}</span>
+          {steps.length > 1 && <small>×{steps.length}</small>}
+          {!!parts.length && <ChevronRight size={13} />}
+        </summary>
+        {parts.map(([title, body], i) => (
+          <div key={i} className={cx("step-thought")}>
+            <b>{plain(title)}</b>
+            {body && readable(body, locale) && <Markdown text={body} />}
+          </div>
+        ))}
+      </details>
     </li>
   );
 }
@@ -532,6 +631,19 @@ function Brief({
     <div className={cx("brief")}>
       <span className={cx("step-title")}>{t.steps.set_brief}</span>
       {step.subject && <h4>{step.subject}</h4>}
+      {!!step.ideas?.length && (
+        <ol className={cx("ideas")}>
+          {step.ideas.map((idea, i) => (
+            <li key={i}>{idea}</li>
+          ))}
+        </ol>
+      )}
+      {step.concept && (
+        <blockquote>
+          <small>{t.steps.concept}</small>
+          {step.concept}
+        </blockquote>
+      )}
       {!!step.found?.length && <Found found={step.found} used={used} zoom={zoom} />}
     </div>
   );
@@ -968,10 +1080,22 @@ function RunView({
     );
     steps = [];
   };
-  // The author's own thinking is not shown: the log says what it did, not what it
-  // reasoned (the run's trace keeps everything for those who manage the models).
+  // Thoughts in a row read as one step.
+  let thinking: Step[] = [];
+  const think = (i: number) => {
+    if (!thinking.length) return;
+    steps.push(
+      <Thoughts key={"t" + i} steps={thinking} live={working && i === r.steps.length} />,
+    );
+    thinking = [];
+  };
   r.steps.forEach((s, i) => {
-    if (i === reply || s.kind === "thinking") return;
+    if (i === reply) return;
+    if (s.kind === "thinking") {
+      if (unfolded) thinking.push(s);
+      return;
+    }
+    think(i);
     if (s.kind === "message" && s.role === "user") {
       flush();
       items.push(
@@ -1005,8 +1129,9 @@ function RunView({
         />,
       );
   });
+  think(r.steps.length);
   flush();
-  const count = r.steps.filter((s) => s.kind === "tool").length;
+  const count = r.steps.filter((s) => s.kind === "tool" || s.kind === "thinking").length;
   const saved = r.steps.findLast(
     (s): s is Tool<"write_work"> => s.kind === "tool" && s.name === "write_work" && !!s.revision,
   );

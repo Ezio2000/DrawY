@@ -1775,6 +1775,75 @@ h2:has(> .title) {
   color: var(--ink);
 }
 
+/* Before the author settles what to draw, the note quotes the request as it was written. */
+.brief-note q {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.brief-note p {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.brief-note p[data-weighed] {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.brief-note p[data-concept] {
+  -webkit-line-clamp: 5;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-strong);
+  color: var(--text);
+}
+
+.brief-note p[data-concept] svg {
+  display: inline;
+  margin-right: 5px;
+  vertical-align: -1px;
+  color: var(--ai);
+}
+
+/* What the author is thinking about now, written in as it thinks: each new thought comes
+   in on its own, with a caret after it. */
+.brief-note p[data-thought] {
+  -webkit-line-clamp: 3;
+  color: var(--text-2);
+  animation: line-in 0.4s var(--ease-out) both;
+}
+
+.brief-note p[data-thought] small {
+  margin-right: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ai-deep);
+}
+
+.brief-note p[data-thought]::after {
+  content: "";
+  display: inline-block;
+  width: 1.5px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: -2px;
+  background: var(--ai);
+  animation: caret 1s steps(1) infinite;
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
 
 
 
@@ -1903,6 +1972,44 @@ button.now:hover .now-line {
   border-radius: 50%;
   background: var(--ai);
   animation: breathe 1.8s var(--ease-in-out) infinite;
+}
+
+/* Where a live drawing has got to: a short bar a stage, those passed filled in, the one it
+   is at breathing, and its name. */
+.stages {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.stage-bars {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.stage-bars i {
+  width: 10px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--fill-2);
+  transition: background-color 0.4s var(--ease);
+}
+
+.stage-bars i[data-done] {
+  background: color-mix(in srgb, var(--ai) 45%, transparent);
+}
+
+.stage-bars i[data-current] {
+  background: var(--ai);
+  animation: breathe-soft 1.6s var(--ease-in-out) infinite;
+}
+
+.stages b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  animation: line-in 0.4s var(--ease-out) both;
 }
 
 .now[data-tone="quiet"] .now-dot {
@@ -4331,6 +4438,48 @@ body:has(.resizer[data-dragging]) {
   font-weight: 500;
   line-height: 1.4;
   color: var(--ink);
+}
+
+/* The ways of drawing it the author weighed, then the one it chose, set apart. */
+.ideas {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.brief blockquote {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 4px 10px 10px 4px;
+  border-left: 2px solid var(--ai);
+  background: var(--bg-2);
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.brief blockquote small {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ai-deep);
+}
+
+/* A thought opened: its headline, then its reasoning. */
+.step-thought {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.step-thought b {
+  display: block;
+  font-weight: 500;
+  color: var(--text-2);
 }
 
 .brief h4 i {
@@ -6875,16 +7024,6 @@ body:has(.resizer[data-dragging]) {
 }
 
 @media (max-width: 760px) {
-  .home {
-    padding: 16px 16px 0;
-  }
-
-  .starts,
-  .recent {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px 12px;
-  }
-
   .setting {
     grid-template-columns: 1fr;
     gap: 10px;
