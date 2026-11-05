@@ -398,7 +398,7 @@ describe("user owned works", () => {
         {
           drawings: [fruit],
           modules: [module],
-        }, { cause: { kind: "edit" } }),
+        }, { cause: { kind: "run", runId: "r", prompt: "p" } }),
     ).rejects.toThrow("set_brief");
     a.commit({ ...a.work(work.id), brief: content.brief }, 1, { kind: "edit" });
     const theirs = await client.ingest(

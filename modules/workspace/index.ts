@@ -65,7 +65,12 @@ export async function writeWork(
   // A title the user gave stays: the author retitled works the user had renamed.
   const keptTitle = edit.title !== undefined && !!current.named && cause.kind === "run";
   if (keptTitle) work.title = current.title;
-  if (!work.brief && Object.values(work.scenes).some((s) => s.modules.length))
+  // The author settles a brief before it draws; a person may draw on a blank canvas by hand.
+  if (
+    cause.kind === "run" &&
+    !work.brief &&
+    Object.values(work.scenes).some((s) => s.modules.length)
+  )
     throw new DomainError("请先用 set_brief 确定创作简报，再绘制");
   const { added, missing } = await take(work, edit.materials || [], store.viewer);
   // Whatever else refers to a record that could not be laid will find it once that is fixed.

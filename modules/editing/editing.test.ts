@@ -795,5 +795,9 @@ describe("hand edits reach what the author writes", () => {
     expect(showable(work, edit)).toBe(true);
     expect(showable(work, { materials: ["arrow"] })).toBe(false);
     expect(showable(work, { drawings: [{ id: "mine", from: "arrow" }] })).toBe(false);
+    // So does a module or a new link drawn with a library drawing the work has not taken.
+    expect(showable(work, { modules: [{ id: "n", bounds: [0, 0, 9, 9], drawingId: "label" }] })).toBe(false);
+    expect(showable(work, { links: [{ id: "n", from: "heading", to: "heading" }] })).toBe(!!work.materials.arrow);
+    expect(showable(work, { modules: [{ id: "heading", drawingId: "mine" }], drawings: [{ id: "mine", source: "" }] })).toBe(true);
   });
 });

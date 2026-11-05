@@ -253,10 +253,24 @@ export function applied(work: Work, edit: WorkEdit, current?: string) {
   return next;
 }
 /** Whether a work already holds every material an edit takes in, so the edit can be shown
- * before the workspace fetches anything. */
-export const showable = (work: Work, edit: WorkEdit) =>
-  (edit.materials ?? []).every((id) => !!work.materials[id]) &&
-  (edit.drawings ?? []).every((d) => !d.from || !!drawingOf(work, d.from));
+ * before the workspace fetches anything: the materials it names, the drawings it copies, and
+ * the drawing of every module and new link it lays (a library drawing the work has not used
+ * yet, like the first label on a blank canvas, comes with the workspace's answer). */
+export const showable = (work: Work, edit: WorkEdit) => {
+  const drawn = (id: string) =>
+    !!drawingOf(work, id) || (edit.drawings ?? []).some((d) => d.id === id);
+  const links = Object.fromEntries(
+    Object.values(work.scenes).flatMap((s) => s.links.map((l) => [l.id, l])),
+  );
+  return (
+    (edit.materials ?? []).every((id) => !!work.materials[id]) &&
+    (edit.drawings ?? []).every((d) => !d.from || !!drawingOf(work, d.from)) &&
+    (edit.modules ?? []).every((m) => !m.drawingId || drawn(m.drawingId)) &&
+    (edit.links ?? []).every((l) =>
+      l.drawingId ? drawn(l.drawingId) : !!links[l.id] || drawn("arrow"),
+    )
+  );
+};
 /** An edit as the workspace reads it from what was written: every shape problem at once, in
  * terms of the record it is in. */
 export function readEdit(input: unknown): WorkEdit {
