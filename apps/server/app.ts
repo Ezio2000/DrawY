@@ -27,6 +27,7 @@ import {
 import {
   createWork,
   restore,
+  saveEdits,
   undo,
   writeWork,
 } from "../../modules/workspace/index.ts";
@@ -444,8 +445,17 @@ export function createApp(storage: Storage) {
       .parse(await c.req.json());
     const { work } = await writeWork(store, workId, edit, {
       base: baseRevision,
-      cause: { kind: "edit" },
+      cause: { kind: "edit", draft: true },
     });
+    publish(store.userId, { type: "work", work });
+    return c.json(work);
+  });
+  /** The hand edits made since the latest version, saved as a version of their own. */
+  app.post("/api/works/:id/save", async (c) => {
+    const store = c.get("store"),
+      workId = c.req.param("id");
+    idle(store, workId);
+    const work = await freshen(saveEdits(store, workId), store.viewer);
     publish(store.userId, { type: "work", work });
     return c.json(work);
   });

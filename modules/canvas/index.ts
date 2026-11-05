@@ -86,7 +86,7 @@ const seed = (id: string) =>
 const GRAPHITE = "rgba(94,88,76,.5)";
 const ACCENT = "#d97757";
 /** How far from a link's line, in screen pixels, a press still takes the link. */
-const SLOP = 7;
+const SLOP = 10;
 /** Distance from a point to a segment. */
 function distance(p: Point, a: Point, b: Point) {
   const dx = b.x - a.x,
@@ -169,6 +169,13 @@ export class Canvas {
   /** The space bar held: the view moves under a drag, whatever the tool. */
   private spacing = false;
   private observer: ResizeObserver;
+  /** The canvas's size when last seen, to keep the view steady as it changes. */
+  private size = { width: 0, height: 0 };
+  private settling?: ReturnType<typeof setTimeout>;
+  /** Small marks on modules that open a scene or a page, so they can be found without
+   * hovering over everything. Laid over the canvas, they are never part of the drawing. */
+  private targets = document.createElement("div");
+  private badges = new Map<string, HTMLButtonElement>();
   private abort = new AbortController();
   private automatic: boolean;
   private gesture?: {
@@ -218,6 +225,9 @@ export class Canvas {
     this.layer.style.cssText =
       "position:absolute;left:0;top:0;width:0;height:0;overflow:visible;pointer-events:none;z-index:2;transform-origin:0 0";
     this.element.append(this.layer);
+    this.targets.style.cssText =
+      "position:absolute;inset:0;pointer-events:none;z-index:3;overflow:hidden";
+    this.element.append(this.targets);
     this.hover.style.cssText =
       "position:absolute;border:1px dashed rgba(193,95,60,.55);border-radius:6px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
     this.element.append(this.hover);
@@ -316,7 +326,13 @@ export class Canvas {
     );
     this.element.addEventListener(
       "pointerleave",
-      () => this.hoverOver(null),
+      () => {
+        this.hoverOver(null);
+        if (this.hot) {
+          this.hot = null;
+          for (const badge of this.badges.values()) badge.removeAttribute("data-hot");
+        }
+      },
       { signal },
     );
     this.element.addEventListener("wheel", (e) => this.wheel(e), {
@@ -391,9 +407,28 @@ export class Canvas {
       },
       { signal },
     );
+    // As the page around it changes (a panel sliding open, the window resized) the drawing
+    // keeps its middle where it was, then an automatic view settles once, gently, instead of
+    // refitting on every frame of the change.
     this.observer = new ResizeObserver(() => {
-      if (this.automatic) this.fit(false);
-      else this.paint();
+      const width = this.element.clientWidth,
+        height = this.element.clientHeight,
+        was = this.size;
+      this.size = { width, height };
+      if (!was.width || !was.height || !this.automatic) {
+        if (this.automatic) this.fit(false);
+        else this.paint();
+        return;
+      }
+      cancelAnimationFrame(this.gliding);
+      this.camera = {
+        ...this.camera,
+        x: this.camera.x + (width - was.width) / 2,
+        y: this.camera.y + (height - was.height) / 2,
+      };
+      this.paint();
+      clearTimeout(this.settling);
+      this.settling = setTimeout(() => this.automatic && this.fit(true, 520), 200);
     });
     this.observer.observe(this.element);
     const first = this.renderer;
@@ -858,8 +893,68 @@ export class Canvas {
     if (over) box(this.hover, over.bounds);
     else this.hover.style.display = "none";
     this.paintLinks();
+    this.paintTargets();
     for (const fn of this.watchers) fn();
   }
+  /** A small mark at the corner of each module that opens a scene or a page, while not
+   * editing; it says where it leads when the module or the mark is under the pointer. */
+  private paintTargets() {
+    const shown = !this.editing;
+    this.targets.style.display = shown ? "" : "none";
+    if (!shown) return;
+    const { x, y, scale } = this.camera;
+    const english = /^en/i.test(document.documentElement.lang);
+    const work = this.renderer.work;
+    const seen = new Set<string>();
+    for (const m of this.renderer.instances.values()) {
+      const target = m.target;
+      if (!target) continue;
+      const b = this.ghost.get(m.id) ?? m.bounds;
+      // Too small on screen to carry a mark without covering it.
+      if (b.width * scale < 44 || b.height * scale < 28) continue;
+      seen.add(m.id);
+      let badge = this.badges.get(m.id);
+      if (!badge) {
+        badge = document.createElement("button");
+        badge.dataset.target = "";
+        badge.tabIndex = -1;
+        badge.innerHTML =
+          '<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M5.5 3.5h7v7M12.5 3.5l-9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span></span>';
+        badge.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const now = this.renderer.instances.get(badge!.dataset.module!)?.target;
+          if (now) this.options.open(now);
+        });
+        this.badges.set(m.id, badge);
+        this.targets.append(badge);
+      }
+      badge.dataset.module = m.id;
+      const title =
+        target.kind === "scene" ? work.scenes[target.id]?.title : work.details[target.id]?.title;
+      const words =
+        target.kind === "scene"
+          ? english
+            ? `Open ${title ? "“" + title + "”" : "the scene"}`
+            : `进入${title ? "「" + title + "」" : "子场景"}`
+          : english
+            ? `Read ${title ? "“" + title + "”" : "more"}`
+            : `查看${title ? "「" + title + "」" : "详情"}`;
+      if (badge.lastElementChild!.textContent !== words) {
+        badge.lastElementChild!.textContent = words;
+        badge.setAttribute("aria-label", words);
+      }
+      badge.toggleAttribute("data-hot", this.hot === m.id);
+      badge.style.left = x + (b.x + b.width) * scale + "px";
+      badge.style.top = y + b.y * scale + "px";
+    }
+    for (const [id, badge] of this.badges)
+      if (!seen.has(id)) {
+        badge.remove();
+        this.badges.delete(id);
+      }
+  }
+  /** The module under the pointer that opens something, while not editing. */
+  private hot: string | null = null;
   /** The hovered and the selected link traced over, and the selected link's ends. */
   private paintLinks() {
     const { x, y, scale } = this.camera;
@@ -981,12 +1076,17 @@ export class Canvas {
   /** What a press at a point lands on while editing: a module that draws there, else a
    * link passing near, else the smallest module whose box holds it. */
   private pick(x: number, y: number): { module?: Instance; link?: string } {
-    const drawn = this.moduleAt(x, y, false);
-    if (drawn) return { module: drawn };
     const link = this.editing ? this.linkAt(x, y) : null;
+    const drawn = this.moduleAt(x, y, false);
+    // A link is drawn over the backdrop, so there the link is what the press is on.
+    if (drawn && !(link && this.beneath(drawn))) return { module: drawn };
     if (link) return { link };
     const module = this.moduleAt(x, y);
     return module ? { module } : {};
+  }
+  /** Whether a module is drawn under the links: the scene's backdrop. */
+  private beneath(m: Instance) {
+    return Number(this.renderer.host("module", m.id)?.style.zIndex || 2) < 1;
   }
   /** Calls `fn` whenever the view, the selection or what is dragged changes, for controls
    * laid over the canvas. Returns what stops it. */
@@ -1044,7 +1144,7 @@ export class Canvas {
     );
     this.changed();
   }
-  fit(glide = true) {
+  fit(glide = true, duration = 1100) {
     this.automatic = true;
     const { top, bottom } = this.options.insets?.() || { top: 0, bottom: 80 },
       height = this.element.clientHeight - top - bottom;
@@ -1057,6 +1157,12 @@ export class Canvas {
       height,
     );
     target.y += top;
+    // A view already all but there stays put: a glide of a few pixels reads as drifting.
+    const near =
+      Math.abs(target.scale / this.camera.scale - 1) < 0.03 &&
+      Math.abs(target.x - this.camera.x) < 14 &&
+      Math.abs(target.y - this.camera.y) < 14;
+    if (glide && near) return;
     cancelAnimationFrame(this.gliding);
     if (!glide || !this.options.motion) {
       this.camera = target;
@@ -1074,7 +1180,7 @@ export class Canvas {
       },
       start = performance.now();
     const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / 1100),
+      const t = Math.min(1, (now - start) / duration),
         e = 1 - (1 - t) ** 4,
         scale = from.scale * (target.scale / from.scale) ** e;
       this.camera = {
@@ -1649,6 +1755,14 @@ export class Canvas {
   }
   private move(e: PointerEvent) {
     const g = this.gesture;
+    if (!g && !this.editing) {
+      const host = (e.target as Element | null)?.closest?.<HTMLElement>("[data-module-id]");
+      const id = host && this.renderer.instances.get(host.dataset.moduleId!)?.target ? host.dataset.moduleId! : null;
+      if (id !== this.hot) {
+        this.hot = id;
+        for (const [m, badge] of this.badges) badge.toggleAttribute("data-hot", m === id);
+      }
+    }
     if (!g) {
       if (this.editing && this.tool === "select" && !this.spacing) {
         const { module: m, link } = this.pick(e.clientX, e.clientY);
@@ -1823,6 +1937,7 @@ export class Canvas {
   }
   dispose() {
     cancelAnimationFrame(this.gliding);
+    clearTimeout(this.settling);
     this.abort.abort();
     this.observer.disconnect();
     this.pending?.dispose();

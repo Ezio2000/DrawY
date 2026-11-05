@@ -10,6 +10,7 @@ import {
   type Work,
   type WorkEdit,
   type Cause,
+  historyOf,
   stepBefore,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
@@ -249,6 +250,13 @@ export function restore(store: UserStore, workId: string, revision: number) {
     current.revision,
     { kind: "restore", revision },
   );
+}
+/** Saves the hand edits made since the latest version as a version of their own. */
+export function saveEdits(store: UserStore, workId: string) {
+  const current = store.work(workId);
+  if (!historyOf(store.revisions(workId)).unsaved.length)
+    throw new DomainError("没有要保存的修改");
+  return store.commit(current, current.revision, { kind: "edit" });
 }
 /** Takes back the latest step: the drawing returns to how it was before it. */
 export function undo(store: UserStore, workId: string) {

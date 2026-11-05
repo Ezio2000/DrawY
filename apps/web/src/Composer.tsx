@@ -62,8 +62,9 @@ export function Composer({
   choose,
   quota,
   spent,
+  collapsed,
 }: {
-  place: "home" | "dock" | "panel";
+  place: "home" | "dock";
   value: string;
   set: (value: string) => void;
   attachments: Attachment[];
@@ -93,6 +94,9 @@ export function Composer({
   quota?: number | null;
   /** Whether no request is left, so a new one cannot be sent (answers still can). */
   spent?: boolean;
+  /** While the author draws there is nothing to write: the box folds down to what is
+   * happening and the button that stops it. */
+  collapsed?: boolean;
 }) {
   const t = useT();
   const picker = useRef<HTMLInputElement>(null);
@@ -100,6 +104,27 @@ export function Composer({
   useEffect(() => {
     if (place === "home") field.current?.focus();
   }, [place]);
+  if (collapsed)
+    return (
+      <div className={cx("composer-wrap")} data-place={place} data-collapsed>
+        <div className={cx("composer")} data-place={place} data-collapsed>
+          {status || (
+            <div className={cx("now")} data-tone="live">
+              <i className={cx("now-dot")} />
+              <span className={cx("now-line")}>{t.composer.working}</span>
+            </div>
+          )}
+          <button
+            className={cx("composer-stop")}
+            aria-label={t.composer.stop}
+            data-tip={t.composer.stop}
+            onClick={stop}
+          >
+            <Square size={12} fill="currentColor" />
+          </button>
+        </div>
+      </div>
+    );
   return (
     <div className={cx("composer-wrap")} data-place={place}>
       <div

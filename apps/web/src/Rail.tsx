@@ -21,7 +21,9 @@ import type { Words } from "./i18n.tsx";
  * the version it is at. */
 function progressOf(w: Summary, t: Words) {
   const p = w.progress;
-  const where = p.blank ? t.rail.blank : t.rail.version(p.version);
+  const where =
+    (p.blank ? t.rail.blank : t.rail.version(p.version)) +
+    (p.unsaved ? ` · ${t.rail.unsaved}` : "");
   switch (p.run) {
     case "running":
     case "viewing":

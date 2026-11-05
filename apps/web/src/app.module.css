@@ -774,7 +774,6 @@ h2:has(> .title) {
   flex: 1;
 }
 
-.composer[data-place="panel"]:has(> .now, > .question),
 .composer[data-place="dock"]:has(> .now, > .question) {
   padding-top: 9px;
   border-radius: 20px;
@@ -1326,6 +1325,75 @@ h2:has(> .title) {
 
 .canvas [data-explorable]:hover {
   filter: drop-shadow(0 6px 16px rgba(193, 95, 60, 0.22));
+}
+
+/* A module that opens a scene or a page carries a small mark at its corner, laid over the
+   canvas (never drawn into the picture the author looks at). Quiet until the module is
+   under the pointer, when it says where it leads. */
+.canvas [data-target] {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 20px;
+  min-width: 20px;
+  max-width: 240px;
+  padding: 0 4.5px;
+  border-radius: 999px;
+  translate: -70% -45%;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 0 0 1px rgba(217, 119, 87, 0.45),
+    0 2px 6px rgba(60, 45, 20, 0.12);
+  color: var(--ai-deep, #c15f3c);
+  pointer-events: auto;
+  cursor: pointer;
+  opacity: 0.82;
+  white-space: nowrap;
+  transition:
+    opacity 0.2s var(--ease),
+    gap 0.25s var(--ease-out),
+    padding 0.25s var(--ease-out),
+    background-color 0.2s var(--ease),
+    color 0.2s var(--ease);
+  animation: target-in 0.5s var(--ease-out) both;
+}
+
+.canvas [data-target] svg {
+  flex: none;
+}
+
+.canvas [data-target] span {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 500 11.5px/1 var(--font);
+  transition: max-width 0.3s var(--ease-out);
+}
+
+.canvas [data-target][data-hot],
+.canvas [data-target]:hover {
+  gap: 4px;
+  padding: 0 9px 0 7px;
+  opacity: 1;
+  translate: -88% -45%;
+}
+
+.canvas [data-target][data-hot] span,
+.canvas [data-target]:hover span {
+  max-width: 200px;
+}
+
+.canvas [data-target]:hover {
+  background: var(--ai, #d97757);
+  color: #fff;
+}
+
+@keyframes target-in {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
 }
 
 /* A drawing that fails while the author is still at work is its draft, not the viewer's. */
@@ -2298,33 +2366,6 @@ body:has(.resizer[data-dragging]) {
   padding: 0 22px 32px;
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-
-/* The composer closes the studio: the conversation scrolls above it, it stays put. */
-.side-composer {
-  flex: none;
-  padding: 10px 14px 14px;
-  background: linear-gradient(to bottom, transparent, var(--surface) 10px);
-}
-
-.composer[data-place="panel"] {
-  padding: 7px 7px 7px 16px;
-  border-radius: 18px;
-  background: var(--bg);
-}
-
-/* Beside the conversation the words get the full width, the tools a row under them. */
-.composer[data-place="panel"] .composer-field {
-  flex-wrap: wrap;
-}
-
-.composer[data-place="panel"] textarea {
-  flex-basis: 100%;
-  padding-top: 6px;
-}
-
-.composer[data-place="panel"] .composer-tools {
-  flex: 1;
 }
 
 .side-panel .inspector {
@@ -7046,74 +7087,6 @@ body:has(.resizer[data-dragging]) {
   transform: rotate(90deg);
 }
 
-/* Spending as a bill: a line a service, what it used and its cost, and the total. */
-.bill {
-  width: 100%;
-  margin: 8px 0 2px;
-  border-collapse: collapse;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-2);
-}
-
-.run > .bill {
-  margin: 4px 0 10px;
-  border-radius: 10px;
-  background: var(--fill);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-
-.bill caption {
-  padding: 0 0 4px;
-  text-align: left;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--text-3);
-}
-
-.bill th,
-.bill td {
-  padding: 6px 10px;
-  text-align: left;
-  vertical-align: top;
-  font-weight: 400;
-}
-
-.bill tbody tr + tr > * {
-  border-top: 1px solid var(--separator);
-}
-
-.bill th {
-  width: 34%;
-}
-
-.bill th b {
-  display: block;
-  font-weight: 500;
-  color: var(--text);
-}
-
-.bill th small {
-  display: block;
-  overflow-wrap: anywhere;
-  font-size: 11.5px;
-  color: var(--text-3);
-}
-
-.bill td:last-child {
-  width: 1%;
-  white-space: nowrap;
-  text-align: right;
-  font-family: var(--font-mono);
-  color: var(--text);
-}
-
-.bill tfoot > tr > * {
-  border-top: 1px solid var(--line-strong);
-  font-weight: 500;
-  color: var(--text);
-}
-
 /* The versions panel: one row for each request, run of hand edits or restore, newest
    first; each can be looked at on the canvas or restored, the button always in view. */
 .drafts-hint {
@@ -7316,4 +7289,473 @@ body:has(.resizer[data-dragging]) {
   color: var(--ai-deep);
   background: color-mix(in srgb, var(--ai-deep) 10%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ai-deep) 40%, transparent);
+}
+
+/* ---------- While the author draws the composer folds down to a pill ---------- */
+
+.composer-wrap[data-collapsed] {
+  width: auto;
+  max-width: 100%;
+  align-items: center;
+}
+
+.composer[data-collapsed],
+.composer[data-place="dock"][data-collapsed]:has(> .now) {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  max-width: min(560px, 100%);
+  padding: 4px 4px 4px 0;
+  border-radius: 999px;
+  animation: fold-in 0.36s var(--ease-out) both;
+}
+
+.composer[data-collapsed] > .now {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 4px 0 16px;
+  border: 0;
+}
+
+.composer[data-collapsed] .board {
+  display: none;
+}
+
+.composer[data-collapsed] .composer-stop {
+  width: 32px;
+  height: 32px;
+}
+
+@keyframes fold-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+/* ---------- Hand edits that are not a version yet ---------- */
+
+.unsaved-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  width: 100%;
+  padding: 8px 8px 8px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: saturate(1.4) blur(18px);
+  -webkit-backdrop-filter: saturate(1.4) blur(18px);
+  box-shadow:
+    0 0 0 1px rgba(217, 119, 87, 0.28),
+    0 10px 28px rgba(60, 45, 20, 0.08);
+  font-size: 13px;
+  color: var(--text-2);
+  animation: rise 0.35s var(--ease-out) both;
+}
+
+.unsaved-bar[data-asking] {
+  box-shadow:
+    0 0 0 1.5px var(--ai),
+    0 12px 32px rgba(60, 45, 20, 0.12);
+}
+
+.unsaved-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  flex: 1 1 220px;
+  min-width: 0;
+  line-height: 1.45;
+}
+
+.unsaved-text b {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.unsaved-text small {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.unsaved-dot {
+  flex: none;
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ai);
+}
+
+.unsaved-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.unsaved-actions .primary,
+.drafts-unsaved .primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.quiet-button {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.quiet-button:hover:not(:disabled) {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.quiet-button:disabled {
+  opacity: 0.4;
+}
+
+.toast-error .toast-action {
+  width: auto;
+  height: 24px;
+  margin: -2px 0 -2px 4px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: inherit;
+}
+
+.toast-error .toast-action:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.drafts-version[data-kind="unsaved"] {
+  flex-wrap: wrap;
+  box-shadow: inset 0 0 0 1px rgba(217, 119, 87, 0.35);
+  background: rgba(217, 119, 87, 0.05);
+}
+
+.drafts-version[data-kind="unsaved"] .drafts-look > i {
+  color: var(--ai-deep);
+}
+
+.drafts-unsaved {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* ---------- Tiers: what is in each, and what would keep it from working ---------- */
+
+.badge[data-tone="warn"] {
+  background: #fdf1ee;
+  color: var(--red-text);
+}
+
+.tier-problems {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 14px;
+  padding: 10px 14px 10px 30px;
+  border-radius: 10px;
+  background: #fdf1ee;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--red-text);
+}
+
+.tier-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--fill);
+}
+
+.tier-preview > small {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.tier-preview > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--line);
+  font-size: 13px;
+}
+
+.tier-preview em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.tier-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.entry-foot .tier-actions:last-child {
+  margin-left: auto;
+}
+
+.tier-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* An option the model does not offer people yet reads as such until it is picked. */
+.setting [aria-pressed="false"][data-off] {
+  color: var(--text-3);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+/* ---------- Usage: tiles at a glance, the cost split, a line a service ---------- */
+
+.run-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--fill);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  transition: background-color 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.run-stats:hover,
+.run-stats[aria-expanded="true"] {
+  background: var(--fill-2);
+  color: var(--text);
+}
+
+.usage-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.usage-chips em {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--bg);
+  font-style: normal;
+  font-size: 11.5px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+
+.work-usage > button {
+  align-items: center;
+}
+
+.spend {
+  display: grid;
+  gap: 12px;
+  margin: 8px 0 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 12.5px;
+  color: var(--text-2);
+  animation: rise 0.3s var(--ease-out) both;
+}
+
+.work-usage .spend {
+  margin: 10px 0 2px;
+}
+
+.spend-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+.spend-tiles > div {
+  flex: 1 1 86px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--fill);
+}
+
+.spend-tiles dt {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.spend-tiles dd {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0 0;
+}
+
+.spend-tiles b {
+  font-size: 17px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.spend-tiles [data-key="cost"] b {
+  color: var(--ai-deep);
+}
+
+.spend-tiles small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.spend-split {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.spend-split i {
+  min-width: 3px;
+  flex-basis: 0;
+}
+
+.spend [data-key="author"] {
+  --swatch: var(--ai, #d97757);
+}
+
+.spend [data-key="search"] {
+  --swatch: #6a9bcc;
+}
+
+.spend [data-key="image"] {
+  --swatch: #788c5d;
+}
+
+.spend [data-key="failed"] {
+  --swatch: #b0aea5;
+}
+
+.spend-split i {
+  background: var(--swatch);
+}
+
+.spend-rows {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.spend-rows li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "swatch name cost"
+    ". parts parts";
+  align-items: center;
+  gap: 2px 8px;
+  padding: 8px 2px;
+}
+
+.spend-rows li + li {
+  border-top: 1px solid var(--separator);
+}
+
+.spend-swatch {
+  grid-area: swatch;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--swatch);
+}
+
+.spend-name {
+  grid-area: name;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.spend-name b {
+  flex: none;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.spend-name small {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.spend-parts {
+  grid-area: parts;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.spend-parts em {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--fill);
+  font-style: normal;
+  font-size: 11.5px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.spend-cost {
+  grid-area: cost;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.spend-cost small {
+  font-family: var(--font);
+  font-size: 11px;
+  color: var(--text-3);
 }

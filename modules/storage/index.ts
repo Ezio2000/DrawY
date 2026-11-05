@@ -6,7 +6,7 @@ import {
   ADMIN,
   MEMBER,
   DEFAULT_QUOTA,
-  versionsOf,
+  historyOf,
   type WorkProgress,
   defaultCatalog,
   emptySettings,
@@ -424,7 +424,7 @@ export class UserStore {
       .get(this.userId, workId) as
       | { status: Run["status"]; prompt: string | null; error: string | null }
       | undefined;
-    const versions = versionsOf(
+    const { versions, unsaved } = historyOf(
       db
         .prepare(
           "SELECT revision,cause FROM revisions WHERE user_id=? AND work_id=?",
@@ -442,6 +442,7 @@ export class UserStore {
       prompt: (run?.prompt ?? "").slice(0, 120),
       version: latest?.number ?? 0,
       blank: !latest || latest.cause.kind === "create",
+      ...(unsaved.length ? { unsaved: unsaved.length } : {}),
     };
   }
   revisions(workId: string): RevisionSummary[] {

@@ -12,6 +12,7 @@ import {
   ImagePlus,
   PencilLine,
   History,
+  Check,
 } from "lucide-react";
 import { Lantern } from "@drawy/ui/brand";
 import { ModelSketch, KinshipSketch } from "@drawy/ui/sketches";
@@ -33,9 +34,9 @@ import { Composer, chosen, type Attachment } from "./Composer.tsx";
 import { Library } from "./Library.tsx";
 import { Settings } from "./Settings.tsx";
 import {
+  historyOf,
   stepBefore,
   versionOf,
-  versionsOf,
   type Work,
   type WorkEdit,
   type Run,
@@ -192,7 +193,11 @@ export function App() {
     // Options picked on the author's questions, sent with whatever the user writes.
     [choices, setChoices] = useState(""),
     // Why the composer holds a change written up for the author, until it is sent.
-    [handed, setHanded] = useState("");
+    [handed, setHanded] = useState(""),
+    // A message held back while the person decides what becomes of their unsaved edits.
+    [holding, setHolding] = useState<() => Promise<void>>(),
+    // Going back to a version, to take back while the work is still where it left it.
+    [wentBack, setWentBack] = useState<{ at: number; from: number; text: string }>();
   const page = pageOf(path);
   const journal = panel === "journal";
   const drafting = panel === "drafts";
@@ -280,10 +285,15 @@ export function App() {
     const t = setTimeout(() => setNotice(""), 2400);
     return () => clearTimeout(t);
   }, [notice]);
-  // What people count as versions: one for each request, run of hand edits or restore.
-  const versions = useMemo(() => versionsOf(history), [history]);
+  // What people count as versions: one for each request or set of saved hand edits; the
+  // edits made since the latest are not one until the person saves them.
+  const { versions, unsaved } = useMemo(() => historyOf(history), [history]);
+  // The history follows the work a moment later; until it does, it says nothing.
+  const synced = !!work && history.some((r) => r.revision === work.revision);
+  const unsavedCount = synced ? unsaved.length : 0;
   const undoable =
-    !!work && stepBefore(history, work.revision) !== undefined;
+    !!work &&
+    (wentBack?.at === work.revision || stepBefore(history, work.revision) !== undefined);
   const canRedo = !!work && redoable?.at === work.revision;
   const ids = selected.map((s) => s.moduleId);
   // Editing waits while the author works or an earlier revision is shown.
@@ -503,7 +513,24 @@ export function App() {
     };
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
-  }, [work, undoable, canRedo, working, preview]);
+  }, [work, undoable, canRedo, working, preview, wentBack]);
+  // Cmd/Ctrl+S saves the hand edits as a version.
+  useEffect(() => {
+    if (!unsavedCount) return;
+    const key = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "s") return;
+      e.preventDefault();
+      if (!editless) void attempt(saveEdits);
+    };
+    addEventListener("keydown", key);
+    return () => removeEventListener("keydown", key);
+  }, [unsavedCount, editless]);
+  // Going back can be taken back for a while, from the note that says it happened.
+  useEffect(() => {
+    if (!wentBack) return;
+    const t = setTimeout(() => setWentBack(undefined), 10000);
+    return () => clearTimeout(t);
+  }, [wentBack]);
   useEffect(() => {
     if (!preview) return;
     const key = (e: KeyboardEvent) => e.key === "Escape" && setPreview(undefined);
@@ -535,9 +562,15 @@ export function App() {
       setUploading((n) => n - left);
     }
   }
-  async function send(text = prompt, target = sceneId, picked = choices) {
+  async function send(text = prompt, target = sceneId, picked = choices, decided = false) {
     if ((!text.trim() && !attachments.length) || loadingRuns || busy || working || uploading) return;
     if (spent && run?.status !== "waiting") throw Error(t.composer.quotaOut);
+    // Hand edits not saved yet wait for the person to say what becomes of them, since the
+    // author would otherwise take them into its own version.
+    if (!decided && work && (unsavedCount || queued.current)) {
+      setHolding(() => () => send(text, target, picked, true));
+      return;
+    }
     if (!connected) {
       if (manages) go("/settings");
       return;
@@ -598,20 +631,59 @@ export function App() {
     if (!work.scenes[id].modules.length && !working)
       await send(t.work.expand(title || work.scenes[id].title), id);
   }
+  /** Goes back to a version: the work is as it was then, and the versions after it leave
+   * the list. It shows at once, and can be taken back from the note that says so. */
   async function restore(revision: number) {
+    await edits.current;
+    const from = work!.revision;
     const number = versionOf(versions, revision)?.number;
-    W(
-      await api<Work>("/works/" + work!.id + "/restore", "POST", {
-        revision,
-      }),
+    const w = await mine(() =>
+      api<Work>("/works/" + work!.id + "/restore", "POST", { revision }),
     );
+    W(w);
     setPreview(undefined);
-    if (number !== undefined) setNotice(t.history.restored(number));
+    setRedoable(undefined);
+    setWentBack(
+      number !== undefined ? { at: w.revision, from, text: t.history.wentBack(number) } : undefined,
+    );
     if (run) setDismissed(run.id);
+  }
+  /** Takes back going back to a version: the versions it left come back. */
+  async function undoBack() {
+    const back = wentBack!;
+    setWentBack(undefined);
+    W(
+      await mine(() =>
+        api<Work>("/works/" + work!.id + "/restore", "POST", { revision: back.from }),
+      ),
+    );
+  }
+  /** Saves the hand edits made since the latest version as a version of their own. */
+  async function saveEdits() {
+    await edits.current;
+    const number = (versions.at(-1)?.number ?? 0) + 1;
+    W(await mine(() => api<Work>("/works/" + work!.id + "/save", "POST")));
+    setRedoable(undefined);
+    setWentBack(undefined);
+    setNotice(t.unsaved.saved(number));
+  }
+  /** Throws the hand edits made since the latest version away. */
+  async function discardEdits() {
+    await edits.current;
+    const latest = versions.at(-1);
+    if (!latest) return;
+    const from = work!.revision;
+    const w = await mine(() =>
+      api<Work>("/works/" + work!.id + "/restore", "POST", { revision: latest.revision }),
+    );
+    W(w);
+    setRedoable(undefined);
+    setWentBack({ at: w.revision, from, text: t.unsaved.discarded });
   }
   /** Takes back the latest request, or hand edit, as a whole; it can be brought back
    * until the work changes otherwise. Both show at once, like the edits they undo. */
   async function undo() {
+    if (wentBack?.at === work!.revision) return undoBack();
     const from = work!.revision;
     const w = await mine(() => api<Work>("/works/" + work!.id + "/undo", "POST"));
     setRedoable((old) => ({
@@ -738,7 +810,11 @@ export function App() {
     );
   }
   async function look(revision: number) {
+    // Looking at a version, and coming back from it, swaps the picture in place rather
+    // than drawing it again.
+    own.current.add(work!.revision);
     if (revision === work!.revision) return setPreview(undefined);
+    own.current.add(revision);
     setPreview({
       revision,
       work: await api<Work>(`/works/${work!.id}/revisions/${revision}`),
@@ -842,10 +918,9 @@ export function App() {
       <span className={cx("now-line")}>{handed}</span>
     </div>
   );
-  // The composer sits at the bottom of the page, its model picks under it; while a run is
-  // under way it moves into the open studio, picks left behind.
-  const docked = !(journal && engaged);
-  const composer = (place: "home" | "dock" | "panel") => (
+  // The composer sits at the bottom of the page, its model picks under it; while the author
+  // draws it folds down to what is happening and the button that stops it.
+  const composer = (place: "home" | "dock") => (
     <Composer
       place={place}
       value={prompt}
@@ -882,7 +957,8 @@ export function App() {
       stop={() => void attempt(stop)}
       attach={(files) => void attempt(() => upload(files))}
       pick={() => setPicking(true)}
-      models={place === "panel" || engaged ? undefined : models}
+      models={engaged ? undefined : models}
+      collapsed={place === "dock" && working}
       quota={user?.quota}
       spent={spent && run?.status !== "waiting"}
       choose={(change) => {
@@ -1207,12 +1283,95 @@ export function App() {
                       </button>
                     </div>
                   )}
-                  {notice && (
+                  {notice && !wentBack && (
                     <div className={cx("toast-error")} data-tone="ok" role="status">
                       <span>{notice}</span>
                     </div>
                   )}
-                  {docked && composer("dock")}
+                  {wentBack?.at === work.revision && !preview && !holding && (
+                    <div className={cx("toast-error")} data-tone="ok" role="status">
+                      <span>{wentBack.text}</span>
+                      <button
+                        className={cx("toast-action")}
+                        onClick={() => void attempt(undoBack)}
+                      >
+                        {t.history.undoBack}
+                      </button>
+                    </div>
+                  )}
+                  {holding ? (
+                    <div className={cx("unsaved-bar")} data-asking role="alertdialog">
+                      <span className={cx("unsaved-text")}>
+                        <i className={cx("unsaved-dot")} />
+                        {t.unsaved.ask(Math.max(1, unsavedCount))}
+                      </span>
+                      <span className={cx("unsaved-actions")}>
+                        <button
+                          className={cx("quiet-button")}
+                          onClick={() => setHolding(undefined)}
+                        >
+                          {t.unsaved.cancel}
+                        </button>
+                        <button
+                          className={cx("secondary small")}
+                          onClick={() => {
+                            const go = holding;
+                            setHolding(undefined);
+                            void attempt(async () => {
+                              await discardEdits();
+                              await go();
+                            });
+                          }}
+                        >
+                          {t.unsaved.discardAndSend}
+                        </button>
+                        <button
+                          className={cx("primary small")}
+                          onClick={() => {
+                            const go = holding;
+                            setHolding(undefined);
+                            void attempt(async () => {
+                              await saveEdits();
+                              await go();
+                            });
+                          }}
+                        >
+                          {t.unsaved.saveAndSend}
+                        </button>
+                      </span>
+                    </div>
+                  ) : (
+                    !!unsavedCount &&
+                    !preview &&
+                    !engaged && (
+                      <div className={cx("unsaved-bar")} role="status">
+                        <span className={cx("unsaved-text")}>
+                          <i className={cx("unsaved-dot")} />
+                          <b>{t.unsaved.title(unsavedCount)}</b>
+                          <small>{t.unsaved.hint}</small>
+                        </span>
+                        <span className={cx("unsaved-actions")}>
+                          <button
+                            className={cx("quiet-button")}
+                            disabled={editless}
+                            onClick={() => void attempt(discardEdits)}
+                          >
+                            {t.unsaved.discardAll}
+                          </button>
+                          <button
+                            className={cx("primary small")}
+                            disabled={editless}
+                            data-tip={t.unsaved.shortcut}
+                            onClick={() => void attempt(saveEdits)}
+                          >
+                            <Check size={13} />
+                            {t.unsaved.save((versions.at(-1)?.number ?? 0) + 1)}
+                          </button>
+                        </span>
+                      </div>
+                    )
+                  )}
+                  {composer("dock")}
                 </div>
                 {detailId && work.details[detailId] && (
                   <DetailView
@@ -1322,11 +1481,14 @@ export function App() {
                     ) : drafting ? (
                       <Drafts
                         versions={versions}
+                        unsaved={unsavedCount}
                         current={work.revision}
                         previewing={preview?.revision}
-                        locked={engaged}
+                        locked={engaged || loadingRuns}
                         look={(r) => void attempt(() => look(r))}
                         restore={(r) => void attempt(() => restore(r))}
+                        save={() => void attempt(saveEdits)}
+                        discard={() => void attempt(discardEdits)}
                       />
                     ) : (
                       <Studio
@@ -1344,9 +1506,6 @@ export function App() {
                       />
                     )}
                   </section>
-                  {journal && engaged && (
-                    <footer className={cx("side-composer")}>{composer("panel")}</footer>
-                  )}
                 </div>
               </aside>
             </div>

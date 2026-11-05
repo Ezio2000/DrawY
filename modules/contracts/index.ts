@@ -193,11 +193,14 @@ export interface Work {
   named?: boolean;
 }
 /** What made a revision: the work's creation, one request to the author (every revision
- * it saves while answering), a hand edit on the canvas, or bringing back an earlier one. */
+ * it saves while answering), a hand edit on the canvas, or bringing back an earlier one.
+ * A hand edit saved with `draft` is not a version yet: the person keeps working on it and
+ * saves it as one (a plain `edit` revision) or throws it away. Edits saved before drafts
+ * existed carry no flag and count as versions, consecutive ones together. */
 export type Cause =
   | { kind: "create" }
   | { kind: "run"; runId: string; prompt: string }
-  | { kind: "edit" }
+  | { kind: "edit"; draft?: boolean }
   | { kind: "restore"; revision: number };
 export interface RevisionSummary {
   revision: number;
@@ -214,68 +217,139 @@ export interface WorkProgress {
   version: number;
   /** Whether nothing has been drawn on it yet. */
   blank: boolean;
+  /** Hand edits made on it that are not saved as a version yet. */
+  unsaved?: number;
 }
 /** What people count as one version of a work: everything one request to the author
- * saved (only how it ended matters), a run of hand edits, a run of restores, or the blank
- * start. Numbered from the oldest, the blank start being 0, so the numbers follow the
- * requests made rather than every draft the author saved on the way. */
+ * saved (only how it ended matters), hand edits saved as one, or the blank start.
+ * Numbered from the oldest, the blank start being 0, so the numbers follow the requests
+ * made rather than every draft the author saved on the way. Going back to a version makes
+ * it the latest again: the versions after it leave the list, as if they had not been made,
+ * and the next request or saved edit takes the number after it. */
 export interface Version {
   number: number;
   /** The revision it stands at: the last one it saved. */
   revision: number;
-  /** Every revision it saved, oldest first. */
+  /** Every revision it saved, oldest first, and those that went back to it. */
   revisions: number[];
   /** The cause of its last revision. */
   cause: Cause;
   updatedAt: number;
 }
+/** One hand edit not saved as a version yet, and the revisions that came back to it. */
+export interface UnsavedEdit {
+  revision: number;
+  revisions: number[];
+}
 const sameStep = (a: Cause, b: Cause) =>
   a.kind === b.kind &&
   a.kind !== "create" &&
+  a.kind !== "restore" &&
+  (a.kind !== "edit" || (!a.draft && !(b as Extract<Cause, { kind: "edit" }>).draft)) &&
   (a.kind !== "run" || a.runId === (b as Extract<Cause, { kind: "run" }>).runId);
-/** The versions of a work, oldest first, from its revisions in any order. */
-export function versionsOf(history: Pick<RevisionSummary, "revision" | "cause" | "updatedAt">[]): Version[] {
-  const versions: Version[] = [];
-  for (const r of [...history].sort((a, b) => a.revision - b.revision)) {
-    const last = versions.at(-1);
-    if (last && sameStep(last.cause, r.cause)) {
-      last.revisions.push(r.revision);
-      last.revision = r.revision;
-      last.cause = r.cause;
-      last.updatedAt = r.updatedAt;
-    } else
-      versions.push({
-        number: versions.length,
-        revision: r.revision,
-        revisions: [r.revision],
-        cause: r.cause,
-        updatedAt: r.updatedAt,
-      });
+/** The versions of a work as they stand now, oldest first, and the hand edits made on the
+ * latest that are not saved as a version yet, from its revisions in any order. */
+export function historyOf(history: Pick<RevisionSummary, "revision" | "cause" | "updatedAt">[]): {
+  versions: Version[];
+  unsaved: UnsavedEdit[];
+} {
+  type Entry = Version & {
+    /** The versions under it when it was made, to bring back with it. */
+    chain: Entry[];
+    /** The revisions standing as it ended. */
+    ends: Set<number>;
+    /** Gone back to: whatever comes next is a version of its own. */
+    sealed?: boolean;
+  };
+  // Where each revision is: in a version, or among the unsaved edits laid on one.
+  const where = new Map<number, { version?: Entry; edits?: UnsavedEdit[]; at?: number }>();
+  const sorted = [...history].sort((a, b) => a.revision - b.revision);
+  let stack: Entry[] = [],
+    unsaved: UnsavedEdit[] = [];
+  const push = (r: (typeof sorted)[number], cause: Cause, before: number[]) => {
+    const entry: Entry = {
+      number: stack.length,
+      revision: r.revision,
+      revisions: [...before, r.revision],
+      cause,
+      updatedAt: r.updatedAt,
+      chain: [...stack],
+      ends: new Set([r.revision]),
+    };
+    for (const n of entry.revisions) where.set(n, { version: entry });
+    stack = [...stack, entry];
+    unsaved = [];
+  };
+  for (const r of sorted) {
+    const top = stack.at(-1),
+      cause = r.cause;
+    if (cause.kind === "edit" && cause.draft && top) {
+      unsaved = [...unsaved, { revision: r.revision, revisions: [r.revision] }];
+      where.set(r.revision, { version: top, edits: unsaved, at: unsaved.length - 1 });
+      continue;
+    }
+    if (cause.kind === "restore") {
+      const to = where.get(cause.revision);
+      if (to?.version && to.edits) {
+        // Back to an edit not saved yet, with the version it was made on.
+        stack = [...to.version.chain, to.version];
+        unsaved = to.edits.slice(0, to.at! + 1);
+        unsaved.at(-1)!.revisions.push(r.revision);
+        where.set(r.revision, { version: to.version, edits: unsaved, at: unsaved.length - 1 });
+        continue;
+      }
+      if (to?.version && to.version.ends.has(cause.revision)) {
+        // Back to a version as it ended: the ones after it go.
+        const v = to.version;
+        stack = [...v.chain, v];
+        unsaved = [];
+        v.revisions.push(r.revision);
+        v.ends.add(r.revision);
+        v.sealed = true;
+        where.set(r.revision, { version: v });
+        continue;
+      }
+      // A draft from the middle of a request comes back as a version of its own.
+      push(r, cause, []);
+      continue;
+    }
+    if (top && !top.sealed && !unsaved.length && sameStep(top.cause, cause)) {
+      top.revisions.push(r.revision);
+      top.revision = r.revision;
+      top.cause = cause;
+      top.updatedAt = r.updatedAt;
+      top.ends = new Set([r.revision]);
+      where.set(r.revision, { version: top });
+    } else push(r, cause, unsaved.flatMap((e) => e.revisions));
   }
   // Without the blank start (it can only be missing from a partial history) numbering
   // still begins at 1.
-  if (versions[0] && versions[0].cause.kind !== "create")
-    for (const v of versions) v.number++;
-  return versions;
+  const offset = sorted[0] && sorted[0].cause.kind !== "create" ? 1 : 0;
+  return {
+    versions: stack.map((v) => ({
+      number: v.number + offset,
+      revision: v.revision,
+      revisions: [...v.revisions],
+      cause: v.cause,
+      updatedAt: v.updatedAt,
+    })),
+    unsaved: unsaved.map((e) => ({ revision: e.revision, revisions: [...e.revisions] })),
+  };
 }
+/** The versions of a work as they stand now, oldest first, from its revisions in any order. */
+export const versionsOf = (
+  history: Pick<RevisionSummary, "revision" | "cause" | "updatedAt">[],
+): Version[] => historyOf(history).versions;
 /** The version a revision belongs to. */
 export const versionOf = (versions: Version[], revision: number) =>
   versions.find((v) => v.revisions.includes(revision));
-/** The revision undoing goes back to from `revision`: the version before the one it is
- * in. Follow each restored revision's own target before finding its version: redo may
- * point to an earlier restore inside the same version, whose last target is different. */
+/** The revision undoing goes back to from `revision`, the latest: the hand edit before it
+ * while edits are not saved yet, else the version before the one it is in. */
 export function stepBefore(history: RevisionSummary[], revision: number): number | undefined {
-  const versions = versionsOf(history);
-  const causes = new Map(history.map((r) => [r.revision, r.cause]));
-  const seen = new Set<number>();
-  let at = revision;
-  let cause = causes.get(at);
-  while (cause?.kind === "restore" && !seen.has(at)) {
-    seen.add(at);
-    at = cause.revision;
-    cause = causes.get(at);
-  }
-  const v = versionOf(versions, at);
+  const { versions, unsaved } = historyOf(history);
+  const i = unsaved.findIndex((e) => e.revisions.includes(revision));
+  if (i >= 0) return i > 0 ? unsaved[i - 1].revision : versions.at(-1)?.revision;
+  const v = versionOf(versions, revision);
   if (!v) return undefined;
   return versions[versions.indexOf(v) - 1]?.revision;
 }
