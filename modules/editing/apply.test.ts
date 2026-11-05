@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fixture } from "../runtime/fixture.ts";
-import { EditRejected, labelOf, type Problem, type Work, type WorkEdit } from "../contracts/index.ts";
+import { EditRejected, labelOf, shownName, type Problem, type Work, type WorkEdit } from "../contracts/index.ts";
 import { linkEnds } from "../contracts/geometry.ts";
 import { WRITE_EXAMPLE, EDIT_EXAMPLE } from "../agent/prompts.ts";
 import { writeSchema } from "../agent/tools.ts";
@@ -348,5 +348,18 @@ describe("two edits as one", () => {
     });
     const edit: WorkEdit = { title: "x" };
     expect(composed({}, edit)).toEqual(edit);
+  });
+});
+
+describe("what a module is called", () => {
+  it("goes by its title before its other words, and by its drawing rather than its id", () => {
+    const w = work();
+    const [left, right] = w.scenes.root.modules;
+    const titled = { ...left, data: { title: "烘焙", text: "200°C 左右 12 分钟" } };
+    expect(labelOf(titled)).toBe("烘焙");
+    // The author knows a module without words by its id; a person sees its drawing's name.
+    expect(labelOf(right)).toBe("right");
+    expect(shownName(w, right)).toBe("斜边层级");
+    expect(shownName(w, { ...right, label: "右边" })).toBe("右边");
   });
 });

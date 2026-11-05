@@ -1,7 +1,7 @@
 import { detailElement } from "../../../modules/runtime/detail.ts";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { ZoomOut, ZoomIn, Scan, Lightbulb } from "lucide-react";
+import { ZoomOut, ZoomIn, Scan } from "lucide-react";
 import { reducedMotion, Spinner, useLocale } from "@drawy/ui";
 import {
   Canvas,
@@ -194,8 +194,9 @@ export function SceneView({
   const empty = !work.scenes[sceneId].modules.length;
   const [styles, setStyles] = useState<StyleMaterial[]>([]);
   useEffect(() => void styleList().then(setStyles, () => {}), []);
-  // What the author has understood, noted on the paper before it starts drawing: the
-  // subject as it is written, then the settled brief with the idea the picture is built on.
+  // What is being drawn, noted on the paper before the first stroke: the subject, who it is
+  // for and its style. The author's own reasoning (intent, concept) stays in the studio's
+  // folded process, not on the page.
   const briefing = steps.findLast(
     (s): s is Extract<ToolStep, { name: "set_brief" }> =>
       s.kind === "tool" && s.name === "set_brief",
@@ -204,16 +205,13 @@ export function SceneView({
   const note = brief
     ? {
         subject: brief.subject,
-        intent: brief.intent,
-        concept: brief.concept,
         tags: [
           brief.audience,
           styles.find((s) => s.id === brief.style)?.name[locale],
-          t.registers[brief.register],
-        ].filter(Boolean),
+        ].filter((x): x is string => !!x),
       }
     : briefing?.subject
-      ? { subject: briefing.subject, intent: "", concept: "", tags: [] }
+      ? { subject: briefing.subject, tags: [] as string[] }
       : undefined;
   // Before the first stroke, the references the author gathers are laid out on the paper.
   const references = steps
@@ -272,16 +270,7 @@ export function SceneView({
         </div>
       )}
       {empty && !run && shown && (
-        <p className={cx("blank")}>
-          {editing ? (
-            t.edit.blank
-          ) : (
-            <>
-              {t.work.blank}
-              <small>{t.work.blankHint}</small>
-            </>
-          )}
-        </p>
+        <p className={cx("blank")}>{t.work.blank}</p>
       )}
       {empty && run && (!!references.length || note) && (
         <div
@@ -291,13 +280,6 @@ export function SceneView({
           {note && (
             <figure className={cx("brief-note")}>
               <b>{note.subject}</b>
-              {note.intent && <p>{note.intent}</p>}
-              {note.concept && (
-                <p data-concept>
-                  <Lightbulb size={12} />
-                  {note.concept}
-                </p>
-              )}
               {!!note.tags.length && (
                 <span>
                   {note.tags.map((t) => (

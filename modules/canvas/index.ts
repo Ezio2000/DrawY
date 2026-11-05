@@ -1,6 +1,6 @@
 import { SceneRenderer } from "../runtime/scene.ts";
 import { fit, union, zoom, type Camera } from "../contracts/geometry.ts";
-import { labelOf } from "../contracts/index.ts";
+import { shownName } from "../contracts/index.ts";
 import { plan, play, gesture, hatching } from "./ink.ts";
 import {
   facing,
@@ -1253,7 +1253,7 @@ export class Canvas {
     this.options.select(
       this.selection.map((id) => {
         const m = this.renderer.instances.get(id)!;
-        return { moduleId: m.id, label: labelOf(m), data: m.data };
+        return { moduleId: m.id, label: shownName(this.renderer.work, m), data: m.data };
       }),
     );
     this.paint();

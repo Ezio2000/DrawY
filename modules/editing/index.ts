@@ -13,4 +13,4 @@ export * from "./work.ts";
 export * from "./changes.ts";
 export * from "./apply.ts";
 export { syntaxError } from "./shared.ts";
-export { labelOf, usersOf } from "../contracts/index.ts";
+export { labelOf, shownName, usersOf } from "../contracts/index.ts";

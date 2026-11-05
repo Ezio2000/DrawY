@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Plus } from "lucide-react";
 import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
 import { ModelSketch, KinshipSketch } from "@drawy/ui/sketches";
@@ -9,29 +9,66 @@ import { progressOf } from "./Rail.tsx";
 import type { Summary } from "./api.ts";
 
 const sketches = [OrbitSketch, ModelSketch, KinshipSketch];
-/** How many works the home page shows; the rest are a press away in the side bar. */
-const RECENT = 12;
+
+/** How many whole rows of `list`'s items fit in its height, times the columns it lays out:
+ * the page never scrolls, it shows fewer works instead. */
+function useFits(list: React.RefObject<HTMLUListElement | null>, deps: unknown[]) {
+  const [fits, setFits] = useState(Infinity);
+  // A card's height, kept from when one was shown, so the shelf can grow back from none.
+  const card = useRef(0);
+  useLayoutEffect(() => {
+    const ul = list.current;
+    if (!ul) return;
+    const measure = () => {
+      const style = getComputedStyle(ul);
+      const cols = style.gridTemplateColumns.split(" ").filter(Boolean).length || 1;
+      const item = ul.firstElementChild as HTMLElement | null;
+      if (item) card.current = item.offsetHeight;
+      if (!card.current) return;
+      const gap = parseFloat(style.rowGap) || 0;
+      const rows = Math.floor((ul.clientHeight + gap) / (card.current + gap));
+      setFits(cols * rows);
+    };
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(ul);
+    return () => watch.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return fits;
+}
 
 /** The first page, laid out like a drawing tool's file browser rather than a chatbot's
- * greeting: ways to start a work (a blank canvas, or one of three requests), then the works
- * the person was last on. The composer stays at the bottom, where it is on every page. */
+ * greeting: ways to start a work (a blank canvas, or one of three requests), then as many of
+ * the works last drawn on as fit the window. The composer stays at the bottom, where it is on
+ * every page. */
 export function Home({
   works,
+  listed,
   start,
   blank,
+  all,
   open,
   composer,
 }: {
   works: Summary[];
+  /** Whether `works` has arrived; until then the shelf stays empty rather than say "none". */
+  listed: boolean;
   /** Sends one of the examples as a request. */
   start: (text: string) => void;
   /** Makes a blank canvas and opens it. */
   blank: () => void;
+  /** Shows every work, in the side bar. */
+  all: () => void;
   open: (id: string) => void;
   composer: ReactNode;
 }) {
   const t = useT();
-  const recent = [...works].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, RECENT);
+  const shelf = useRef<HTMLUListElement>(null);
+  const recent = [...works].sort((a, b) => b.updatedAt - a.updatedAt);
+  const fits = useFits(shelf, [listed, recent.length > 0]);
+  const shown = recent.slice(0, fits);
+  const hidden = recent.length - shown.length;
   return (
     <div className={cx("home")}>
       <header className={cx("home-head")}>
@@ -54,7 +91,7 @@ export function Home({
             const Sketch = sketches[i];
             return (
               <li key={text}>
-                <button className={cx("start")} onClick={() => start(text)}>
+                <button className={cx("start")} title={text} onClick={() => start(text)}>
                   <span className={cx("start-art")}>
                     <Sketch />
                   </span>
@@ -65,11 +102,20 @@ export function Home({
           })}
         </ul>
       </section>
-      <section className={cx("home-section")} aria-labelledby="home-recent">
-        <h2 id="home-recent">{t.home.recent}</h2>
-        {recent.length ? (
-          <ul className={cx("recent")}>
-            {recent.map((w) => {
+      <section className={cx("home-section", "home-recent")} aria-labelledby="home-recent">
+        <h2 id="home-recent">
+          {t.home.recent}
+          {hidden > 0 && (
+            <button className={cx("home-all")} onClick={all}>
+              {t.home.all(recent.length)}
+            </button>
+          )}
+        </h2>
+        {listed && !recent.length ? (
+          <p className={cx("home-empty")}>{t.home.noWorks}</p>
+        ) : (
+          <ul className={cx("recent")} ref={shelf}>
+            {shown.map((w) => {
               const state = progressOf(w, t);
               return (
                 <li key={w.id}>
@@ -90,8 +136,6 @@ export function Home({
               );
             })}
           </ul>
-        ) : (
-          <p className={cx("home-empty")}>{t.home.noWorks}</p>
         )}
       </section>
       <div className={cx("home-composer")}>{composer}</div>

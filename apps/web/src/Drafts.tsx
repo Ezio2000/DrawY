@@ -56,7 +56,6 @@ export function Drafts({
   const latest = versions.at(-1)!;
   return (
     <>
-      <p className={cx("drafts-hint")}>{t.drafts.hint}</p>
       <ol className={cx("drafts")}>
         {!!unsaved && (
           <li

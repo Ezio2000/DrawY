@@ -21,6 +21,7 @@ import {
   setStyle,
   setStyles,
   labelOf,
+  shownName,
   syntaxError,
 } from "../../../modules/editing/index.ts";
 import type { Work } from "../../../modules/contracts/index.ts";
@@ -160,8 +161,8 @@ function Token({
   );
 }
 
-/** The scene being edited: its title, the scenes below it, and the script that runs in
- * it. The root scene's title is the work's. */
+/** The scene being edited: its title and the scenes below it. The root scene's title is
+ * the work's. */
 export function SceneSettings({
   work,
   sceneId,
@@ -233,18 +234,6 @@ export function SceneSettings({
           </span>
         </div>
       </div>
-      <div className={cx("field")}>
-        <span className={cx("field-name")}>{t.edit.scene.script}</span>
-        <p className={cx("edit-hint")}>{t.edit.scene.scriptHint}</p>
-        <Code
-          key={"script:" + sceneId}
-          label={t.edit.scene.script}
-          value={scene.interaction ?? ""}
-          rows={6}
-          check={(code) => (code.trim() ? syntaxError(code) : null)}
-          apply={(code) => change((w) => setInteraction(w, sceneId, code))}
-        />
-      </div>
       {!root && (
         <button
           className={cx("edit-danger")}
@@ -261,6 +250,30 @@ export function SceneSettings({
         </button>
       )}
     </div>
+  );
+}
+
+/** The script that runs in the scene: code, so it sits in a section of its own that starts
+ * folded, out of the way of what most edits need. */
+export function SceneScript({
+  work,
+  sceneId,
+  change,
+}: {
+  work: Work;
+  sceneId: string;
+  change: Change;
+}) {
+  const t = useT();
+  return (
+    <Code
+      key={"script:" + sceneId}
+      label={t.edit.scene.script}
+      value={work.scenes[sceneId].interaction ?? ""}
+      rows={6}
+      check={(code) => (code.trim() ? syntaxError(code) : null)}
+      apply={(code) => change((w) => setInteraction(w, sceneId, code))}
+    />
   );
 }
 
@@ -385,7 +398,7 @@ export function Layers({
   if (!layers.length) return <p className={cx("edit-note")}>{t.edit.layers.empty}</p>;
   const nameOf = (id: string) => {
     const m = scene.modules.find((x) => x.id === id);
-    return m ? labelOf(m) : id;
+    return m ? shownName(work, m) : id;
   };
   return (
     <>
@@ -441,7 +454,7 @@ export function Layers({
               <input
                 autoFocus
                 className={cx("edit-input")}
-                defaultValue={labelOf(m)}
+                defaultValue={shownName(work, m)}
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {
                   e.stopPropagation();
@@ -450,13 +463,14 @@ export function Layers({
                 }}
                 onBlur={(e) => {
                   setNaming(undefined);
-                  if (e.target.value !== m.label)
+                  // Leaving the name as it was shown changes nothing.
+                  if (e.target.value !== shownName(work, m))
                     void change((w) => rename(w, sceneId, m.id, e.target.value));
                 }}
               />
             ) : (
               <>
-                <span className={cx("layer-name")}>{labelOf(m)}</span>
+                <span className={cx("layer-name")}>{shownName(work, m)}</span>
                 <small>{drawingName(m.drawingId)}</small>
                 {m.group && (
                   <i data-tip={t.edit.layers.group(m.group)}>

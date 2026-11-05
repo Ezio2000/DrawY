@@ -45,6 +45,7 @@ import type { Canvas, Pointed } from "../../../modules/canvas/index.ts";
 import {
   applied,
   labelOf,
+  shownName,
   moveParts,
   removeParts,
   replace,
@@ -145,6 +146,9 @@ export function App() {
     [path, setPath] = useState(location.pathname),
     [error, E] = useState(""),
     [open, O] = useState(false),
+    // Whether the list of works has arrived, so the home page does not say there are none
+    // before it knows.
+    [listed, setListed] = useState(false),
     [works, L] = useState<Summary[]>([]),
     [work, W] = useState<Work>(),
     // An earlier revision shown on the canvas in place of the current one.
@@ -351,7 +355,11 @@ export function App() {
     window.history.replaceState(null, "", to);
     setPath(to);
   }
-  const refreshList = () => api<Summary[]>("/works").then(L);
+  const refreshList = () =>
+    api<Summary[]>("/works").then((w) => {
+      L(w);
+      setListed(true);
+    });
   async function load(id: string) {
     // The work shows as soon as it arrives; its runs, which can be long, follow.
     const runs = api<Run[]>("/works/" + id + "/runs");
@@ -794,7 +802,7 @@ export function App() {
     const link = active?.links.find((l) => l.id === id);
     if (link) return `${nameOf(link.from.moduleId)} → ${nameOf(link.to.moduleId)}`;
     const m = active?.modules.find((x) => x.id === id);
-    return m ? labelOf(m) : id;
+    return m ? shownName(work!, m) : id;
   };
   const chosenLink = !selected.length && linkId ? active?.links.find((l) => l.id === linkId) : undefined;
   /** Hands a change to the author, written into the composer for the person to send, and
@@ -1000,6 +1008,7 @@ export function App() {
               void attempt(async () => {
                 await api("/auth/logout", "POST");
                 L([]);
+                setListed(false);
                 U(null);
                 go("/");
               })
@@ -1056,6 +1065,8 @@ export function App() {
               works={shownWorks}
               start={(text) => void attempt(() => send(text))}
               blank={createBlank}
+              listed={listed}
+              all={() => O(true)}
               open={(id) => go("/a/" + id)}
               composer={composer("home")}
             />
@@ -1326,7 +1337,6 @@ export function App() {
                         <span className={cx("unsaved-text")}>
                           <i className={cx("unsaved-dot")} />
                           <b>{t.unsaved.title(unsavedCount)}</b>
-                          <small>{t.unsaved.hint}</small>
                         </span>
                         <span className={cx("unsaved-actions")}>
                           <button

@@ -172,13 +172,13 @@ export function Library({
           <button
             key={k}
             aria-current={on === k || undefined}
+            data-tip={t.library.shelfHints[k]}
             onClick={() => shelve(k)}
           >
             {k === "public" ? <Globe size={15} /> : k === "mine" ? <Lock size={15} /> : <Users size={15} />}
             {t.library.shelves[k]}
           </button>
         ))}
-        <small>{t.library.shelfHints[on]}</small>
       </nav>
       <div className={cx("library-bar")}>
         {shown.length > 1 && (

@@ -7,7 +7,6 @@ import {
   Compass,
   Eye,
   Globe,
-  Lightbulb,
   PenTool,
   Search,
   ImagePlus,
@@ -35,19 +34,6 @@ type ToolStep = Extract<Step, { kind: "tool" }>;
 type Tool<N extends ToolStep["name"]> = Extract<ToolStep, { name: N }>;
 export const live = (run?: Run) =>
   !!run && ["running", "viewing"].includes(run.status);
-/** Whether a text is written in the page's language: the model summarises its thoughts in
- * a language of its own, which is not shown to a reader of another. */
-const readable = (text: string, locale: string) =>
-  /[㐀-鿿]/.test(text) === (locale === "zh");
-/** A thought's headline and the reasoning under it. */
-function thought(text: string) {
-  const closed = text.match(/^\*\*(.+?)\*\*\s*([\s\S]*)$/);
-  return closed
-    ? [closed[1], closed[2]]
-    : text.startsWith("**")
-      ? [text.slice(2), ""]
-      : [text.split("\n")[0], text.split("\n").slice(1).join("\n").trim()];
-}
 const k = (n: number) =>
   n >= 1_000_000
     ? `${(n / 1_000_000).toFixed(1)}M`
@@ -86,9 +72,7 @@ function doing(step: ToolStep, t: Words): string {
     case "draw_guide":
       return [w.guiding, guideNames(step, t).join(w.list)].filter(Boolean).join(" · ");
     case "set_brief":
-      return [w.briefing, step.subject, step.register && t.registers[step.register]]
-        .filter(Boolean)
-        .join(" · ");
+      return [w.briefing, step.subject].filter(Boolean).join(" · ");
     case "find_materials":
       return [w.finding, step.subjects.join(w.list)].filter(Boolean).join(" · ");
     case "generate_images":
@@ -218,7 +202,7 @@ export function Now({
           {text}
           {ended?.saved !== undefined && (
             <span className={cx("now-saved")}>
-              {ended.clean === undefined ? t.now.saved(ended.saved) : t.now.unchecked(ended.saved)}
+              {ended.clean === undefined ? t.now.saved : t.now.unchecked}
             </span>
           )}
         </button>
@@ -284,21 +268,18 @@ export function Now({
 }
 /** One line on what a live run is doing, and for how long it has. */
 function Current({ run }: { run: Run }) {
-  const t = useT(),
-    locale = useLocale();
-  // A tool still at work outranks the thoughts and notes that stream alongside it.
+  const t = useT();
+  // A tool still at work outranks the notes that stream alongside it; the author's own
+  // thinking is never the line.
   const busy = run.steps.findLast(
       (s): s is ToolStep => s.kind === "tool" && s.status === "running",
     ),
     tail = run.steps.at(-1);
-  const headline = tail?.kind === "thinking" ? thought(tail.text)[0] : "";
   const line = busy
     ? doing(busy, t)
-    : headline && readable(headline, locale)
-      ? plain(headline)
-      : tail?.kind === "message" && tail.role === "assistant"
-        ? plain(tail.text)
-        : between(run.steps, t);
+    : tail?.kind === "message" && tail.role === "assistant"
+      ? plain(tail.text)
+      : between(run.steps, t);
   const at = run.steps.indexOf((busy ?? tail)!);
   return (
     <>
@@ -394,7 +375,7 @@ function StepView({
         <Markdown text={step.text} citations={step.citations} className={cx("step-note")} />
       </li>
     );
-  if (step.kind === "thinking") return <Thoughts steps={[step]} live={live} />;
+  if (step.kind === "thinking") return null;
   const Icon = icons[step.name] ?? Wrench;
   const errors = [
     ...(step.name === "view_canvas" ? step.errors || [] : []),
@@ -413,36 +394,6 @@ function StepView({
           </small>
         ))}
       </div>
-    </li>
-  );
-}
-/** Thoughts in a row, as one line: the latest headline the reader can read, and every
- * thought's headline and reasoning when opened. */
-function Thoughts({ steps, live }: { steps: Step[]; live: boolean }) {
-  const t = useT(),
-    locale = useLocale();
-  const parts = steps
-    .map((s) => thought(s.kind === "thinking" ? s.text : ""))
-    .filter(([title]) => title && readable(title, locale));
-  const headline = parts.at(-1)?.[0];
-  return (
-    <li className={cx("step")} data-kind="thinking" data-status={live ? "running" : "done"}>
-      <i className={cx("step-icon")}>
-        <Lightbulb size={13} />
-      </i>
-      <details className={cx("step-body")}>
-        <summary>
-          <span>{headline ? plain(headline) : t.now.thinking}</span>
-          {steps.length > 1 && <small>×{steps.length}</small>}
-          {!!parts.length && <ChevronRight size={13} />}
-        </summary>
-        {parts.map(([title, body], i) => (
-          <div key={i} className={cx("step-thought")}>
-            <b>{plain(title)}</b>
-            {body && readable(body, locale) && <Markdown text={body} />}
-          </div>
-        ))}
-      </details>
     </li>
   );
 }
@@ -580,25 +531,7 @@ function Brief({
   return (
     <div className={cx("brief")}>
       <span className={cx("step-title")}>{t.steps.set_brief}</span>
-      {step.subject && (
-        <h4>
-          {step.subject}
-          {step.register && <i>{t.registers[step.register]}</i>}
-        </h4>
-      )}
-      {!!step.ideas?.length && (
-        <ol className={cx("ideas")}>
-          {step.ideas.map((idea, i) => (
-            <li key={i}>{idea}</li>
-          ))}
-        </ol>
-      )}
-      {step.concept && (
-        <blockquote>
-          <small>{t.steps.concept}</small>
-          {step.concept}
-        </blockquote>
-      )}
+      {step.subject && <h4>{step.subject}</h4>}
       {!!step.found?.length && <Found found={step.found} used={used} zoom={zoom} />}
     </div>
   );
@@ -883,13 +816,14 @@ function Stats({
     </div>
   );
 }
-/** What the whole work has spent over every request, service by service. */
+/** What the whole work has spent over every request, service by service: for those who
+ * manage the models and pay for them. Everyone else counts requests, not tokens. */
 function WorkUsage({ runs }: { runs: Run[] }) {
   const t = useT(),
     manages = useCan()("models.manage");
   const [open, setOpen] = useState(false);
   const s = total(runs.map(spentBy));
-  if (!s.input && !s.output && !s.searches && !s.pages && !s.images)
+  if (!manages || (!s.input && !s.output && !s.searches && !s.pages && !s.images))
     return null;
   const names = (pick: (r: Run) => string | undefined) =>
     [...new Set(runs.map(pick).filter(Boolean))].join(t.now.list) || undefined;
@@ -915,7 +849,7 @@ function WorkUsage({ runs }: { runs: Run[] }) {
       {open && (
         <Stats
           s={s}
-          by={!manages ? { author: names((r) => r.services?.label) } : {
+          by={{
             author: names((r) => r.services?.author),
             search: names((r) =>
               r.services?.search === "off" ? undefined : searchedBy(r, t),
@@ -1034,22 +968,10 @@ function RunView({
     );
     steps = [];
   };
-  // Thoughts in a row read as one step.
-  let thinking: Step[] = [];
-  const think = (i: number) => {
-    if (!thinking.length) return;
-    steps.push(
-      <Thoughts key={"t" + i} steps={thinking} live={working && i === r.steps.length} />,
-    );
-    thinking = [];
-  };
+  // The author's own thinking is not shown: the log says what it did, not what it
+  // reasoned (the run's trace keeps everything for those who manage the models).
   r.steps.forEach((s, i) => {
-    if (i === reply) return;
-    if (s.kind === "thinking" && unfolded) {
-      thinking.push(s);
-      return;
-    }
-    think(i);
+    if (i === reply || s.kind === "thinking") return;
     if (s.kind === "message" && s.role === "user") {
       flush();
       items.push(
@@ -1083,9 +1005,8 @@ function RunView({
         />,
       );
   });
-  think(r.steps.length);
   flush();
-  const count = r.steps.filter((s) => s.kind === "tool" || s.kind === "thinking").length;
+  const count = r.steps.filter((s) => s.kind === "tool").length;
   const saved = r.steps.findLast(
     (s): s is Tool<"write_work"> => s.kind === "tool" && s.name === "write_work" && !!s.revision,
   );
@@ -1094,7 +1015,9 @@ function RunView({
     r.elapsedMs && span(r.elapsedMs),
   ].filter(Boolean);
   const spent = spentBy(r);
-  const priced = !working && !!r.usage && (spent.input + spent.output > 0 || !!spent.images);
+  // What a run spent is for those who manage the models; others count requests.
+  const priced =
+    manages && !working && !!r.usage && (spent.input + spent.output > 0 || !!spent.images);
   const answer = reply >= 0 ? (r.steps[reply] as Extract<Step, { kind: "message" }>) : undefined;
   const sources = sourcesOf(answer?.citations);
   const ended = last && r.status === "failed" ? stopped(r, work) : undefined;
@@ -1139,7 +1062,7 @@ function RunView({
         <Stats
           s={spent}
           elapsed={r.elapsedMs}
-          by={!manages ? { author: r.services?.label } : {
+          by={{
             author:
               r.services &&
               [
