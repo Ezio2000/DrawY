@@ -10,7 +10,7 @@ import {
   Lightbulb,
   PenTool,
   Search,
-  Sparkles,
+  ImagePlus,
   SquareArrowOutUpRight,
   Wrench,
   X,
@@ -367,7 +367,7 @@ const icons = {
   draw_guide: BookMarked,
   set_brief: Compass,
   find_materials: Search,
-  generate_images: Sparkles,
+  generate_images: ImagePlus,
   write_work: PenTool,
   view_canvas: Eye,
 } satisfies Record<ToolStep["name"], unknown>;

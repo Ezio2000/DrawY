@@ -1,7 +1,6 @@
 import { SceneView, DetailView } from "./SceneView.tsx";
 import { Studio, Now, live } from "./Studio.tsx";
 import { ExportMenu } from "./Export.tsx";
-import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Undo2,
@@ -14,8 +13,6 @@ import {
   History,
   Check,
 } from "lucide-react";
-import { Lantern } from "@drawy/ui/brand";
-import { ModelSketch, KinshipSketch } from "@drawy/ui/sketches";
 import {
   Spinner,
   LocaleContext,
@@ -66,8 +63,8 @@ import type {
 import { TraceView } from "./TraceView.tsx";
 import { Drafts } from "./Drafts.tsx";
 import { Title } from "./Title.tsx";
+import { Home } from "./Home.tsx";
 import { ChooseLocale, dictionaries, useLanguage } from "./i18n.tsx";
-const sketches = [OrbitSketch, ModelSketch, KinshipSketch];
 type Page = "home" | "work" | "library" | "settings" | "traces";
 const pageOf = (path: string): Page =>
   path.startsWith("/a/")
@@ -936,7 +933,7 @@ export function App() {
             : undefined
       }
       unquote={() => canvas.current?.select([])}
-      edit={editing || editless || !work?.brief ? undefined : () => setPanel("edit")}
+      edit={editing || editless ? undefined : () => setPanel("edit")}
       placeholder={
         place === "home"
           ? t.home.placeholder
@@ -1054,33 +1051,12 @@ export function App() {
               <Library use={use} action={t.work.useIt} />
             </div>
           ) : page === "home" ? (
-            <div className={cx("home")}>
-              <section className={cx("hero")}>
-                <h1 className={cx("hero-title")}>
-                  <Lantern size={40} className={cx("hero-mark")} />
-                  <Title name="hero" size="hero" />
-                </h1>
-                <nav className={cx("examples")}>
-                  {t.home.examples.map((text, i) => {
-                    const Sketch = sketches[i];
-                    return (
-                      <button
-                        className={cx("example")}
-                        key={text}
-                        style={{ animationDelay: 240 + i * 80 + "ms" }}
-                        onClick={() => void attempt(() => send(text))}
-                      >
-                        <span className={cx("example-art")}>
-                          <Sketch />
-                        </span>
-                        <span className={cx("example-text")}>{text}</span>
-                      </button>
-                    );
-                  })}
-                </nav>
-              </section>
-              <div className={cx("home-composer")}>{composer("home")}</div>
-            </div>
+            <Home
+              works={shownWorks}
+              start={(text) => void attempt(() => send(text))}
+              open={(id) => go("/a/" + id)}
+              composer={composer("home")}
+            />
           ) : !work ? (
             <div className={cx("loading")}>
               <Spinner />
@@ -1400,9 +1376,8 @@ export function App() {
                   </button>
                   <button
                     aria-label={t.work.edit}
-                    data-tip={work.brief ? t.work.edit : t.work.nothingToEdit}
+                    data-tip={t.work.edit}
                     aria-pressed={editing}
-                    disabled={!work.brief}
                     onClick={() => toggle("edit")}
                   >
                     <PencilLine size={17} />

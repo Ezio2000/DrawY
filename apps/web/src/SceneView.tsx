@@ -272,7 +272,16 @@ export function SceneView({
         </div>
       )}
       {empty && !run && shown && (
-        <p className={cx("blank")}>{editing ? t.edit.blank : t.work.blank}</p>
+        <p className={cx("blank")}>
+          {editing ? (
+            t.edit.blank
+          ) : (
+            <>
+              {t.work.blank}
+              <small>{t.work.blankHint}</small>
+            </>
+          )}
+        </p>
       )}
       {empty && run && (!!references.length || note) && (
         <div

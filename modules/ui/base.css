@@ -1,7 +1,10 @@
-/* SeeY · a warm sheet of paper
-   Home and work share one paper surface: white background, ink-colored text, warm gray hairlines, white cards floating on the paper; terracotta is the AI's lamp,
-   and the only accent color. The interface is subtractive: the canvas fills the space, controls float on the paper and appear only when needed,
-   motion is responsive and smooth, and whitespace is left to the diagram itself. */
+/* DrawY · a sketchbook, not a chat
+   Home and work share one paper surface: white background, ink-colored text, warm gray hairlines.
+   Ink is for type and the one primary action; a blue pencil marks what is selected, focused or
+   linked, the way an editor marks a proof; graphite is what is still being drawn; the lantern
+   keeps its warm seal colour as the logo. The interface is subtractive: the canvas fills the
+   space, controls stay on the paper and appear only when needed, motion is quick and plain,
+   and whitespace is left to the diagram itself. */
 
 @property --angle {
   syntax: "<angle>";
@@ -21,25 +24,27 @@
   /* A bookish serif for titles;
   a hand for what the page writes itself. */
   --font-serif:
-    "Tiempos Headline", "Iowan Old Style", "Palatino Linotype", Palatino, "Noto Serif SC",
+    "Iowan Old Style", "Palatino Linotype", Palatino, "Noto Serif SC",
     "Source Han Serif SC", "Songti SC", "STSong", Georgia, serif;
-  /* Ink is for type and the one primary action;
-  the AI's terracotta marks links, focus
-     and selection;
-  yellow is the highlighter under a title. */
+  /* Ink is for type and the one primary action; the blue pencil marks links, focus and
+     selection; yellow is the highlighter under a title. */
   --paper: #ffffff;
   --ink: #141413;
   --ink-hover: #2e2d2a;
-  --blue: #c15f3c;
-  --blue-hover: #a9502f;
-  --blue-press: #8f4327;
-  --blue-soft: rgba(217, 119, 87, 0.12);
-  --link: #b4532f;
+  --blue: #2a56bd;
+  --blue-hover: #22479e;
+  --blue-press: #1b3a82;
+  --blue-soft: rgba(51, 102, 214, 0.1);
+  --link: #2a56bd;
   --marker: #ffe066;
-  /* The AI's colour: its mark and what it brings forward. */
-  --ai: #d97757;
+  /* The accent at two weights: marks and rings, and words and icons that carry it. */
+  --ai: #3366d6;
+  --ai-deep: #2a56bd;
+  /* The logo's own colours: a seal red for the lantern, lamplight for its flame. */
+  --brand: #c8553d;
   --lamp: #e9a93a;
-  --ai-deep: #c15f3c;
+  /* Graphite on paper: hatching for what is still being drawn. */
+  --pencil: rgba(20, 20, 19, 0.13);
   --red: #ef4444;
   --red-text: #c81e1e;
   --green: #16a34a;
@@ -179,7 +184,7 @@ img {
 }
 
 ::selection {
-  background: rgba(193, 95, 60, 0.2);
+  background: rgba(51, 102, 214, 0.18);
 }
 
 * {
@@ -204,7 +209,7 @@ img {
 }
 
 :focus-visible {
-  outline: 2px solid rgba(193, 95, 60, 0.6);
+  outline: 2px solid rgba(51, 102, 214, 0.55);
   outline-offset: 2px;
 }
 

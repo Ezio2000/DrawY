@@ -84,7 +84,7 @@ const seed = (id: string) =>
     2166136261,
   );
 const GRAPHITE = "rgba(94,88,76,.5)";
-const ACCENT = "#d97757";
+const ACCENT = "#3366d6";
 /** How far from a link's line, in screen pixels, a press still takes the link. */
 const SLOP = 10;
 /** Distance from a point to a segment. */
@@ -229,7 +229,7 @@ export class Canvas {
       "position:absolute;inset:0;pointer-events:none;z-index:3;overflow:hidden";
     this.element.append(this.targets);
     this.hover.style.cssText =
-      "position:absolute;border:1px dashed rgba(193,95,60,.55);border-radius:6px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
+      "position:absolute;border:1px dashed rgba(42,86,189,.55);border-radius:6px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
     this.element.append(this.hover);
     const english = /^en/i.test(document.documentElement.lang);
     this.frame.style.cssText =
@@ -270,10 +270,10 @@ export class Canvas {
     }
     this.element.append(this.frame);
     this.groupBox.style.cssText =
-      "position:absolute;border:1px dashed rgba(217,119,87,.45);border-radius:8px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
+      "position:absolute;border:1px dashed rgba(51,102,214,.45);border-radius:8px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
     this.element.append(this.groupBox);
     this.marquee.style.cssText =
-      "position:absolute;border:1px solid rgba(217,119,87,.8);background:rgba(217,119,87,.07);pointer-events:none;display:none;z-index:5;box-sizing:border-box";
+      "position:absolute;border:1px solid rgba(51,102,214,.8);background:rgba(51,102,214,.07);pointer-events:none;display:none;z-index:5;box-sizing:border-box";
     this.element.append(this.marquee);
     this.line.style.cssText =
       "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none;z-index:5;overflow:visible";
@@ -842,7 +842,7 @@ export class Canvas {
     while (this.outlines.length < chosen.length) {
       const outline = document.createElement("div");
       outline.style.cssText =
-        "position:absolute;border:1px solid #d97757;border-radius:6px;box-shadow:0 0 0 4px rgba(217,119,87,.12);pointer-events:none;display:none;z-index:3;box-sizing:border-box";
+        "position:absolute;border:1px solid #3366d6;border-radius:6px;box-shadow:0 0 0 4px rgba(51,102,214,.12);pointer-events:none;display:none;z-index:3;box-sizing:border-box";
       this.element.append(outline);
       this.outlines.push(outline);
     }
@@ -855,7 +855,7 @@ export class Canvas {
       const frame = union(chosen.map((m) => m.bounds));
       box(this.frame, frame);
       this.frame.style.border =
-        chosen.length > 1 ? "1px dashed rgba(217,119,87,.7)" : "none";
+        chosen.length > 1 ? "1px dashed rgba(51,102,214,.7)" : "none";
       const small =
         frame.width * scale < 36 || frame.height * scale < 36;
       for (const h of this.frame.querySelectorAll<HTMLElement>("[data-handle]"))

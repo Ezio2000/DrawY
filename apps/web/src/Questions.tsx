@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { X, Check, Sparkles, PenLine } from "lucide-react";
+import { X, Check, FastForward, PenLine } from "lucide-react";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 import type { Question } from "../../../modules/contracts/index.ts";
@@ -157,7 +157,7 @@ export function Questions({
             onClick={() => answer(t.questions.yoursMessage)}
           >
             <i>
-              <Sparkles size={13} />
+              <FastForward size={13} />
             </i>
             {t.questions.yours}
           </button>

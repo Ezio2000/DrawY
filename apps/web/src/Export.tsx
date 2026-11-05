@@ -163,7 +163,7 @@ async function card(png: Blob, title: string, credit: string, [W, H]: readonly [
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "right";
   ctx.fillText(credit, W - pad, H - pad);
-  ctx.fillStyle = "#d97757";
+  ctx.fillStyle = "#c8553d";
   ctx.beginPath();
   ctx.arc(W - pad - ctx.measureText(credit).width - foot * 0.9, H - pad - foot * 0.35, foot * 0.28, 0, Math.PI * 2);
   ctx.fill();

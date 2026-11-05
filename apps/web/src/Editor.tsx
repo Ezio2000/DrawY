@@ -25,7 +25,7 @@ import {
   Lock,
   SendToBack,
   Shapes,
-  Sparkles,
+  MessageSquareQuote,
   Spline,
   Trash2,
   Type,
@@ -350,7 +350,7 @@ function Selected({
           </Act>
           <i />
           <Act label={t.edit.actions.ask} onClick={ask}>
-            <Sparkles size={16} />
+            <MessageSquareQuote size={16} />
           </Act>
           <Act label={t.edit.actions.remove} tip={t.edit.remove} danger onClick={ops.remove}>
             <Trash2 size={16} />
@@ -420,7 +420,7 @@ function Selected({
         </Section>
       )}
       <button className={cx("edit-ask")} onClick={ask}>
-        <Sparkles size={15} />
+        <MessageSquareQuote size={15} />
         {t.edit.ask}
       </button>
     </>
@@ -798,7 +798,7 @@ function LinkPanel({
           </Act>
           <i />
           <Act label={t.edit.actions.ask} onClick={ask}>
-            <Sparkles size={16} />
+            <MessageSquareQuote size={16} />
           </Act>
           <Act label={t.edit.removeLink} tip={t.edit.remove} danger onClick={ops.remove}>
             <Trash2 size={16} />

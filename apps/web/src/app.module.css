@@ -10,9 +10,21 @@
   --rail-open: 272px;
   --journal: 520px;
   --veil: rgba(255, 255, 255, 0.86);
-  /* Card grounds from the Anthropic palette's oat. */
+  /* Card grounds: paper a shade darker. */
   --oat: #f0eee6;
   --oat-deep: #e8e4d9;
+  /* Pencil hatching on paper: what stands in for a picture or a look still to come. */
+  --hatch:
+    linear-gradient(
+        135deg,
+        var(--pencil) 0 4%,
+        transparent 4% 46%,
+        var(--pencil) 46% 54%,
+        transparent 54% 96%,
+        var(--pencil) 96%
+      )
+      0 0 / 8px 8px,
+    var(--bg-2);
   position: fixed;
   inset: 0;
   overflow: hidden;
@@ -375,6 +387,8 @@
 
 /* ---------- Home ---------- */
 
+/* A plain question over three requests to start from; once there are works, they sit on
+   a shelf beneath, and the page scrolls under the composer. */
 .home {
   display: flex;
   flex-direction: column;
@@ -387,18 +401,20 @@
 .hero {
   display: flex;
   flex-direction: column;
-  align-items: center;
   justify-content: center;
-  gap: 36px;
+  gap: 28px;
   flex: 1;
-  width: min(720px, 100%);
+  width: min(760px, 100%);
   padding-bottom: 24px;
 }
 
+.home[data-returning] .hero {
+  flex: none;
+  gap: 22px;
+  padding: max(40px, 9vh) 0 36px;
+}
+
 .hero-title {
-  display: flex;
-  align-items: center;
-  gap: 14px;
   margin: 0;
 }
 
@@ -481,39 +497,48 @@ h2:has(> .title) {
   color: var(--text-2);
 }
 
-.hero-mark {
-  flex: none;
-  margin-top: -14px;
-  animation: rise 0.9s var(--ease-out) both;
-}
-
 .examples {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
+  gap: 16px;
   width: 100%;
 }
 
 .example {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
+  align-items: stretch;
+  gap: 8px;
   padding: 0;
-  text-align: center;
-  animation: rise 0.9s var(--ease-out) both;
+  text-align: left;
+  animation: rise 0.6s var(--ease-out) both;
 }
 
+/* Each example on its own sheet, like a page torn from the sketchbook. */
 .example-art {
   display: grid;
   place-items: center;
   width: 100%;
   aspect-ratio: 16 / 10;
-  transition: transform 0.4s var(--ease-out);
+  padding: 6px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 0 0 0 1px var(--line);
+  transition:
+    box-shadow 0.2s var(--ease),
+    transform 0.3s var(--ease-out);
+}
+
+.home[data-returning] .example-art {
+  aspect-ratio: 16 / 8;
 }
 
 .example:hover .example-art {
-  transform: translateY(-4px) scale(1.02);
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    var(--shadow-float);
+  transform: translateY(-2px);
 }
 
 .example:active .example-art {
@@ -524,17 +549,134 @@ h2:has(> .title) {
 .example-art > svg {
   width: 100%;
   height: 100%;
+  min-height: 0;
 }
 
 .example-text {
-  font-family: var(--font-serif);
-  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+  font-size: 14px;
   color: var(--text-2);
   transition: color 0.2s var(--ease);
 }
 
+.example-text svg {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity 0.2s var(--ease),
+    transform 0.25s var(--ease-out);
+}
+
 .example:hover .example-text {
   color: var(--text);
+}
+
+.example:hover .example-text svg {
+  opacity: 1;
+  transform: none;
+}
+
+/* The works last drawn on: a picture of each, its title and where it has got to. */
+.recent {
+  width: min(760px, 100%);
+  padding-bottom: 8px;
+}
+
+.recent h2 {
+  margin: 0 0 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--separator);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.recent ul {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recent li {
+  min-width: 0;
+  animation: rise 0.5s var(--ease-out) both;
+}
+
+.recent button {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  text-align: left;
+}
+
+.recent-cover {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  margin-bottom: 8px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--paper) radial-gradient(var(--canvas-dots) 1px, transparent 1.3px) 0 0 / 12px 12px;
+  box-shadow: 0 0 0 1px var(--line);
+  transition:
+    box-shadow 0.2s var(--ease),
+    transform 0.3s var(--ease-out);
+}
+
+.recent button:hover .recent-cover {
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    var(--shadow-float);
+  transform: translateY(-2px);
+}
+
+.recent-cover img {
+  width: 100%;
+  height: 100%;
+  padding: 6px;
+  background: var(--paper);
+  object-fit: contain;
+}
+
+.recent-cover i {
+  font-family: var(--font-serif);
+  font-style: normal;
+  font-size: 34px;
+  color: var(--line-strong);
+}
+
+.recent b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.work-state {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.work-state[data-tone="live"],
+.work-state[data-tone="ask"] {
+  color: var(--ai-deep);
+}
+
+.work-state[data-tone="failed"] {
+  color: var(--red-text);
 }
 
 /* ---------- Auth: a headline and one card, beside what DrawY makes ---------- */
@@ -587,7 +729,7 @@ h2:has(> .title) {
   gap: 12px;
   width: 100%;
   padding: 24px;
-  border-radius: 24px;
+  border-radius: 16px;
   background: var(--bg);
   box-shadow:
     0 0 0 1px var(--line),
@@ -654,7 +796,7 @@ h2:has(> .title) {
   height: calc(100vh - 24px);
   margin: 12px 12px 12px 0;
   overflow: hidden;
-  border-radius: 28px;
+  border-radius: 16px;
   background: var(--oat);
   animation: fade-in 1.2s var(--ease) 0.2s both;
 }
@@ -692,7 +834,7 @@ h2:has(> .title) {
 
 .composer:focus-within {
   box-shadow:
-    0 0 0 1px var(--line-strong),
+    0 0 0 1px rgba(20, 20, 19, 0.4),
     0 2px 6px rgba(60, 45, 20, 0.05),
     0 18px 44px rgba(60, 45, 20, 0.1);
 }
@@ -701,13 +843,13 @@ h2:has(> .title) {
   position: relative;
   z-index: 2;
   padding: 12px 8px 8px 18px;
-  border-radius: 22px;
+  border-radius: 16px;
   animation: rise 0.9s var(--ease-out) 0.1s both;
 }
 
 .composer[data-place="dock"] {
   padding: 7px 7px 7px 18px;
-  border-radius: 22px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: saturate(1.4) blur(18px);
   -webkit-backdrop-filter: saturate(1.4) blur(18px);
@@ -776,7 +918,7 @@ h2:has(> .title) {
 
 .composer[data-place="dock"]:has(> .now, > .question) {
   padding-top: 9px;
-  border-radius: 20px;
+  border-radius: 16px;
 }
 
 .composer[data-place="dock"] .composer-gap {
@@ -827,18 +969,20 @@ h2:has(> .title) {
   border-radius: 50%;
 }
 
+/* Sending is the page's one primary action, so it is in ink like the others. */
 .composer-send {
-  background: var(--ai);
-  color: #fff;
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .composer-send:hover:not(:disabled) {
-  background: var(--ai-deep);
+  background: var(--ink-hover);
 }
 
 .composer-send:disabled {
   opacity: 1;
-  background: #ecdcd3;
+  background: var(--fill-2);
+  color: var(--text-3);
 }
 
 .composer-send:active:not(:disabled),
@@ -891,7 +1035,7 @@ h2:has(> .title) {
 }
 
 .quote button:hover {
-  background: rgba(193, 95, 60, 0.14);
+  background: rgba(42, 86, 189, 0.14);
 }
 
 .attached {
@@ -1282,10 +1426,16 @@ h2:has(> .title) {
   border-top: 1px solid var(--separator);
 }
 
-/* The home page: the greeting and examples in the middle, the composer at the bottom. */
+/* The home page: the question and examples in the middle, the composer at the bottom,
+   where the shelf scrolls away beneath it. */
 .home-composer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   width: min(760px, 100%);
-  padding-bottom: 20px;
+  margin-top: auto;
+  padding: 20px 0;
+  background: linear-gradient(rgba(255, 255, 255, 0), var(--paper) 22px);
 }
 
 /* ---------- Workspace ---------- */
@@ -1324,7 +1474,7 @@ h2:has(> .title) {
 }
 
 .canvas [data-explorable]:hover {
-  filter: drop-shadow(0 6px 16px rgba(193, 95, 60, 0.22));
+  filter: drop-shadow(0 6px 16px rgba(42, 86, 189, 0.22));
 }
 
 /* A module that opens a scene or a page carries a small mark at its corner, laid over the
@@ -1343,9 +1493,9 @@ h2:has(> .title) {
   translate: -70% -45%;
   background: rgba(255, 255, 255, 0.92);
   box-shadow:
-    0 0 0 1px rgba(217, 119, 87, 0.45),
+    0 0 0 1px rgba(51, 102, 214, 0.45),
     0 2px 6px rgba(60, 45, 20, 0.12);
-  color: var(--ai-deep, #c15f3c);
+  color: var(--ai-deep);
   pointer-events: auto;
   cursor: pointer;
   opacity: 0.82;
@@ -1385,7 +1535,7 @@ h2:has(> .title) {
 }
 
 .canvas [data-target]:hover {
-  background: var(--ai, #d97757);
+  background: var(--ai);
   color: #fff;
 }
 
@@ -1580,12 +1730,21 @@ h2:has(> .title) {
   top: calc(50% - 30px);
   left: 50%;
   translate: -50% -50%;
+  display: grid;
+  gap: 6px;
+  max-width: calc(100% - 48px);
+  text-align: center;
   font-family: var(--font-serif);
-  font-size: 16px;
-  font-style: italic;
-  color: var(--text-3);
+  font-size: 18px;
+  color: var(--text-2);
   pointer-events: none;
   animation: fade-in 0.8s var(--ease) both;
+}
+
+.blank small {
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--text-3);
 }
 
 /* ---------- The author on the canvas ---------- */
@@ -1737,27 +1896,10 @@ h2:has(> .title) {
   animation: develop 2.6s var(--ease-out) both;
 }
 
+/* A picture still to come is pencil hatching that keeps being drawn. */
 .references figure > i {
-  background:
-    radial-gradient(
-      circle at 28% 38%,
-      rgba(217, 119, 87, 0.32),
-      transparent 48%
-    ),
-    radial-gradient(
-      circle at 72% 62%,
-      rgba(80, 116, 150, 0.28),
-      transparent 52%
-    ),
-    radial-gradient(
-      circle at 52% 86%,
-      rgba(233, 169, 58, 0.26),
-      transparent 46%
-    ),
-    #f5f0e8;
-  background-size: 180% 180%;
-  filter: blur(5px);
-  animation: drift 5s var(--ease-in-out) infinite alternate;
+  background: var(--hatch);
+  animation: hatch 0.9s linear infinite;
 }
 
 /* Where the author is looking: corner marks around the view and a slow band of light. */
@@ -1790,7 +1932,7 @@ h2:has(> .title) {
 
 .annotation {
   position: absolute;
-  border: calc(1px / var(--zoom)) dashed rgba(193, 95, 60, 0.55);
+  border: calc(1px / var(--zoom)) dashed rgba(42, 86, 189, 0.55);
   border-radius: calc(5px / var(--zoom));
   animation: fade-in 0.4s var(--ease) calc(var(--i) * 35ms) both;
 }
@@ -1869,8 +2011,7 @@ button.now:hover .now-line {
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-align: left;
-  font-family: var(--font-serif);
-  font-size: 14.5px;
+  font-size: 14px;
   line-height: 1.55;
   color: var(--ink);
 }
@@ -1962,14 +2103,13 @@ button.now:hover .now-line {
   filter: none;
   box-shadow:
     0 0 0 2px #fff,
-    0 0 0 3.5px rgba(217, 119, 87, 0.7);
+    0 0 0 3.5px rgba(51, 102, 214, 0.7);
 }
 
 .developing {
   display: block;
-  background: linear-gradient(110deg, #f1ebe3 30%, #fbe3d7 50%, #f1ebe3 70%) 0
-    0 / 260% 100%;
-  animation: shimmer 1.6s linear infinite;
+  background: var(--hatch);
+  animation: hatch 0.9s linear infinite;
 }
 
 /* The author's questions, in the composer above the field: each question, then its options
@@ -4097,8 +4237,8 @@ body:has(.resizer[data-dragging]) {
 
 .step[data-status="running"] .step-icon {
   color: var(--ai-deep);
-  background: #fbefe9;
-  box-shadow: inset 0 0 0 1px rgba(217, 119, 87, 0.45);
+  background: var(--blue-soft);
+  box-shadow: inset 0 0 0 1px rgba(51, 102, 214, 0.45);
 }
 
 .step[data-status="running"] .step-icon::after {
@@ -4603,10 +4743,11 @@ body:has(.resizer[data-dragging]) {
   font-style: italic;
 }
 
-/* The author's reply, as written: serif paragraphs, lists and emphasis. */
+/* The author's reply, as written: plain paragraphs, lists and emphasis, in the page's own
+   type rather than a chatbot's serif. */
 .reply {
-  font-family: var(--font-serif);
-  font-size: 15px;
+  font-family: var(--font);
+  font-size: 14.5px;
   line-height: 1.7;
   color: var(--ink);
   overflow-wrap: anywhere;
@@ -4649,7 +4790,6 @@ body:has(.resizer[data-dragging]) {
 
 .md h3,
 .md h4 {
-  font-family: var(--font-serif);
   font-weight: 600;
   line-height: 1.4;
 }
@@ -4695,7 +4835,7 @@ body:has(.resizer[data-dragging]) {
 .md a {
   color: var(--ai-deep);
   text-decoration: underline;
-  text-decoration-color: rgba(217, 119, 87, 0.35);
+  text-decoration-color: rgba(51, 102, 214, 0.35);
   text-underline-offset: 2px;
 }
 
@@ -5228,9 +5368,8 @@ body:has(.resizer[data-dragging]) {
 }
 
 .look[data-developing] {
-  background: linear-gradient(110deg, #f1ebe3 30%, #fbe3d7 50%, #f1ebe3 70%) 0
-    0 / 260% 100%;
-  animation: shimmer 1.6s linear infinite;
+  background: var(--hatch);
+  animation: hatch 0.9s linear infinite;
 }
 
 .look > svg {
@@ -6043,7 +6182,7 @@ body:has(.resizer[data-dragging]) {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  border: 1.5px dashed rgba(193, 95, 60, 0.6);
+  border: 1.5px dashed rgba(42, 86, 189, 0.6);
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(4px);
@@ -6865,8 +7004,30 @@ body:has(.resizer[data-dragging]) {
 }
 
 @media (max-width: 760px) {
+  .home {
+    padding: 24px 16px 0;
+  }
+
   .examples {
     grid-template-columns: 1fr;
+  }
+
+  /* Coming back on a phone, the examples step aside for the works. */
+  .home[data-returning] .example-art {
+    display: none;
+  }
+
+  .home[data-returning] .examples {
+    gap: 4px;
+  }
+
+  .home[data-returning] .example-text svg {
+    opacity: 1;
+    transform: none;
+  }
+
+  .recent ul {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .setting {
@@ -6907,8 +7068,7 @@ body:has(.resizer[data-dragging]) {
 @keyframes line-in {
   from {
     opacity: 0;
-    filter: blur(3px);
-    transform: translateY(4px);
+    transform: translateY(3px);
   }
 }
 
@@ -6946,15 +7106,6 @@ body:has(.resizer[data-dragging]) {
   }
 }
 
-@keyframes shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: -60% 0;
-  }
-}
-
 @keyframes look-in {
   from {
     opacity: 0;
@@ -6970,22 +7121,22 @@ body:has(.resizer[data-dragging]) {
   }
 }
 
+/* A picture comes up like a print in the tray: pale and grey first, then its colour. */
 @keyframes develop {
   from {
-    opacity: 0.2;
-    filter: blur(14px) saturate(0) brightness(1.15);
+    opacity: 0.25;
+    filter: grayscale(1) contrast(0.55) brightness(1.25);
   }
-  40% {
-    opacity: 0.85;
+  45% {
+    opacity: 0.9;
+    filter: grayscale(0.6) contrast(0.85) brightness(1.08);
   }
 }
 
-@keyframes drift {
-  from {
-    background-position: 0% 0%;
-  }
+/* Hatching moves along by one line, so it reads as being drawn rather than loading. */
+@keyframes hatch {
   to {
-    background-position: 100% 100%;
+    background-position: 8px 0;
   }
 }
 
@@ -7351,7 +7502,7 @@ body:has(.resizer[data-dragging]) {
   backdrop-filter: saturate(1.4) blur(18px);
   -webkit-backdrop-filter: saturate(1.4) blur(18px);
   box-shadow:
-    0 0 0 1px rgba(217, 119, 87, 0.28),
+    0 0 0 1px rgba(51, 102, 214, 0.28),
     0 10px 28px rgba(60, 45, 20, 0.08);
   font-size: 13px;
   color: var(--text-2);
@@ -7442,8 +7593,8 @@ body:has(.resizer[data-dragging]) {
 
 .drafts-version[data-kind="unsaved"] {
   flex-wrap: wrap;
-  box-shadow: inset 0 0 0 1px rgba(217, 119, 87, 0.35);
-  background: rgba(217, 119, 87, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(51, 102, 214, 0.35);
+  background: rgba(51, 102, 214, 0.05);
 }
 
 .drafts-version[data-kind="unsaved"] .drafts-look > i {
@@ -7654,7 +7805,7 @@ body:has(.resizer[data-dragging]) {
 }
 
 .spend [data-key="author"] {
-  --swatch: var(--ai, #d97757);
+  --swatch: var(--ai);
 }
 
 .spend [data-key="search"] {
