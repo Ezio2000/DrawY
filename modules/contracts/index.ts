@@ -193,14 +193,14 @@ export interface Work {
   named?: boolean;
 }
 /** What made a revision: the work's creation, one request to the author (every revision
- * it saves while answering), a hand edit on the canvas, or bringing back an earlier one.
- * A hand edit saved with `draft` is not a version yet: the person keeps working on it and
- * saves it as one (a plain `edit` revision) or throws it away. Edits saved before drafts
- * existed carry no flag and count as versions, consecutive ones together. */
+ * it saves while answering), a hand edit on the canvas, the person saving their hand edits
+ * as a version, or going back to an earlier one. A hand edit is not a version until it is
+ * saved: the person keeps working on it, then saves it or throws it away. */
 export type Cause =
   | { kind: "create" }
   | { kind: "run"; runId: string; prompt: string }
-  | { kind: "edit"; draft?: boolean }
+  | { kind: "edit" }
+  | { kind: "save" }
   | { kind: "restore"; revision: number };
 export interface RevisionSummary {
   revision: number;
@@ -241,12 +241,9 @@ export interface UnsavedEdit {
   revision: number;
   revisions: number[];
 }
-const sameStep = (a: Cause, b: Cause) =>
-  a.kind === b.kind &&
-  a.kind !== "create" &&
-  a.kind !== "restore" &&
-  (a.kind !== "edit" || (!a.draft && !(b as Extract<Cause, { kind: "edit" }>).draft)) &&
-  (a.kind !== "run" || a.runId === (b as Extract<Cause, { kind: "run" }>).runId);
+/** Revisions one request saved in a row are one version. */
+const sameRun = (a: Cause, b: Cause) =>
+  a.kind === "run" && b.kind === "run" && a.runId === b.runId;
 /** The versions of a work as they stand now, oldest first, and the hand edits made on the
  * latest that are not saved as a version yet, from its revisions in any order. */
 export function historyOf(history: Pick<RevisionSummary, "revision" | "cause" | "updatedAt">[]): {
@@ -283,7 +280,7 @@ export function historyOf(history: Pick<RevisionSummary, "revision" | "cause" | 
   for (const r of sorted) {
     const top = stack.at(-1),
       cause = r.cause;
-    if (cause.kind === "edit" && cause.draft && top) {
+    if (cause.kind === "edit" && top) {
       unsaved = [...unsaved, { revision: r.revision, revisions: [r.revision] }];
       where.set(r.revision, { version: top, edits: unsaved, at: unsaved.length - 1 });
       continue;
@@ -313,7 +310,7 @@ export function historyOf(history: Pick<RevisionSummary, "revision" | "cause" | 
       push(r, cause, []);
       continue;
     }
-    if (top && !top.sealed && !unsaved.length && sameStep(top.cause, cause)) {
+    if (top && !top.sealed && !unsaved.length && sameRun(top.cause, cause)) {
       top.revisions.push(r.revision);
       top.revision = r.revision;
       top.cause = cause;

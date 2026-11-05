@@ -357,15 +357,15 @@ describe("user owned works", () => {
     // An edit made from a revision that is no longer the latest is refused.
     expect((await send(alice.cookie, edit)).status).toBe(409);
     // Until the person saves it, the edit is not a version of its own.
-    expect(store.revisions(work.id)[0].cause).toEqual({ kind: "edit", draft: true });
-    expect(store.progress(work.id)).toMatchObject({ version: 2, unsaved: 1 });
+    expect(store.revisions(work.id)[0].cause).toEqual({ kind: "edit" });
+    expect(store.progress(work.id)).toMatchObject({ version: 1, unsaved: 1 });
     const save = (cookie: string) =>
       app.request(`/api/works/${work.id}/save`, { method: "POST", headers: { cookie } });
     expect((await save(bob.cookie)).status).toBe(404);
     const kept = await save(alice.cookie);
     expect(kept.status).toBe(200);
     expect(((await kept.json()) as Work).scenes).toEqual(moved.scenes);
-    expect(store.progress(work.id)).toMatchObject({ version: 3 });
+    expect(store.progress(work.id)).toMatchObject({ version: 2 });
     expect(store.progress(work.id).unsaved).toBeUndefined();
     // With nothing left to save, saving says so.
     expect((await save(alice.cookie)).status).not.toBe(200);

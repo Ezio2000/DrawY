@@ -11,6 +11,7 @@ export function versionTitle(v: Version, versions: Version[], t: Words) {
     case "run":
       return v.cause.prompt || t.history.pictures;
     case "edit":
+    case "save":
       return t.history.edited;
     case "restore": {
       const from = versionOf(versions, v.cause.revision);
@@ -93,7 +94,7 @@ export function Drafts({
               ? MessageSquareText
               : v.cause.kind === "restore"
                 ? RotateCcw
-                : v.cause.kind === "edit"
+                : v.cause.kind === "save" || v.cause.kind === "edit"
                   ? Hand
                   : FilePlus2;
           const title = versionTitle(v, versions, t);

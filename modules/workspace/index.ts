@@ -256,7 +256,7 @@ export function saveEdits(store: UserStore, workId: string) {
   const current = store.work(workId);
   if (!historyOf(store.revisions(workId)).unsaved.length)
     throw new DomainError("没有要保存的修改");
-  return store.commit(current, current.revision, { kind: "edit" });
+  return store.commit(current, current.revision, { kind: "save" });
 }
 /** Takes back the latest step: the drawing returns to how it was before it. */
 export function undo(store: UserStore, workId: string) {

@@ -445,7 +445,7 @@ export function createApp(storage: Storage) {
       .parse(await c.req.json());
     const { work } = await writeWork(store, workId, edit, {
       base: baseRevision,
-      cause: { kind: "edit", draft: true },
+      cause: { kind: "edit" },
     });
     publish(store.userId, { type: "work", work });
     return c.json(work);

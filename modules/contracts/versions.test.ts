@@ -6,22 +6,21 @@ const history = (causes: Cause[]): RevisionSummary[] =>
 const run = (runId: string): Cause => ({ kind: "run", runId, prompt: "ask " + runId });
 
 it("counts one version for each request, however many drafts it saved", () => {
-  // Two requests that saved twelve drafts between them, then three hand edits saved before
-  // drafts existed.
+  // Two requests that saved twelve drafts between them, then three hand edits saved as one.
   const h = history([
     { kind: "create" },
     ...Array.from({ length: 8 }, () => run("a")),
     ...Array.from({ length: 4 }, () => run("b")),
     { kind: "edit" },
     { kind: "edit" },
-    { kind: "edit" },
+    { kind: "save" },
   ]);
   const versions = versionsOf(h);
   expect(versions.map((v) => [v.number, v.cause.kind, v.revision, v.revisions.length])).toEqual([
     [0, "create", 1, 1],
     [1, "run", 9, 8],
     [2, "run", 13, 4],
-    [3, "edit", 16, 3],
+    [3, "save", 16, 3],
   ]);
   // Order given does not matter.
   expect(versionsOf([...h].reverse())).toEqual(versions);
@@ -56,7 +55,7 @@ it("goes back to a version instead of making a new one, and forward again", () =
 });
 
 it("keeps hand edits out of the versions until they are saved as one", () => {
-  const draft: Cause = { kind: "edit", draft: true };
+  const draft: Cause = { kind: "edit" };
   const h = history([{ kind: "create" }, run("a"), draft, draft, draft]);
   const { versions, unsaved } = historyOf(h);
   expect(versions.map((v) => v.number)).toEqual([0, 1]);
@@ -80,13 +79,13 @@ it("keeps hand edits out of the versions until they are saved as one", () => {
     unsaved: [],
   });
   // Saved, they are one version; edits saved one after another are versions of their own.
-  const saved = history([{ kind: "create" }, run("a"), draft, draft, { kind: "edit" }, draft, { kind: "edit" }]);
+  const saved = history([{ kind: "create" }, run("a"), draft, draft, { kind: "save" }, draft, { kind: "save" }]);
   expect(historyOf(saved)).toEqual({
     versions: [
       expect.objectContaining({ number: 0 }),
       expect.objectContaining({ number: 1 }),
-      expect.objectContaining({ number: 2, cause: { kind: "edit" }, revisions: [3, 4, 5] }),
-      expect.objectContaining({ number: 3, cause: { kind: "edit" }, revisions: [6, 7] }),
+      expect.objectContaining({ number: 2, cause: { kind: "save" }, revisions: [3, 4, 5] }),
+      expect.objectContaining({ number: 3, cause: { kind: "save" }, revisions: [6, 7] }),
     ],
     unsaved: [],
   });
