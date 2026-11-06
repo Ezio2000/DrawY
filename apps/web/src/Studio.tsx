@@ -135,11 +135,12 @@ function doing(step: ToolStep, t: Words): string {
 /** Between tools, what the author is about, told by where it has got to. */
 function between(steps: Step[], t: Words) {
   const last = steps.findLast((s): s is ToolStep => s.kind === "tool");
-  if (!last) return t.now.understanding;
+  if (!last) return t.now.thinking;
   if (last.status === "failed") return t.now.recovering;
   switch (last.name) {
+    // Having looked, it may revise or be done.
     case "view_canvas":
-      return t.now.revising;
+      return t.now.reviewing;
     case "write_work":
       return t.now.checking;
     default:
@@ -314,24 +315,29 @@ export function Now({
     </button>
   );
 }
-/** One line on what a live run is doing, and for how long it has. */
-function Current({ run }: { run: Run }) {
-  const t = useT(),
-    locale = useLocale();
-  // A tool still at work outranks the thoughts and notes that stream alongside it.
+/** What a live run is doing, in a line: a tool still at work outranks the thoughts and
+ * notes that stream alongside it, then the latest thought the reader can read, then the
+ * author's latest note, then where it has got to. `told` leaves out what the steps
+ * listed above the line already say (the tool at work, the note just written). */
+export function currentOf(run: Run, t: Words, locale: string, told = false) {
   const busy = run.steps.findLast(
       (s): s is ToolStep => s.kind === "tool" && s.status === "running",
     ),
     tail = run.steps.at(-1),
-    headline = tail?.kind === "thinking" ? thinkingOf(run, locale) : "";
+    headline = tail?.kind === "thinking" ? thinkingOf(run, locale) : "",
+    note = tail?.kind === "message" && tail.role === "assistant" ? plain(tail.text) : "";
   const line = busy
-    ? doing(busy, t)
-    : headline
-      ? headline
-      : tail?.kind === "message" && tail.role === "assistant"
-        ? plain(tail.text)
-        : between(run.steps, t);
-  const at = run.steps.indexOf((busy ?? tail)!);
+    ? told
+      ? ""
+      : doing(busy, t)
+    : headline || (told ? "" : note) || between(run.steps, t);
+  return { line, at: run.steps.indexOf((busy ?? tail)!) };
+}
+/** One line on what a live run is doing, and for how long it has. */
+function Current({ run, told }: { run: Run; told?: boolean }) {
+  const t = useT(),
+    locale = useLocale();
+  const { line, at } = currentOf(run, t, locale, told);
   return (
     <>
       <span key={at + line} className={cx("now-line")}>
@@ -469,12 +475,14 @@ function StepView({
 /** Thoughts in a row, as one line: the latest headline the reader can read, and every
  * thought's headline and reasoning when opened. */
 function Thoughts({ steps, live }: { steps: Step[]; live: boolean }) {
-  const t = useT(),
-    locale = useLocale();
+  const locale = useLocale();
   const parts = steps
     .map((s) => thought(s.kind === "thinking" ? s.text : ""))
     .filter(([title]) => title && readable(title, locale));
   const headline = parts.at(-1)?.[0];
+  // Thoughts summarised in another language say nothing to this reader; the line under the
+  // steps tells that the author is thinking.
+  if (!parts.length) return null;
   return (
     <li className={cx("step")} data-kind="thinking" data-status={live ? "running" : "done"}>
       <i className={cx("step-icon")}>
@@ -482,7 +490,7 @@ function Thoughts({ steps, live }: { steps: Step[]; live: boolean }) {
       </i>
       <details className={cx("step-body")}>
         <summary>
-          <span>{headline ? plain(headline) : t.now.thinking}</span>
+          <span>{plain(headline!)}</span>
           {steps.length > 1 && <small>×{steps.length}</small>}
           {!!parts.length && <ChevronRight size={13} />}
         </summary>
@@ -644,7 +652,10 @@ function Brief({
           {step.concept}
         </blockquote>
       )}
-      {!!step.found?.length && <Found found={step.found} used={used} zoom={zoom} />}
+      {/* Only what the library has: the rest is painted in the steps that follow. */}
+      {step.found?.some((f) => f.candidates.length) && (
+        <Found found={step.found.filter((f) => f.candidates.length)} used={used} zoom={zoom} />
+      )}
     </div>
   );
 }
@@ -713,20 +724,27 @@ function Draft({ step }: { step: Tool<"write_work"> }) {
         {step.status === "running" ? w.writing : w.write_work}
         {step.writing && step.status === "running" && <small> · {w.writingDrawing(step.writing)}</small>}
       </span>
-      {step.scenes.map((s) => (
-        <div key={s.id} className={cx("draft-scene")}>
-          {s.title && <b>{s.title}</b>}
-          <span className={cx("draft-modules")}>
-            {/* While streaming every module shows as it lands; a saved draft keeps a few. */}
-            {(step.status === "running" ? s.modules : s.modules.slice(0, 8)).map((m) => (
-              <i key={m.id}>{m.label || m.id}</i>
-            ))}
-            {step.status !== "running" && s.modules.length > 8 && (
-              <i data-more>+{s.modules.length - 8}</i>
+      {step.scenes.map((s) => {
+        // Modules go by their words; one without any is only counted below, its id being
+        // the author's handle, not a name.
+        const named = s.modules.filter((m) => m.label);
+        return (
+          <div key={s.id} className={cx("draft-scene")}>
+            {s.title && <b>{s.title}</b>}
+            {!!named.length && (
+              <span className={cx("draft-modules")}>
+                {/* While streaming every module shows as it lands; a saved draft keeps a few. */}
+                {(step.status === "running" ? named : named.slice(0, 8)).map((m) => (
+                  <i key={m.id}>{m.label}</i>
+                ))}
+                {step.status !== "running" && named.length > 8 && (
+                  <i data-more>+{named.length - 8}</i>
+                )}
+              </span>
             )}
-          </span>
-        </div>
-      ))}
+          </div>
+        );
+      })}
       {!!facts.length && (
         <div className={cx("draft-foot")}>
           <small>{facts.join(" · ")}</small>
@@ -1111,7 +1129,15 @@ function RunView({
         </div>,
       );
     } else if (s.kind === "message" && s.asked) {
-      // What the author asked stays in the conversation, before the answer.
+      // What the author asked stays in the conversation, before the answer, unless the
+      // answer restates each question with what was chosen.
+      const next = r.steps[i + 1];
+      if (
+        next?.kind === "message" &&
+        next.role === "user" &&
+        next.text.split("\n")[0] === s.text.split("\n")[0]
+      )
+        return;
       flush();
       items.push(
         <div key={i} className={cx("reply", "asked")}>
@@ -1137,7 +1163,8 @@ function RunView({
   );
   const facts = [
     !!count && t.journal.steps(count),
-    r.elapsedMs && span(r.elapsedMs),
+    // A live run's time is the clock under its steps.
+    !working && r.elapsedMs && span(r.elapsedMs),
   ].filter(Boolean);
   const spent = spentBy(r);
   // What a run spent is for those who manage the models; others count requests.
@@ -1208,7 +1235,7 @@ function RunView({
       {items.slice(1)}
       {working && unfolded && (
         <div className={cx("run-now")}>
-          <Current run={r} />
+          <Current run={r} told />
         </div>
       )}
       {answer && (

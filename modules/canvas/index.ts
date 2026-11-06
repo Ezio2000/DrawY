@@ -493,10 +493,10 @@ export class Canvas {
       const before = this.renderer;
       this.renderer = next;
       next.element.style.visibility = "";
-      // The selection stays on what is still there, as it is now.
-      this.refresh(false);
+      // The selection stays on what is still there, as it is now, and the drawing takes
+      // the current view at once; an automatic view then glides on to fit it.
+      this.refresh();
       if (this.automatic && !quiet) this.fit(true);
-      else this.paint();
       if (quiet) before.dispose();
       else this.unfold(before, next);
       this.options.shown?.(scene);
@@ -1162,11 +1162,15 @@ export class Canvas {
     );
     target.y += top;
     // A view already all but there stays put: a glide of a few pixels reads as drifting.
+    // It is still painted, so a drawing just swapped in takes the view it stays at.
     const near =
       Math.abs(target.scale / this.camera.scale - 1) < 0.03 &&
       Math.abs(target.x - this.camera.x) < 14 &&
       Math.abs(target.y - this.camera.y) < 14;
-    if (glide && near) return;
+    if (glide && near) {
+      this.paint();
+      return;
+    }
     cancelAnimationFrame(this.gliding);
     if (!glide || !this.options.motion) {
       this.camera = target;
