@@ -1142,14 +1142,15 @@ function RunView({
   const spent = spentBy(r);
   // What a run spent is for those who manage the models; others count requests.
   const priced =
-    manages && !working && !!r.usage && (spent.input + spent.output > 0 || !!spent.images);
+    manages && !working && !!r.usage &&
+    (spent.input + spent.output > 0 || !!spent.images || !!spent.failed.attempts || !!spent.failed.images);
   const answer = reply >= 0 ? (r.steps[reply] as Extract<Step, { kind: "message" }>) : undefined;
   const sources = sourcesOf(answer?.citations);
   const ended = last && r.status === "failed" ? stopped(r, work) : undefined;
   return (
     <article className={cx("run")} data-status={r.status}>
       {items[0]}
-      {!!count && (
+      {(!!count || priced) && (
         <div className={cx("run-head")}>
           <button className={cx("run-fold")} aria-expanded={unfolded} onClick={() => fold(!unfolded)}>
             {working && <i className={cx("now-dot")} />}

@@ -196,9 +196,10 @@ export function App() {
     // Why the composer holds a change written up for the author, until it is sent.
     [handed, setHanded] = useState(""),
     // A message held back while the person decides what becomes of their unsaved edits.
-    [holding, setHolding] = useState<() => Promise<void>>(),
+    [holding, setHolding] = useState<{ workId: string; send: (work: Work) => Promise<void> }>(),
     // Going back to a version, to take back while the work is still where it left it.
-    [wentBack, setWentBack] = useState<{ at: number; from: number; text: string }>();
+    [wentBack, setWentBack] = useState<{ workId: string; at: number; from: number; text: string }>();
+  const [historyWorkId, setHistoryWorkId] = useState<string>();
   const page = pageOf(path);
   const journal = panel === "journal";
   const drafting = panel === "drafts";
@@ -264,11 +265,12 @@ export function App() {
     if (target) go(sceneAddress(target));
   }, [run?.id, run?.status]);
   useEffect(() => {
+    if (!work || workIdOf(path) !== work.id) return;
     // An address naming a scene the work no longer has falls back to its root.
     if (work && addressed && !work.scenes[addressed])
       history_replace(sceneAddress(work.rootSceneId));
     if (detailId && work && !work.details[detailId]) setDetail(undefined);
-  }, [work, addressed, detailId]);
+  }, [work, path, addressed, detailId]);
   useEffect(() => {
     S([]);
     setLink(null);
@@ -290,11 +292,11 @@ export function App() {
   // edits made since the latest are not one until the person saves them.
   const { versions, unsaved } = useMemo(() => historyOf(history), [history]);
   // The history follows the work a moment later; until it does, it says nothing.
-  const synced = !!work && history.some((r) => r.revision === work.revision);
+  const synced = !!work && historyWorkId === work.id && history.some((r) => r.revision === work.revision);
   const unsavedCount = synced ? unsaved.length : 0;
   const undoable =
     !!work &&
-    (wentBack?.at === work.revision || stepBefore(history, work.revision) !== undefined);
+    ((wentBack?.workId === work.id && wentBack.at === work.revision) || stepBefore(history, work.revision) !== undefined);
   const canRedo = !!work && redoable?.at === work.revision;
   const ids = selected.map((s) => s.moduleId);
   // Editing waits while the author works or an earlier revision is shown.
@@ -306,8 +308,19 @@ export function App() {
   const spent = user?.quota === 0;
   useEffect(() => {
     if (!work) return H([]);
-    void api<RevisionSummary[]>("/works/" + work.id + "/revisions").then(H, () => {});
+    let cancelled = false;
+    void api<RevisionSummary[]>("/works/" + work.id + "/revisions").then((rows) => {
+      if (cancelled) return;
+      H(rows);
+      setHistoryWorkId(work.id);
+    }, () => {});
+    return () => { cancelled = true; };
   }, [work?.id, work?.revision]);
+  useEffect(() => {
+    setHolding(undefined);
+    setWentBack(undefined);
+    setRedoable(undefined);
+  }, [work?.id]);
   // A preview ends when the work changes under it.
   useEffect(() => setPreview(undefined), [work?.id, work?.revision]);
   useEffect(() => {
@@ -365,6 +378,7 @@ export function App() {
     const runs = api<Run[]>("/works/" + id + "/runs");
     runs.catch(() => {});
     const w = await api<Work>("/works/" + id);
+    if (workIdOf(location.pathname) !== id) return;
     W(w);
     setDetail(undefined);
     S([]);
@@ -567,13 +581,15 @@ export function App() {
       setUploading((n) => n - left);
     }
   }
-  async function send(text = prompt, target = sceneId, picked = choices, decided = false) {
+  async function send(text = prompt, target = sceneId, picked = choices, decided?: Work) {
     if ((!text.trim() && !attachments.length) || loadingRuns || busy || working || uploading) return;
+    if (work && (current.current?.id !== work.id || workIdOf(location.pathname) !== work.id)) return;
+    if (!decided && work && !synced) return;
     if (spent && run?.status !== "waiting") throw Error(t.composer.quotaOut);
     // Hand edits not saved yet wait for the person to say what becomes of them, since the
     // author would otherwise take them into its own version.
     if (!decided && work && (unsavedCount || queued.current)) {
-      setHolding(() => () => send(text, target, picked, true));
+      setHolding({ workId: work.id, send: (saved) => send(text, target, picked, saved) });
       return;
     }
     if (!connected) {
@@ -582,7 +598,7 @@ export function App() {
     }
     B(true);
     try {
-      let w = work;
+      let w = decided ?? work;
       const message =
         !w && style ? `${text.trim()}\n${t.home.styleLine(style.name[locale])}` : text;
       if (!w) {
@@ -594,6 +610,7 @@ export function App() {
         target = w.rootSceneId;
         go("/a/" + w.id);
       }
+      if (!w.scenes[target]) target = w.rootSceneId;
       const request = selected.length
         ? `${message}\n${selected.map((s) => `Selected module: ${s.moduleId}\n${s.label}`).join("\n")}`
         : chosenLink
@@ -649,13 +666,14 @@ export function App() {
     setPreview(undefined);
     setRedoable(undefined);
     setWentBack(
-      number !== undefined ? { at: w.revision, from, text: t.history.wentBack(number) } : undefined,
+      number !== undefined ? { workId: w.id, at: w.revision, from, text: t.history.wentBack(number) } : undefined,
     );
     if (run) setDismissed(run.id);
   }
   /** Takes back going back to a version: the versions it left come back. */
   async function undoBack() {
     const back = wentBack!;
+    if (back.workId !== work?.id) return;
     setWentBack(undefined);
     W(
       await mine(() =>
@@ -667,28 +685,31 @@ export function App() {
   async function saveEdits() {
     await edits.current;
     const number = (versions.at(-1)?.number ?? 0) + 1;
-    W(await mine(() => api<Work>("/works/" + work!.id + "/save", "POST")));
+    const w = await mine(() => api<Work>("/works/" + work!.id + "/save", "POST"));
+    W(w);
     setRedoable(undefined);
     setWentBack(undefined);
     setNotice(t.unsaved.saved(number));
+    return w;
   }
   /** Throws the hand edits made since the latest version away. */
   async function discardEdits() {
     await edits.current;
     const latest = versions.at(-1);
-    if (!latest) return;
+    if (!latest) return work!;
     const from = work!.revision;
     const w = await mine(() =>
       api<Work>("/works/" + work!.id + "/restore", "POST", { revision: latest.revision }),
     );
     W(w);
     setRedoable(undefined);
-    setWentBack({ at: w.revision, from, text: t.unsaved.discarded });
+    setWentBack({ workId: w.id, at: w.revision, from, text: t.unsaved.discarded });
+    return w;
   }
   /** Takes back the latest request, or hand edit, as a whole; it can be brought back
    * until the work changes otherwise. Both show at once, like the edits they undo. */
   async function undo() {
-    if (wentBack?.at === work!.revision) return undoBack();
+    if (wentBack?.workId === work!.id && wentBack.at === work!.revision) return undoBack();
     const from = work!.revision;
     const w = await mine(() => api<Work>("/works/" + work!.id + "/undo", "POST"));
     setRedoable((old) => ({
@@ -971,7 +992,7 @@ export function App() {
       style={place === "home" ? style : undefined}
       setStyle={place === "home" ? setStyle : undefined}
       working={working}
-      busy={busy || loadingRuns}
+      busy={busy || loadingRuns || (place !== "home" && !synced)}
       send={() => void attempt(() => send())}
       stop={() => void attempt(stop)}
       attach={(files) => void attempt(() => upload(files))}
@@ -1281,7 +1302,7 @@ export function App() {
                       <span>{notice}</span>
                     </div>
                   )}
-                  {wentBack?.at === work.revision && !preview && !holding && (
+                  {wentBack?.workId === work.id && wentBack.at === work.revision && !preview && !holding && (
                     <div className={cx("toast-error")} data-tone="ok" role="status">
                       <span>{wentBack.text}</span>
                       <button
@@ -1292,7 +1313,7 @@ export function App() {
                       </button>
                     </div>
                   )}
-                  {holding ? (
+                  {holding?.workId === work.id ? (
                     <div className={cx("unsaved-bar")} data-asking role="alertdialog">
                       <span className={cx("unsaved-text")}>
                         <i className={cx("unsaved-dot")} />
@@ -1308,11 +1329,10 @@ export function App() {
                         <button
                           className={cx("secondary small")}
                           onClick={() => {
-                            const go = holding;
+                            const held = holding;
                             setHolding(undefined);
                             void attempt(async () => {
-                              await discardEdits();
-                              await go();
+                              await held.send(await discardEdits());
                             });
                           }}
                         >
@@ -1321,11 +1341,10 @@ export function App() {
                         <button
                           className={cx("primary small")}
                           onClick={() => {
-                            const go = holding;
+                            const held = holding;
                             setHolding(undefined);
                             void attempt(async () => {
-                              await saveEdits();
-                              await go();
+                              await held.send(await saveEdits());
                             });
                           }}
                         >
