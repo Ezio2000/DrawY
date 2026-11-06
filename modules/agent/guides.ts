@@ -58,7 +58,7 @@ A scene's script is its interaction field, a JavaScript function body receiving 
 - api.openScene(id) and api.openDetail(id) navigate. A module target navigates without code.
 
 These states are transient, since the saved work is what reopens, so the default state belongs in instance data. When a control changes values, keep the scales they are read against (axes, reference lines, maxima) fixed over the control's range, so a change shows as a change, with ticks on round numbers. Register async handlers as async functions so preview waits for them.
-Give the scene checks [{moduleId, selector}] for important buttons: view_canvas then shows them pressed. Test a sequence with view_canvas actions in a specified scene, because an interaction you have not seen run is unverified.`,
+Give the scene checks [{moduleId, selector}] for the important buttons its script or a drawing answers: view_canvas then shows them pressed. Test a sequence with view_canvas actions in a specified scene, because an interaction you have not seen run is unverified. A module's target needs no check, as the app opens it without your code: view_canvas already shows every subscene, and a detail page is laid out by the app, so a click that opens one is reported in words, not pictured.`,
   },
   formats: {
     when: "when the user names a medium that carries its own words and shape: a poster, flyer, social-media card, cover or slide",

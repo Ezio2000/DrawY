@@ -46,6 +46,10 @@ export interface CanvasOptions {
   /** Screen space kept clear above and below the automatic view, for controls laid over
    * the canvas; asked each time the view is fitted, as the controls change size. */
   insets?: () => { top: number; bottom: number };
+  /** Mark each module that opens a scene or a page, at its corner. The app's canvas does;
+   * the page the capture service and the exports draw has none, as the marks are styled by
+   * the app and are not part of the work. */
+  marks?: boolean;
   open: (target: Target) => void;
   select: (selection: Selection[]) => void;
   /** A double click on words or a picture in a module. */
@@ -899,7 +903,7 @@ export class Canvas {
   /** A small mark at the corner of each module that opens a scene or a page, while not
    * editing; it says where it leads when the module or the mark is under the pointer. */
   private paintTargets() {
-    const shown = !this.editing;
+    const shown = !this.editing && this.options.marks !== false;
     this.targets.style.display = shown ? "" : "none";
     if (!shown) return;
     const { x, y, scale } = this.camera;

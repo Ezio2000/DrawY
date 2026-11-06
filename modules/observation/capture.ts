@@ -43,7 +43,12 @@ export interface Shot {
   overview: boolean;
   /** The screenshot's size in pixels. */
   viewport: { width: number; height: number };
-  base64: string;
+  /** None when a click opened a page of the work: the page is the author's own HTML, laid
+   * out by the app, so it is named instead of pictured. */
+  base64?: string;
+  /** The page a click opened, and whether the click only opened the module's own target,
+   * which the app does by itself without any script. */
+  opened?: { detail: string; byTarget: boolean };
   errors: string[];
 }
 /** Runs in the page, so its helpers live inside it: reads every part's text. A size is the
@@ -238,6 +243,36 @@ export async function capture(
           document.getElementById("drawy-annotations")?.remove(),
         );
       };
+      /** What a click led to: the scene as it now looks, or the page it opened named. The
+       * page is closed again, so a sequence of clicks goes on in the scene. */
+      const after = async (label: string, moduleId: string) => {
+        const opened = await page.evaluate((moduleId) => {
+          const at = document.querySelector<HTMLElement>("[data-drawy-detail]");
+          if (!at) return undefined;
+          at.remove();
+          const detail = at.dataset.drawyDetail!;
+          const target = window.drawyView.renderer.instances.get(moduleId)?.target;
+          return {
+            detail,
+            byTarget: target?.kind === "detail" && target.id === detail,
+          };
+        }, moduleId);
+        if (!opened) return shot(label);
+        shots.push({
+          camera: await page.evaluate(() => window.drawyView.view),
+          sceneId: await page.evaluate(() => window.drawyData.sceneId),
+          label,
+          overview: false,
+          viewport: page.viewportSize()!,
+          opened,
+          errors: [
+            ...new Set([
+              ...errors,
+              ...(await page.evaluate(() => window.drawyErrors)),
+            ]),
+          ],
+        });
+      };
       await load();
       if (scene.overview) {
         await shot("全图", true);
@@ -252,7 +287,7 @@ export async function capture(
           } catch (e) {
             errors.push(String(e));
           }
-          await shot(`交互 ${check.moduleId} ${check.selector}`);
+          await after(`交互 ${check.moduleId} ${check.selector}`, check.moduleId);
         }
       }
       if (scene.regions?.length) {
@@ -287,7 +322,7 @@ export async function capture(
           } catch (e) {
             errors.push(String(e));
           }
-          await shot(`操作 ${action.moduleId} ${action.selector}`);
+          await after(`操作 ${action.moduleId} ${action.selector}`, action.moduleId);
         }
       }
       await page.close();

@@ -196,8 +196,14 @@ it("awaits async scene events, opens separate details and renders structured dia
       () => window.drawyData.work.scenes.root.modules[4].data.tip,
     ),
   ).toBe("食物与休息");
+  // The marks of modules that open something belong to the app, not to this page.
+  expect(await page.locator("button[data-target]").count()).toBe(0);
   await page.locator('[data-module-id="level-2"]').click();
   expect(await page.locator("article h1").innerText()).toBe("理解需求层次");
+  // The page covers the screen and the article keeps its measure.
+  const cover = (await page.locator("[data-drawy-detail]").boundingBox())!;
+  expect(cover.width).toBe(1440);
+  expect((await page.locator("article").boundingBox())!.width).toBe(680);
   await page.getByRole("button", { name: "← 返回图中" }).click();
   expect(await page.locator("article").count()).toBe(0);
   await page.locator('[data-action="explore"]').click();
@@ -720,11 +726,18 @@ it("captures full scenes and completed interaction states through the same runti
         regions: [work.scenes.root.modules[4].bounds],
         actions: [
           { moduleId: "control", selector: '[data-action="emphasize"]' },
+          { moduleId: "level-2", selector: "svg" },
+          { moduleId: "control", selector: '[data-action="emphasize"]' },
         ],
       },
     ],
   });
-  expect(shots).toHaveLength(5);
+  expect(shots).toHaveLength(7);
+  // A click that opens a detail page names it instead of picturing it, and closes it so
+  // the next click lands in the scene.
+  expect(shots[5].base64).toBeUndefined();
+  expect(shots[5].opened).toEqual({ detail: "explanation", byTarget: true });
+  expect(shots[6].base64).toBeDefined();
   expect(shots[0].modules!.map((m) => m.id)).toContain("level-4");
   // Only the opening view carries the scene's modules.
   expect(shots.slice(1).every((s) => !s.modules)).toBe(true);
