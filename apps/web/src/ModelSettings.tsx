@@ -15,6 +15,10 @@ import {
   Trash2,
   Server,
   Tags,
+  ArrowUp,
+  ArrowDown,
+  Copy,
+  Star,
 } from "lucide-react";
 import { Segmented, Switch } from "@drawy/ui";
 import {
@@ -403,9 +407,10 @@ function ProviderSection<
                             : x,
                         ),
                       );
-                    const labelled = catalog.labels.some(
+                    const tiers = catalog.labels.filter(
                       (l) => l.writer === m.id || l.image === m.id,
                     );
+                    const labelled = !!tiers.length;
                     const kept = isDefault || total < 2 || labelled;
                     return (
                       <Entry
@@ -414,9 +419,14 @@ function ProviderSection<
                         title={kind.label(p, m)}
                         detail={kind.detail(p, m)}
                         badges={
-                          isDefault && (
-                            <Badge tone="accent">{w.isDefault}</Badge>
-                          )
+                          <>
+                            {isDefault && <Badge tone="accent">{w.isDefault}</Badge>}
+                            {labelled && (
+                              <Badge tone="muted">
+                                {w.usedBy(tiers.map((l) => l.name).join(t.now.list))}
+                              </Badge>
+                            )}
+                          </>
                         }
                         open={model === m.id}
                         toggle={() =>
@@ -475,6 +485,27 @@ function ProviderSection<
                                   : w.lastKept
                               : ""}
                           </small>
+                          <span className={cx("tier-actions")}>
+                          <button
+                            className={cx("secondary small")}
+                            onClick={() => {
+                              const copy = { ...structuredClone(m), id: newId(m.id.split("-")[0] || "m"), name: m.name && w.copyOf(m.name) };
+                              set(
+                                list.map((x) =>
+                                  x.id === p.id
+                                    ? kind.settle({
+                                        ...x,
+                                        models: x.models.flatMap((y) => (y.id === m.id ? [y, copy] : [y])),
+                                      })
+                                    : x,
+                                ),
+                              );
+                              setModel(copy.id);
+                            }}
+                          >
+                            <Copy size={14} />
+                            {w.duplicate}
+                          </button>
                           <button
                             className={cx("secondary small danger")}
                             disabled={kept}
@@ -496,6 +527,7 @@ function ProviderSection<
                             <Trash2 size={14} />
                             {w.removeModel}
                           </button>
+                          </span>
                         </footer>
                       </Entry>
                     );
@@ -709,7 +741,7 @@ function writerGroups(
             />
           </Row>
         )}
-        {m.speeds.length > 1 && (
+        {m.speeds.length > 0 && (
           <Row
             label={w.speed}
             hint={w.defaultOptionHint}
@@ -1109,8 +1141,53 @@ export function SearchSection({
   );
 }
 
+/** One choice among a few, the first standing for "whatever the model says", so a
+ * choice with a single option can still be made and seen. */
+function ChooseOrDefault<V extends string>({
+  label,
+  options,
+  value,
+  fallback,
+  name,
+  pick,
+  offered,
+}: {
+  label: string;
+  options: readonly V[];
+  value?: V;
+  /** What the model uses when nothing is chosen. */
+  fallback: V;
+  name: (v: V) => string;
+  pick: (v?: V) => void;
+  /** Options the model offers people now; the others are offered once picked. */
+  offered: readonly V[];
+}) {
+  const t = useT(),
+    w = t.settings;
+  return (
+    <Segmented label={label}>
+      <button aria-pressed={value === undefined} onClick={() => pick(undefined)}>
+        {w.modelDefault(name(fallback))}
+      </button>
+      {options.map((v) => (
+        <button
+          key={v}
+          aria-pressed={value === v}
+          data-off={!offered.includes(v) || undefined}
+          data-tip={offered.includes(v) ? undefined : w.notOfferedYet}
+          onClick={() => pick(v)}
+        >
+          {name(v)}
+        </button>
+      ))}
+    </Segmented>
+  );
+}
+
 /** The labels people pick beside the composer, each a whole combination of models that
- * only those who manage models see: people pick the name, never what is in it. */
+ * only those who manage models see: people pick the name, never what is in it. Each shows
+ * what is in it at a glance and what would keep it from working, and can be moved,
+ * copied or made the default from its row. */
 export function LabelSection({
   catalog,
   change,
@@ -1134,15 +1211,32 @@ export function LabelSection({
       : v === BUILTIN
         ? t.composer.searchBuiltin
         : (catalog.searches.find((s) => s.id === v)?.name ?? v);
-  const set = (labels: ModelLabel[], label = catalog.defaults.label) =>
+  const set = (labels: ModelLabel[], label = catalog.defaults.label, writers = catalog.writers) =>
     change({
       ...catalog,
+      writers,
       labels,
       defaults: {
         ...catalog.defaults,
         label: labels.some((l) => l.id === label) ? label : (labels[0]?.id ?? ""),
       },
     });
+  /** The drawing model with an option it did not offer people yet, now offered. */
+  const offering = (id: string, patch: (m: WriterModel) => Partial<WriterModel>) =>
+    catalog.writers.map((p) =>
+      p.models.some((m) => m.id === id)
+        ? settleProvider({
+            ...p,
+            models: p.models.map((m) => (m.id === id ? { ...m, ...patch(m) } : m)),
+          })
+        : p,
+    );
+  const move = (i: number, by: number) => {
+    const next = [...list];
+    const [l] = next.splice(i, 1);
+    next.splice(i + by, 0, l);
+    set(next);
+  };
   return (
     <section>
       <Head title={t.titles.labels} hint={w.labelsHint}>
@@ -1170,12 +1264,29 @@ export function LabelSection({
       </Head>
       {!list.length && <p className={cx("settings-empty")}>{w.noLabels}</p>}
       <ul className={cx("entries")}>
-        {list.map((l) => {
-          const patch = (p: Partial<ModelLabel>) =>
-            set(list.map((x) => (x.id === l.id ? { ...x, ...p } : x)));
+        {list.map((l, i) => {
+          const patch = (p: Partial<ModelLabel>, writers?: WriterProvider[]) =>
+            set(
+              list.map((x) => (x.id === l.id ? { ...x, ...p } : x)),
+              catalog.defaults.label,
+              writers,
+            );
           const writer = writers.find((x) => x.m.id === l.writer);
           const painter = painters.find((x) => x.m.id === l.image);
           const isDefault = l.id === catalog.defaults.label;
+          const served = writer
+            ? speedsOf({ channel: writer.p.channel, protocol: writer.m.protocol })
+            : [];
+          const builtinOk =
+            !!writer?.m.builtinSearch &&
+            offersBuiltinSearch({ channel: writer.p.channel, protocol: writer.m.protocol });
+          // What would keep the tier from drawing, said on its row.
+          const problems = [
+            !writer && w.tierNoWriter,
+            writer && !writer.p.credential && w.tierUnconnected(writer.p.name),
+            writer && !writer.m.tools && w.tierNoTools,
+            l.web === BUILTIN && !builtinOk && w.tierNoBuiltin,
+          ].filter(Boolean) as string[];
           return (
             <Entry
               key={l.id}
@@ -1190,10 +1301,29 @@ export function LabelSection({
               ]
                 .filter(Boolean)
                 .join(" · ")}
-              badges={isDefault && <Badge tone="accent">{w.labelIsDefault}</Badge>}
+              badges={
+                <>
+                  {isDefault && <Badge tone="accent">{w.labelIsDefault}</Badge>}
+                  {!!problems.length && <Badge tone="warn">{w.tierUnready}</Badge>}
+                </>
+              }
               open={editing === l.id}
               toggle={() => setEditing(editing === l.id ? undefined : l.id)}
             >
+              {!!problems.length && (
+                <ul className={cx("tier-problems")}>
+                  {problems.map((p) => (
+                    <li key={p}>{p}</li>
+                  ))}
+                </ul>
+              )}
+              <div className={cx("tier-preview")}>
+                <small>{w.tierPreview}</small>
+                <span>
+                  <b>{l.name || w.labelNew(i + 1)}</b>
+                  {l.description && <em>{l.description}</em>}
+                </span>
+              </div>
               <Group title={w.basics}>
                 <Row label={w.labelName} hint={w.labelNameHint}>
                   <input value={l.name} onChange={(e) => patch({ name: e.target.value })} />
@@ -1202,13 +1332,6 @@ export function LabelSection({
                   <input
                     value={l.description}
                     onChange={(e) => patch({ description: e.target.value })}
-                  />
-                </Row>
-                <Row label={w.labelIsDefault} hint={w.labelDefaultHint}>
-                  <Switch
-                    checked={isDefault}
-                    disabled={isDefault}
-                    onChange={() => set(list, l.id)}
                   />
                 </Row>
               </Group>
@@ -1220,63 +1343,123 @@ export function LabelSection({
                       patch({ writer: e.target.value, effort: undefined, speed: undefined })
                     }
                   >
-                    {writers.map(({ p, m }) => (
-                      <option key={m.id} value={m.id}>
-                        {writerLabel(p, m)}
-                      </option>
+                    {catalog.writers.map((p) => (
+                      <optgroup
+                        key={p.id}
+                        label={p.name + (p.credential ? "" : ` · ${t.composer.modelUnconnected}`)}
+                      >
+                        {p.models.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {writerLabel(p, m)}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                 </Row>
-                {writer && writer.m.efforts.length > 1 && (
-                  <Row label={w.effort} wide={crowded(writer.m.efforts)}>
-                    <Choose
+                {writer && writer.m.efforts.length > 0 && (
+                  <Row label={w.effort} hint={w.tierOptionHint} wide>
+                    <ChooseOrDefault
                       label={w.effort}
                       options={writer.m.efforts}
-                      value={l.effort ?? writer.m.effort}
+                      offered={writer.m.efforts}
+                      value={l.effort}
+                      fallback={writer.m.effort}
                       name={(v) => w.efforts[v]}
                       pick={(effort) => patch({ effort })}
                     />
                   </Row>
                 )}
-                {writer && writer.m.speeds.length > 1 && (
-                  <Row label={w.speed} wide={crowded(writer.m.speeds)}>
-                    <Choose
+                {writer && served.length > 0 && (
+                  <Row label={w.speed} hint={w.tierSpeedHint} wide>
+                    <ChooseOrDefault
                       label={w.speed}
-                      options={writer.m.speeds}
-                      value={l.speed ?? writer.m.speed}
+                      options={served}
+                      offered={writer.m.speeds}
+                      value={l.speed}
+                      fallback={writer.m.speed}
                       name={(v) => w.speeds[v]}
-                      pick={(speed) => patch({ speed })}
+                      pick={(speed) =>
+                        patch(
+                          { speed },
+                          // A speed the model did not offer yet is offered from now on.
+                          speed && !writer.m.speeds.includes(speed)
+                            ? offering(writer.m.id, (m) => ({
+                                speeds: served.filter((s) => s === speed || m.speeds.includes(s)),
+                              }))
+                            : undefined,
+                        )
+                      }
                     />
                   </Row>
                 )}
-                <Row label={t.titles.search} wide={crowded(webs)}>
+                <Row label={t.titles.search} hint={builtinOk ? undefined : w.tierBuiltinHint} wide={crowded(webs)}>
                   <Choose
                     label={t.titles.search}
                     options={webs}
                     value={l.web}
                     name={webName}
-                    disabled={(v) =>
-                      v === BUILTIN &&
-                      !(
-                        writer?.m.builtinSearch &&
-                        offersBuiltinSearch({ channel: writer.p.channel, protocol: writer.m.protocol })
-                      )
-                    }
+                    disabled={(v) => v === BUILTIN && !builtinOk}
                     pick={(web) => patch({ web })}
                   />
                 </Row>
                 <Row label={t.titles.image}>
                   <select value={l.image} onChange={(e) => patch({ image: e.target.value })}>
-                    {painters.map(({ p, m }) => (
-                      <option key={m.id} value={m.id}>
-                        {imageLabel(p, m)}
-                      </option>
+                    {catalog.painters.map((p) => (
+                      <optgroup
+                        key={p.id}
+                        label={p.name + (p.credential ? "" : ` · ${t.composer.modelUnconnected}`)}
+                      >
+                        {p.models.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {imageLabel(p, m)}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                 </Row>
               </Group>
-              <footer className={cx("entry-foot")}>
-                <small />
+              <footer className={cx("entry-foot tier-foot")}>
+                <span className={cx("tier-actions")}>
+                  <button
+                    className={cx("secondary small")}
+                    disabled={i === 0}
+                    aria-label={w.moveUp}
+                    data-tip={w.moveUp}
+                    onClick={() => move(i, -1)}
+                  >
+                    <ArrowUp size={14} />
+                  </button>
+                  <button
+                    className={cx("secondary small")}
+                    disabled={i === list.length - 1}
+                    aria-label={w.moveDown}
+                    data-tip={w.moveDown}
+                    onClick={() => move(i, 1)}
+                  >
+                    <ArrowDown size={14} />
+                  </button>
+                  <button
+                    className={cx("secondary small")}
+                    onClick={() => {
+                      const id = newId("t");
+                      const next = [...list];
+                      next.splice(i + 1, 0, { ...l, id, name: w.copyOf(l.name) });
+                      set(next);
+                      setEditing(id);
+                    }}
+                  >
+                    <Copy size={14} />
+                    {w.duplicate}
+                  </button>
+                  {!isDefault && (
+                    <button className={cx("secondary small")} onClick={() => set(list, l.id)}>
+                      <Star size={14} />
+                      {w.makeDefault}
+                    </button>
+                  )}
+                </span>
                 <button
                   className={cx("secondary small danger")}
                   onClick={() => {

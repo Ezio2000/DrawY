@@ -11,7 +11,7 @@ import { fixture } from "../runtime/fixture.ts";
 import { Storage } from "../storage/index.ts";
 import { upgradeWork, type OldWork } from "../storage/upgrade.ts";
 import { composed } from "../editing/index.ts";
-import { writeWork } from "./index.ts";
+import { createWork, writeWork } from "./index.ts";
 import { chestRevision4, chestFailedWrite, chestCorrectWrite, redisFailedWrite, redisCorrections, redisBase } from "./write.fixtures.ts";
 
 /* The commit as a whole, on the writes that failed in real runs (the Redis and chest pain
@@ -195,5 +195,21 @@ describe("the chest pain figure's fourth write", () => {
     // No module changed, so no other link that meets the ECG module can lose its place.
     expect(work.scenes.root.modules).toEqual(before.scenes.root.modules);
     expect(links(before).filter((l) => l.from.moduleId === "ecg" || l.to.moduleId === "ecg").length).toBeGreaterThan(1);
+  });
+});
+
+describe("a blank canvas", () => {
+  const text = { id: "words", bounds: [40, 40, 200, 60] as [number, number, number, number], drawingId: "label", data: { text: "手写" } };
+  it("takes a hand edit before any brief", async () => {
+    const store = db.scoped(register(db, "hand", "abcdef").id);
+    const blank = createWork(store, "未命名画布");
+    const { work } = await writeWork(store, blank.id, { modules: [text] }, { cause: { kind: "edit" } });
+    expect(work.brief).toBeNull();
+    expect(work.scenes.root.modules.map((m) => m.id)).toEqual(["words"]);
+  });
+  it("still asks the author for a brief before it draws", async () => {
+    const store = db.scoped(register(db, "hand2", "abcdef").id);
+    const blank = createWork(store, "未命名画布");
+    await expect(writeWork(store, blank.id, { modules: [text] }, { cause })).rejects.toThrow("set_brief");
   });
 });

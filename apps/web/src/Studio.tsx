@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
+  BarChart3,
   BookMarked,
   BookOpen,
   ChevronRight,
@@ -9,7 +10,7 @@ import {
   Lightbulb,
   PenTool,
   Search,
-  Sparkles,
+  ImagePlus,
   SquareArrowOutUpRight,
   Wrench,
   X,
@@ -46,6 +47,37 @@ function thought(text: string) {
     : text.startsWith("**")
       ? [text.slice(2), ""]
       : [text.split("\n")[0], text.split("\n").slice(1).join("\n").trim()];
+}
+/** What a live run's author is thinking about right now, as the headline of its latest
+ * thought, when that is written in the reader's language. */
+export function thinkingOf(run: Run | undefined, locale: string) {
+  if (!live(run)) return "";
+  const last = run!.steps.findLast((s) => s.kind === "thinking");
+  if (!last || last.kind !== "thinking") return "";
+  const [headline] = thought(last.text);
+  return headline && readable(headline, locale) ? plain(headline) : "";
+}
+/** The stages a drawing goes through, and how far a run has got: thinking it over,
+ * settling what it shows, gathering pictures, the first strokes, then looking and
+ * revising. A run that skips a stage passes it. */
+export const STAGES = 5;
+export function stageOf(run: Run) {
+  let stage = 0;
+  for (const s of run.steps) {
+    if (s.kind !== "tool") continue;
+    const at =
+      s.name === "set_brief"
+        ? 1
+        : s.name === "find_materials" || s.name === "generate_images"
+          ? 2
+          : s.name === "write_work"
+            ? 3
+            : s.name === "view_canvas"
+              ? 4
+              : 0;
+    stage = Math.max(stage, at);
+  }
+  return stage;
 }
 const k = (n: number) =>
   n >= 1_000_000
@@ -85,9 +117,7 @@ function doing(step: ToolStep, t: Words): string {
     case "draw_guide":
       return [w.guiding, guideNames(step, t).join(w.list)].filter(Boolean).join(" · ");
     case "set_brief":
-      return [w.briefing, step.subject, step.register && t.registers[step.register]]
-        .filter(Boolean)
-        .join(" · ");
+      return [w.briefing, step.subject].filter(Boolean).join(" · ");
     case "find_materials":
       return [w.finding, step.subjects.join(w.list)].filter(Boolean).join(" · ");
     case "generate_images":
@@ -164,7 +194,10 @@ export function Now({
   dismiss,
   resume,
   restore,
+  compact,
 }: {
+  /** Whether only the stages show, the studio being open to tell the rest. */
+  compact?: boolean;
   run?: Run;
   work: Work;
   offline: boolean;
@@ -217,7 +250,7 @@ export function Now({
           {text}
           {ended?.saved !== undefined && (
             <span className={cx("now-saved")}>
-              {ended.clean === undefined ? t.now.saved(ended.saved) : t.now.unchecked(ended.saved)}
+              {ended.clean === undefined ? t.now.saved : t.now.unchecked}
             </span>
           )}
         </button>
@@ -263,8 +296,8 @@ export function Now({
     );
   return (
     <button className={cx("now")} data-tone="live" data-tip={t.now.open} onClick={reveal}>
-      <i className={cx("now-dot")} />
-      <Current run={run} />
+      <Stages run={run} />
+      {!compact && <Current run={run} />}
       {(!!board.length || painting) && (
         <span className={cx("board")}>
           {board.map((p, i) => (
@@ -289,36 +322,54 @@ function Current({ run }: { run: Run }) {
   const busy = run.steps.findLast(
       (s): s is ToolStep => s.kind === "tool" && s.status === "running",
     ),
-    tail = run.steps.at(-1);
-  const headline = tail?.kind === "thinking" ? thought(tail.text)[0] : "";
+    tail = run.steps.at(-1),
+    headline = tail?.kind === "thinking" ? thinkingOf(run, locale) : "";
   const line = busy
     ? doing(busy, t)
-    : headline && readable(headline, locale)
-      ? plain(headline)
+    : headline
+      ? headline
       : tail?.kind === "message" && tail.role === "assistant"
         ? plain(tail.text)
         : between(run.steps, t);
   const at = run.steps.indexOf((busy ?? tail)!);
   return (
     <>
-      <span key={at} className={cx("now-line")}>
+      <span key={at + line} className={cx("now-line")}>
         {line}
       </span>
-      <Elapsed key={at + line} />
+      <Clock since={run.startedAt} />
     </>
   );
 }
-/** How long the author has been at its current step, once that is long enough to wonder. */
-function Elapsed() {
-  const [since] = useState(Date.now()),
-    [now, setNow] = useState(since);
+/** Where the drawing has got to: a short bar a stage, the stages passed filled in, and the
+ * stage it is at named beside them. */
+function Stages({ run }: { run: Run }) {
+  const t = useT(),
+    at = stageOf(run);
+  return (
+    <span className={cx("stages")}>
+      <span className={cx("stage-bars")} aria-hidden>
+        {Array.from({ length: STAGES }, (_, i) => (
+          <i key={i} data-done={i < at || undefined} data-current={i === at || undefined} />
+        ))}
+      </span>
+      <b key={at}>{t.now.stages[at]}</b>
+    </span>
+  );
+}
+/** How long the run has been drawing, as minutes and seconds. */
+function Clock({ since }: { since: number }) {
+  const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
-  const t = useT();
-  const s = Math.round((now - since) / 1000);
-  return s >= 8 ? <small className={cx("now-time")}>{t.now.seconds(s)}</small> : null;
+  const s = Math.max(0, Math.round((now - since) / 1000));
+  return (
+    <small className={cx("now-time")}>
+      {Math.floor(s / 60)}:{String(s % 60).padStart(2, "0")}
+    </small>
+  );
 }
 
 /** The version a request ended in, by its number; the versions panel looks at and
@@ -366,7 +417,7 @@ const icons = {
   draw_guide: BookMarked,
   set_brief: Compass,
   find_materials: Search,
-  generate_images: Sparkles,
+  generate_images: ImagePlus,
   write_work: PenTool,
   view_canvas: Eye,
 } satisfies Record<ToolStep["name"], unknown>;
@@ -579,12 +630,7 @@ function Brief({
   return (
     <div className={cx("brief")}>
       <span className={cx("step-title")}>{t.steps.set_brief}</span>
-      {step.subject && (
-        <h4>
-          {step.subject}
-          {step.register && <i>{t.registers[step.register]}</i>}
-        </h4>
-      )}
+      {step.subject && <h4>{step.subject}</h4>}
       {!!step.ideas?.length && (
         <ol className={cx("ideas")}>
           {step.ideas.map((idea, i) => (
@@ -760,139 +806,162 @@ const searchedBy = (run: Run, t: Words) =>
       : run.services.search === "service"
         ? run.services.searchBy
         : t.composer.searchOff;
-/** Spending as a bill: one line a service, what it used and what that cost, and the
- * total. */
-function Bill({
+/** Spending at a glance: what it cost, the tokens and how much of the input the cache
+ * served, searches and pictures as tiles; then how the cost splits between the services,
+ * and one line for each with what it used and who served it. */
+function Stats({
   s,
-  title,
   by,
+  elapsed,
 }: {
   s: Spent;
-  title?: string;
   by?: { author?: string; search?: string; image?: string };
+  /** How long it took, for one run. */
+  elapsed?: number;
 }) {
   const t = useT(),
     w = t.usage;
-  const rows = [
+  const hit = s.input ? Math.round((s.cached / s.input) * 100) : 0;
+  const services = [
     {
       key: "author",
       label: w.author,
       who: by?.author,
-      parts: [
-        w.input(k(s.input), k(s.cached)),
-        w.output(k(s.output), k(s.reasoning)),
-      ],
+      parts: [w.inputShort(k(s.input)), w.outputShort(k(s.output)), !!s.reasoning && w.reasoningShort(k(s.reasoning))],
       cost: s.cost?.author,
+      used: s.input + s.output > 0,
     },
     {
       key: "search",
       label: w.search,
       who: by?.search,
-      parts: [w.searchCalls(s.searches), w.pages(s.pages)],
+      parts: [w.searchCalls(s.searches), !!s.pages && w.pages(s.pages)],
       cost: s.cost?.search,
+      used: s.searches + s.pages > 0,
     },
     {
       key: "image",
       label: w.image,
       who: by?.image,
-      parts: [w.imageTokens(s.images, k(s.imageTokens))],
+      parts: [w.images(s.images), !!s.imageTokens && w.tokens(k(s.imageTokens))],
       cost: s.cost?.image,
+      used: s.images > 0,
     },
-    // Only when something failed: most runs have nothing to say here.
-    ...(s.failed.attempts || s.failed.invalidCalls || s.failed.images
-      ? [
-          {
-            key: "failed",
-            label: w.failed,
-            who: undefined,
-            parts: [
-              ...(s.failed.attempts
-                ? [
-                    w.failedAttempts(s.failed.attempts),
-                    w.failedTime(Math.round(s.failed.ms / 1000)),
-                    w.input(k(s.failed.input), k(s.failed.cached)),
-                    s.failed.estimated
-                      ? w.failedOutputAbout(k(s.failed.output))
-                      : w.failedOutput(k(s.failed.output)),
-                  ]
-                : []),
-              ...(s.failed.invalidCalls ? [w.failedCalls(s.failed.invalidCalls)] : []),
-              ...(s.failed.images ? [w.failedImages(s.failed.images)] : []),
-            ],
-            cost: s.cost?.failed,
-          },
-        ]
+    {
+      key: "failed",
+      label: w.failed,
+      who: undefined,
+      parts: [
+        !!s.failed.attempts && w.failedAttempts(s.failed.attempts),
+        !!s.failed.attempts && w.failedTime(Math.round(s.failed.ms / 1000)),
+        !!s.failed.attempts &&
+          (s.failed.estimated ? w.failedOutputAbout(k(s.failed.output)) : w.failedOutput(k(s.failed.output))),
+        !!s.failed.invalidCalls && w.failedCalls(s.failed.invalidCalls),
+        !!s.failed.images && w.failedImages(s.failed.images),
+      ],
+      cost: s.cost?.failed,
+      used: !!(s.failed.attempts || s.failed.invalidCalls || s.failed.images),
+    },
+  ].filter((r) => r.used);
+  const total = s.cost?.total ?? 0;
+  const tiles = [
+    { key: "cost", label: w.cost, value: s.cost ? money(total) : w.unpriced },
+    {
+      key: "tokens",
+      label: w.tokensLabel,
+      value: k(s.input + s.output),
+      sub: s.input ? w.cacheHit(hit) : undefined,
+    },
+    ...(elapsed ? [{ key: "time", label: w.elapsed, value: span(elapsed) }] : []),
+    ...(s.searches || s.pages
+      ? [{ key: "search", label: w.searchesLabel, value: String(s.searches), sub: s.pages ? w.pagesShort(s.pages) : undefined }]
       : []),
+    ...(s.images ? [{ key: "images", label: w.imagesLabel, value: String(s.images) }] : []),
   ];
   return (
-    <table className={cx("bill")}>
-      {title && <caption>{title}</caption>}
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.key}>
-            <th>
-              <b>{r.label}</b>
-              {r.who && <small>{r.who}</small>}
-            </th>
-            <td>{r.parts.join(" · ")}</td>
-            <td>{r.cost === undefined ? "—" : money(r.cost)}</td>
-          </tr>
+    <div className={cx("spend")}>
+      <dl className={cx("spend-tiles")}>
+        {tiles.map((tile) => (
+          <div key={tile.key} data-key={tile.key}>
+            <dt>{tile.label}</dt>
+            <dd>
+              <b>{tile.value}</b>
+              {tile.sub && <small>{tile.sub}</small>}
+            </dd>
+          </div>
         ))}
-      </tbody>
-      <tfoot>
-        <tr>
-          <th>{w.total}</th>
-          <td />
-          <td>{s.cost ? money(s.cost.total) : w.unpriced}</td>
-        </tr>
-      </tfoot>
-    </table>
+      </dl>
+      {total > 0 && services.filter((r) => r.cost).length > 1 && (
+        <div className={cx("spend-split")} role="img" aria-label={w.split}>
+          {services
+            .filter((r) => r.cost)
+            .map((r) => (
+              <i
+                key={r.key}
+                data-key={r.key}
+                style={{ flexGrow: r.cost! / total }}
+                title={`${r.label} ${money(r.cost!)}`}
+              />
+            ))}
+        </div>
+      )}
+      <ul className={cx("spend-rows")}>
+        {services.map((r) => (
+          <li key={r.key} data-key={r.key}>
+            <i className={cx("spend-swatch")} />
+            <span className={cx("spend-name")}>
+              <b>{r.label}</b>
+              {r.who && <small title={r.who}>{r.who}</small>}
+            </span>
+            <span className={cx("spend-parts")}>
+              {(r.parts.filter(Boolean) as string[]).map((part) => (
+                <em key={part}>{part}</em>
+              ))}
+            </span>
+            <span className={cx("spend-cost")}>
+              {r.cost === undefined ? "—" : money(r.cost)}
+              {total > 0 && !!r.cost && <small>{Math.round((r.cost / total) * 100)}%</small>}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
-/** A run's spending in a few words. */
-function usage(run: Run, t: Words) {
-  const s = spentBy(run);
-  const tokens = s.input + s.output;
-  return [
-    s.cost && money(s.cost.total),
-    !!s.searches && t.usage.searches(s.searches),
-    !!s.pages && t.usage.pagesShort(s.pages),
-    ...s.hosted.map(([n, c]) => `${toolName(n)} ×${c}`),
-    !!s.images && t.usage.images(s.images),
-    !!tokens && t.usage.tokens(k(tokens)),
-    !!s.failed.attempts && t.usage.failedAttempts(s.failed.attempts),
-  ].filter(Boolean) as string[];
-}
-/** What the whole work has spent over every request, service by service. */
+/** What the whole work has spent over every request, service by service: for those who
+ * manage the models and pay for them. Everyone else counts requests, not tokens. */
 function WorkUsage({ runs }: { runs: Run[] }) {
   const t = useT(),
     manages = useCan()("models.manage");
   const [open, setOpen] = useState(false);
   const s = total(runs.map(spentBy));
-  if (!s.input && !s.output && !s.searches && !s.pages && !s.images)
+  if (!manages || (!s.input && !s.output && !s.searches && !s.pages && !s.images))
     return null;
   const names = (pick: (r: Run) => string | undefined) =>
     [...new Set(runs.map(pick).filter(Boolean))].join(t.now.list) || undefined;
   return (
     <div className={cx("work-usage")} data-open={open || undefined}>
       <button aria-expanded={open} onClick={() => setOpen(!open)}>
+        <BarChart3 size={14} />
         <b>{t.usage.allRuns(runs.length)}</b>
-        <span>
+        <span className={cx("usage-chips")}>
           {[
             s.cost && money(s.cost.total),
             t.usage.tokens(k(s.input + s.output)),
-            t.usage.searches(s.searches),
-            t.usage.images(s.images),
+            !!s.searches && t.usage.searches(s.searches),
+            !!s.images && t.usage.images(s.images),
           ]
             .filter(Boolean)
-            .join(" · ")}
+            .map((x) => (
+              <em key={x as string}>{x}</em>
+            ))}
         </span>
         <ChevronRight size={13} />
       </button>
       {open && (
-        <Bill
+        <Stats
           s={s}
-          by={!manages ? { author: names((r) => r.services?.label) } : {
+          by={{
             author: names((r) => r.services?.author),
             search: names((r) =>
               r.services?.search === "off" ? undefined : searchedBy(r, t),
@@ -996,6 +1065,7 @@ function RunView({
   t: Words;
 }) {
   const manages = useCan()("models.manage");
+  const [showStats, setShowStats] = useState(false);
   const working = live(r);
   const reply =
     r.status === "completed" && r.steps.at(-1)?.kind === "message" ? r.steps.length - 1 : -1;
@@ -1021,8 +1091,8 @@ function RunView({
   };
   r.steps.forEach((s, i) => {
     if (i === reply) return;
-    if (s.kind === "thinking" && unfolded) {
-      thinking.push(s);
+    if (s.kind === "thinking") {
+      if (unfolded) thinking.push(s);
       return;
     }
     think(i);
@@ -1068,21 +1138,36 @@ function RunView({
   const facts = [
     !!count && t.journal.steps(count),
     r.elapsedMs && span(r.elapsedMs),
-    ...usage(r, t),
   ].filter(Boolean);
+  const spent = spentBy(r);
+  // What a run spent is for those who manage the models; others count requests.
+  const priced =
+    manages && !working && !!r.usage &&
+    (spent.input + spent.output > 0 || !!spent.images || !!spent.failed.attempts || !!spent.failed.images);
   const answer = reply >= 0 ? (r.steps[reply] as Extract<Step, { kind: "message" }>) : undefined;
   const sources = sourcesOf(answer?.citations);
   const ended = last && r.status === "failed" ? stopped(r, work) : undefined;
   return (
     <article className={cx("run")} data-status={r.status}>
       {items[0]}
-      {!!count && (
+      {(!!count || priced) && (
         <div className={cx("run-head")}>
           <button className={cx("run-fold")} aria-expanded={unfolded} onClick={() => fold(!unfolded)}>
             {working && <i className={cx("now-dot")} />}
             <span>{working ? t.journal.working : t.journal.process}</span>
             <small>{facts.join(" · ")}</small>
           </button>
+          {priced && (
+            <button
+              className={cx("run-stats")}
+              aria-expanded={showStats}
+              data-tip={showStats ? t.usage.hideStats : t.usage.showStats}
+              onClick={() => setShowStats(!showStats)}
+            >
+              <BarChart3 size={13} />
+              <span>{spent.cost ? money(spent.cost.total) : t.usage.tokens(k(spent.input + spent.output))}</span>
+            </button>
+          )}
           {unfolded && manages && (
             <a
               className={cx("run-trace")}
@@ -1099,12 +1184,11 @@ function RunView({
           )}
         </div>
       )}
-      {items.slice(1)}
-      {unfolded && r.usage && (
-        <Bill
-          s={spentBy(r)}
-          title={t.usage.thisRun}
-          by={!manages ? { author: r.services?.label } : {
+      {showStats && priced && (
+        <Stats
+          s={spent}
+          elapsed={r.elapsedMs}
+          by={{
             author:
               r.services &&
               [
@@ -1121,6 +1205,7 @@ function RunView({
           }}
         />
       )}
+      {items.slice(1)}
       {working && unfolded && (
         <div className={cx("run-now")}>
           <Current run={r} />

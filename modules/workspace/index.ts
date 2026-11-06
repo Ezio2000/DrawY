@@ -10,6 +10,7 @@ import {
   type Work,
   type WorkEdit,
   type Cause,
+  historyOf,
   stepBefore,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
@@ -64,7 +65,12 @@ export async function writeWork(
   // A title the user gave stays: the author retitled works the user had renamed.
   const keptTitle = edit.title !== undefined && !!current.named && cause.kind === "run";
   if (keptTitle) work.title = current.title;
-  if (!work.brief && Object.values(work.scenes).some((s) => s.modules.length))
+  // The author settles a brief before it draws; a person may draw on a blank canvas by hand.
+  if (
+    cause.kind === "run" &&
+    !work.brief &&
+    Object.values(work.scenes).some((s) => s.modules.length)
+  )
     throw new DomainError("请先用 set_brief 确定创作简报，再绘制");
   const { added, missing } = await take(work, edit.materials || [], store.viewer);
   // Whatever else refers to a record that could not be laid will find it once that is fixed.
@@ -249,6 +255,13 @@ export function restore(store: UserStore, workId: string, revision: number) {
     current.revision,
     { kind: "restore", revision },
   );
+}
+/** Saves the hand edits made since the latest version as a version of their own. */
+export function saveEdits(store: UserStore, workId: string) {
+  const current = store.work(workId);
+  if (!historyOf(store.revisions(workId)).unsaved.length)
+    throw new DomainError("没有要保存的修改");
+  return store.commit(current, current.revision, { kind: "save" });
 }
 /** Takes back the latest step: the drawing returns to how it was before it. */
 export function undo(store: UserStore, workId: string) {

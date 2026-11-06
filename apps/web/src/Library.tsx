@@ -33,18 +33,9 @@ type Shown = Material & { ownerName?: string | null };
 let lastShelf: Shelf = "public";
 
 const kinds = ["picture", "drawing", "effect", "style"] as const;
-/** Soft grounds for the shelf, after the Anthropic palette: oat, cactus, heather, coral,
- * manilla, sky, clay and olive, each faded to a tint. */
-const tints = [
-  "#ece6da",
-  "#dbe6e1",
-  "#e2e1ec",
-  "#f2e1df",
-  "#f1e8d6",
-  "#dfe7ef",
-  "#f3e0d6",
-  "#e3e8d8",
-];
+/** The ground every picture sits on: one light neutral, so the pictures carry the colour
+ * and the shelf does not. */
+const tints = ["#f5f5f5"];
 /** Each kind's cell on the shelf: wide enough to see what it is, no larger. */
 const cells: Record<Material["kind"], { width: number; height: number }> = {
   picture: { width: 96, height: 124 },
@@ -181,13 +172,13 @@ export function Library({
           <button
             key={k}
             aria-current={on === k || undefined}
+            data-tip={t.library.shelfHints[k]}
             onClick={() => shelve(k)}
           >
             {k === "public" ? <Globe size={15} /> : k === "mine" ? <Lock size={15} /> : <Users size={15} />}
             {t.library.shelves[k]}
           </button>
         ))}
-        <small>{t.library.shelfHints[on]}</small>
       </nav>
       <div className={cx("library-bar")}>
         {shown.length > 1 && (

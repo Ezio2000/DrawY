@@ -105,7 +105,7 @@ export const Badge = ({
   tone,
 }: {
   children: ReactNode;
-  tone?: "accent" | "muted";
+  tone?: "accent" | "muted" | "warn";
 }) => (
   <span className={cx("badge")} data-tone={tone}>
     {children}

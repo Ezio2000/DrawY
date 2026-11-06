@@ -22,6 +22,7 @@ import type {
 import { cx } from "./cx.ts";
 import { styleList } from "./Composer.tsx";
 import { useT } from "./i18n.tsx";
+import { live, thinkingOf } from "./Studio.tsx";
 import type { StyleMaterial } from "@drawy/materials/schema";
 type ToolStep = Extract<Step, { kind: "tool" }>;
 /** What the canvas shows of a work: its revision and which pictures have developed. */
@@ -194,27 +195,35 @@ export function SceneView({
   const empty = !work.scenes[sceneId].modules.length;
   const [styles, setStyles] = useState<StyleMaterial[]>([]);
   useEffect(() => void styleList().then(setStyles, () => {}), []);
-  // What the author has understood, noted on the paper before it starts drawing: the
-  // subject as it is written, then the settled brief with the idea the picture is built on.
+  // A note on the paper while the canvas is still blank, so there is something to watch
+  // before the first stroke: at first the request as it was written and what the author is
+  // thinking about now, as it thinks; once it settles what to draw, the subject, the ways
+  // of drawing it weighed and the idea it chose, with who it is for and the style.
   const briefing = steps.findLast(
     (s): s is Extract<ToolStep, { name: "set_brief" }> =>
       s.kind === "tool" && s.name === "set_brief",
   );
+  const request = steps.find(
+    (s): s is Extract<Step, { kind: "message" }> => s.kind === "message" && s.role === "user",
+  )?.text;
+  const thinking = thinkingOf(run, locale);
   const brief = work.brief ?? undefined;
-  const note = brief
-    ? {
-        subject: brief.subject,
-        intent: brief.intent,
-        concept: brief.concept,
-        tags: [
-          brief.audience,
-          styles.find((s) => s.id === brief.style)?.name[locale],
-          t.registers[brief.register],
-        ].filter(Boolean),
-      }
-    : briefing?.subject
-      ? { subject: briefing.subject, intent: "", concept: "", tags: [] }
-      : undefined;
+  const note =
+    brief || briefing?.subject
+      ? {
+          subject: briefing?.subject || brief!.subject,
+          ideas: briefing?.ideas ?? [],
+          concept: briefing?.concept || brief?.concept || "",
+          tags: brief
+            ? [
+                brief.audience,
+                styles.find((s) => s.id === brief.style)?.name[locale],
+              ].filter((x): x is string => !!x)
+            : [],
+        }
+      : request
+        ? { request, ideas: [] as string[], concept: "", tags: [] as string[] }
+        : undefined;
   // Before the first stroke, the references the author gathers are laid out on the paper.
   const references = steps
     .flatMap((s, i) =>
@@ -272,7 +281,7 @@ export function SceneView({
         </div>
       )}
       {empty && !run && shown && (
-        <p className={cx("blank")}>{editing ? t.edit.blank : t.work.blank}</p>
+        <p className={cx("blank")}>{t.work.blank}</p>
       )}
       {empty && run && (!!references.length || note) && (
         <div
@@ -280,13 +289,24 @@ export function SceneView({
           data-leaving={!!draft.length || undefined}
         >
           {note && (
-            <figure className={cx("brief-note")}>
-              <b>{note.subject}</b>
-              {note.intent && <p>{note.intent}</p>}
+            <figure className={cx("brief-note")} data-asking={!("subject" in note) || undefined}>
+              {"subject" in note ? <b>{note.subject}</b> : <q>{note.request}</q>}
+              {!!note.ideas.length && (
+                <p data-weighed>
+                  {t.now.weighed}
+                  {note.ideas.join(" · ")}
+                </p>
+              )}
               {note.concept && (
                 <p data-concept>
                   <Lightbulb size={12} />
                   {note.concept}
+                </p>
+              )}
+              {live(run) && !draft.length && (
+                <p data-thought key={thinking || "…"}>
+                  <small>{t.now.thinkingNow}</small>
+                  {thinking || t.now.thinking + "…"}
                 </p>
               )}
               {!!note.tags.length && (

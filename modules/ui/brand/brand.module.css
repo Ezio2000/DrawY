@@ -1,5 +1,5 @@
 /* The marks drawn by hand, like the home title: ink lines in the colour around them,
-   bowing a little and running past where they meet, with one touch of terracotta. */
+   bowing a little and running past where they meet, with one touch of the accent. */
 
 .hand-mark {
   flex-shrink: 0;
@@ -60,11 +60,11 @@
   animation: glimmer var(--spark-glimmer, 0s) var(--ease-in-out) infinite;
 }
 
-/* The lantern drawn by hand: terracotta frame, a candle, a warm flame with its glow, and
+/* The lantern drawn by hand: a seal-red frame, a candle, a warm flame with its glow, and
    rays in lamplight yellow. */
 
 .lantern {
-  color: var(--ai);
+  color: var(--brand);
   overflow: visible;
 }
 
@@ -98,7 +98,7 @@
   opacity: 0.16;
 }
 
-/* A pencil: wooden yellow body, terracotta band, dark point. */
+/* A pencil: wooden yellow body, seal-red band, dark point. */
 
 .pen path {
   stroke: #3a352c;
@@ -113,7 +113,7 @@
 
 .pen .pen-band {
   fill: none;
-  stroke: var(--ai-deep);
+  stroke: var(--brand);
   stroke-width: 1.8;
 }
 
@@ -248,7 +248,7 @@
 }
 
 .sketch-pen {
-  filter: drop-shadow(0 3px 4px rgba(60, 45, 20, 0.18));
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.126));
 }
 
 .sketching[data-resting] .sketch-pen {

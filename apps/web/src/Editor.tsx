@@ -25,7 +25,7 @@ import {
   Lock,
   SendToBack,
   Shapes,
-  Sparkles,
+  MessageSquareQuote,
   Spline,
   Trash2,
   Type,
@@ -37,6 +37,7 @@ import {
   addScene,
   composed,
   labelOf,
+  shownName,
   moveParts,
   reattach,
   removeParts,
@@ -73,7 +74,7 @@ import {
   type PickPicture,
 } from "./EditControls.tsx";
 import { keys } from "./EditMenu.tsx";
-import { Details, Layers, Look, SceneSettings } from "./EditWork.tsx";
+import { Details, Layers, Look, SceneScript, SceneSettings } from "./EditWork.tsx";
 import type { Change, EditOps } from "./handEdits.ts";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
@@ -211,13 +212,15 @@ export function EditPanel({
                 <span>{t.edit.addDrawing}</span>
               </button>
             </div>
-            <p className={cx("edit-hint")}>{t.edit.intro}</p>
           </section>
           <Section id="scene" title={sceneId === work.rootSceneId ? t.edit.scene.rootHeading : t.edit.scene.heading}>
             <SceneSettings work={work} sceneId={sceneId} change={change} openScene={openScene} />
           </Section>
-          <Section id="look" title={t.edit.look}>
+          <Section id="look" title={t.edit.look} open={false}>
             <Look work={work} change={change} />
+          </Section>
+          <Section id="script" title={t.edit.scene.script} open={false}>
+            <SceneScript work={work} sceneId={sceneId} change={change} />
           </Section>
           <Section id="details" title={t.edit.details.heading} open={false}>
             <Details work={work} change={change} />
@@ -301,21 +304,21 @@ function Selected({
         <div className={cx("edit-title")}>
           {one ? (
             <input
-              key={one.id + ":" + labelOf(one)}
+              key={one.id + ":" + shownName(work, one)}
               className={cx("edit-name")}
               aria-label={t.edit.name}
               placeholder={t.edit.untitled}
-              defaultValue={labelOf(one)}
+              defaultValue={shownName(work, one)}
               onKeyDown={(e) => {
                 e.stopPropagation();
                 if (e.key === "Enter") e.currentTarget.blur();
                 if (e.key === "Escape") {
-                  e.currentTarget.value = labelOf(one);
+                  e.currentTarget.value = shownName(work, one);
                   e.currentTarget.blur();
                 }
               }}
               onBlur={(e) =>
-                e.target.value !== labelOf(one) &&
+                e.target.value !== shownName(work, one) &&
                 void change((w) => rename(w, sceneId, one.id, e.target.value))
               }
             />
@@ -350,7 +353,7 @@ function Selected({
           </Act>
           <i />
           <Act label={t.edit.actions.ask} onClick={ask}>
-            <Sparkles size={16} />
+            <MessageSquareQuote size={16} />
           </Act>
           <Act label={t.edit.actions.remove} tip={t.edit.remove} danger onClick={ops.remove}>
             <Trash2 size={16} />
@@ -406,12 +409,10 @@ function Selected({
               ))}
             </ul>
           )}
-          <p className={cx("edit-hint")}>{t.edit.linkHint}</p>
         </Section>
       )}
       {one && (
         <Section id="advanced" title={t.edit.code.heading} open={false}>
-          <p className={cx("edit-hint")}>{t.edit.code.hint}</p>
           <DrawingPanel key={one.id} work={work} sceneId={sceneId} module={one} change={change} pick={pick} />
           <div className={cx("field")}>
             <span className={cx("field-name")}>{t.edit.code.record}</span>
@@ -420,7 +421,7 @@ function Selected({
         </Section>
       )}
       <button className={cx("edit-ask")} onClick={ask}>
-        <Sparkles size={15} />
+        <MessageSquareQuote size={15} />
         {t.edit.ask}
       </button>
     </>
@@ -596,7 +597,7 @@ function Leads({
   const keysNow = new Set(modules.map((m) => keyOf(m.target)));
   const current = keysNow.size === 1 ? [...keysNow][0] : "\u0000mixed";
   const target = modules[0].target;
-  const name = labelOf(modules[0]);
+  const name = shownName(work, modules[0]);
   const set = (value: string) => {
     if (value === NEW_SCENE)
       return void change((w) => {
@@ -650,7 +651,7 @@ function Leads({
 /** A module's name as the editor shows it. */
 const nameIn = (work: Work, sceneId: string, id: string) => {
   const m = work.scenes[sceneId]?.modules.find((x) => x.id === id);
-  return m ? labelOf(m) : id;
+  return m ? shownName(work, m) : id;
 };
 /** A link of the selected module, as a row: a press selects the link to change it; it can
  * be turned round or taken out where it is. */
@@ -751,7 +752,7 @@ function LinkPanel({
             .filter((x) => x.id !== other)
             .map((x) => (
               <option key={x.id} value={x.id}>
-                {labelOf(x)}
+                {shownName(work, x)}
               </option>
             ))}
         </select>
@@ -798,7 +799,7 @@ function LinkPanel({
           </Act>
           <i />
           <Act label={t.edit.actions.ask} onClick={ask}>
-            <Sparkles size={16} />
+            <MessageSquareQuote size={16} />
           </Act>
           <Act label={t.edit.removeLink} tip={t.edit.remove} danger onClick={ops.remove}>
             <Trash2 size={16} />
@@ -808,7 +809,6 @@ function LinkPanel({
       <Section id="link-ends" title={l.ends}>
         {end("from")}
         {end("to")}
-        <p className={cx("edit-hint")}>{l.endsHint}</p>
       </Section>
       <Section id="link-content" title={t.edit.content}>
         <Fields key={link.id} work={work} sceneId={sceneId} part={link} canvas={canvas} change={change} pickPicture={pickPicture} />

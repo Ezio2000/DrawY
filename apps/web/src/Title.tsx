@@ -2,13 +2,13 @@ import { Lantern } from "@drawy/ui/brand";
 import { cx } from "./cx.ts";
 import { useT, type Words } from "./i18n.tsx";
 
-/** A page or section title, set in the serif of the rest of the page. */
+/** A page or section title. */
 export function Title({
   name,
   size = "page",
 }: {
   name: keyof Words["titles"];
-  size?: "hero" | "page" | "section";
+  size?: "page" | "section";
 }) {
   const t = useT();
   return (

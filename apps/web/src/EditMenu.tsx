@@ -9,7 +9,7 @@ import {
   MousePointer2,
   SendToBack,
   Shapes,
-  Sparkles,
+  MessageSquareQuote,
   Trash2,
   Type,
   Ungroup,
@@ -268,7 +268,7 @@ export function SelectionBar({
         item(e.menu.reverse, <ArrowRightLeft size={15} />, () => ops.reverse(), { key: "R" })
       )}
       <i />
-      {item(e.menu.ask, <Sparkles size={15} />, ask)}
+      {item(e.menu.ask, <MessageSquareQuote size={15} />, ask)}
       {item(e.menu.remove, <Trash2 size={15} />, ops.remove, { key: "Delete", danger: true })}
     </div>
   );

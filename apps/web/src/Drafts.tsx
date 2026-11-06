@@ -1,4 +1,4 @@
-import { FilePlus2, Hand, MessageSquareText, RotateCcw } from "lucide-react";
+import { Check, FilePlus2, Hand, MessageSquareText, PencilLine, RotateCcw } from "lucide-react";
 import { cx } from "./cx.ts";
 import { ago } from "./time.ts";
 import { useT, type Words } from "./i18n.tsx";
@@ -11,9 +11,8 @@ export function versionTitle(v: Version, versions: Version[], t: Words) {
     case "run":
       return v.cause.prompt || t.history.pictures;
     case "edit":
-      return v.revisions.length > 1
-        ? t.history.editedTimes(v.revisions.length)
-        : t.history.edited;
+    case "save":
+      return t.history.edited;
     case "restore": {
       const from = versionOf(versions, v.cause.revision);
       return from ? t.history.restored(from.number) : t.history.restoredSome;
@@ -24,45 +23,85 @@ export function versionTitle(v: Version, versions: Version[], t: Words) {
 }
 
 /** The work's versions, newest first: one for each request to the author (however many
- * drafts it saved on the way), each run of hand edits and each restore. Pressing one shows
- * it on the canvas; restoring brings it back as the newest version. */
+ * drafts it saved on the way) and each set of hand edits saved as one, with the edits not
+ * saved yet above them. Pressing one shows it on the canvas; going back to one makes it
+ * the latest again, the versions after it leaving the list. */
 export function Drafts({
   versions,
+  unsaved,
   current,
   previewing,
   locked,
   look,
   restore,
+  save,
+  discard,
 }: {
-  /** Oldest first, as `versionsOf` gives them. */
+  /** Oldest first, as `historyOf` gives them. */
   versions: Version[];
+  /** How many hand edits are not saved as a version yet. */
+  unsaved: number;
   current: number;
   previewing?: number;
   /** Whether the work can be changed now; while the author works it cannot. */
   locked: boolean;
   look: (revision: number) => void;
   restore: (revision: number) => void;
+  save: () => void;
+  discard: () => void;
 }) {
   const t = useT();
   if (!versions.length)
     return <p className={cx("journal-empty")}>{t.drafts.empty}</p>;
+  const latest = versions.at(-1)!;
   return (
     <>
-      <p className={cx("drafts-hint")}>{t.drafts.hint}</p>
       <ol className={cx("drafts")}>
+        {!!unsaved && (
+          <li
+            className={cx("drafts-version")}
+            data-kind="unsaved"
+            data-current={previewing === undefined || undefined}
+          >
+            <button
+              className={cx("drafts-look")}
+              aria-pressed={previewing === undefined}
+              onClick={() => look(current)}
+            >
+              <i>
+                <PencilLine size={13} />
+              </i>
+              <span>
+                <b>{t.unsaved.row}</b>
+                <q>{t.unsaved.rowHint(unsaved)}</q>
+              </span>
+            </button>
+            <span className={cx("drafts-unsaved")}>
+              <button className={cx("secondary small")} disabled={locked} onClick={discard}>
+                {t.unsaved.discard}
+              </button>
+              <button className={cx("primary small")} disabled={locked} onClick={save}>
+                <Check size={13} />
+                {t.unsaved.saveShort}
+              </button>
+            </span>
+          </li>
+        )}
         {[...versions].reverse().map((v) => {
           const Icon =
             v.cause.kind === "run"
               ? MessageSquareText
               : v.cause.kind === "restore"
                 ? RotateCcw
-                : v.cause.kind === "edit"
+                : v.cause.kind === "save" || v.cause.kind === "edit"
                   ? Hand
                   : FilePlus2;
           const title = versionTitle(v, versions, t);
-          const now = v.revisions.includes(current);
+          // With edits not saved yet, the latest version is what they were made on.
+          const now = v.revisions.includes(current) || (!!unsaved && v === latest);
           const shown =
-            v.revision === previewing || (now && previewing === undefined);
+            v.revision === previewing ||
+            (now && !unsaved && previewing === undefined);
           return (
             <li
               key={v.revision}
@@ -75,7 +114,7 @@ export function Drafts({
                 className={cx("drafts-look")}
                 aria-pressed={shown}
                 data-tip={now ? undefined : t.history.look}
-                onClick={() => look(v.revision)}
+                onClick={() => look(now && !unsaved ? current : v.revision)}
               >
                 <i>
                   <Icon size={13} />
@@ -90,7 +129,7 @@ export function Drafts({
                   {v.cause.kind !== "create" && <q title={title}>{title}</q>}
                 </span>
               </button>
-              {now ? (
+              {now && !unsaved ? (
                 <em>{t.history.current}</em>
               ) : (
                 <button

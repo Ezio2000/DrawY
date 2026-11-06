@@ -163,7 +163,7 @@ async function card(png: Blob, title: string, credit: string, [W, H]: readonly [
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "right";
   ctx.fillText(credit, W - pad, H - pad);
-  ctx.fillStyle = "#d97757";
+  ctx.fillStyle = "#c8553d";
   ctx.beginPath();
   ctx.arc(W - pad - ctx.measureText(credit).width - foot * 0.9, H - pad - foot * 0.35, foot * 0.28, 0, Math.PI * 2);
   ctx.fill();
@@ -285,7 +285,7 @@ export function ExportMenu({
     }
   }
   const preparing = (format: Format) => format === "share" && ready?.key !== key;
-  const item = (format: Format, Icon: typeof Download, label: string, hint: string) => (
+  const item = (format: Format, Icon: typeof Download, label: string) => (
     <button
       key={format}
       role="menuitem"
@@ -293,10 +293,7 @@ export function ExportMenu({
       onClick={() => void run(format)}
     >
       {busy === format || preparing(format) ? <Spinner size={15} /> : <Icon size={16} />}
-      <span>
-        {label}
-        <small>{hint}</small>
-      </span>
+      <span>{label}</span>
     </button>
   );
   return (
@@ -314,10 +311,10 @@ export function ExportMenu({
       {open && (
         <div className={cx("export-menu")} role="menu">
           <h4>{w.picture}</h4>
-          {item("png", FileImage, w.png, w.pngHint)}
-          {item("jpeg", ImageDown, w.jpeg, w.jpegHint)}
-          {item("copy", Clipboard, w.copy, w.copyHint)}
-          {share && item("share", Share2, w.share, w.shareHint)}
+          {item("png", FileImage, w.png)}
+          {item("jpeg", ImageDown, w.jpeg)}
+          {item("copy", Clipboard, w.copy)}
+          {share && item("share", Share2, w.share)}
           <h4>{w.cards}</h4>
           <div className={cx("export-cards")}>
             {(["square", "portrait", "wide"] as const).map((f) => {
@@ -332,8 +329,8 @@ export function ExportMenu({
             })}
           </div>
           <h4>{w.other}</h4>
-          {item("html", FileCode2, w.html, w.htmlHint)}
-          {item("pdf", FileText, w.pdf, w.pdfHint)}
+          {item("html", FileCode2, w.html)}
+          {item("pdf", FileText, w.pdf)}
         </div>
       )}
     </div>

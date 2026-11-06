@@ -12,6 +12,7 @@ const exact: Record<string, string> = {
   当前任务没有等待回答: "The current task isn't waiting for an answer",
   场景不存在: "Scene not found",
   没有可以撤销的修改: "There is nothing to undo",
+  没有要保存的修改: "There are no changes to save",
   模块不存在: "Module not found",
   资源不存在: "Not found",
   请选择图片: "Choose an image",

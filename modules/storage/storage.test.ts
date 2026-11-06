@@ -356,6 +356,19 @@ describe("user owned works", () => {
     });
     // An edit made from a revision that is no longer the latest is refused.
     expect((await send(alice.cookie, edit)).status).toBe(409);
+    // Until the person saves it, the edit is not a version of its own.
+    expect(store.revisions(work.id)[0].cause).toEqual({ kind: "edit" });
+    expect(store.progress(work.id)).toMatchObject({ version: 1, unsaved: 1 });
+    const save = (cookie: string) =>
+      app.request(`/api/works/${work.id}/save`, { method: "POST", headers: { cookie } });
+    expect((await save(bob.cookie)).status).toBe(404);
+    const kept = await save(alice.cookie);
+    expect(kept.status).toBe(200);
+    expect(((await kept.json()) as Work).scenes).toEqual(moved.scenes);
+    expect(store.progress(work.id)).toMatchObject({ version: 2 });
+    expect(store.progress(work.id).unsaved).toBeUndefined();
+    // With nothing left to save, saving says so.
+    expect((await save(alice.cookie)).status).not.toBe(200);
     // A hand edit is a step of its own: undoing it leaves the author's drawing.
     expect(undo(store, work.id).scenes).toEqual(saved.scenes);
   });
@@ -385,7 +398,7 @@ describe("user owned works", () => {
         {
           drawings: [fruit],
           modules: [module],
-        }, { cause: { kind: "edit" } }),
+        }, { cause: { kind: "run", runId: "r", prompt: "p" } }),
     ).rejects.toThrow("set_brief");
     a.commit({ ...a.work(work.id), brief: content.brief }, 1, { kind: "edit" });
     const theirs = await client.ingest(

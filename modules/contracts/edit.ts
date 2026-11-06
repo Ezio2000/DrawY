@@ -141,7 +141,7 @@ export function editedText(
   return text;
 }
 /** Data keys that hold a module's words, in the order they name it. */
-const NAMING = ["text", "title", "name", "label"];
+const NAMING = ["title", "name", "text", "label"];
 /** What a person editing the work calls a module: the name it was given, or else its words,
  * or else its id. Its words change and the name follows, as nothing stores it twice. */
 export function labelOf(m: Pick<Instance, "id" | "label" | "data">) {
@@ -151,6 +151,13 @@ export function labelOf(m: Pick<Instance, "id" | "label" | "data">) {
     if (typeof words === "string" && words) return words;
   }
   return m.id;
+}
+/** What the interface calls a module: its name or words as `labelOf` reads them, or else
+ * the name of the drawing it is drawn with. Its id is the author's handle, which means
+ * nothing to a person reading a list of layers. */
+export function shownName(work: Work, m: Pick<Instance, "id" | "label" | "data" | "drawingId">) {
+  const named = labelOf(m);
+  return named !== m.id ? named : (drawingOf(work, m.drawingId)?.name ?? m.id);
 }
 /** The drawing an id means: one of the work's own, or else a library drawing the work holds.
  * Both read the same way; a part of a work is drawn with `defaults` under its own data. */
