@@ -1130,6 +1130,8 @@ const zh = {
     prompt: "提示词",
     noHits: "没有命中",
     geometry: (n: number) => `交给模型的几何 · ${n} 个模块`,
+    openedDetail: (detail: string, byTarget: boolean) =>
+      `打开了详情页 ${detail}${byTarget ? "（模块自己的跳转）" : ""}，没有截图`,
     summary: "压缩后的摘要",
     usageOnly: "用量",
     settings: "设置",
@@ -2268,6 +2270,8 @@ const en: Words = {
     prompt: "Prompt",
     noHits: "No hits",
     geometry: (n) => `Geometry given to the model · ${n} modules`,
+    openedDetail: (detail, byTarget) =>
+      `Opened detail page ${detail}${byTarget ? " (the module's own target)" : ""}, not pictured`,
     summary: "Compacted summary",
     usageOnly: "Usage",
     settings: "Settings",
