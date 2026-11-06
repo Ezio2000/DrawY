@@ -34,12 +34,15 @@ function open(target: Target) {
     } catch {}
     render(target.id);
   } else {
-    const detail = detailElement(work.details[target.id], () =>
-      detail.remove(),
-    );
-    detail.style.cssText =
-      "position:fixed;inset:0;overflow:auto;background:#fff;padding:48px max(24px,calc((100vw - 760px)/2));box-sizing:border-box;z-index:10";
-    document.body.append(detail);
+    // The page covers the drawing; the article inside keeps its own measure, as in the app.
+    // Padding on the article itself would come out of that measure and squeeze it.
+    const page = document.createElement("div");
+    page.dataset.drawyDetail = target.id;
+    page.style.cssText =
+      "position:fixed;inset:0;overflow:auto;background:#fff;padding:48px 24px 96px;box-sizing:border-box;z-index:10";
+    const detail = detailElement(work.details[target.id], () => page.remove());
+    page.append(detail);
+    document.body.append(page);
     window.drawyReady = false;
     void Promise.all([
       document.fonts.ready,
@@ -58,6 +61,7 @@ function render(sceneId: string) {
   dispatchEvent(new CustomEvent("drawy:scene", { detail: sceneId }));
   window.drawyReady = false;
   window.drawyView = new Canvas(stage, work, work.scenes[sceneId], {
+    marks: false,
     open,
     select: () => {},
     error: (message) => window.drawyErrors.push(message),

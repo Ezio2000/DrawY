@@ -136,16 +136,20 @@ export async function observe(
           );
         const { shots } = (await response.json()) as { shots: Shot[] };
         if (!shots.length) throw Error("截图服务没有返回画面");
-        const screenshots = shots.map((s, i) =>
-          store.putCapture(
-            Buffer.from(s.base64, "base64"),
-            `canvas-${work.revision}-${s.sceneId}-${i}`,
-          ),
+        const kept = shots.map((s, i) =>
+          s.base64
+            ? store.putCapture(
+                Buffer.from(s.base64, "base64"),
+                `canvas-${work.revision}-${s.sceneId}-${i}`,
+              )
+            : undefined,
         );
+        const screenshots = kept.filter((c) => !!c);
         span.set({
           shots: shots.map((s, i) => ({
             view: s.label,
-            url: screenshots[i].url,
+            ...(kept[i] ? { url: kept[i].url } : {}),
+            ...(s.opened ? { opened: s.opened } : {}),
             camera: s.camera,
             modules: s.modules,
             errors: s.errors,
@@ -199,14 +203,19 @@ export async function observe(
                       ...moduleReport(work, s, earlier.reported),
                     }
                   : {}),
+                ...(s.opened ? { opened: openedPage(work, s.opened) } : {}),
                 ...(s.errors.length ? { errors: s.errors } : {}),
               }),
             },
-            {
-              type: "input_image",
-              image_url: "data:image/png;base64," + s.base64,
-              detail: "high",
-            },
+            ...(s.base64
+              ? [
+                  {
+                    type: "input_image",
+                    image_url: "data:image/png;base64," + s.base64,
+                    detail: "high",
+                  },
+                ]
+              : []),
           ]),
         ];
         return { observation, content };
@@ -215,6 +224,19 @@ export async function observe(
       }
     },
   );
+}
+/** A page a click opened, in words: the app lays out a detail page the same way for every
+ * work, so a picture of it would only show the author's HTML back. A module's own target
+ * opens without any script, so a check of it tests nothing the author wrote. */
+function openedPage(work: Work, opened: NonNullable<Shot["opened"]>) {
+  const title = work.details[opened.detail]?.title;
+  return {
+    detail: opened.detail,
+    ...(title ? { title } : {}),
+    note: opened.byTarget
+      ? "This click opened the module's own target, which the app opens by itself; details are not pictured. Take this check out of the scene's checks."
+      : "The click opened this detail page; details are not pictured, as the app lays them out.",
+  };
 }
 /** How the scene's figure sits in the opening view: its extent in scene units, the share of
  * the view it covers, which drops as its proportions stray from the view's, and the text

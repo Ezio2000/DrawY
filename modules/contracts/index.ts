@@ -436,7 +436,7 @@ const sceneEditSchema = z
     checks: z
       .array(checkSchema)
       .optional()
-      .describe("Important buttons view_canvas should try, by module and CSS selector; replaces the list"),
+      .describe("Important buttons of the scene's script or a drawing that view_canvas should try, by module and CSS selector; not modules that only open their target; replaces the list"),
     clear: z
       .boolean()
       .optional()

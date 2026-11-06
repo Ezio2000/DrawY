@@ -734,9 +734,13 @@ function Attributes({
         <Part key="request" title={w().request} value={{ revision: a.revision, sceneId: a.sceneId, regions: a.regions, claims: a.claims, annotate: a.annotate, actions: a.actions }} />,
         ...(a.shots || []).map((shot: Item, i: number) => (
           <Part key={"shot" + i} title={shot.view} value={shot}>
-            <div className={cx("shots")}>
-              <Shot url={shot.url} />
-            </div>
+            {shot.url ? (
+              <div className={cx("shots")}>
+                <Shot url={shot.url} />
+              </div>
+            ) : (
+              shot.opened && <Text text={w().openedDetail(shot.opened.detail, shot.opened.byTarget)} />
+            )}
             {!!shot.errors?.length && <Text text={shot.errors.join("\n")} />}
             {shot.modules && (
               <Part title={w().geometry(shot.modules.length)} value={shot.modules} open={false} />
