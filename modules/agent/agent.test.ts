@@ -11,7 +11,7 @@ import { restore, writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { CutOff, generate } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
-import { boxOf, costOf, labelOf, modelCatalogSchema, type Run, type Work } from "../contracts/index.ts";
+import { boxOf, costOf, labelOf, modelCatalogSchema, type Run, type Step, type Work } from "../contracts/index.ts";
 import { removeParts, setData } from "../editing/index.ts";
 import { tracer } from "../trace/index.ts";
 import { library as client } from "../materials/index.ts";
@@ -961,6 +961,75 @@ it("develops pictures while the author composes and holds the end until they wer
       imageInput: 1200,
       textOutput: 0,
     });
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("names only the pictures still being painted while a look waits for them", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-wait-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    // One look at the root then sees every scene with something in it.
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const catalog = store.storage.models();
+    Object.assign(catalog.painters[0], { credential: "test", baseUrl: "https://example.invalid" });
+    store.storage.saveModels(catalog);
+    // Each picture is painted when the test lets it through, in the order its request came.
+    const gates: (() => void)[] = [],
+      opened = [0, 1].map(() => new Promise<void>((r) => gates.push(r)));
+    let asked = 0;
+    const png = await picture();
+    library.route(async () => {
+      await opened[asked++];
+      return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+    });
+    const picture_ = (zh: string, en: string) => ({
+      name: { zh, en },
+      role: "object",
+      depicts: `a ${en}, side view`,
+      aspect: "landscape",
+    });
+    script([
+      ["generate_images", { images: [picture_("鲸", "whale"), picture_("船", "boat")] }],
+      ["view_canvas", {}],
+      ["finish", { message: "done" }],
+    ]);
+    const run: Run = {
+      id: "wait",
+      workId: work.id,
+      sceneId: "root",
+      status: "running",
+      steps: [],
+      observations: [],
+      startedAt: Date.now(),
+    };
+    store.saveRun(run);
+    const done = new Agent(() => {}).execute(
+      store,
+      run,
+      { input: [], settings: store.settings(), generations: 0 },
+      "request",
+    );
+    const look = () =>
+      run.steps.find(
+        (s): s is Extract<Step, { kind: "tool"; name: "view_canvas" }> =>
+          s.kind === "tool" && s.name === "view_canvas",
+      );
+    await vi.waitFor(() => expect(look()?.waiting).toEqual(["鲸", "船"]));
+    // The two are painted side by side, so either may come first.
+    gates[0]();
+    await vi.waitFor(() => expect(look()?.waiting).toHaveLength(1));
+    expect(["鲸", "船"]).toContain(look()?.waiting?.[0]);
+    gates[1]();
+    await done;
+    expect(run.status).toBe("completed");
+    expect(look()?.waiting).toBeUndefined();
   } finally {
     db.close();
     rmSync(dir, { recursive: true });

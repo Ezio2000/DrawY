@@ -589,7 +589,7 @@ const zh = {
     finding: "查找素材",
     generating: "生成图片",
     writing: "绘制",
-    waitingImages: (names: string) => `等待图片：${names}`,
+    waitingImages: (n: number, names: string) => `还在画 ${n} 张图：${names}`,
     focus: {
       overview: "全图",
       region: "局部",
@@ -1729,7 +1729,7 @@ const en: Words = {
     finding: "Finding materials",
     generating: "Generating images",
     writing: "Drawing",
-    waitingImages: (names) => `Waiting for pictures: ${names}`,
+    waitingImages: (n, names) => `Still painting ${n} ${n === 1 ? "picture" : "pictures"}: ${names}`,
     focus: {
       overview: "Whole",
       region: "Detail",

@@ -4352,6 +4352,17 @@ body:has(.resizer[data-dragging]) {
   text-overflow: ellipsis;
 }
 
+/* A thought the model summarised in another language than the page's is set quieter. */
+.now-line[lang],
+.step[data-kind="thinking"] summary span[lang],
+.brief-note p[data-thought] span[lang] {
+  color: var(--text-3);
+}
+
+.step-thought[lang] b {
+  color: var(--text-3);
+}
+
 .step[data-kind="thinking"] summary small {
   flex: none;
   font-style: normal;

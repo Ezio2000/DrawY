@@ -35,10 +35,12 @@ type ToolStep = Extract<Step, { kind: "tool" }>;
 type Tool<N extends ToolStep["name"]> = Extract<ToolStep, { name: N }>;
 export const live = (run?: Run) =>
   !!run && ["running", "viewing"].includes(run.status);
-/** Whether a text is written in the page's language: the model summarises its thoughts in
- * a language of its own, which is not shown to a reader of another. */
-const readable = (text: string, locale: string) =>
-  /[㐀-鿿]/.test(text) === (locale === "zh");
+/** The language a thought is written in, when it is not the page's: some models summarise
+ * their thoughts in English whatever the user writes. Such a thought still shows, since a
+ * line of the author's thinking tells more than a blank while it thinks, but marked as
+ * its own language and set quieter. */
+export const foreign = (text: string, locale: string) =>
+  /[㐀-鿿]/.test(text) === (locale === "zh") ? undefined : locale === "zh" ? "en" : "zh";
 /** A thought's headline and the reasoning under it. */
 function thought(text: string) {
   const closed = text.match(/^\*\*(.+?)\*\*\s*([\s\S]*)$/);
@@ -48,14 +50,14 @@ function thought(text: string) {
       ? [text.slice(2), ""]
       : [text.split("\n")[0], text.split("\n").slice(1).join("\n").trim()];
 }
-/** What a live run's author is thinking about right now, as the headline of its latest
- * thought, when that is written in the reader's language. */
-export function thinkingOf(run: Run | undefined, locale: string) {
+/** What a live run's author is thinking about right now: the headline of its latest
+ * thought. */
+export function thinkingOf(run: Run | undefined) {
   if (!live(run)) return "";
   const last = run!.steps.findLast((s) => s.kind === "thinking");
   if (!last || last.kind !== "thinking") return "";
   const [headline] = thought(last.text);
-  return headline && readable(headline, locale) ? plain(headline) : "";
+  return headline ? plain(headline) : "";
 }
 /** The stages a drawing goes through, and how far a run has got: thinking it over,
  * settling what it shows, gathering pictures, the first strokes, then looking and
@@ -128,7 +130,7 @@ function doing(step: ToolStep, t: Words): string {
       return w.writing;
     case "view_canvas":
       return step.waiting
-        ? w.waitingImages(step.waiting.join(w.list))
+        ? w.waitingImages(step.waiting.length, step.waiting.join(w.list))
         : [w.viewing, w.focus[step.focus]].filter(Boolean).join(" · ");
   }
 }
@@ -316,31 +318,38 @@ export function Now({
   );
 }
 /** What a live run is doing, in a line: a tool still at work outranks the thoughts and
- * notes that stream alongside it, then the latest thought the reader can read, then the
- * author's latest note, then where it has got to. `told` leaves out what the steps
- * listed above the line already say (the tool at work, the note just written). */
+ * notes that stream alongside it, then the latest thought, then the author's latest note,
+ * then where it has got to. `told` leaves out what the steps listed above the line
+ * already say (the tool at work, the thought or note just written). `lang` marks a
+ * thought in another language than the page's. */
 export function currentOf(run: Run, t: Words, locale: string, told = false) {
   const busy = run.steps.findLast(
       (s): s is ToolStep => s.kind === "tool" && s.status === "running",
     ),
     tail = run.steps.at(-1),
-    headline = tail?.kind === "thinking" ? thinkingOf(run, locale) : "",
+    headline = tail?.kind === "thinking" ? thinkingOf(run) : "",
     note = tail?.kind === "message" && tail.role === "assistant" ? plain(tail.text) : "";
-  const line = busy
-    ? told
+  const line = told
+    ? busy
       ? ""
-      : doing(busy, t)
-    : headline || (told ? "" : note) || between(run.steps, t);
-  return { line, at: run.steps.indexOf((busy ?? tail)!) };
+      : between(run.steps, t)
+    : busy
+      ? doing(busy, t)
+      : headline || note || between(run.steps, t);
+  return {
+    line,
+    lang: !told && !busy && line === headline ? foreign(headline, locale) : undefined,
+    at: run.steps.indexOf((busy ?? tail)!),
+  };
 }
 /** One line on what a live run is doing, and for how long it has. */
 function Current({ run, told }: { run: Run; told?: boolean }) {
   const t = useT(),
     locale = useLocale();
-  const { line, at } = currentOf(run, t, locale, told);
+  const { line, lang, at } = currentOf(run, t, locale, told);
   return (
     <>
-      <span key={at + line} className={cx("now-line")}>
+      <span key={at + line} className={cx("now-line")} lang={lang}>
         {line}
       </span>
       <Clock since={run.startedAt} />
@@ -472,17 +481,16 @@ function StepView({
     </li>
   );
 }
-/** Thoughts in a row, as one line: the latest headline the reader can read, and every
- * thought's headline and reasoning when opened. */
+/** Thoughts in a row, as one line: the latest headline, and every thought's headline and
+ * reasoning when opened. */
 function Thoughts({ steps, live }: { steps: Step[]; live: boolean }) {
   const locale = useLocale();
   const parts = steps
     .map((s) => thought(s.kind === "thinking" ? s.text : ""))
-    .filter(([title]) => title && readable(title, locale));
+    .filter(([title]) => title);
   const headline = parts.at(-1)?.[0];
-  // Thoughts summarised in another language say nothing to this reader; the line under the
-  // steps tells that the author is thinking.
-  if (!parts.length) return null;
+  // A thought still without words is told by the line under the steps.
+  if (!headline) return null;
   return (
     <li className={cx("step")} data-kind="thinking" data-status={live ? "running" : "done"}>
       <i className={cx("step-icon")}>
@@ -490,14 +498,14 @@ function Thoughts({ steps, live }: { steps: Step[]; live: boolean }) {
       </i>
       <details className={cx("step-body")}>
         <summary>
-          <span>{plain(headline!)}</span>
+          <span lang={foreign(headline, locale)}>{plain(headline)}</span>
           {steps.length > 1 && <small>×{steps.length}</small>}
           {!!parts.length && <ChevronRight size={13} />}
         </summary>
         {parts.map(([title, body], i) => (
-          <div key={i} className={cx("step-thought")}>
+          <div key={i} className={cx("step-thought")} lang={foreign(title, locale)}>
             <b>{plain(title)}</b>
-            {body && readable(body, locale) && <Markdown text={body} />}
+            {body && <Markdown text={body} />}
           </div>
         ))}
       </details>
@@ -609,7 +617,9 @@ function ToolBody({
       return (
         <>
           <span className={cx("step-title")}>
-            {step.waiting ? t.now.waitingImages(step.waiting.join(t.now.list)) : w.view_canvas}
+            {step.waiting
+              ? t.now.waitingImages(step.waiting.length, step.waiting.join(t.now.list))
+              : w.view_canvas}
             {!step.waiting && <small> · {t.now.focus[step.focus]}</small>}
           </span>
           {!!step.screenshots?.length && (

@@ -206,10 +206,9 @@ export function SceneView({
   const request = steps.find(
     (s): s is Extract<Step, { kind: "message" }> => s.kind === "message" && s.role === "user",
   )?.text;
-  // What the author is about now: its thought when one reads in this language, else what it
-  // is doing or last noted.
-  const thinking = thinkingOf(run, locale),
-    doing = live(run) ? currentOf(run!, t, locale).line : "";
+  // What the author is about now: its latest thought, or what it is doing or last noted.
+  const thinking = thinkingOf(run),
+    now = live(run) ? currentOf(run!, t, locale) : undefined;
   const brief = work.brief ?? undefined;
   const note =
     brief || briefing?.subject
@@ -316,9 +315,9 @@ export function SceneView({
                 </p>
               )}
               {live(run) && !draft.length && (
-                <p data-thought key={doing}>
-                  {thinking && <small>{t.now.thinkingNow}</small>}
-                  {doing}
+                <p data-thought key={now?.line}>
+                  {now?.line === thinking && <small>{t.now.thinkingNow}</small>}
+                  <span lang={now?.lang}>{now?.line}</span>
                 </p>
               )}
               {!!note.tags.length && (

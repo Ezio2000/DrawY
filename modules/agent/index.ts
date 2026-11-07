@@ -1815,8 +1815,20 @@ export class Agent {
             (d) => !d.settled,
           );
           run.status = "viewing";
-          if (pending.length)
-            Object.assign(step!, { waiting: pending.map((d) => d.name) });
+          // The pictures still to come, shortened as each arrives, so the wait shows going.
+          const left = () => {
+            const names = pending.filter((d) => !d.settled).map((d) => d.name);
+            return names.length ? names : undefined;
+          };
+          if (pending.length) {
+            Object.assign(step!, { waiting: left() });
+            for (const d of pending)
+              void d.done.then(() => {
+                if (!("waiting" in step!) || !step.waiting) return;
+                Object.assign(step!, { waiting: left() });
+                this.emit(store, run);
+              });
+          }
           this.emit(store, run);
           try {
             await Promise.race([
