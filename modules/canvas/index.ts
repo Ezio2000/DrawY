@@ -88,7 +88,7 @@ const seed = (id: string) =>
     2166136261,
   );
 const GRAPHITE = "rgba(70,70,70,.45)";
-const ACCENT = "#3d72e0";
+const ACCENT = "#2e62ea";
 /** How far from a link's line, in screen pixels, a press still takes the link. */
 const SLOP = 10;
 /** Distance from a point to a segment. */
@@ -221,7 +221,7 @@ export class Canvas {
     this.element.dataset.canvas = "";
     this.element.tabIndex = 0;
     this.element.style.cssText =
-      "position:relative;width:100%;height:100%;overflow:hidden;outline:none;background-image:radial-gradient(#dcd6c9 .7px,transparent .7px)";
+      "position:relative;width:100%;height:100%;overflow:hidden;outline:none;background-image:radial-gradient(#d3d7dc .8px,transparent .8px)";
     host.append(this.element);
     this.renderer = this.renderFor(work, scene);
     this.renderer.element.style.visibility = "hidden";
@@ -274,10 +274,10 @@ export class Canvas {
     }
     this.element.append(this.frame);
     this.groupBox.style.cssText =
-      "position:absolute;border:1px dashed rgba(61,114,224,.45);border-radius:8px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
+      "position:absolute;border:1px dashed rgba(46,98,234,.45);border-radius:8px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
     this.element.append(this.groupBox);
     this.marquee.style.cssText =
-      "position:absolute;border:1px solid rgba(61,114,224,.8);background:rgba(61,114,224,.07);pointer-events:none;display:none;z-index:5;box-sizing:border-box";
+      "position:absolute;border:1px solid rgba(46,98,234,.8);background:rgba(46,98,234,.07);pointer-events:none;display:none;z-index:5;box-sizing:border-box";
     this.element.append(this.marquee);
     this.line.style.cssText =
       "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none;z-index:5;overflow:visible";
@@ -306,7 +306,7 @@ export class Canvas {
       this.element.append(handle);
     }
     this.readout.style.cssText =
-      "position:absolute;z-index:6;display:none;padding:2px 7px;border-radius:6px;background:#2b2a27;color:#fff;font:500 11px/1.5 system-ui,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none;transform:translate(-50%,0)";
+      "position:absolute;z-index:6;display:none;padding:2px 7px;border-radius:6px;background:#15181c;color:#fff;font:500 11px/1.5 system-ui,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none;transform:translate(-50%,0)";
     this.element.append(this.readout);
     const signal = this.abort.signal;
     // While editing, the canvas takes every press and click before the drawings do, so
@@ -846,7 +846,7 @@ export class Canvas {
     while (this.outlines.length < chosen.length) {
       const outline = document.createElement("div");
       outline.style.cssText =
-        "position:absolute;border:1px solid #3366d6;border-radius:6px;box-shadow:0 0 0 4px rgba(61,114,224,.12);pointer-events:none;display:none;z-index:3;box-sizing:border-box";
+        "position:absolute;border:1px solid #2e62ea;border-radius:6px;box-shadow:0 0 0 4px rgba(46,98,234,.12);pointer-events:none;display:none;z-index:3;box-sizing:border-box";
       this.element.append(outline);
       this.outlines.push(outline);
     }
@@ -859,7 +859,7 @@ export class Canvas {
       const frame = union(chosen.map((m) => m.bounds));
       box(this.frame, frame);
       this.frame.style.border =
-        chosen.length > 1 ? "1px dashed rgba(61,114,224,.7)" : "none";
+        chosen.length > 1 ? "1px dashed rgba(46,98,234,.7)" : "none";
       const small =
         frame.width * scale < 36 || frame.height * scale < 36;
       for (const h of this.frame.querySelectorAll<HTMLElement>("[data-handle]"))

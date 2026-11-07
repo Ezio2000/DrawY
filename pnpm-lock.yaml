@@ -96,6 +96,9 @@ importers:
 
   modules/ui:
     dependencies:
+      '@fontsource-variable/instrument-sans':
+        specifier: 5.2.8
+        version: 5.2.8
       lucide-react:
         specifier: 0.468.0
         version: 0.468.0(react@19.3.0)
@@ -371,6 +374,9 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@fontsource-variable/instrument-sans@5.2.8':
+    resolution: {integrity: sha512-mTCaukbdIjjoipj2E3Q5XoZM3ZxJWdzyHevf/LG/0PHlfF9Q85pxOM7B7A9MerFyxmRzz5kVlumgIvgDSG4CPg==}
 
   '@hono/node-server@1.19.17':
     resolution: {integrity: sha512-dSneS5qhiauZWGDCeK4o695Xd9nUNjviSZCMQrj10eetr8Uln1ucn6bbphOM6UynAMMtNIzZNSpL9vnASJwrPQ==}
@@ -1755,6 +1761,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@fontsource-variable/instrument-sans@5.2.8': {}
 
   '@hono/node-server@1.19.17(hono@4.13.14)':
     dependencies:

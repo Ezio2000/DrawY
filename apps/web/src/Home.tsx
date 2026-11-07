@@ -26,7 +26,9 @@ function useFits(list: React.RefObject<HTMLUListElement | null>, deps: unknown[]
       if (item) card.current = item.offsetHeight;
       if (!card.current) return;
       const gap = parseFloat(style.rowGap) || 0;
-      const rows = Math.floor((ul.clientHeight + gap) / (card.current + gap));
+      // The list keeps room around it for the sheets' crop marks.
+      const pad = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+      const rows = Math.floor((ul.clientHeight - pad + gap) / (card.current + gap));
       setFits(cols * rows);
     };
     measure();
@@ -40,8 +42,8 @@ function useFits(list: React.RefObject<HTMLUListElement | null>, deps: unknown[]
 
 /** The first page, laid out like a drawing tool's file browser rather than a chatbot's
  * greeting: ways to start a work (a blank canvas, or one of three requests), then as many of
- * the works last drawn on as fit the window. The composer stays at the bottom, where it is on
- * every page. */
+ * the works last drawn on as fit the window, each a sheet on the table framed by its crop
+ * marks. The composer stays at the bottom, where it is on every page. */
 export function Home({
   works,
   listed,
@@ -77,12 +79,16 @@ export function Home({
         </h1>
       </header>
       <section className={cx("home-section")} aria-labelledby="home-new">
-        <h2 id="home-new">{t.home.create}</h2>
+        <h2 id="home-new">
+          <span>{t.home.create}</span>
+        </h2>
         <ul className={cx("starts")}>
           <li>
             <button className={cx("start")} data-blank onClick={blank}>
-              <span className={cx("start-art")}>
-                <Plus size={22} strokeWidth={1.6} />
+              <span className={cx("sheet")}>
+                <span className={cx("start-art")}>
+                  <Plus size={22} strokeWidth={1.5} />
+                </span>
               </span>
               <span className={cx("start-name")}>{t.rail.blankCanvas}</span>
             </button>
@@ -92,8 +98,10 @@ export function Home({
             return (
               <li key={text}>
                 <button className={cx("start")} title={text} onClick={() => start(text)}>
-                  <span className={cx("start-art")}>
-                    <Sketch />
+                  <span className={cx("sheet")}>
+                    <span className={cx("start-art")}>
+                      <Sketch />
+                    </span>
                   </span>
                   <span className={cx("start-name")}>{text}</span>
                 </button>
@@ -104,7 +112,8 @@ export function Home({
       </section>
       <section className={cx("home-section", "home-recent")} aria-labelledby="home-recent">
         <h2 id="home-recent">
-          {t.home.recent}
+          <span>{t.home.recent}</span>
+          {listed && recent.length > 0 && hidden === 0 && <small>{recent.length}</small>}
           {hidden > 0 && (
             <button className={cx("home-all")} onClick={all}>
               {t.home.all(recent.length)}
@@ -120,12 +129,14 @@ export function Home({
               return (
                 <li key={w.id}>
                   <button onClick={() => open(w.id)} title={w.progress.prompt || undefined}>
-                    <span className={cx("recent-cover")}>
-                      {w.cover && !w.progress.blank ? (
-                        <img src={w.cover} alt="" loading="lazy" decoding="async" />
-                      ) : (
-                        <i aria-hidden>{w.progress.blank ? "" : w.title.slice(0, 1)}</i>
-                      )}
+                    <span className={cx("sheet")}>
+                      <span className={cx("recent-cover")}>
+                        {w.cover && !w.progress.blank ? (
+                          <img src={w.cover} alt="" loading="lazy" decoding="async" />
+                        ) : (
+                          <i aria-hidden>{w.progress.blank ? "" : w.title.slice(0, 1)}</i>
+                        )}
+                      </span>
                     </span>
                     <b>{w.title}</b>
                     <span className={cx("work-state")} data-tone={state.tone || undefined}>

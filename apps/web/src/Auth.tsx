@@ -6,7 +6,8 @@ import { LanguageSwitch, useT } from "./i18n.tsx";
 import { api, type User } from "./api.ts";
 import { cx } from "./cx.ts";
 
-/** Signing in or up: a headline and one card on the left, what DrawY makes on the right. */
+/** Signing in or up: a headline and a plain form on the left; on the right, on the table,
+ * one sheet of what DrawY makes. */
 export function Auth({ done }: { done: (user: User) => void }) {
   const t = useT();
   const [signup, S] = useState(false),
@@ -118,7 +119,9 @@ export function Auth({ done }: { done: (user: User) => void }) {
         </div>
       </section>
       <figure className={cx("auth-art")}>
-        <img src="/sketch-to-drawing.webp" alt={t.auth.art} />
+        <span className={cx("sheet")}>
+          <img src="/sketch-to-drawing.webp" alt={t.auth.art} />
+        </span>
       </figure>
     </div>
   );

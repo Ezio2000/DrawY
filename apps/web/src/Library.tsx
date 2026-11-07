@@ -35,7 +35,7 @@ let lastShelf: Shelf = "public";
 const kinds = ["picture", "drawing", "effect", "style"] as const;
 /** The ground every picture sits on: one light neutral, so the pictures carry the colour
  * and the shelf does not. */
-const tints = ["#f5f5f5"];
+const tints = ["#ffffff"];
 /** Each kind's cell on the shelf: wide enough to see what it is, no larger. */
 const cells: Record<Material["kind"], { width: number; height: number }> = {
   picture: { width: 96, height: 124 },
