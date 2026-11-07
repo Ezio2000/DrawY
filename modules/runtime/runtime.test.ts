@@ -184,6 +184,24 @@ it("fits the complete composition, keeps camera out of the work and anchors zoom
     fit({ x: -20, y: 40, width: 800, height: 600 }, 20, 20).scale,
   ).toBeGreaterThan(0);
 });
+it("draws a revision swapped in under a view that already fits it at that view", async () => {
+  await open();
+  const scale = await page.evaluate(async () => {
+    const view = window.drawyView,
+      work = structuredClone(window.drawyData.work),
+      before = view.renderer;
+    // Same extent, so the automatic view has nowhere to glide.
+    work.revision += 1;
+    work.scenes.root.modules[0].data = { ...work.scenes.root.modules[0].data, text: "新" };
+    view.update(work, work.scenes.root);
+    while (view.renderer === before) await new Promise((r) => setTimeout(r, 20));
+    return view.view.scale;
+  });
+  const transform = await page.evaluate(
+    () => window.drawyView.renderer.element.style.transform,
+  );
+  expect(Number(transform.match(/scale\(([\d.]+)\)/)?.[1])).toBeCloseTo(scale, 4);
+});
 it("awaits async scene events, opens separate details and renders structured diagrams in subscenes", async () => {
   await open();
   await page.locator('[data-action="emphasize"]').click();

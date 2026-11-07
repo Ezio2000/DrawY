@@ -22,7 +22,7 @@ import type {
 import { cx } from "./cx.ts";
 import { styleList } from "./Composer.tsx";
 import { useT } from "./i18n.tsx";
-import { live, thinkingOf } from "./Studio.tsx";
+import { currentOf, live, thinkingOf } from "./Studio.tsx";
 import type { StyleMaterial } from "@drawy/materials/schema";
 type ToolStep = Extract<Step, { kind: "tool" }>;
 /** What the canvas shows of a work: its revision and which pictures have developed. */
@@ -206,7 +206,9 @@ export function SceneView({
   const request = steps.find(
     (s): s is Extract<Step, { kind: "message" }> => s.kind === "message" && s.role === "user",
   )?.text;
-  const thinking = thinkingOf(run, locale);
+  // What the author is about now: its latest thought, or what it is doing or last noted.
+  const thinking = thinkingOf(run),
+    now = live(run) ? currentOf(run!, t, locale) : undefined;
   const brief = work.brief ?? undefined;
   const note =
     brief || briefing?.subject
@@ -249,6 +251,15 @@ export function SceneView({
             : [],
     )
     .slice(-7);
+  // The cards spread up to 150px apart, closer when that would run past the canvas.
+  const card = references.some((r) => r.made) ? 212 : 128,
+    spread =
+      references.length > 1
+        ? Math.max(
+            0,
+            Math.min(150, ((host.current?.clientWidth || 800) - 64 - card) / (references.length - 1)),
+          )
+        : 0;
   return (
     <>
       <div
@@ -304,9 +315,9 @@ export function SceneView({
                 </p>
               )}
               {live(run) && !draft.length && (
-                <p data-thought key={thinking || "…"}>
-                  <small>{t.now.thinkingNow}</small>
-                  {thinking || t.now.thinking + "…"}
+                <p data-thought key={now?.line}>
+                  {now?.line === thinking && <small>{t.now.thinkingNow}</small>}
+                  <span lang={now?.lang}>{now?.line}</span>
                 </p>
               )}
               {!!note.tags.length && (
@@ -326,7 +337,7 @@ export function SceneView({
                   data-made={made || undefined}
                   style={
                     {
-                      "--x": (i - (references.length - 1) / 2) * 150 + "px",
+                      "--x": (i - (references.length - 1) / 2) * spread + "px",
                       "--y": (i % 2 ? 22 : -16) + "px",
                       "--r": [-4, 3, -2, 5, -3, 2, -5][i] + "deg",
                       "--i": i,
