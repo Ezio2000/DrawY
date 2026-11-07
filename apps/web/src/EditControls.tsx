@@ -831,7 +831,9 @@ export function Section({
   aside?: ReactNode;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(() => opened(id, initial));
+  const [open, setOpen] = useState(() => opened(id, initial)),
+    // Opened by a press just now: what it holds comes down into place, once.
+    [opening, setOpening] = useState(false);
   return (
     <section className={cx("edit-section")} data-open={open || undefined}>
       <header>
@@ -839,6 +841,7 @@ export function Section({
           aria-expanded={open}
           onClick={() => {
             setOpen(!open);
+            setOpening(!open);
             try {
               localStorage.setItem("drawy.edit." + id, open ? "0" : "1");
             } catch {}
@@ -850,7 +853,15 @@ export function Section({
         </button>
         {aside}
       </header>
-      {open && <div className={cx("edit-section-body")}>{children}</div>}
+      {open && (
+        <div
+          className={cx("edit-section-body")}
+          data-opening={opening || undefined}
+          onAnimationEnd={(e) => e.target === e.currentTarget && setOpening(false)}
+        >
+          {children}
+        </div>
+      )}
     </section>
   );
 }

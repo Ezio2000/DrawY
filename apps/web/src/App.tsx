@@ -204,6 +204,20 @@ export function App() {
   const journal = panel === "journal";
   const drafting = panel === "drafts";
   const editing = panel === "edit";
+  // A panel folding away keeps what it showed until it has folded, rather than turning
+  // into the studio as it goes.
+  const [lastPanel, setLastPanel] = useState<Panel>(panel),
+    [folding, setFolding] = useState<Panel>("");
+  if (panel !== lastPanel) {
+    setLastPanel(panel);
+    setFolding(panel ? "" : lastPanel);
+  }
+  useEffect(() => {
+    if (!folding) return;
+    const done = setTimeout(() => setFolding(""), 480);
+    return () => clearTimeout(done);
+  }, [folding]);
+  const showing: Sized = panel || folding || "journal";
   const J = (on: boolean) => setPanel(on ? "journal" : "");
   const toggle = (p: Panel) => {
     setPanel(panel === p ? "" : p);
@@ -480,11 +494,36 @@ export function App() {
     if (el) el.scrollTop = el.scrollHeight;
     following.current = true;
   }, [journal]);
+  // What arrives while the person reads at the end of the conversation draws it down in one
+  // continuous ease, each frame closing part of the way to the bottom as it grows, rather
+  // than a fresh smooth scroll begun every time a step comes in. Scrolling away stops it.
+  const scrolling = useRef(0);
   useEffect(() => {
     const el = conversation.current;
-    if (el && following.current)
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (!el || !following.current || scrolling.current) return;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
+    let last = performance.now(),
+      put = el.scrollTop;
+    const tick = (now: number) => {
+      const gap = el.scrollHeight - el.clientHeight - el.scrollTop;
+      if (!el.isConnected || !following.current || gap < 1) return void (scrolling.current = 0);
+      // Moved by the person since the last frame: they are reading further up.
+      if (Math.abs(el.scrollTop - put) > 2) {
+        following.current = false;
+        return void (scrolling.current = 0);
+      }
+      const t = 1 - Math.exp(-Math.max(0, now - last) / 110);
+      last = now;
+      el.scrollTop += Math.max(1, gap * t);
+      put = el.scrollTop;
+      scrolling.current = requestAnimationFrame(tick);
+    };
+    scrolling.current = requestAnimationFrame(tick);
   }, [runs]);
+  useEffect(() => () => cancelAnimationFrame(scrolling.current), []);
   useEffect(() => {
     if (!scenes) return;
     const close = (e: PointerEvent) => {
@@ -1442,7 +1481,12 @@ export function App() {
                     done={setNotice}
                   />
                 </nav>
-                <div className={cx("side-panel")} data-kind={panel || undefined} inert={!panel}>
+                <div
+                  className={cx("side-panel")}
+                  data-kind={panel || undefined}
+                  data-showing={showing}
+                  inert={!panel}
+                >
                   {panel && (
                     <Resizer
                       kind={editing ? "edit" : drafting ? "drafts" : "journal"}
@@ -1451,15 +1495,13 @@ export function App() {
                       label={t.work.resize}
                     />
                   )}
-                  <header>
+                  <header key={"head-" + showing}>
                     <h2>
-                      <Title
-                        name={editing ? "edit" : drafting ? "drafts" : "journal"}
-                        size="section"
-                      />
+                      <Title name={showing} size="section" />
                     </h2>
                   </header>
                   <section
+                    key={"body-" + showing}
                     className={cx("side-body")}
                     ref={conversation}
                     onWheel={(e) => {
@@ -1470,7 +1512,7 @@ export function App() {
                         el.scrollHeight - el.scrollTop - el.clientHeight < 160;
                     }}
                   >
-                    {editing ? (
+                    {showing === "edit" ? (
                       <EditPanel
                         work={shown!}
                         sceneId={sceneId}
@@ -1488,7 +1530,7 @@ export function App() {
                         openScene={(id) => void attempt(() => enter(id))}
                         ask={() => ask()}
                       />
-                    ) : drafting ? (
+                    ) : showing === "drafts" ? (
                       <Drafts
                         versions={versions}
                         unsaved={unsavedCount}

@@ -104,6 +104,14 @@ export function Composer({
   useEffect(() => {
     if (place === "home") field.current?.focus();
   }, [place]);
+  // Unfolding from the pill when the author stops or asks, it opens the way it folded,
+  // rather than standing there whole at once.
+  const [folded, setFolded] = useState(!!collapsed),
+    [unfolding, setUnfolding] = useState(false);
+  if (folded !== !!collapsed) {
+    setFolded(!!collapsed);
+    setUnfolding(!collapsed);
+  }
   if (collapsed)
     return (
       <div className={cx("composer-wrap")} data-place={place} data-collapsed>
@@ -130,6 +138,8 @@ export function Composer({
       <div
         className={cx("composer")}
         data-place={place}
+        data-unfolding={unfolding || undefined}
+        onAnimationEnd={(e) => e.target === e.currentTarget && setUnfolding(false)}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();

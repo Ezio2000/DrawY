@@ -570,7 +570,9 @@ h2:has(> .title) {
   border-radius: 8px;
   background: var(--paper);
   box-shadow: 0 0 0 1px var(--line);
-  transition: box-shadow 0.15s var(--ease);
+  transition:
+    box-shadow 0.15s var(--ease),
+    transform 0.3s var(--ease-out);
 }
 
 .start-art {
@@ -598,6 +600,13 @@ h2:has(> .title) {
 .start:hover .start-art,
 .recent button:hover .recent-cover {
   box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-float);
+}
+
+/* A press gives under the finger, and springs back as it lets go. */
+.start:active .start-art,
+.recent button:active .recent-cover {
+  transform: scale(0.98);
+  transition-duration: 0.15s, 0.08s;
 }
 
 .start[data-blank]:hover .start-art {
@@ -1624,7 +1633,8 @@ h2:has(> .title) {
   display: flex;
   gap: 1px;
   padding: 4px;
-  border-radius: 10px;
+  /* The buttons' corners sit concentric inside the bar's. */
+  border-radius: 12px;
   background: var(--glass);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.042);
   opacity: 0.72;
@@ -1641,7 +1651,7 @@ h2:has(> .title) {
   place-items: center;
   width: 32px;
   height: 32px;
-  border-radius: 10px;
+  border-radius: 8px;
   color: var(--text-2);
 }
 
@@ -2468,7 +2478,8 @@ button.now:hover .now-line {
   width: var(--panel);
 }
 
-.side-panel[data-kind="drafts"] {
+/* What the panel shows sets how wide its contents are, also while it folds away. */
+.side-panel[data-showing="drafts"] {
   --panel: var(--drafts, 340px);
 }
 
@@ -2539,6 +2550,13 @@ body:has(.resizer[data-dragging]) {
   overscroll-behavior: contain;
 }
 
+/* Turning from one panel to another, the new one comes up over the width changing under
+   it rather than replacing the old one in a blink. */
+.side-panel > header,
+.side-body {
+  animation: fade-in 0.26s var(--ease) both;
+}
+
 .side-panel .inspector {
   top: 8px;
   right: 8px;
@@ -2548,7 +2566,7 @@ body:has(.resizer[data-dragging]) {
 
 /* ---------- Editing by hand: a panel of plain controls beside the canvas ---------- */
 
-.side-panel[data-kind="edit"] {
+.side-panel[data-showing="edit"] {
   --panel: var(--edit, 380px);
 }
 
@@ -3097,6 +3115,10 @@ body:has(.resizer[data-dragging]) {
   flex-direction: column;
   gap: 14px;
   padding: 4px 0 12px;
+}
+
+.edit-section-body[data-opening] {
+  animation: line-in 0.28s var(--ease-out) both;
 }
 
 .edit-adds:has(> :nth-child(3)) {
@@ -3979,7 +4001,7 @@ body:has(.resizer[data-dragging]) {
   align-items: center;
   gap: 1px;
   padding: 4px;
-  border-radius: 10px;
+  border-radius: 14px;
   background: var(--glass);
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.042),
@@ -4027,7 +4049,7 @@ body:has(.resizer[data-dragging]) {
   box-shadow:
     0 0 0 0.5px var(--line-strong),
     var(--shadow-float);
-  animation: pop 0.16s var(--ease-out) both;
+  animation: unfold 0.16s var(--ease-out) both;
 }
 
 .edit-menu button {
@@ -7084,6 +7106,14 @@ body:has(.resizer[data-dragging]) {
   }
 }
 
+/* A menu opening where it was asked for: a small step in scale, from that point. */
+@keyframes unfold {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
 @keyframes draw {
   to {
     stroke-dashoffset: 0;
@@ -7472,6 +7502,10 @@ body:has(.resizer[data-dragging]) {
     opacity: 0;
     transform: translateY(6px) scale(0.98);
   }
+}
+
+.composer[data-unfolding] {
+  animation: fold-in 0.36s var(--ease-out) both;
 }
 
 /* ---------- Hand edits that are not a version yet ---------- */

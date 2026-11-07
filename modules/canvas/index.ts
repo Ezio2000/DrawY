@@ -131,7 +131,14 @@ export class Canvas {
     }
   >();
   private sketched = 0;
+  /** The frame the view's next step of a glide, an ease or a follow is waiting for. */
   private gliding = 0;
+  /** A view the camera is easing toward, around a point that stays put on screen: where
+   * the wheel or the zoom buttons asked it to go, reached over a few frames, not at once. */
+  private easing?: { to: Camera; at: Point; pace: number };
+  /** A paint waiting for the next frame, so input that arrives faster than the screen
+   * draws moves the view once a frame. */
+  private painting = 0;
   private movable: boolean;
   /** Editing: a press selects instead of opening or operating what is drawn, any module
    * can be dragged at once, and Shift adds to the selection. */
@@ -175,7 +182,8 @@ export class Canvas {
   private observer: ResizeObserver;
   /** The canvas's size when last seen, to keep the view steady as it changes. */
   private size = { width: 0, height: 0 };
-  private settling?: ReturnType<typeof setTimeout>;
+  /** When the canvas last changed size, for an automatic view following the change. */
+  private resizedAt = 0;
   /** Small marks on modules that open a scene or a page, so they can be found without
    * hovering over everything. Laid over the canvas, they are never part of the drawing. */
   private targets = document.createElement("div");
@@ -411,28 +419,18 @@ export class Canvas {
       },
       { signal },
     );
-    // As the page around it changes (a panel sliding open, the window resized) the drawing
-    // keeps its middle where it was, then an automatic view settles once, gently, instead of
-    // refitting on every frame of the change.
+    // As the page around it changes (a panel sliding open, the window resized) an automatic
+    // view follows it, easing each frame toward the view that fits the space there is now:
+    // the drawing moves once, with the panel, rather than being cut off by it and gliding
+    // back afterwards. A view the person set stays where it is on the page.
     this.observer = new ResizeObserver(() => {
       const width = this.element.clientWidth,
         height = this.element.clientHeight,
         was = this.size;
       this.size = { width, height };
-      if (!was.width || !was.height || !this.automatic) {
-        if (this.automatic) this.fit(false);
-        else this.paint();
-        return;
-      }
-      cancelAnimationFrame(this.gliding);
-      this.camera = {
-        ...this.camera,
-        x: this.camera.x + (width - was.width) / 2,
-        y: this.camera.y + (height - was.height) / 2,
-      };
-      this.paint();
-      clearTimeout(this.settling);
-      this.settling = setTimeout(() => this.automatic && this.fit(true, 520), 200);
+      if (!this.automatic) return this.paint();
+      if (!was.width || !was.height) return this.fit(false);
+      this.follow();
     });
     this.observer.observe(this.element);
     const first = this.renderer;
@@ -1130,10 +1128,81 @@ export class Canvas {
     }
     return b && new DOMRect(r.left + x + b.x * scale, r.top + y + b.y * scale, b.width * scale, b.height * scale);
   }
+  /** The person moved the view: whatever glide or ease was under way gives way to it. */
   private changed() {
-    cancelAnimationFrame(this.gliding);
+    this.stop();
+    this.moved();
+  }
+  private moved(soon = false) {
     this.automatic = false;
     this.options.cameraChanged?.({ ...this.camera });
+    if (soon) {
+      if (!this.painting)
+        this.painting = requestAnimationFrame(() => {
+          this.painting = 0;
+          this.paint();
+        });
+    } else this.paint();
+  }
+  private stop() {
+    cancelAnimationFrame(this.gliding);
+    this.easing = undefined;
+    this.following = false;
+  }
+  /** The camera a step `t` of the way from `from` to `to`: the world point at `at` on
+   * screen moves evenly while the scale changes at an even rate, so a zoom never seems to
+   * speed up or slow down as it grows. */
+  private between(from: Camera, to: Camera, t: number, at: Point): Camera {
+    const a = { x: (at.x - from.x) / from.scale, y: (at.y - from.y) / from.scale },
+      b = { x: (at.x - to.x) / to.scale, y: (at.y - to.y) / to.scale },
+      scale = from.scale * (to.scale / from.scale) ** t;
+    return {
+      scale,
+      x: at.x - (a.x + (b.x - a.x) * t) * scale,
+      y: at.y - (a.y + (b.y - a.y) * t) * scale,
+    };
+  }
+  /** Whether two views are the same to the eye. */
+  private same(a: Camera, b: Camera) {
+    return (
+      Math.abs(a.scale / b.scale - 1) < 0.001 &&
+      Math.abs(a.x - b.x) < 0.25 &&
+      Math.abs(a.y - b.y) < 0.25
+    );
+  }
+  /** Moves the view toward `to` over the next frames, `at` staying put, each frame
+   * closing the gap by a share set by `pace` (ms); another call on the way retargets it. */
+  private ease(to: Camera, at: Point, pace: number) {
+    if (!this.options.motion) {
+      this.camera = to;
+      return this.changed();
+    }
+    const running = !!this.easing;
+    this.easing = { to, at, pace };
+    this.automatic = false;
+    if (running) return;
+    cancelAnimationFrame(this.gliding);
+    this.following = false;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const e = this.easing;
+      if (!e) return;
+      const t = 1 - Math.exp(-Math.max(0, now - last) / e.pace);
+      last = now;
+      this.camera = this.between(this.camera, e.to, t, e.at);
+      if (this.same(this.camera, e.to)) {
+        this.camera = e.to;
+        this.easing = undefined;
+      } else this.gliding = requestAnimationFrame(tick);
+      this.moved();
+    };
+    this.gliding = requestAnimationFrame(tick);
+  }
+  /** An ease still under way stops where it is: a press works on what is under the
+   * pointer as the person sees it, not on a view that keeps sliding under them. */
+  private hold() {
+    if (!this.easing) return;
+    this.stop();
     this.paint();
   }
   get view() {
@@ -1148,8 +1217,8 @@ export class Canvas {
     );
     this.changed();
   }
-  fit(glide = true, duration = 1100) {
-    this.automatic = true;
+  /** The view that fits the whole composition in the space left between the controls. */
+  private fitted() {
     const { top, bottom } = this.options.insets?.() || { top: 0, bottom: 80 },
       height = this.element.clientHeight - top - bottom;
     const target = fit(
@@ -1161,6 +1230,11 @@ export class Canvas {
       height,
     );
     target.y += top;
+    return { target, centre: { x: this.element.clientWidth / 2, y: top + height / 2 } };
+  }
+  fit(glide = true, duration = 1100) {
+    this.automatic = true;
+    const { target, centre } = this.fitted();
     // A view already all but there stays put: a glide of a few pixels reads as drifting.
     // It is still painted, so a drawing just swapped in takes the view it stays at.
     const near =
@@ -1171,7 +1245,7 @@ export class Canvas {
       this.paint();
       return;
     }
-    cancelAnimationFrame(this.gliding);
+    this.stop();
     if (!glide || !this.options.motion) {
       this.camera = target;
       this.paint();
@@ -1179,35 +1253,45 @@ export class Canvas {
     }
     // Glide around the view's centre in world space, zooming at an even pace.
     const from = { ...this.camera },
-      w = this.element.clientWidth / 2,
-      h = top + height / 2,
-      a = { x: (w - from.x) / from.scale, y: (h - from.y) / from.scale },
-      b = {
-        x: (w - target.x) / target.scale,
-        y: (h - target.y) / target.scale,
-      },
       start = performance.now();
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / duration),
-        e = 1 - (1 - t) ** 4,
-        scale = from.scale * (target.scale / from.scale) ** e;
-      this.camera = {
-        scale,
-        x: w - (a.x + (b.x - a.x) * e) * scale,
-        y: h - (a.y + (b.y - a.y) * e) * scale,
-      };
+        e = 1 - (1 - t) ** 4;
+      this.camera = this.between(from, target, e, centre);
       this.paint();
       if (t < 1) this.gliding = requestAnimationFrame(tick);
     };
     this.gliding = requestAnimationFrame(tick);
   }
+  /** An automatic view keeping up with the canvas as it changes size, each frame easing
+   * toward what fits now, until the size has held still and the view has arrived. */
+  private follow() {
+    this.resizedAt = performance.now();
+    if (!this.options.motion) return this.fit(false);
+    // Already following: the next frame takes the new size.
+    if (this.following) return;
+    this.stop();
+    this.following = true;
+    let last = performance.now();
+    const tick = (now: number) => {
+      if (!this.automatic) return void (this.following = false);
+      const t = 1 - Math.exp(-Math.max(0, now - last) / 70);
+      last = now;
+      const { target, centre } = this.fitted();
+      this.camera = this.between(this.camera, target, t, centre);
+      const done = this.same(this.camera, target) && now - this.resizedAt > 120;
+      if (done) this.camera = target;
+      this.paint();
+      if (done) this.following = false;
+      else this.gliding = requestAnimationFrame(tick);
+    };
+    this.gliding = requestAnimationFrame(tick);
+  }
+  private following = false;
+  /** Zooms by `factor` about the middle of the canvas, easing there. */
   zoom(factor: number) {
-    this.camera = zoom(
-      this.camera,
-      { x: this.element.clientWidth / 2, y: this.element.clientHeight / 2 },
-      factor,
-    );
-    this.changed();
+    const at = { x: this.element.clientWidth / 2, y: this.element.clientHeight / 2 };
+    this.ease(zoom(this.easing?.to ?? this.camera, at, factor), at, 60);
   }
   setMovable(value: boolean) {
     this.movable = value;
@@ -1515,18 +1599,30 @@ export class Canvas {
   private wheel(e: WheelEvent) {
     if (!this.editing && this.interactive(e)) return;
     e.preventDefault();
+    // Lines and pages, as some mice and browsers count, in pixels.
+    const unit =
+      e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.element.clientHeight : 1;
+    const dx = e.deltaX * unit,
+      dy = e.deltaY * unit;
     if (e.ctrlKey || e.metaKey) {
-      const rect = this.element.getBoundingClientRect();
-      this.camera = zoom(
-        this.camera,
-        { x: e.clientX - rect.left, y: e.clientY - rect.top },
-        Math.exp(-e.deltaY * 0.008),
-      );
-    } else {
-      this.camera.x -= e.deltaX;
-      this.camera.y -= e.deltaY;
+      const rect = this.element.getBoundingClientRect(),
+        at = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      // A pinch arrives as many small steps; a mouse wheel's notch as one large one, kept
+      // to a comfortable step and eased, so it zooms rather than jumps.
+      const step = Math.max(-60, Math.min(60, dy));
+      this.ease(zoom(this.easing?.to ?? this.camera, at, Math.exp(-step * 0.008)), at, 40);
+      return;
     }
-    this.changed();
+    // Scrolling moves the view, and where an ease is heading with it.
+    for (const c of this.easing ? [this.camera, this.easing.to] : [this.camera]) {
+      c.x -= dx;
+      c.y -= dy;
+    }
+    if (this.easing) this.moved();
+    else {
+      this.stop();
+      this.moved(true);
+    }
   }
   /** A point on screen in scene units. */
   private toScene(clientX: number, clientY: number): Point {
@@ -1540,6 +1636,7 @@ export class Canvas {
       (!this.editing && this.interactive(e))
     )
       return;
+    this.hold();
     // While editing, a press on the canvas leaves any field in the panel, which keeps it.
     if (this.editing) this.element.focus({ preventScroll: true });
     const start = { x: e.clientX, y: e.clientY, moved: false };
@@ -1945,7 +2042,7 @@ export class Canvas {
   }
   dispose() {
     cancelAnimationFrame(this.gliding);
-    clearTimeout(this.settling);
+    cancelAnimationFrame(this.painting);
     this.abort.abort();
     this.observer.disconnect();
     this.pending?.dispose();

@@ -107,12 +107,16 @@ export function EditMenu({
       removeEventListener("blur", close);
     };
   }, []);
-  // The menu stays on screen near the corner of the window.
+  // The menu stays on screen near the corner of the window, and unfolds from the pointer
+  // wherever that leaves it.
   useLayoutEffect(() => {
     const el = ref.current!;
-    const r = el.getBoundingClientRect();
-    el.style.left = Math.min(at.x, innerWidth - r.width - 8) + "px";
-    el.style.top = Math.min(at.y, innerHeight - r.height - 8) + "px";
+    const r = el.getBoundingClientRect(),
+      left = Math.min(at.x, innerWidth - r.width - 8),
+      top = Math.min(at.y, innerHeight - r.height - 8);
+    el.style.left = left + "px";
+    el.style.top = top + "px";
+    el.style.transformOrigin = `${at.x - left}px ${at.y - top}px`;
   }, [at]);
   const some = selected.length > 0;
   const items: Item[] = link && !some
