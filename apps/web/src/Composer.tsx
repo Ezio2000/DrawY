@@ -17,14 +17,8 @@ import { api, type Models } from "./api.ts";
 import { cx } from "./cx.ts";
 import { useDismiss } from "./Rail.tsx";
 import { useT } from "./i18n.tsx";
+import type { Attachment } from "./session/request.ts";
 
-/** Something sent along with the message: a picture, or any library material. */
-export interface Attachment {
-  id: string;
-  kind: string;
-  name: string;
-  url?: string;
-}
 let styles: Promise<StyleMaterial[]> | undefined;
 /** The library's styles, loaded once. */
 export const styleList = () =>
@@ -45,6 +39,7 @@ export function Composer({
   attachments,
   detach,
   uploading,
+  focus,
   quote,
   unquote,
   edit,
@@ -70,6 +65,9 @@ export function Composer({
   attachments: Attachment[];
   detach: (id: string) => void;
   uploading: number;
+  /** Changes each time something is handed to the field to send, which then takes the
+   * focus. */
+  focus?: number;
   quote?: string;
   unquote: () => void;
   /** Changes what is quoted by hand instead. */
@@ -104,6 +102,9 @@ export function Composer({
   useEffect(() => {
     if (place === "home") field.current?.focus();
   }, [place]);
+  useEffect(() => {
+    if (focus) requestAnimationFrame(() => field.current?.focus());
+  }, [focus]);
   if (collapsed)
     return (
       <div className={cx("composer-wrap")} data-place={place} data-collapsed>

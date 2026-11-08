@@ -22,7 +22,8 @@ import type {
 import { cx } from "./cx.ts";
 import { styleList } from "./Composer.tsx";
 import { useT } from "./i18n.tsx";
-import { currentOf, live, thinkingOf } from "./Studio.tsx";
+import { currentOf, thinkingOf } from "./Studio.tsx";
+import { live } from "./session/work.ts";
 import type { StyleMaterial } from "@drawy/materials/schema";
 type ToolStep = Extract<Step, { kind: "tool" }>;
 /** What the canvas shows of a work: its revision and which pictures have developed. */

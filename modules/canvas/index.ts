@@ -450,6 +450,7 @@ export class Canvas {
       // Opening a work or entering a scene shows what is already drawn as it is: only
       // what arrives while it is open unfolds.
       this.options.shown?.(scene);
+      this.arrived();
     });
   }
   /** Keeps the selection on what is still drawn, as it is now. */
@@ -457,6 +458,32 @@ export class Canvas {
     if (this.selection.length) this.select(this.selection);
     if (this.link && !this.renderer.links.has(this.link)) this.selectLink(null);
     if (paint) this.paint();
+  }
+  /** Modules waited for, until each is drawn (not only laid out) or the wait is given up. */
+  private awaited = new Set<{ ids: string[]; done: (drawn: boolean) => void }>();
+  /** Settles once these modules are drawn: true, or false if they are not drawn within a
+   * few seconds (the change that makes them failed, or the scene went). */
+  drawn(ids: string[]) {
+    return new Promise<boolean>((done) => {
+      const wait = {
+        ids,
+        done: (drawn: boolean) => {
+          clearTimeout(timer);
+          this.awaited.delete(wait);
+          done(drawn);
+        },
+      };
+      const timer = setTimeout(() => wait.done(false), 4000);
+      this.awaited.add(wait);
+      this.arrived();
+    });
+  }
+  /** Patches being drawn: a module laid out by one is not drawn until it is done. */
+  private patching = 0;
+  private arrived() {
+    if (this.patching || this.pending) return;
+    for (const wait of [...this.awaited])
+      if (wait.ids.every((id) => this.renderer.instances.has(id))) wait.done(true);
   }
   private renderFor(work: Work, scene: Scene) {
     return new SceneRenderer(work, scene, {
@@ -471,14 +498,21 @@ export class Canvas {
     // A change the person made is laid over what is drawn, redrawing only what changed.
     if (quiet && !this.pending && this.renderer.patchable(work, scene)) {
       const renderer = this.renderer;
-      void renderer.patch(work, scene).then(
-        () => {
-          if (this.renderer !== renderer) return;
-          this.refresh();
-          this.options.shown?.(scene);
-        },
-        (e) => this.options.error(String(e)),
-      );
+      this.patching++;
+      void renderer
+        .patch(work, scene)
+        .then(
+          () => {
+            if (this.renderer !== renderer) return;
+            this.refresh();
+            this.options.shown?.(scene);
+          },
+          (e) => this.options.error(String(e)),
+        )
+        .finally(() => {
+          this.patching--;
+          this.arrived();
+        });
       this.refresh();
       return;
     }
@@ -496,6 +530,7 @@ export class Canvas {
       // The selection stays on what is still there, as it is now, and the drawing takes
       // the current view at once; an automatic view then glides on to fit it.
       this.refresh();
+      this.arrived();
       if (this.automatic && !quiet) this.fit(true);
       if (quiet) before.dispose();
       else this.unfold(before, next);
@@ -1944,6 +1979,7 @@ export class Canvas {
     }
   }
   dispose() {
+    for (const wait of [...this.awaited]) wait.done(false);
     cancelAnimationFrame(this.gliding);
     clearTimeout(this.settling);
     this.abort.abort();
