@@ -39,6 +39,17 @@
   left: 0;
 }
 
+/* A work page that takes the whole screen (the phone's) leaves the side bar out; its own
+   way back home leads to it. */
+.app[data-whole] > .rail,
+.app[data-whole] > .rail-scrim {
+  display: none;
+}
+
+.app[data-whole] > .app-main {
+  left: 0;
+}
+
 .loading {
   display: grid;
   place-items: center;

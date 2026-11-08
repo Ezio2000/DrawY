@@ -1,0 +1,430 @@
+/* The work page on a phone: the drawing fills the screen; the way home, the title and the
+   few buttons float over its top, the composer over its foot, and the studio, the versions,
+   sharing and the scenes come up from the bottom as sheets. Everything a thumb presses is
+   at least 44px. The tokens are the app's own: white paper, neutral greys, one blue. */
+
+.phone {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--canvas-bg);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stage {
+  position: absolute;
+  inset: 0;
+}
+
+/* ---------- Top ---------- */
+
+.bar {
+  position: absolute;
+  z-index: 20;
+  top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  right: max(8px, env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.bar > * {
+  pointer-events: auto;
+}
+
+.round {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
+  color: var(--ink);
+}
+
+.round:disabled {
+  color: var(--text-3);
+  box-shadow: var(--shadow-1);
+}
+
+.round:active:not(:disabled),
+.title:active {
+  background: var(--bg-2);
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  height: 44px;
+  margin-right: auto;
+  padding: 0 12px 0 14px;
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
+  font: 600 15px/1.2 var(--font-display);
+  color: var(--ink);
+}
+
+.title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title small {
+  font: 500 12px/1 var(--font);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.title svg {
+  flex: none;
+  color: var(--text-3);
+}
+
+/* ---------- Foot ---------- */
+
+.dock {
+  position: absolute;
+  z-index: 20;
+  left: max(8px, env(safe-area-inset-left));
+  right: max(8px, env(safe-area-inset-right));
+  bottom: max(8px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-height: 44px;
+  padding: 6px 6px 6px 14px;
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.note > span {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.note[data-tone="error"] > span {
+  color: var(--red-text);
+}
+
+.note > button:not([class]) {
+  min-width: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+}
+
+.note .choices {
+  display: flex;
+  flex: 1 0 100%;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 4px 2px 0;
+}
+
+.choices button {
+  min-height: 40px;
+}
+
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ai);
+}
+
+/* What can be done to the part selected, in a row above the composer. */
+.actions {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.actions button {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 56px;
+  min-height: 52px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.actions button:active:not(:disabled) {
+  background: var(--fill);
+}
+
+.actions button:disabled {
+  color: var(--text-3);
+}
+
+.actions button[data-danger] {
+  color: var(--red-text);
+}
+
+.actions button[data-ask] {
+  color: var(--ai-deep);
+}
+
+.actions b {
+  flex: none;
+  align-self: center;
+  max-width: 30%;
+  padding: 0 10px 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 13px/1.2 var(--font-display);
+}
+
+/* ---------- Sheets ---------- */
+
+.scrim {
+  position: absolute;
+  z-index: 40;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.24);
+  animation: fade 0.2s var(--ease-out) both;
+}
+
+.sheet {
+  position: absolute;
+  z-index: 41;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - 48px);
+  padding-bottom: env(safe-area-inset-bottom);
+  border-radius: 12px 12px 0 0;
+  background: var(--paper);
+  box-shadow: 0 -1px 0 var(--line), 0 -8px 24px rgba(0, 0, 0, 0.08);
+  animation: rise 0.32s var(--ease-sheet) both;
+}
+
+.sheet[data-size="tall"] {
+  height: calc(100% - 48px);
+}
+
+.grip {
+  flex: none;
+  width: 36px;
+  height: 4px;
+  margin: 8px auto 0;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+
+.sheet > header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 6px 18px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.sheet > header h2 {
+  flex: 1;
+  margin: 0;
+  font: 600 16px/1.3 var(--font-display);
+}
+
+.sheet > header button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Sharing and export, as rows a thumb can reach. */
+.exports {
+  display: grid;
+  padding: 6px 8px 12px;
+}
+
+.exports h4 {
+  margin: 12px 10px 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.exports button {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 10px;
+  border-radius: 10px;
+  text-align: left;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.exports button:active:not(:disabled) {
+  background: var(--fill);
+}
+
+.exports button > svg {
+  flex: none;
+  color: var(--text-2);
+}
+
+.exports > div {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 2px 4px 4px;
+}
+
+.exports > div button {
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-height: 76px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  text-align: center;
+  font-size: 13px;
+}
+
+.exports > div small {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+/* The scenes, and renaming the work. */
+.scenes {
+  display: grid;
+  gap: 2px;
+  padding: 10px 8px 14px;
+}
+
+.scenes label {
+  display: grid;
+  gap: 6px;
+  padding: 2px 10px 12px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.scenes input {
+  height: 44px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 0;
+  background: var(--field);
+  font: 500 16px var(--font);
+  color: var(--text);
+}
+
+.scenes button {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 12px;
+  border-radius: 10px;
+  text-align: left;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.scenes button[data-child] {
+  padding-left: 30px;
+}
+
+.scenes button[aria-current] {
+  background: var(--blue-soft);
+  color: var(--ai-deep);
+  font-weight: 600;
+}
+
+/* The studio is written for a panel with room around it. */
+.body[data-padded] {
+  padding: 8px 16px 16px;
+}
+
+/* Held on its side, a phone is wide and short: the bars and sheets keep to a readable
+   width in the middle, and the drawing keeps the height. */
+@media (orientation: landscape) {
+  .dock {
+    left: 50%;
+    right: auto;
+    width: min(600px, calc(100% - 16px));
+    translate: -50% 0;
+  }
+
+  .sheet {
+    left: 50%;
+    right: auto;
+    width: min(640px, 100%);
+    translate: -50% 0;
+  }
+
+  .sheet[data-size="tall"] {
+    height: calc(100% - 16px);
+    max-height: calc(100% - 16px);
+  }
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .scrim {
+    animation: none;
+  }
+}

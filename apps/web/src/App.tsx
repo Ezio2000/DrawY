@@ -274,7 +274,10 @@ export function App() {
       <AccountContext.Provider value={user ?? null}>
         <ChooseLocale.Provider value={setLocale}>
           <Tooltips />
-          <div className={cx("app")}>
+          <div
+            className={cx("app")}
+            data-whole={(page === "work" && !!session && shells.whole) || undefined}
+          >
             {user && (
               <Rail
                 user={user}

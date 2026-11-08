@@ -10,16 +10,25 @@ function shell(
   load: () => Promise<{ default: ComponentType<ShellProps> }>,
   fits: string | null,
   name: Record<Locale, string>,
+  /** Whether the page takes the whole screen, without the app's side bar. */
+  whole = false,
 ) {
   // A page is drawn again only when its props change, and they keep their identity: what
   // changes inside them is read slice by slice where it is shown.
-  return { page: lazy(() => load().then((m) => ({ default: memo(m.default) }))), fits, name };
+  return { page: lazy(() => load().then((m) => ({ default: memo(m.default) }))), fits, name, whole };
 }
 
+/** Phones, held either way: a window narrower than 600px, or a touch screen less than
+ * 500px tall (a phone on its side). A tablet's shorter side is 600px or more, which leaves
+ * room for the canvas and a panel beside it, and a tablet is where people still lay a
+ * picture out with a finger or a pen; so tablets, touch laptops and every computer get the
+ * desktop page, whose canvas takes fingers as well as a mouse. */
+const PHONE = "(max-width: 599px), (pointer: coarse) and (max-height: 499px)";
+
 /** The work pages there are. A page for another device is one file and one line here,
- * above the desktop page, which takes whatever no other page fits; for example
- * `phone: shell(() => import("./phone/WorkPage.tsx"), "(max-width: 760px), (pointer: coarse) and (max-width: 1100px)", { zh: "手机", en: "Phone" }),` */
+ * above the desktop page, which takes whatever no other page fits. */
 export const shells = {
+  phone: shell(() => import("./phone/WorkPage.tsx"), PHONE, { zh: "手机", en: "Phone" }, true),
   desktop: shell(() => import("./desktop/WorkPage.tsx"), null, { zh: "电脑", en: "Desktop" }),
 };
 export type Device = keyof typeof shells;
@@ -74,6 +83,8 @@ export function useShell(storage: KeyValue) {
       setChoice(next);
     },
     Page: shells[device].page,
+    /** Whether the page takes the whole screen, without the app's side bar. */
+    whole: shells[device].whole,
   };
 }
 export type Shells = ReturnType<typeof useShell>;
