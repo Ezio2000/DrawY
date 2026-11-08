@@ -24,6 +24,9 @@ import type {
   Target,
   Work,
 } from "../contracts/index.ts";
+/** How waiting for modules to be drawn ended: they are drawn; a revision as new as theirs
+ * was drawn without them; or the canvas went (the scene was left). */
+export type Drawn = "drawn" | "missing" | "gone";
 /** Words or a picture a person pointed at in a module, to change them. */
 export type Pointed =
   | {
@@ -437,7 +440,8 @@ export class Canvas {
     this.observer.observe(this.element);
     const first = this.renderer;
     this.ready = first.mount().finally(() => {
-      if (this.renderer !== first) return;
+      this.mounting = false;
+      if (this.renderer !== first) return this.arrived();
       first.element.style.visibility = "";
       // What is already drawn comes in at once, with only a short fade over the paper.
       if (this.options.motion)
@@ -459,32 +463,39 @@ export class Canvas {
     if (this.link && !this.renderer.links.has(this.link)) this.selectLink(null);
     if (paint) this.paint();
   }
-  /** Modules waited for, until each is drawn (not only laid out) or the wait is given up. */
-  private awaited = new Set<{ ids: string[]; done: (drawn: boolean) => void }>();
-  /** Settles once these modules are drawn: true, or false if they are not drawn within a
-   * few seconds (the change that makes them failed, or the scene went). */
-  drawn(ids: string[]) {
-    return new Promise<boolean>((done) => {
+  /** Modules waited for, each with the revision that made them. */
+  private awaited = new Set<{ ids: string[]; revision: number; done: (how: Drawn) => void }>();
+  /** Settles once these modules, made in `revision`, are drawn (not only laid out):
+   * `drawn`; `missing` once a revision as new as theirs has been drawn without them (a
+   * later change took them out); `gone` if the canvas goes first. No clock is involved, so
+   * a slow device only makes it wait longer. */
+  drawn(ids: string[], revision: number) {
+    return new Promise<Drawn>((done) => {
       const wait = {
         ids,
-        done: (drawn: boolean) => {
-          clearTimeout(timer);
+        revision,
+        done: (how: Drawn) => {
           this.awaited.delete(wait);
-          done(drawn);
+          done(how);
         },
       };
-      const timer = setTimeout(() => wait.done(false), 4000);
       this.awaited.add(wait);
       this.arrived();
     });
   }
   /** Patches being drawn: a module laid out by one is not drawn until it is done. */
   private patching = 0;
+  /** Whether the first drawing of the scene is still being made. */
+  private mounting = true;
   private arrived() {
-    if (this.patching || this.pending) return;
-    for (const wait of [...this.awaited])
-      if (wait.ids.every((id) => this.renderer.instances.has(id))) wait.done(true);
+    if (this.mounting || this.patching || this.pending) return;
+    const shown = this.renderer.work.revision;
+    for (const wait of [...this.awaited]) {
+      if (wait.ids.every((id) => this.renderer.instances.has(id))) wait.done("drawn");
+      else if (shown >= wait.revision) wait.done("missing");
+    }
   }
+
   private renderFor(work: Work, scene: Scene) {
     return new SceneRenderer(work, scene, {
       open: (t) => this.options.open(t),
@@ -1979,7 +1990,7 @@ export class Canvas {
     }
   }
   dispose() {
-    for (const wait of [...this.awaited]) wait.done(false);
+    for (const wait of [...this.awaited]) wait.done("gone");
     cancelAnimationFrame(this.gliding);
     clearTimeout(this.settling);
     this.abort.abort();

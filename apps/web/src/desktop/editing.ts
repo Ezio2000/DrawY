@@ -1,18 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
 import type { Point } from "../../../../modules/contracts/index.ts";
-import { isClip, labelOf, type Alignment } from "../../../../modules/editing/index.ts";
+import {
+  isClip,
+  labelOf,
+  type Alignment,
+  type Clip,
+  type Stacking,
+} from "../../../../modules/editing/index.ts";
 import type { DrawingMaterial, Material, PictureMaterial } from "@drawy/materials/schema";
-import { CLIP_TYPE, kept, newer } from "../session/clip.ts";
+import { CLIP_TYPE, Clipboard, newer } from "../session/clip.ts";
+import { useStore } from "../session/store.ts";
 import type { Session } from "../session/work.ts";
+import { browserStorage } from "../storage.ts";
 
 /* Editing by hand with a mouse and a keyboard: the tools over the canvas, the menu on a
- * right click, the system clipboard and the shortcuts. Every one of them ends in one of
- * the session's operations. */
+ * right click, the system clipboard and the shortcuts. The session's operations act on
+ * the parts they are given; here they act on what is selected. */
 
 /** What a press on the canvas does while editing: select and move, move the view, or
  * place words where it lands. */
 export type Tool = "select" | "hand" | "text";
+
+/** The parts last copied, shared by every work and, through local storage, every tab. */
+const clipboard = new Clipboard(browserStorage);
 
 const typing = (target: EventTarget | null) =>
   !!(target as Element | null)?.closest?.("input,textarea,select,[contenteditable]");
@@ -21,6 +32,8 @@ export function useEditing({
   session,
   canvas,
   editing,
+  selected,
+  link,
   pick,
   retype,
 }: {
@@ -28,6 +41,10 @@ export function useEditing({
   canvas: Canvas | undefined;
   /** Whether the editor is open. */
   editing: boolean;
+  /** The modules selected. */
+  selected: string[];
+  /** The link selected, when no module is. */
+  link: string | null;
   /** Asks for a material from the library, of one kind. */
   pick: (kind: "picture" | "drawing", chosen: (m: Material) => void) => void;
   /** Starts changing words where they are drawn. */
@@ -35,11 +52,9 @@ export function useEditing({
 }) {
   const [tool, setTool] = useState<Tool>("select");
   const [menu, setMenu] = useState<{ x: number; y: number }>();
-  const { ops: base, locked, ids: selected, link, sceneId } = session;
-  useEffect(
-    () => canvas?.setTool(tool === "text" ? "place" : tool),
-    [tool, canvas],
-  );
+  const clipped = useStore(clipboard);
+  const { ops: base, locked, sceneId, scene } = session;
+  useEffect(() => canvas?.setTool(tool === "text" ? "place" : tool), [tool, canvas]);
   useEffect(() => {
     if (!editing) {
       setTool("select");
@@ -49,6 +64,41 @@ export function useEditing({
 
   const ops = {
     ...base,
+    /** Takes out the selected modules, or the selected link. */
+    remove: () => base.remove(selected.length ? selected : link ? [link] : []),
+    /** Turns a link round: the selected one unless another is named. */
+    reverse: (id = link) => void (id && base.reverse(id)),
+    duplicate: () => base.duplicate(selected),
+    stack: (to: Stacking) => base.stack(selected, to),
+    group: () => base.group(selected),
+    ungroup: () => base.ungroup(selected),
+    align: (to: Alignment) => base.align(selected, to),
+    distribute: (axis: "x" | "y") => base.distribute(selected, axis),
+    selectAll: () => canvas?.selectAll(),
+    /** Selects the next module in the stacking order, or the one before. */
+    cycle(back: boolean) {
+      const modules = scene?.modules ?? [];
+      if (!modules.length) return;
+      const at = modules.findIndex((m) => m.id === selected.at(-1));
+      const next =
+        at < 0
+          ? back
+            ? modules.length - 1
+            : 0
+          : (at + (back ? -1 : 1) + modules.length) % modules.length;
+      canvas?.select([modules[next].id]);
+    },
+    /** Copies the selected modules, keeping the clip for pasting anywhere. */
+    copy: (): Clip | null => {
+      const clip = base.copy(selected);
+      return clip && clipboard.keep(clip);
+    },
+    cut() {
+      if (ops.copy()) ops.remove();
+    },
+    paste(clip = clipboard.kept()) {
+      if (clip) base.paste(clip);
+    },
     /** Adds words, a picture or a library drawing at a point, or in the middle of the
      * view; words are ready to type once drawn. */
     add(kind: "text" | "picture" | "drawing", at?: Point) {
@@ -92,14 +142,14 @@ export function useEditing({
       if (!active(e)) return;
       const data = e.clipboardData;
       e.preventDefault();
+      const mine = clipboard.kept();
       try {
         const clip = JSON.parse(data?.getData(CLIP_TYPE) || "null");
-        if (isClip(clip)) return latest.current.ops.paste(newer(clip, kept()));
+        if (isClip(clip)) return latest.current.ops.paste(mine ? newer(clip, mine) : clip);
       } catch {}
       const files = [...(data?.files ?? [])].filter((f) => f.type.startsWith("image/"));
       if (files.length) return latest.current.ops.pictures(files);
       const text = data?.getData("text/plain")?.trim() ?? "";
-      const mine = kept();
       // The words written beside a clip mean the clip itself.
       if (mine && text === mine.modules.map(labelOf).join("\n"))
         return latest.current.ops.paste(mine);
@@ -202,7 +252,7 @@ export function useEditing({
     return () => removeEventListener("keydown", key);
   }, [editing, locked, session.work, selected, link, sceneId, tool, menu, canvas]);
 
-  return { ops, tool, setTool, menu, setMenu };
+  return { ops, tool, setTool, menu, setMenu, clipped };
 }
 /** Alt with a letter lines the selection up, as in drawing apps. */
 const alignKeys: Record<string, Alignment> = {

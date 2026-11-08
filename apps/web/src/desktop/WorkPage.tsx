@@ -12,15 +12,20 @@ import {
 import { Dialog } from "@drawy/ui";
 import type { Material } from "@drawy/materials/schema";
 import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
-import { versionOf } from "../../../../modules/contracts/index.ts";
-import { removeParts, replace } from "../../../../modules/editing/index.ts";
+import {
+  versionOf,
+  type Selection,
+  type Target,
+} from "../../../../modules/contracts/index.ts";
+import { removeParts, replace, shownName } from "../../../../modules/editing/index.ts";
+import { useAccount } from "../account.tsx";
 import { cx } from "../cx.ts";
 import { useT } from "../i18n.tsx";
 import { SceneView, DetailView } from "../SceneView.tsx";
 import { Studio, Now } from "../Studio.tsx";
 import { ExportMenu } from "../Export.tsx";
 import { Rename } from "../Rail.tsx";
-import { Composer } from "../Composer.tsx";
+import { Composer, Unconnected } from "../Composer.tsx";
 import { Library } from "../Library.tsx";
 import { Title } from "../Title.tsx";
 import { Drafts } from "../Drafts.tsx";
@@ -65,10 +70,19 @@ const roomy = () => innerWidth > 1080;
 
 /** The work page on a computer: the canvas with the title over it and the composer laid
  * over its foot, and beside it a panel for the studio, the drafts or the editor. */
-export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps) {
+export default function DesktopWorkPage({ session: s, asking, feedback, go }: ShellProps) {
   const t = useT();
-  const { attempt } = app;
+  const user = useAccount()!;
+  const { attempt } = feedback;
+  const { request, draft } = asking;
   const work = s.work!;
+  // What is selected: modules, or else a link, as the canvas says.
+  const [selected, setSelected] = useState<Selection[]>([]);
+  const [link, setLink] = useState<string | null>(null);
+  // The detail page open over the scene.
+  const [detailId, setDetail] = useState<string>();
+  // The run whose reply under the canvas was put away.
+  const [dismissed, setDismissed] = useState("");
   const [panel, setPanel] = useState<Panel>("");
   const [widths, setWidths] = useState(() => ({
     journal: panelWidth.read("journal"),
@@ -91,7 +105,16 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
   const journal = panel === "journal",
     drafting = panel === "drafts",
     editing = panel === "edit";
-  const { run, working, sceneId, scene: active, versions, unsavedCount, preview, locked } = s;
+  const { run, working, sceneId, scene: active, versions, unsaved, preview, locked } = s;
+  const ids = selected.map((x) => x.moduleId);
+  const chosenLink = !ids.length && link ? active?.links.find((l) => l.id === link) : undefined;
+  const linkId = chosenLink ? link : null;
+  const focus = { modules: selected, link: chosenLink };
+  // The latest reply shows under the canvas until it is put away; one from before the
+  // work was opened stays in the studio.
+  const putAway = !run || run.id === dismissed || run.id === s.earlier;
+  const replying = !putAway && !working && !s.waiting;
+  const dismiss = () => setDismissed(run?.id ?? "");
   const toggle = (p: Panel) => {
     setPanel(panel === p ? "" : p);
     s.endPreview();
@@ -99,11 +122,23 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
   /** Asks for a material of one kind from the library, for what it is chosen for. */
   const pick = (kind: "picture" | "drawing", chosen: (m: Material) => void) =>
     setChoosing({ kind, chosen });
-  const hand = useEditing({ session: s, canvas, editing, pick, retype: setRetyping });
+  const hand = useEditing({
+    session: s,
+    canvas,
+    editing,
+    selected: ids,
+    link: linkId,
+    pick,
+    retype: setRetyping,
+  });
   /** Hands a change to the author, written into the composer for the person to send. */
   const ask = (text?: string, why = "") => draft.hand(text, why);
 
+  // What is selected and open belongs to the scene it was in.
   useEffect(() => {
+    setSelected([]);
+    setLink(null);
+    setDetail(undefined);
     setScenes(false);
     setRetyping(undefined);
   }, [s.id, sceneId]);
@@ -149,14 +184,14 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
       if (working || preview) return;
       if (k === "y" || e.shiftKey) {
         if (s.redoable) void attempt(s.redo);
-      } else if (s.undoable) void attempt(s.undo);
+      } else if (s.undoable) undo();
     };
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
-  }, [s.undoable, s.redoable, working, preview, s.undo, s.redo]);
+  }, [s.undoable, s.redoable, working, preview, s.undo, s.redo, run?.id]);
   // Cmd/Ctrl+S saves the hand edits as a version.
   useEffect(() => {
-    if (!unsavedCount) return;
+    if (!unsaved) return;
     const key = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "s") return;
       e.preventDefault();
@@ -164,7 +199,7 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
     };
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
-  }, [unsavedCount, locked]);
+  }, [unsaved, locked]);
   useEffect(() => {
     if (!preview) return;
     const key = (e: KeyboardEvent) => e.key === "Escape" && s.endPreview();
@@ -173,11 +208,33 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
   }, [preview]);
   // The author's last reply under the canvas goes with Escape or a press on the drawing.
   useEffect(() => {
-    if (!s.replying || journal || s.detailId) return;
-    const key = (e: KeyboardEvent) => e.key === "Escape" && s.dismiss();
+    if (!replying || journal || detailId) return;
+    const key = (e: KeyboardEvent) => e.key === "Escape" && dismiss();
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
-  }, [s.replying, journal, s.detailId]);
+  }, [replying, journal, detailId]);
+
+  /** A module by its name, or a link by the names of the modules it joins. */
+  const nameOf = (id: string): string => {
+    const l = active?.links.find((x) => x.id === id);
+    if (l) return `${nameOf(l.from.moduleId)} → ${nameOf(l.to.moduleId)}`;
+    const m = active?.modules.find((x) => x.id === id);
+    return m ? shownName(work, m) : id;
+  };
+  /** Going back, or undoing, puts the reply under the canvas away. */
+  const restore = (revision: number) =>
+    void attempt(async () => {
+      await s.restore(revision);
+      dismiss();
+    });
+  const undo = () =>
+    void attempt(async () => {
+      await s.undo();
+      dismiss();
+    });
+  /** Follows a module's target: into a scene, or a detail page over this one. */
+  const open = (target: Target) =>
+    target.kind === "scene" ? enter(target.id) : setDetail(target.id);
 
   /** Words or a picture pointed at on the canvas: words are changed where they are, a
    * picture is swapped for one from the library. What the work cannot change by itself is
@@ -193,7 +250,7 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
         );
         if (!done) {
           draft.use(m);
-          ask(t.edit.askPicture(s.nameOf(p.moduleId)), t.edit.handedPicture);
+          ask(t.edit.askPicture(nameOf(p.moduleId)), t.edit.handedPicture);
         }
       }),
     );
@@ -206,7 +263,7 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
       return void attempt(() => s.change((w) => removeParts(w, sceneId, [p.moduleId])));
     void attempt(async () => {
       if (!(await s.change((w) => replace(w, sceneId, p.moduleId, "text", p.text, text))))
-        ask(t.edit.askText(s.nameOf(p.moduleId), p.text, text), t.edit.handedText);
+        ask(t.edit.askText(nameOf(p.moduleId), p.text, text), t.edit.handedText);
     });
   }
   /** Stopping hands what was asked back to the composer, to change and send again. */
@@ -215,10 +272,9 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
       const asked = await s.stop();
       if (asked && !draft.get().text.trim()) draft.write(asked);
     });
-  const resume = () =>
-    void attempt(() =>
-      app.send({ text: t.now.resumeMessage, scene: run?.sceneId ?? sceneId, picked: "" }),
-    );
+  const send = (ask: Parameters<typeof asking.send>[0] = {}) =>
+    void attempt(() => asking.send({ focus, ...ask }));
+  const resume = () => send({ text: t.now.resumeMessage, scene: run?.sceneId ?? sceneId, picked: "" });
   const enter = (id: string) => void attempt(() => s.enter(id));
 
   const crumbs = [];
@@ -227,54 +283,32 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
     crumbs.unshift(at);
     at = at.parentId ? work.scenes[at.parentId] : undefined;
   }
-  const chosenLink = s.chosenLink;
-  const linkId = chosenLink ? s.link : null;
   const sameGroup =
-    !!s.selected.length &&
-    s.ids.every((id) => {
+    !!ids.length &&
+    ids.every((id) => {
       const g = active?.modules.find((m) => m.id === id)?.group;
-      return g && g === active?.modules.find((m) => m.id === s.ids[0])?.group;
+      return g && g === active?.modules.find((m) => m.id === ids[0])?.group;
     });
 
   // While drawing, the bar always shows how far it has got; with the studio open, which
   // tells the rest, only the stages.
-  const status = (app.offline ||
-    s.waiting ||
-    working ||
-    (!journal && run?.id !== s.dismissed)) && (
+  const status = (s.offline || s.waiting || working || (!journal && !putAway)) && (
     <Now
       compact={journal && working}
       run={run}
       work={work}
-      offline={app.offline}
+      offline={s.offline}
       pictures={!!active?.modules.length}
-      answer={(o) => void attempt(() => app.send({ text: o, picked: "" }))}
+      answer={(o) => send({ text: o, picked: "" })}
       choose={draft.choose}
       cancel={() => void attempt(s.cancel)}
       reveal={() => setPanel("journal")}
-      dismiss={s.dismiss}
+      dismiss={dismiss}
       resume={resume}
-      restore={(r) => void attempt(() => s.restore(r))}
+      restore={restore}
     />
   );
-  const connected =
-    app.models && !!app.models.labels.find((m) => m.id === app.models!.chosen.label)?.ready;
-  const manages = !!app.user.permissions.includes("models.manage");
-  const spent = app.user.quota === 0 && !s.waiting;
-  // Until a drawing model is connected, the composer says so: those who manage models
-  // are led to Settings, the rest are told an administrator has to.
-  const unconnected = connected === false && (
-    <div className={cx("now")} data-tone="failed">
-      <span className={cx("now-line")}>
-        {manages ? t.composer.unconnected : t.composer.unconnectedMember}
-      </span>
-      {manages && (
-        <button className={cx("primary small")} onClick={() => app.go("/settings")}>
-          {t.composer.connect}
-        </button>
-      )}
-    </div>
-  );
+  const unconnected = asking.blocked === "unconnected" && <Unconnected go={go} />;
   const note = request.handed && request.text && (
     <div className={cx("now")}>
       <span className={cx("now-line")}>{request.handed}</span>
@@ -298,7 +332,7 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
         className={cx("stage")}
         data-working={working || undefined}
         onPointerDown={(e) => {
-          if (s.replying && (e.target as Element).closest("[data-canvas]")) s.dismiss();
+          if (replying && (e.target as Element).closest("[data-canvas]")) dismiss();
         }}
       >
         <header className={cx("topbar")}>
@@ -367,12 +401,12 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
             setCanvas(c);
             s.attach(c);
           }}
-          open={s.open}
-          select={s.select}
+          open={open}
+          select={setSelected}
           commit={hand.ops.move}
           point={point}
           connect={hand.ops.connect}
-          selectLink={s.selectLink}
+          selectLink={setLink}
           reconnect={hand.ops.reconnect}
           menu={hand.setMenu}
           place={(at) => {
@@ -388,7 +422,7 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
             canvas={canvas}
             stage={stage.current}
             ops={hand.ops}
-            selected={s.ids}
+            selected={ids}
             link={linkId}
             grouped={sameGroup}
             hidden={!!hand.menu || !!retyping || hand.tool !== "select"}
@@ -399,10 +433,10 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
           <EditMenu
             at={hand.menu}
             ops={hand.ops}
-            selected={s.ids}
+            selected={ids}
             link={linkId}
-            grouped={s.ids.some((id) => active?.modules.find((m) => m.id === id)?.group)}
-            clipped={s.clipped}
+            grouped={ids.some((id) => active?.modules.find((m) => m.id === id)?.group)}
+            clipped={hand.clipped}
             close={() => hand.setMenu(undefined)}
             ask={() => ask()}
           />
@@ -427,29 +461,29 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
               <button
                 className={cx("primary small")}
                 disabled={working}
-                onClick={() => void attempt(() => s.restore(preview.revision))}
+                onClick={() => restore(preview.revision)}
               >
                 {t.history.restoreThis}
               </button>
             </div>
           )}
-          {app.error && (
+          {feedback.error && (
             <div className={cx("toast-error")} role="alert">
-              <span>{app.error}</span>
-              <button aria-label={t.close} onClick={app.clearError}>
+              <span>{feedback.error}</span>
+              <button aria-label={t.close} onClick={feedback.dismiss}>
                 <X size={13} />
               </button>
             </div>
           )}
-          {app.notice && !s.wentBack && (
+          {feedback.notice && !s.back && (
             <div className={cx("toast-error")} data-tone="ok" role="status">
-              <span>{app.notice}</span>
+              <span>{feedback.notice}</span>
             </div>
           )}
-          {s.wentBack?.at === work.revision && !preview && !s.holding && (
+          {s.back && !preview && !s.holding && (
             <div className={cx("toast-error")} data-tone="ok" role="status">
-              <span>{s.wentBack.text}</span>
-              <button className={cx("toast-action")} onClick={() => void attempt(s.undo)}>
+              <span>{s.back.text}</span>
+              <button className={cx("toast-action")} onClick={undo}>
                 {t.history.undoBack}
               </button>
             </div>
@@ -458,7 +492,7 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
             <div className={cx("unsaved-bar")} data-asking role="alertdialog">
               <span className={cx("unsaved-text")}>
                 <i className={cx("unsaved-dot")} />
-                {t.unsaved.ask(Math.max(1, unsavedCount))}
+                {t.unsaved.ask(Math.max(1, unsaved))}
               </span>
               <span className={cx("unsaved-actions")}>
                 <button className={cx("quiet-button")} onClick={() => void s.decide("cancel")}>
@@ -479,13 +513,13 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
               </span>
             </div>
           ) : (
-            !!unsavedCount &&
+            !!unsaved &&
             !preview &&
             !s.engaged && (
               <div className={cx("unsaved-bar")} role="status">
                 <span className={cx("unsaved-text")}>
                   <i className={cx("unsaved-dot")} />
-                  <b>{t.unsaved.title(unsavedCount)}</b>
+                  <b>{t.unsaved.title(unsaved)}</b>
                 </span>
                 <span className={cx("unsaved-actions")}>
                   <button
@@ -517,18 +551,18 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
             uploading={request.uploading}
             focus={request.asked}
             quote={
-              s.selected.length
-                ? s.selected.map((x) => x.label || x.moduleId).join(t.now.list)
+              selected.length
+                ? selected.map((x) => x.label || x.moduleId).join(t.now.list)
                 : chosenLink
-                  ? s.nameOf(chosenLink.id)
+                  ? nameOf(chosenLink.id)
                   : undefined
             }
-            unquote={s.unquote}
+            unquote={() => (canvas ? canvas.select([]) : (setSelected([]), setLink(null)))}
             edit={editing || locked ? undefined : () => setPanel("edit")}
             placeholder={
               s.waiting
                 ? t.composer.answering
-                : s.selected.length || chosenLink
+                : selected.length || chosenLink
                   ? t.composer.selected
                   : working
                     ? t.composer.working
@@ -537,19 +571,19 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
             status={unconnected || note || status}
             working={working}
             busy={s.sending || !s.loaded || !s.synced}
-            send={() => void attempt(() => app.send())}
+            send={() => send()}
             stop={stop}
             attach={(files) => void attempt(() => draft.upload(files))}
-            pick={app.library}
-            models={s.engaged ? undefined : app.models}
+            pick={asking.pick}
+            models={s.engaged ? undefined : asking.models}
             collapsed={working}
-            quota={app.user.quota}
-            spent={spent}
-            choose={app.choose}
+            quota={user.quota}
+            spent={asking.blocked === "spent" && !s.waiting}
+            choose={asking.choose}
           />
         </div>
-        {s.detailId && work.details[s.detailId] && (
-          <DetailView detail={work.details[s.detailId]} close={s.closeDetail} />
+        {detailId && work.details[detailId] && (
+          <DetailView detail={work.details[detailId]} close={() => setDetail(undefined)} />
         )}
       </section>
       <aside className={cx("side")} aria-label={t.work.panel}>
@@ -558,7 +592,7 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
             aria-label={t.work.undo}
             data-tip={t.work.undo}
             disabled={working || !s.undoable}
-            onClick={() => void attempt(s.undo)}
+            onClick={undo}
           >
             <Undo2 size={17} />
           </button>
@@ -599,8 +633,8 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
             work={work}
             sceneId={sceneId}
             disabled={!active?.modules.length}
-            fail={app.fail}
-            done={app.say}
+            fail={feedback.fail}
+            done={feedback.say}
           />
         </nav>
         <div className={cx("side-panel")} data-kind={panel || undefined} inert={!panel}>
@@ -631,7 +665,7 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
               <EditPanel
                 work={s.shown!}
                 sceneId={sceneId}
-                selected={s.ids}
+                selected={ids}
                 link={linkId}
                 canvas={canvas}
                 busy={s.engaged ? t.edit.busy : undefined}
@@ -644,12 +678,12 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
             ) : drafting ? (
               <Drafts
                 versions={versions}
-                unsaved={unsavedCount}
+                unsaved={unsaved}
                 current={work.revision}
                 previewing={preview?.revision}
                 locked={s.engaged || !s.loaded}
                 look={(r) => void attempt(() => s.look(r))}
-                restore={(r) => void attempt(() => s.restore(r))}
+                restore={restore}
                 save={() => void attempt(s.save)}
                 discard={() => void attempt(s.discard)}
               />
@@ -658,10 +692,10 @@ export function DesktopWorkPage({ session: s, request, draft, app }: ShellProps)
                 runs={s.runs}
                 loaded={s.loaded}
                 work={work}
-                restore={(r) => void attempt(() => s.restore(r))}
+                restore={restore}
                 versionOf={(r) => versionOf(versions, r)?.number}
                 resume={resume}
-                openTrace={(id) => app.go("/traces/" + id)}
+                openTrace={(id) => go("/traces/" + id)}
               />
             )}
           </section>

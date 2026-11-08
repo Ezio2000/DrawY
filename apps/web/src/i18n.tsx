@@ -54,6 +54,8 @@ const zh = {
   // Rail
   rail: {
     nav: "导航",
+    layout: "界面",
+    layoutAuto: (name: string) => `自动（${name}）`,
     open: "展开侧栏",
     close: "收起侧栏",
     home: "首页",
@@ -1202,6 +1204,8 @@ const en: Words = {
   },
   rail: {
     nav: "Navigation",
+    layout: "Layout",
+    layoutAuto: (name) => `Auto (${name})`,
     open: "Open sidebar",
     close: "Close sidebar",
     home: "Home",

@@ -10,7 +10,7 @@ import { applied, moveParts } from "../../../../modules/editing/index.ts";
 import { fixture } from "../../../../modules/runtime/fixture.ts";
 import { dictionaries } from "../i18n.tsx";
 import type { ServerEvent } from "../events.ts";
-import { WorkSession, type SessionHost, type View } from "./work.ts";
+import { WorkSession, type Session, type SessionHost, type View } from "./work.ts";
 
 /** The server's part, kept in memory: revisions are added, never changed, as the real one
  * keeps them. A gate holds hand edits back to look at the page before they are saved. */
@@ -85,7 +85,7 @@ beforeEach(() => {
     notice: (text) => void host.notices.push(text),
     fail: (e) => void host.failures.push(e),
     listen: (listener) => {
-      events = listener;
+      events = listener.event;
       return () => (events = undefined);
     },
   };
@@ -94,177 +94,225 @@ afterEach(() => vi.useRealTimers());
 
 /** Lets the requests on their way and what follows them settle. */
 const settle = () => new Promise((r) => setTimeout(r, 0));
+/** Opens the fixture's work and waits for it and its revisions; `s()` is its snapshot now,
+ * with the actions on it, as a shell sees it. */
 async function open() {
-  const s = new WorkSession(head.id, host);
+  const store = new WorkSession(head.id, host);
   await settle();
   await settle();
-  expect(s.get().synced).toBe(true);
-  return s;
+  const s = () => store.get() as Session;
+  expect(s().synced).toBe(true);
+  return { store, s };
 }
 const moved = (w: Work) => moveParts(w, "root", [{ id: "heading", bounds: { x: 0, y: 0, width: 640, height: 70 } }]);
 const heading = (w?: Work) => w?.scenes.root.modules.find((m) => m.id === "heading")!.bounds.x;
 
 it("shows a hand edit at once and swaps the saved work in quietly", async () => {
-  const s = await open();
+  const { s } = await open();
   let open_!: () => void;
   gate = new Promise((r) => (open_ = r));
-  const job = s.change(moved);
+  const job = s().change(moved);
   // Before the server answers, the canvas already shows the edit, as a showing of its own.
-  expect(heading(s.get().display!.work)).toBe(0);
-  expect(s.get().display!.version).toBe("~1");
-  expect(s.get().work!.revision).toBe(1);
-  expect(s.quiet(2)).toBe(true);
+  expect(heading(s().display!.work)).toBe(0);
+  expect(s().display!.version).toBe("~1");
+  expect(s().work!.revision).toBe(1);
+  expect(s().quiet(2)).toBe(true);
   open_();
   expect(await job).toBe(true);
   await settle();
-  const now = s.get();
-  expect(now.draft).toBeUndefined();
-  expect(now.display!.version).toBe("");
-  expect(now.display!.work.revision).toBe(2);
+  expect(s().display!.version).toBe("");
+  expect(s().display!.work.revision).toBe(2);
   // The saved revision is the person's own, so the canvas lays it on without drawing it.
-  expect(s.quiet(2)).toBe(true);
-  expect(now.unsavedCount).toBe(1);
-  expect(now.undoable).toBe(true);
+  expect(s().quiet(2)).toBe(true);
+  expect(s().unsaved).toBe(1);
+  expect(s().undoable).toBe(true);
 });
 
 it("takes back what a failed hand edit showed", async () => {
-  const s = await open();
+  const { s } = await open();
   refuse = "refused";
-  await expect(s.change(moved)).rejects.toThrow("refused");
-  expect(s.get().draft).toBeUndefined();
-  expect(heading(s.get().display!.work)).toBe(100);
-  expect(s.quiet(2)).toBe(false);
+  await expect(s().change(moved)).rejects.toThrow("refused");
+  expect(s().display!.version).toBe("");
+  expect(heading(s().display!.work)).toBe(100);
+  expect(s().quiet(2)).toBe(false);
 });
 
 it("holds a request back while hand edits are unsaved, then saves them and sends it", async () => {
-  const s = await open();
-  await s.change(moved);
+  const { s } = await open();
+  await s().change(moved);
   await settle();
   const sent = vi.fn();
-  await s.send({ text: "make it blue", sent });
-  expect(s.get().holding).toBe(true);
+  await s().send({ text: "make it blue", sent });
+  expect(s().holding).toBe(true);
   expect(posted.some((p) => p.path.endsWith("/runs"))).toBe(false);
-  await s.decide("save");
-  expect(s.get().holding).toBe(false);
+  await s().decide("save");
+  expect(s().holding).toBe(false);
   expect(posted.map((p) => p.path.split("/").at(-1))).toEqual(["edits", "save", "runs"]);
   expect(sent).toHaveBeenCalledOnce();
-  expect(s.get().run?.id).toBe("run-0");
+  expect(s().run?.id).toBe("run-0");
   expect(host.notices).toEqual([dictionaries.en.unsaved.saved(1)]);
 });
 
+it("holds a request back while a hand edit is still on its way", async () => {
+  const { s } = await open();
+  let open_!: () => void;
+  gate = new Promise((r) => (open_ = r));
+  const job = s().change(moved);
+  await s().send({ text: "make it blue" });
+  expect(s().holding).toBe(true);
+  open_();
+  await job;
+});
+
 it("a request held back can be dropped, and the edits stay", async () => {
-  const s = await open();
-  await s.change(moved);
+  const { s } = await open();
+  await s().change(moved);
   await settle();
   const sent = vi.fn();
-  await s.send({ text: "make it blue", sent });
-  await s.decide("cancel");
+  await s().send({ text: "make it blue", sent });
+  await s().decide("cancel");
   expect(sent).not.toHaveBeenCalled();
-  expect(s.get().holding).toBe(false);
-  expect(s.get().unsavedCount).toBe(1);
+  expect(s().holding).toBe(false);
+  expect(s().unsaved).toBe(1);
+});
+
+it("tells the author what a request is about", async () => {
+  const { s } = await open();
+  const link = { id: "l1", from: { moduleId: "heading" }, to: { moduleId: "control" } } as never;
+  await s().send({ text: "bigger", focus: { modules: [{ moduleId: "heading", label: "Title" }] } });
+  expect(posted.at(-1)!.data.prompt).toBe("bigger\nSelected module: heading\nTitle");
+  runs[0].status = "completed" as never;
+  events!({ type: "run", run: runs[0] });
+  await s().send({ text: "thicker", focus: { modules: [], link } });
+  expect(posted.at(-1)!.data.prompt).toBe("thicker\nSelected link: l1 (heading → control)");
 });
 
 it("going back to a version can be taken back for a while", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  const s = new WorkSession(head.id, host);
+  const store = new WorkSession(head.id, host);
+  const s = () => store.get();
   await vi.runOnlyPendingTimersAsync();
-  await s.change(moved);
-  await s.save();
+  await s().change(moved);
+  await s().save();
   await vi.advanceTimersByTimeAsync(1);
-  expect(s.get().versions.map((v) => v.number)).toEqual([0, 1]);
-  await s.restore(1);
+  expect(s().versions.map((v) => v.number)).toEqual([0, 1]);
+  await s().restore(1);
   await vi.advanceTimersByTimeAsync(1);
-  expect(heading(s.get().work)).toBe(100);
-  expect(s.get().wentBack?.text).toBe(dictionaries.en.history.wentBack(0));
-  expect(s.get().undoable).toBe(true);
-  await s.undo();
+  expect(heading(s().work)).toBe(100);
+  expect(s().back?.text).toBe(dictionaries.en.history.wentBack(0));
+  expect(s().undoable).toBe(true);
+  await s().undo();
   await vi.advanceTimersByTimeAsync(1);
-  expect(heading(s.get().work)).toBe(0);
-  expect(s.get().wentBack).toBeUndefined();
+  expect(heading(s().work)).toBe(0);
+  expect(s().back).toBeUndefined();
   // Left alone, the note goes after ten seconds and undoing steps back as usual.
-  await s.restore(1);
+  await s().restore(1);
+  expect(s().back).toBeDefined();
   await vi.advanceTimersByTimeAsync(10_001);
-  expect(s.get().wentBack).toBeUndefined();
+  expect(s().back).toBeUndefined();
 });
 
 it("redoes what undoing took back until the work changes otherwise", async () => {
-  const s = await open();
-  await s.change(moved);
+  const { s } = await open();
+  await s().change(moved);
   await settle();
-  await s.undo();
+  await s().undo();
   await settle();
-  expect(heading(s.get().work)).toBe(100);
-  expect(s.get().redoable).toBe(true);
-  await s.redo();
+  expect(heading(s().work)).toBe(100);
+  expect(s().redoable).toBe(true);
+  await s().redo();
   await settle();
-  expect(heading(s.get().work)).toBe(0);
-  expect(s.get().redoable).toBe(false);
-  await s.undo();
+  expect(heading(s().work)).toBe(0);
+  expect(s().redoable).toBe(false);
+  await s().undo();
   await settle();
-  await s.change((w) => moveParts(w, "root", [{ id: "control", bounds: { x: 0, y: 0, width: 340, height: 48 } }]));
-  expect(s.get().redoable).toBe(false);
+  await s().change((w) => moveParts(w, "root", [{ id: "control", bounds: { x: 0, y: 0, width: 340, height: 48 } }]));
+  expect(s().redoable).toBe(false);
 });
 
 it("a preview ends when the work changes under it, and shows without being drawn", async () => {
-  const s = await open();
-  await s.change(moved);
+  const { s } = await open();
+  await s().change(moved);
   await settle();
-  await s.look(1);
-  expect(s.get().preview?.revision).toBe(1);
-  expect(s.get().locked).toBe(true);
-  expect(heading(s.get().display!.work)).toBe(100);
-  expect(s.quiet(1)).toBe(true);
+  await s().look(1);
+  expect(s().preview?.revision).toBe(1);
+  expect(s().locked).toBe(true);
+  expect(heading(s().display!.work)).toBe(100);
+  expect(s().quiet(1)).toBe(true);
   events!({ type: "work", work: commit(head, { kind: "edit" }) });
-  expect(s.get().preview).toBeUndefined();
+  expect(s().preview).toBeUndefined();
 });
 
-it("selects the modules an edit makes once the view has drawn them", async () => {
-  const s = await open();
-  let drawn!: (yes: boolean) => void;
-  const view: View = {
+it("does not go back to an older work the server sends late", async () => {
+  const { s } = await open();
+  const old = structuredClone(head);
+  await s().change(moved);
+  events!({ type: "work", work: old });
+  expect(s().work!.revision).toBe(2);
+});
+
+/** A view that draws when told to, saying how it went. */
+function slowView() {
+  const waits: ((how: "drawn" | "missing" | "gone") => void)[] = [];
+  const view: View & { waits: typeof waits } = {
+    waits,
     center: () => ({ x: 0, y: 0 }),
     scale: 1,
     select: vi.fn(),
-    drawn: () => new Promise((r) => (drawn = r)),
+    drawn: () => new Promise((r) => waits.push(r)),
   };
-  s.attach(view);
-  s.actions.select([{ moduleId: "heading", label: "", data: {} }]);
-  s.ops.duplicate();
+  return view;
+}
+
+it("selects the modules an edit makes once the view has drawn them, however long it takes", async () => {
+  const { s } = await open();
+  const view = slowView();
+  s().attach(view);
+  s().ops.duplicate(["heading"]);
   await settle();
   await settle();
+  expect(view.waits).toHaveLength(1);
   expect(view.select).not.toHaveBeenCalled();
-  drawn(true);
+  view.waits[0]("drawn");
   await settle();
-  const copy = s.get().scene!.modules.at(-1)!.id;
+  const copy = s().scene!.modules.at(-1)!.id;
   expect(copy).not.toBe("heading");
   expect(view.select).toHaveBeenCalledWith([copy]);
+});
+
+it("selects nothing when what an edit made was not drawn", async () => {
+  const { s } = await open();
+  const view = slowView();
+  s().attach(view);
+  const made = s().ops.text({ x: 0, y: 0 }, "Hi");
+  await settle();
+  await settle();
+  view.waits[0]("missing");
+  expect(await made).toBeUndefined();
+  expect(view.select).not.toHaveBeenCalled();
 });
 
 it("follows a run that drew only in another scene there once it ends", async () => {
   const sub = { ...structuredClone(head.scenes.root), id: "sub", title: "Sub", parentId: "root" };
   head = commit({ ...head, scenes: { ...head.scenes, sub } }, { kind: "edit" });
-  const s = await open();
+  const { s } = await open();
   const step = { kind: "tool", name: "write_work", status: "done", scenes: [{ id: "sub" }] };
   events!({ type: "run", run: { id: "r", workId: head.id, status: "running", steps: [] } as unknown as Run });
   events!({ type: "run", run: { id: "r", workId: head.id, status: "completed", steps: [step] } as unknown as Run });
   await settle();
   expect(host.went).toEqual(["push /a/fixture/sub"]);
-  expect(s.get().sceneId).toBe("root");
+  expect(s().sceneId).toBe("root");
 });
 
 it("an address naming a scene the work does not have falls back to its root", async () => {
-  const s = await open();
-  s.locate("gone");
+  const { store, s } = await open();
+  store.locate("gone");
   expect(host.went).toEqual(["replace /a/fixture"]);
-  expect(s.get().sceneId).toBe("root");
+  expect(s().sceneId).toBe("root");
 });
 
-it("a selection belongs to its scene", async () => {
-  const sub = { ...structuredClone(head.scenes.root), id: "sub", title: "Sub", parentId: "root" };
-  head = commit({ ...head, scenes: { ...head.scenes, sub } }, { kind: "edit" });
-  const s = await open();
-  s.actions.select([{ moduleId: "heading", label: "Title", data: {} }]);
-  expect(s.get().ids).toEqual(["heading"]);
-  s.locate("sub");
-  expect(s.get().ids).toEqual([]);
+it("knows which reply was already there when the work was opened", async () => {
+  runs = [{ id: "old", workId: head.id, status: "completed", steps: [] } as unknown as Run];
+  const { s } = await open();
+  expect(s().earlier).toBe("old");
 });

@@ -18,6 +18,7 @@ import { cx } from "./cx.ts";
 import { useDismiss } from "./Rail.tsx";
 import { useT } from "./i18n.tsx";
 import type { Attachment } from "./session/request.ts";
+import { useCan } from "./account.tsx";
 
 let styles: Promise<StyleMaterial[]> | undefined;
 /** The library's styles, loaded once. */
@@ -500,6 +501,25 @@ function StylePicker({
             </button>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Until a drawing model is connected, the composer says so: those who manage models are
+ * led to Settings, the rest are told an administrator has to. */
+export function Unconnected({ go }: { go: (path: string) => void }) {
+  const t = useT();
+  const manages = useCan()("models.manage");
+  return (
+    <div className={cx("now")} data-tone="failed">
+      <span className={cx("now-line")}>
+        {manages ? t.composer.unconnected : t.composer.unconnectedMember}
+      </span>
+      {manages && (
+        <button className={cx("primary small")} onClick={() => go("/settings")}>
+          {t.composer.connect}
+        </button>
       )}
     </div>
   );

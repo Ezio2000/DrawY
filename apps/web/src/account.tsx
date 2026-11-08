@@ -9,3 +9,5 @@ export function useCan() {
   return (permission: Permission) =>
     !!account?.permissions.includes(permission);
 }
+/** The signed-in account: its name, role and the requests it has left. */
+export const useAccount = () => useContext(AccountContext);

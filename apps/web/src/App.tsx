@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentType } from "react";
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { X, ImagePlus } from "lucide-react";
 import {
   Spinner,
@@ -15,7 +15,7 @@ import { AccountContext } from "./account.tsx";
 import { cx } from "./cx.ts";
 import { Rail } from "./Rail.tsx";
 import { Auth } from "./Auth.tsx";
-import { Composer, chosen } from "./Composer.tsx";
+import { Composer, Unconnected, chosen } from "./Composer.tsx";
 import { Library } from "./Library.tsx";
 import { Settings, leaving } from "./Settings.tsx";
 import { TraceView } from "./TraceView.tsx";
@@ -26,13 +26,9 @@ import { ChooseLocale, dictionaries, useLanguage } from "./i18n.tsx";
 import { pageOf, sceneOf, workIdOf } from "./routes.ts";
 import { useRequest } from "./session/request.ts";
 import { live, useWorkSession, type Ask, type SessionHost } from "./session/work.ts";
-import { deviceOf, type Device, type ShellProps } from "./shell.ts";
-import { DesktopWorkPage } from "./desktop/WorkPage.tsx";
-
-/** The work page for each device: the same session, laid out for the screen it is on. */
-const shells: Record<Device, ComponentType<ShellProps>> = {
-  desktop: DesktopWorkPage,
-};
+import type { Asking, Feedback } from "./shell.ts";
+import { useShell } from "./shells.ts";
+import { browserStorage } from "./storage.ts";
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -47,18 +43,17 @@ export function App() {
     // before it knows.
     [listed, setListed] = useState(false),
     [works, L] = useState<Summary[]>([]),
-    // The drawing models to pick from; until the chosen one is connected, nothing can
-    // be drawn.
+    // The labels to draw with; until the chosen one is connected, nothing can be drawn.
     [models, setModels] = useState<Models>(),
     // Something that went well, said briefly.
     [notice, setNotice] = useState(""),
     [picking, setPicking] = useState(false),
-    [offline, G] = useState(false),
     // A request from the home page on its way, making the work it is for.
     [starting, setStarting] = useState(false),
     [dragging, setDragging] = useState(false),
     [trash, setTrash] = useState<Summary>();
   const page = pageOf(path);
+  const shells = useShell(browserStorage);
   const deleting = useRef<{ id: string; timer: ReturnType<typeof setTimeout> }>(undefined);
   const language = useRef({ t, locale });
   language.current = { t, locale };
@@ -90,9 +85,9 @@ export function App() {
     spent: () => U((u) => (u && u.quota !== null ? { ...u, quota: Math.max(0, u.quota - 1) } : u)),
     notice: setNotice,
     fail: (e) => E(messageOf(e)),
-    listen: (event) => {
+    listen: (listener) => {
       const u = now.current.user;
-      return u ? listen(u.id, { event }) : () => {};
+      return u ? listen(u.id, listener) : () => {};
     },
   }));
   const { session, store, begin } = useWorkSession(user ? workIdOf(path) : undefined, host);
@@ -100,8 +95,12 @@ export function App() {
   useLayoutEffect(() => store?.locate(sceneOf(path)), [store, path]);
 
   const manages = !!user?.permissions.includes("models.manage");
-  const connected =
-    models && !!models.labels.find((m) => m.id === models.chosen.label)?.ready;
+  const blocked: Asking["blocked"] =
+    models && !models.labels.find((m) => m.id === models.chosen.label)?.ready
+      ? "unconnected"
+      : user?.quota === 0
+        ? "spent"
+        : undefined;
 
   const attempt = async (fn: () => Promise<unknown>) => {
     try {
@@ -111,34 +110,35 @@ export function App() {
       E(messageOf(e));
     }
   };
+  const feedback: Feedback = {
+    error,
+    notice,
+    dismiss: () => E(""),
+    fail: (e) => E(messageOf(e)),
+    say: setNotice,
+    attempt,
+  };
   /** Whether a request can go: a drawing model connected and requests left; answering the
-   * author's questions still works when none are left. */
+   * author's questions still works when none are left. Those who manage the models are
+   * taken to connect one. */
   const allowed = (answering: boolean) => {
-    if (user?.quota === 0 && !answering) throw Error(t.composer.quotaOut);
-    if (connected) return true;
+    if (blocked === "spent" && !answering) throw Error(t.composer.quotaOut);
+    if (blocked !== "unconnected") return true;
     if (manages) go("/settings");
     return false;
   };
-  /** Sends the request as written, or what is given in its place, to the open work. */
+  /** Sends the request as written, or what is given in its place: to the open work, or,
+   * from the home page, to a work it makes for itself and opens. */
   const send = async (ask: Partial<Ask> = {}) => {
     const r = draft.get();
     const text = ask.text ?? r.text,
       materials = ask.materials ?? r.attachments.map((a) => a.id);
-    if (!store || r.uploading || (!text.trim() && !materials.length)) return;
-    if (!allowed(store.get().waiting)) return;
-    await store.send({
-      text,
-      materials,
-      picked: ask.picked ?? r.choices,
-      scene: ask.scene,
-      sent: ask.sent ?? draft.clear,
-    });
-  };
-  /** A request from the home page: it makes a work for itself, opens it and is sent there. */
-  async function start(text = draft.get().text) {
-    const r = draft.get();
-    if ((!text.trim() && !r.attachments.length) || r.uploading || starting) return;
-    if (!allowed(false)) return;
+    if (r.uploading || (!text.trim() && !materials.length)) return;
+    if (store) {
+      if (!allowed(store.get().waiting)) return;
+      return store.get().send({ text, materials, picked: ask.picked ?? r.choices, scene: ask.scene, focus: ask.focus, sent: ask.sent ?? draft.clear });
+    }
+    if (starting || !allowed(false)) return;
     setStarting(true);
     try {
       const w = await api<Work>("/works", "POST", {
@@ -146,9 +146,9 @@ export function App() {
       });
       const made = begin(w);
       go("/a/" + w.id);
-      await made.send({
+      await made.get().send({
         text: r.style ? `${text.trim()}\n${t.home.styleLine(r.style.name[locale])}` : text,
-        materials: r.attachments.map((a) => a.id),
+        materials,
         picked: r.choices,
         scene: w.rootSceneId,
         sent: draft.clear,
@@ -156,15 +156,7 @@ export function App() {
     } finally {
       setStarting(false);
     }
-  }
-  /** A blank canvas, made and opened: from the side bar and from the home page. */
-  const createBlank = () =>
-    void attempt(async () => {
-      const w = await api<Work>("/works", "POST", { title: t.rail.untitled });
-      begin(w);
-      go("/a/" + w.id);
-      await refreshList();
-    });
+  };
   const choose = (change: SettingsChange) => {
     setModels((m) => m && chosen(m, change));
     // What the server settles on (a label taken away falls back) is shown next.
@@ -173,6 +165,23 @@ export function App() {
       setModels(await api<Models>("/models"));
     });
   };
+  const asking: Asking = {
+    request,
+    draft,
+    send,
+    pick: () => setPicking(true),
+    models,
+    choose,
+    blocked,
+  };
+  /** A blank canvas, made and opened: from the side bar and from the home page. */
+  const createBlank = () =>
+    void attempt(async () => {
+      const w = await api<Work>("/works", "POST", { title: t.rail.untitled });
+      begin(w);
+      go("/a/" + w.id);
+      await refreshList();
+    });
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -210,7 +219,6 @@ export function App() {
         );
         if (!live(run)) void refreshList();
       },
-      offline: G,
     });
   }, [user?.id]);
   useEffect(() => {
@@ -272,7 +280,12 @@ export function App() {
   }
   const shownWorks = works.filter((w) => w.id !== trash?.id);
   const droppable = page === "home" || page === "work";
-  const Shell = shells[deviceOf()];
+  const loading = (
+    <div className={cx("loading")}>
+      <Spinner />
+    </div>
+  );
+  const Page = shells.Page;
   return (
     <LocaleContext.Provider value={locale}>
       <AccountContext.Provider value={user ?? null}>
@@ -290,6 +303,7 @@ export function App() {
                 go={go}
                 create={createBlank}
                 remove={remove}
+                shells={shells}
                 logout={() =>
                   void attempt(async () => {
                     await api("/auth/logout", "POST");
@@ -321,9 +335,7 @@ export function App() {
               }}
             >
               {user === undefined ? (
-                <div className={cx("loading")}>
-                  <Spinner />
-                </div>
+                loading
               ) : !user ? (
                 <Auth
                   done={(u) => {
@@ -347,7 +359,7 @@ export function App() {
               ) : page === "home" ? (
                 <Home
                   works={shownWorks}
-                  start={(text) => void attempt(() => start(text))}
+                  start={(text) => void attempt(() => send({ text }))}
                   blank={createBlank}
                   listed={listed}
                   all={() => O(true)}
@@ -362,63 +374,28 @@ export function App() {
                       uploading={request.uploading}
                       unquote={() => {}}
                       placeholder={t.home.placeholder}
-                      status={
-                        connected === false && (
-                          <div className={cx("now")} data-tone="failed">
-                            <span className={cx("now-line")}>
-                              {manages ? t.composer.unconnected : t.composer.unconnectedMember}
-                            </span>
-                            {manages && (
-                              <button
-                                className={cx("primary small")}
-                                onClick={() => go("/settings")}
-                              >
-                                {t.composer.connect}
-                              </button>
-                            )}
-                          </div>
-                        )
-                      }
+                      status={blocked === "unconnected" && <Unconnected go={go} />}
                       style={request.style}
                       setStyle={draft.setStyle}
                       working={false}
                       busy={starting}
-                      send={() => void attempt(() => start())}
+                      send={() => void attempt(() => send())}
                       stop={() => {}}
                       attach={(files) => void attempt(() => draft.upload(files))}
-                      pick={() => setPicking(true)}
+                      pick={asking.pick}
                       models={models}
                       quota={user.quota}
-                      spent={user.quota === 0}
+                      spent={blocked === "spent"}
                       choose={choose}
                     />
                   }
                 />
               ) : !session?.work ? (
-                <div className={cx("loading")}>
-                  <Spinner />
-                </div>
+                loading
               ) : (
-                <Shell
-                  session={session}
-                  request={request}
-                  draft={draft}
-                  app={{
-                    user,
-                    models,
-                    choose,
-                    offline,
-                    error,
-                    clearError: () => E(""),
-                    fail: (e) => E(messageOf(e)),
-                    notice,
-                    say: setNotice,
-                    attempt,
-                    go,
-                    library: () => setPicking(true),
-                    send,
-                  }}
-                />
+                <Suspense fallback={loading}>
+                  <Page session={session} asking={asking} feedback={feedback} go={go} />
+                </Suspense>
               )}
               {error && page !== "work" && (
                 <div className={cx("toast-error")} data-floating role="alert">

@@ -8,8 +8,11 @@ import {
   Trash2,
   ChevronsUpDown,
   SquarePen,
+  MonitorSmartphone,
 } from "lucide-react";
 import { PanelMark } from "@drawy/ui/brand";
+import { useLocale } from "@drawy/ui";
+import type { ShellChoice, Shells } from "./shells.ts";
 import { cx } from "./cx.ts";
 import { Brand } from "./Title.tsx";
 import { LanguageSwitch, useT } from "./i18n.tsx";
@@ -113,6 +116,7 @@ export function Rail({
   go,
   create,
   remove,
+  shells,
   logout,
 }: {
   user: User;
@@ -125,6 +129,8 @@ export function Rail({
   /** Starts a blank canvas and opens it. */
   create: () => void;
   remove: (work: Summary) => void;
+  /** The work pages there are for each kind of device, and the one picked. */
+  shells: Shells;
   logout: () => void;
 }) {
   const t = useT();
@@ -237,6 +243,7 @@ export function Rail({
               </button>
             )}
             <LanguageSwitch label />
+            {shells.devices.length > 1 && <ShellSwitch shells={shells} />}
             <hr />
             <button
               role="menuitem"
@@ -263,5 +270,23 @@ export function Rail({
         </button>
       </div>
     </nav>
+  );
+}
+
+/** Picks the work page by hand, in turn: the one the device fits, then each there is;
+ * the pick is remembered on this browser. */
+function ShellSwitch({ shells }: { shells: Shells }) {
+  const t = useT(),
+    locale = useLocale();
+  const order: ShellChoice[] = ["auto", ...shells.devices];
+  const next = order[(order.indexOf(shells.choice) + 1) % order.length];
+  const name = (c: ShellChoice) =>
+    c === "auto" ? t.rail.layoutAuto(shells.nameOf(shells.fits, locale)) : shells.nameOf(c, locale);
+  return (
+    <button role="menuitem" onClick={() => shells.choose(next)}>
+      <MonitorSmartphone size={15} />
+      {t.rail.layout}
+      <small>{name(shells.choice)}</small>
+    </button>
   );
 }
