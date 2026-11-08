@@ -1,4 +1,4 @@
-import { lazy, useEffect, useState, type ComponentType } from "react";
+import { lazy, memo, useEffect, useState, type ComponentType } from "react";
 import type { Locale } from "@drawy/ui";
 import type { ShellProps } from "./shell.ts";
 import type { KeyValue } from "./storage.ts";
@@ -11,7 +11,9 @@ function shell(
   fits: string | null,
   name: Record<Locale, string>,
 ) {
-  return { page: lazy(load), fits, name };
+  // A page is drawn again only when its props change, and they keep their identity: what
+  // changes inside them is read slice by slice where it is shown.
+  return { page: lazy(() => load().then((m) => ({ default: memo(m.default) }))), fits, name };
 }
 
 /** The work pages there are. A page for another device is one file and one line here,

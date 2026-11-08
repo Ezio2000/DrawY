@@ -1,7 +1,8 @@
-import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { X, ImagePlus } from "lucide-react";
 import {
   Spinner,
+  useLocale,
   LocaleContext,
   Tooltips,
   Presence,
@@ -24,20 +25,27 @@ import { Home } from "./Home.tsx";
 import { listen } from "./events.ts";
 import { ChooseLocale, dictionaries, useLanguage } from "./i18n.tsx";
 import { pageOf, sceneOf, workIdOf } from "./routes.ts";
-import { useRequest } from "./session/request.ts";
-import { live, useWorkSession, type Ask, type SessionHost } from "./session/work.ts";
-import type { Asking, Feedback } from "./shell.ts";
+import { useRequest, type RequestDraft } from "./session/request.ts";
+import { useSelect } from "./session/store.ts";
+import {
+  live,
+  useWorkSession,
+  type Ask,
+  type SessionHost,
+  type WorkSession,
+} from "./session/work.ts";
+import { Feedback } from "./feedback.ts";
+import type { Asking } from "./shell.ts";
+import type { ComponentType } from "react";
+import type { ShellProps } from "./shell.ts";
 import { useShell } from "./shells.ts";
 import { browserStorage } from "./storage.ts";
-
-const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function App() {
   const [locale, setLocale] = useLanguage();
   const t = dictionaries[locale];
   const [user, U] = useState<User | null | undefined>(),
     [path, setPath] = useState(location.pathname),
-    [error, E] = useState(""),
     [open, O] = useState(false),
     // Whether the list of works has arrived, so the home page does not say there are none
     // before it knows.
@@ -45,8 +53,6 @@ export function App() {
     [works, L] = useState<Summary[]>([]),
     // The labels to draw with; until the chosen one is connected, nothing can be drawn.
     [models, setModels] = useState<Models>(),
-    // Something that went well, said briefly.
-    [notice, setNotice] = useState(""),
     [picking, setPicking] = useState(false),
     // A request from the home page on its way, making the work it is for.
     [starting, setStarting] = useState(false),
@@ -57,14 +63,16 @@ export function App() {
   const deleting = useRef<{ id: string; timer: ReturnType<typeof setTimeout> }>(undefined);
   const language = useRef({ t, locale });
   language.current = { t, locale };
-  const [request, draft] = useRequest(() => language.current);
+  const draft = useRequest();
+  const [feedback] = useState(() => new Feedback(() => language.current.t));
+  const { attempt } = feedback;
 
-  const go = (to: string) => {
+  const [go] = useState(() => (to: string) => {
     if (to === location.pathname) return;
     if (!leaving()) return;
     window.history.pushState(null, "", to);
     setPath(to);
-  };
+  });
   const refreshList = () =>
     api<Summary[]>("/works").then((w) => {
       L(w);
@@ -74,7 +82,6 @@ export function App() {
   const now = useRef({ go, refreshList, user });
   now.current = { go, refreshList, user };
   const [host] = useState<SessionHost>(() => ({
-    words: () => language.current.t,
     locale: () => language.current.locale,
     go: (to, how) => {
       if (how === "push") return now.current.go(to);
@@ -83,16 +90,14 @@ export function App() {
     },
     listed: () => now.current.refreshList(),
     spent: () => U((u) => (u && u.quota !== null ? { ...u, quota: Math.max(0, u.quota - 1) } : u)),
-    notice: setNotice,
-    fail: (e) => E(messageOf(e)),
     listen: (listener) => {
       const u = now.current.user;
       return u ? listen(u.id, listener) : () => {};
     },
   }));
-  const { session, store, begin } = useWorkSession(user ? workIdOf(path) : undefined, host);
+  const { session, begin } = useWorkSession(user ? workIdOf(path) : undefined, host);
   // The session follows the scene the address names before the page is painted.
-  useLayoutEffect(() => store?.locate(sceneOf(path)), [store, path]);
+  useLayoutEffect(() => session?.locate(sceneOf(path)), [session, path]);
 
   const manages = !!user?.permissions.includes("models.manage");
   const blocked: Asking["blocked"] =
@@ -102,22 +107,6 @@ export function App() {
         ? "spent"
         : undefined;
 
-  const attempt = async (fn: () => Promise<unknown>) => {
-    try {
-      E("");
-      await fn();
-    } catch (e) {
-      E(messageOf(e));
-    }
-  };
-  const feedback: Feedback = {
-    error,
-    notice,
-    dismiss: () => E(""),
-    fail: (e) => E(messageOf(e)),
-    say: setNotice,
-    attempt,
-  };
   /** Whether a request can go: a drawing model connected and requests left; answering the
    * author's questions still works when none are left. Those who manage the models are
    * taken to connect one. */
@@ -134,19 +123,19 @@ export function App() {
     const text = ask.text ?? r.text,
       materials = ask.materials ?? r.attachments.map((a) => a.id);
     if (r.uploading || (!text.trim() && !materials.length)) return;
-    if (store) {
-      if (!allowed(store.get().waiting)) return;
-      return store.get().send({ text, materials, picked: ask.picked ?? r.choices, scene: ask.scene, focus: ask.focus, sent: ask.sent ?? draft.clear });
+    if (session) {
+      if (!allowed(session.get().waiting)) return;
+      return session.send({ text, materials, picked: ask.picked ?? r.choices, scene: ask.scene, focus: ask.focus, sent: ask.sent ?? draft.clear });
     }
     if (starting || !allowed(false)) return;
     setStarting(true);
     try {
       const w = await api<Work>("/works", "POST", {
-        title: (text.trim() || r.attachments[0].name).slice(0, 36),
+        title: (text.trim() || r.attachments[0].name[locale]).slice(0, 36),
       });
       const made = begin(w);
       go("/a/" + w.id);
-      await made.get().send({
+      await made.send({
         text: r.style ? `${text.trim()}\n${t.home.styleLine(r.style.name[locale])}` : text,
         materials,
         picked: r.choices,
@@ -165,15 +154,21 @@ export function App() {
       setModels(await api<Models>("/models"));
     });
   };
-  const asking: Asking = {
-    request,
-    draft,
-    send,
-    pick: () => setPicking(true),
-    models,
-    choose,
-    blocked,
-  };
+  // What the work page is handed keeps its identity until the labels or what blocks a
+  // request change; its functions call through to the app as it is now.
+  const latest = useRef({ send, choose });
+  latest.current = { send, choose };
+  const asking = useMemo<Asking>(
+    () => ({
+      draft,
+      send: (ask) => latest.current.send(ask),
+      pick: () => setPicking(true),
+      models,
+      choose: (change) => latest.current.choose(change),
+      blocked,
+    }),
+    [models, blocked],
+  );
   /** A blank canvas, made and opened: from the side bar and from the home page. */
   const createBlank = () =>
     void attempt(async () => {
@@ -186,7 +181,7 @@ export function App() {
   useEffect(() => {
     fetch("/api/auth/me")
       .then(async (r) => U(r.ok ? await r.json() : null))
-      .catch((e) => E(e.message));
+      .catch(feedback.fail);
     const pop = () => setPath(location.pathname);
     addEventListener("popstate", pop);
     // A deletion waiting to be taken back happens now if the page is closed.
@@ -225,17 +220,6 @@ export function App() {
     if (!user || (page !== "home" && page !== "work")) return;
     void api<Models>("/models").then(setModels, () => {});
   }, [user?.id, page]);
-  useEffect(() => {
-    if (!notice) return;
-    const t = setTimeout(() => setNotice(""), 2400);
-    return () => clearTimeout(t);
-  }, [notice]);
-  // An error says its piece and goes.
-  useEffect(() => {
-    if (!error) return;
-    const t = setTimeout(() => E(""), 8000);
-    return () => clearTimeout(t);
-  }, [error]);
   useEffect(() => {
     if (!open) return;
     const key = (e: KeyboardEvent) => e.key === "Escape" && O(false);
@@ -285,7 +269,6 @@ export function App() {
       <Spinner />
     </div>
   );
-  const Page = shells.Page;
   return (
     <LocaleContext.Provider value={locale}>
       <AccountContext.Provider value={user ?? null}>
@@ -365,46 +348,30 @@ export function App() {
                   all={() => O(true)}
                   open={(id) => go("/a/" + id)}
                   composer={
-                    <Composer
-                      place="home"
-                      value={request.text}
-                      set={draft.write}
-                      attachments={request.attachments}
-                      detach={draft.detach}
-                      uploading={request.uploading}
-                      unquote={() => {}}
-                      placeholder={t.home.placeholder}
-                      status={blocked === "unconnected" && <Unconnected go={go} />}
-                      style={request.style}
-                      setStyle={draft.setStyle}
-                      working={false}
-                      busy={starting}
-                      send={() => void attempt(() => send())}
-                      stop={() => {}}
-                      attach={(files) => void attempt(() => draft.upload(files))}
-                      pick={asking.pick}
-                      models={models}
+                    <HomeComposer
+                      draft={draft}
+                      asking={asking}
+                      starting={starting}
                       quota={user.quota}
-                      spent={blocked === "spent"}
-                      choose={choose}
+                      go={go}
+                      feedback={feedback}
+                      send={() => void attempt(() => send())}
                     />
                   }
                 />
-              ) : !session?.work ? (
+              ) : !session ? (
                 loading
               ) : (
-                <Suspense fallback={loading}>
-                  <Page session={session} asking={asking} feedback={feedback} go={go} />
-                </Suspense>
+                <OpenWork
+                  session={session}
+                  Page={shells.Page}
+                  asking={asking}
+                  feedback={feedback}
+                  go={go}
+                  loading={loading}
+                />
               )}
-              {error && page !== "work" && (
-                <div className={cx("toast-error")} data-floating role="alert">
-                  <span>{error}</span>
-                  <button aria-label={t.close} onClick={() => E("")}>
-                    <X size={13} />
-                  </button>
-                </div>
-              )}
+              <FloatingError feedback={feedback} shown={page !== "work" || !session} />
               {dragging && (
                 <div className={cx("dropzone")}>
                   <ImagePlus size={28} />
@@ -429,5 +396,86 @@ export function App() {
         </ChooseLocale.Provider>
       </AccountContext.Provider>
     </LocaleContext.Provider>
+  );
+}
+
+/** The open work's page once the work has arrived, or why it could not be opened. */
+function OpenWork({
+  session,
+  Page,
+  loading,
+  ...props
+}: ShellProps & { Page: ComponentType<ShellProps>; loading: React.ReactNode }) {
+  const { here, unopened } = useSelect(session, (s) => ({ here: !!s.work, unopened: s.unopened }));
+  useEffect(() => {
+    if (unopened) props.feedback.fail(unopened);
+  }, [unopened]);
+  if (!here) return unopened ? null : loading;
+  return (
+    <Suspense fallback={loading}>
+      <Page session={session} {...props} />
+    </Suspense>
+  );
+}
+
+/** What went wrong, over pages that have no place of their own to say it. */
+function FloatingError({ feedback, shown }: { feedback: Feedback; shown: boolean }) {
+  const t = dictionaries[useLocale()];
+  const error = useSelect(feedback, (f) => f.error);
+  if (!error || !shown) return null;
+  return (
+    <div className={cx("toast-error")} data-floating role="alert">
+      <span>{error}</span>
+      <button aria-label={t.close} onClick={feedback.dismiss}>
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
+
+/** The home page's composer: it reads the request itself, so typing draws only it. */
+function HomeComposer({
+  draft,
+  asking,
+  starting,
+  quota,
+  go,
+  send,
+  feedback,
+}: {
+  feedback: Feedback;
+  draft: RequestDraft;
+  asking: Asking;
+  starting: boolean;
+  quota: number | null;
+  go: (path: string) => void;
+  send: () => void;
+}) {
+  const t = dictionaries[useLocale()];
+  const request = useSelect(draft, (r) => r);
+  return (
+    <Composer
+      place="home"
+      value={request.text}
+      set={draft.write}
+      attachments={request.attachments}
+      detach={draft.detach}
+      uploading={request.uploading}
+      unquote={() => {}}
+      placeholder={t.home.placeholder}
+      status={asking.blocked === "unconnected" && <Unconnected go={go} />}
+      style={request.style}
+      setStyle={draft.setStyle}
+      working={false}
+      busy={starting}
+      send={send}
+      stop={() => {}}
+      attach={(files) => void feedback.attempt(() => draft.upload(files))}
+      pick={asking.pick}
+      models={asking.models}
+      quota={quota}
+      spent={asking.blocked === "spent"}
+      choose={asking.choose}
+    />
   );
 }

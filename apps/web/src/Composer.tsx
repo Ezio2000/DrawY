@@ -97,7 +97,8 @@ export function Composer({
    * happening and the button that stops it. */
   collapsed?: boolean;
 }) {
-  const t = useT();
+  const t = useT(),
+    locale = useLocale();
   const picker = useRef<HTMLInputElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -171,10 +172,10 @@ export function Composer({
                 className={cx("attached")}
                 data-kind={a.kind}
                 key={a.id}
-                title={a.name}
+                title={a.name[locale]}
               >
-                {a.url ? <img src={a.url} alt={a.name} /> : <b>{a.name}</b>}
-                <button aria-label={t.composer.detach(a.name)} onClick={() => detach(a.id)}>
+                {a.url ? <img src={a.url} alt={a.name[locale]} /> : <b>{a.name[locale]}</b>}
+                <button aria-label={t.composer.detach(a.name[locale])} onClick={() => detach(a.id)}>
                   <X size={11} />
                 </button>
               </span>

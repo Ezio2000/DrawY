@@ -13,12 +13,13 @@ pnpm install
 pnpm typecheck                                    # tsc --noEmit；项目没有 linter
 pnpm build                                        # dist/web（前端）与 dist/runtime/runtime.js（运行时 IIFE）
 pnpm test                                         # 先 build 再 vitest run
+pnpm test:desktop                                 # 先 build 再只跑桌面作品页的回归验证
 pnpm exec vitest run modules/agent/agent.test.ts  # 单个文件
 pnpm exec vitest run -t "用例名片段"               # 单个用例
 docker compose up -d --build                      # 完整部署，访问 http://localhost:8088
 ```
 
-`modules/runtime/runtime.test.ts` 会加载 `dist/runtime/runtime.js`，并在 Playwright Chromium 里执行。所以只要改了 `modules/runtime`、`modules/observation/capture.ts` 或它们依赖的协议代码，就要先 `pnpm build`，否则测到的是旧的 bundle。其他测试不依赖构建产物。
+`modules/runtime/runtime.test.ts` 会加载 `dist/runtime/runtime.js`，并在 Playwright Chromium 里执行。所以只要改了 `modules/runtime`、`modules/observation/capture.ts` 或它们依赖的协议代码，就要先 `pnpm build`，否则测到的是旧的 bundle。`apps/web/regression/desktop.test.ts` 测的是构建出的 `dist/web`，改了前端也要先 build。其他测试不依赖构建产物。Playwright 自带的浏览器没装时，桌面回归验证可以用 `DRAWY_CHROMIUM` 指定一个 Chromium 可执行文件。
 
 本地开发要同时起几个进程：
 - `pnpm --dir materials start`：素材服务，端口 8090，数据在 `data/materials`。
@@ -98,32 +99,48 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 - **App**：`App.tsx` 管这些：
   - 路由（`routes.ts` 的 `pageOf`/`workIdOf`/`sceneOf`/`addressOf`）；
   - 作品列表、删除与撤销删除、素材库对话框；
-  - 错误与提示；
-  - 正在写的请求（`session/request.ts` 的 `RequestDraft`：文字、附件、上传中的数量、主页选的风格、问题的选项；`hand` 把要作者做的修改写进去，并让输入框取得焦点）。请求跨页面存在，因为在素材库里选的素材、主页发出的请求都要带到作品页。
+  - 正在写的请求（`session/request.ts` 的 `RequestDraft`，一个 store：文字、附件、上传中的数量、主页选的风格、问题的选项；`hand` 把要作者做的修改写进去，并让输入框取得焦点）。请求跨页面存在，因为在素材库里选的素材、主页发出的请求都要带到作品页。附件带着素材各语言的名字，由显示的地方挑。
+  - 提示：`feedback.ts` 的 `Feedback` 也是一个 store，记着最近的错误和提示，并按时收起；`SessionError` 的措辞也在这里，供不自己措辞的页面使用。
 
-  App 还挑选作品页的壳，并交给它 `ShellProps`（`shell.ts`）。`ShellProps` 只放每种壳都确实需要的四样：
-  - `session`：会话的快照和动作；
-  - `asking`：请求、`send`、打开素材库的 `pick`、档位和 `choose`，以及 `blocked`（没接入模型或提问次数用完；等待回答时仍能回答）。`send` 检查完上传和 `blocked` 后交给会话；在主页没有打开的作品时，`send` 先建作品、用 `begin` 打开，再发出；
-  - `feedback`：`error`、`notice`、`attempt`、`fail`、`say`；
+  App 不读会话的快照（只有 `OpenWork` 读作品到了没有、打开失败没有），所以作者运行时的事件不会让 App 重新渲染。作品页的壳由 `shells.ts` 选出，App 交给它 `ShellProps`（`shell.ts`），只有每种壳都确实需要的四样：
+  - `session`：会话本身（store 加动作）；
+  - `asking`：`draft`、`send`、打开素材库的 `pick`、档位和 `choose`，以及 `blocked`（没接入模型或提问次数用完；等待回答时仍能回答）。`send` 检查完上传和 `blocked` 后交给会话；在主页没有打开的作品时，`send` 先建作品、用 `begin` 打开，再发出；
+  - `feedback`；
   - `go`：去另一个地址。
 
-  账号从 `AccountContext` 读（`useAccount`/`useCan`），没接入模型的提示是 `Composer.tsx` 的 `Unconnected`。
-- **会话层** `session/` 不含 JSX、样式，不碰 DOM，也不用浏览器存储。`work.ts` 的 `WorkSession` 是一个外部 store（`store.ts`，React 经 `useSyncExternalStore` 读快照），由六个各管一件事、各有自己状态的部分组成，共用一个 `Context`（`types.ts`）：
+  这四样在作品页打开期间保持同一个对象（`asking` 只在档位或 `blocked` 变化时更换），注册表又给每个壳包了 `memo`，所以 App 因作品列表等原因重新渲染时，作品页不跟着渲染。账号从 `AccountContext` 读（`useAccount`/`useCan`），没接入模型的提示是 `Composer.tsx` 的 `Unconnected`。
+- **会话层** `session/` 不含 JSX、样式和界面文案，不碰 DOM，也不用浏览器存储。`work.ts` 的 `WorkSession` 是一个外部 store，由六个各管一件事、各有自己状态的部分组成，共用一个 `Context`（`types.ts`）：
   - `revisions.ts`：作品与修订。服务器推来的作品比当前的旧就不采用；修订号变了就重取 `/revisions`，预览随之结束。它还记着哪些修订是用户自己的（`own`、在路上的请求），由 `quiet` 回答；`look` 管预览，`rename` 改标题。
-  - `runs.ts`：运行与 SSE。自己经 `events.ts` 的 `listen` 订阅，同一用户的所有订阅共用一个连接；`offline` 也在这里；收到 `connected` 时重取作品和运行，用 `merged` 合并。打开作品时先显示作品，运行历史随后合并，`loaded` 之前不能发送、不能手动编辑。`earlier` 是打开作品时已经结束的最后一次运行，它的回复留在画室，不在画布下面重复显示。
+  - `runs.ts`：运行与 SSE。自己经 `events.ts` 的 `listen` 订阅，同一用户的所有订阅共用一个连接；`offline` 和打开失败的 `unopened` 也在这里；收到 `connected` 时重取作品和运行，用 `merged` 合并。打开作品时先显示作品，运行历史随后合并，`loaded` 之前不能发送、不能手动编辑。`earlier` 是打开作品时已经结束的最后一次运行，它的回复留在画室，不在画布下面重复显示。
   - `edits.ts`：手动修改的队列与草稿（`commit` 返回保存后的作品，`change` 只返回有没有修改）。
-  - `sending.ts`：发送与挂起。有排队中或未保存的手动修改时挂起请求，等 `decide("save"|"discard"|"cancel")`；真正发出后调用 `Ask.sent`。请求关于什么由调用方给（`Ask.focus`：选中的模块或连线），`aboutOf` 把它写在请求后面。
-  - `versions.ts`：保存、放弃、回退（`back` 十秒内可以撤回，此时 `undo` 先撤回回退）、撤销和重做（`undone`）。
-  - `scenes.ts`：地址里的场景（`locate`），地址里的场景不存在时换回根场景的地址；`enter` 进入场景，场景还是空的就请作者画；一次运行只在别的场景画了东西时，结束后跟过去（`follow`）。
+  - `sending.ts`：发送与挂起。有排队中或未保存的手动修改时挂起请求，等 `decide("save"|"discard"|"cancel")`；真正发出后调用 `Ask.sent`。请求关于什么由调用方给（`Ask.focus`：选中的模块或连线），`aboutOf` 把它写在请求后面（写给作者的，不是界面文案）。
+  - `versions.ts`：保存、放弃、回退（`back` 记着回到第几版或放弃了修改，十秒内可以撤回，此时 `undo` 先撤回回退）、撤销和重做（`undone`）。
+  - `scenes.ts`：地址里的场景（`locate`），地址里的场景不存在时换回根场景的地址；`enter(id, asking)` 进入场景，场景还是空的就用壳给的 `asking(标题)` 作为请求请作者画；一次运行只在别的场景画了东西时，结束后跟过去（`follow`）。
 
-  快照还给出 `shown`（叠上草稿的作品）、`display`（画布显示哪个作品，以及区分同一修订号不同显示的 `version`）、`versions`、`unsaved`、`synced`、`undoable`/`redoable`、`locked`（运行历史未到、作者在画或等回答、正在预览时不能手动编辑）。界面状态不在会话里：选区、打开的详情页、收起的回复和剪贴板是否有内容都归壳管，所以换场景时清选区也是壳的事。会话要 App 做的事都经 `SessionHost`：跳转地址、刷新列表、扣提问次数、提示、报错、订阅事件、界面文字。`session/work.test.ts` 换上假的 host 和内存里的假服务器，验证草稿、安静替换、挂起、请求附带的选区、回退与撤销、重做、预览、迟到的旧作品、等模块画出再选中、跟随场景。
+  会话只说发生了什么，怎么说、怎么呈现由壳决定：拒绝或做不到时抛 `SessionError`，它的 `reason` 是 `noScene`、`busy`、`linkDrawing` 或 `imagesOnly`；事后要告诉用户的事经 `on(listener)` 发出 `Happening`（`saved` 带版本号；`failed` 是开始后就不再等待的操作失败了）；快照里的 `back` 是结构化的。服务器的错误原样传出，服务端已经按请求的语言翻译好。`SessionHost` 只剩跳转地址、刷新列表、扣提问次数、订阅事件，以及作品内容用的语言（`locale`：从素材库取进作品的名字用哪种语言）。
+
+  动作是会话对象自己的方法（`session.save()` 等，构造时绑定一次）。快照只有数据，`build` 只在被读到时才重建（`Store.changed` 标记过期，并在本轮结束时通知一次），没变的字段沿用上一份快照里的同一个对象（`kept`）。组件用 `useSelect(store, 选择器, 比较)` 只读自己显示的那一片，默认按浅比较，选出的值没变就不重新渲染。这一点必须保持：作者运行时每秒会有很多 `run` 事件，低端手机上也要跑得动。`session/work.test.ts` 换上假的 host 和内存里的假服务器，验证草稿、安静替换、挂起、请求附带的选区、回退与撤销、重做、预览、迟到的旧作品、等模块画出再选中、跟随场景、拒绝的理由和发出的事、一轮变化只通知一次且没变的部分保持原对象。
 - **会话与画布的边界**是 `View`：会话只用 `center()`、`scale`、`select(ids)` 和 `drawn(ids, revision)`。`Canvas.drawn` 不计时：模块真正画出来（不只是排好位置）就是 `drawn`；画过一个不比 `revision` 旧的版本、里面却没有这些模块，就是 `missing`；画布先没了就是 `gone`。慢设备只是等得久一点，不会误判。壳经 `attach` 把 `Canvas` 交给会话。反方向由画布问会话：`quiet(revision)` 为真就原地安静替换。
 
-  `session/ops.ts` 的 `editOps` 是与设备无关的手动操作，作用于调用方给的模块或连线（删除、复制、排序、编组、对齐、移动、连线、拷贝出 `Clip`、粘贴，放文字、图片或库画法）。它们都经 `edits` 提交；新做出的模块等到 `drawn` 后才选中；失败交给 host 报告。`session/clip.ts` 的 `Clipboard` 记着最后拷贝的内容，存储由调用方注入（`storage.ts` 的 `KeyValue`：`browserStorage` 吃掉浏览器拒绝时的异常，测试用 `memoryStorage`）。
+  `session/ops.ts` 的 `editOps` 是与设备无关的手动操作，作用于调用方给的模块或连线（删除、复制、排序、编组、对齐、移动、连线、拷贝出 `Clip`、粘贴，放文字、图片或库画法；新文字的内容由调用方给）。它们都经 `edits` 提交；新做出的模块等到 `drawn` 后才选中；失败作为 `failed` 发出。`session/clip.ts` 的 `Clipboard` 记着最后拷贝的内容，存储由调用方注入（`storage.ts` 的 `KeyValue`：`browserStorage` 吃掉浏览器拒绝时的异常，测试用 `memoryStorage`）。
 - **壳的选择**：`shells.ts` 的注册表里每个壳一行，`shell(按需加载, 媒体查询, 中英文名)`。查询只看宽度和 `pointer`，不看 User-Agent；按注册顺序取第一个匹配的，都不匹配时用没有查询的那个（`desktop`）。窗口变化时跟着重新判断（`useShell`）。用户可以在账号菜单里依次换成“自动”或某一种，选择记在 `drawy.shell`；只有一种壳时不显示这个开关。每个壳由 `React.lazy` 单独分包，在 `Suspense` 里加载。以后做手机版：写 `phone/WorkPage.tsx`（默认导出一个接收 `ShellProps` 的组件），在 `shells` 里 `desktop` 之前加一行（注释里有例子）。
-- **桌面壳** `desktop/`：`WorkPage.tsx` 是现在的作品页布局。这些都在里面：选区和连线选择、详情页、收起回复、面板（画室、版本、编辑）及其宽度、作者开始运行时自动打开画室、场景菜单、改标题、就地改字（`Retype`）、换图时的素材对话框、画室跟着滚动，以及 ⌘Z/⇧⌘Z、⌘S 和 Esc（结束预览、收起回复）。回退和撤销后由它收起回复。`editing.ts` 的 `useEditing` 是鼠标和键盘的编辑方式：工具、右键菜单、系统剪贴板事件、编辑快捷键、方向键微调、全选和 Tab 轮选。它把会话的 `ops` 绑到当前选区上，再加上要先选素材的 `add(kind)`；桌面的剪贴板是这里的一个 `Clipboard(browserStorage)`，所有作品共用。
+- **桌面壳** `desktop/`：
+  - `WorkPage.tsx` 管页面怎么用：选区和连线选择、详情页、收起回复、面板（画室、版本、编辑）及其宽度（`panels.tsx`）、作者开始运行时自动打开画室、场景菜单、改标题、就地改字（`Retype`）、换图时的素材对话框、画室跟着滚动、会话发出的事怎么说（`saved` 说成“已保存为第 N 版”，`failed` 交给 `feedback`），以及 ⌘Z/⇧⌘Z、⌘S 和 Esc（结束预览、收起回复）。它从会话只读运行开始或结束、换场景时才变的东西，快捷键在按下时才读会话。
+  - `parts.tsx` 是读各自那片快照的部件：`Topbar`、`CanvasArea`、`EditOverlay`、`Status`、`Bars`、`DockComposer`（自己读请求，所以打字只重新渲染它）、`DetailLayer`、`SideTools`、`StudioPane`、`DraftsPane`、`EditPane`。作者运行时，只有画布、状态行和画室会跟着重新渲染。
+  - `editing.ts` 的 `useEditing` 是鼠标和键盘的编辑方式：工具、右键菜单、系统剪贴板事件、编辑快捷键、方向键微调、全选和 Tab 轮选。它把会话的 `ops` 绑到当前选区上，再加上要先选素材的 `add(kind)`；桌面的剪贴板是这里的一个 `Clipboard(browserStorage)`，所有作品共用。
+- **桌面版的回归验证** `apps/web/regression/desktop.test.ts`：在临时目录里起真实的素材服务和主程序（各用一个空闲端口），用 Playwright 打开构建出的前端，在真实画布和界面上验证本文写的作品页行为：
+  - 手动修改先以草稿显示，保存后原地替换、模块元素不重建；
+  - 有未保存修改时挂起请求（取消、保存后发送并附上选区）；
+  - ⌘Z/⇧⌘Z/⌘S；预览和回到某版都不重画，回退和放弃修改都可撤销；
+  - 空白画布放文字后直接就地改字，⌘D、⌘C/⌘V、Delete；
+  - 主页发请求建作品；进入空的子场景时请作者画，地址里没有的场景回到根场景；
+  - 作者运行时自动打开画室、收起输入框，结束后的回复按 Esc 收起；运行只画了子场景时跟过去；打开前已结束的回复留在画室；
+  - 作者运行事件只让画布和状态行重新渲染，打字只让输入框重新渲染（部件经 `probe.ts` 的 `counted` 计数，只在测试设置了 `window.__drawyRenders` 时计数）；
+  - 桌面页按需加载、单独分包。
 
-新的会话行为写进对应的部分并在 `work.test.ts` 里测，不要放回组件的 ref 和 effect 里；界面怎么呈现的状态放在壳里。
+  作者不是真的：请求被拦下，回一个已结束的运行；作者的运行事件经页面收事件的 BroadcastChannel 发给页面，和服务器推来的事件走同一条路；档位菜单显示为已接入。改会话层或接入新壳后跑 `pnpm test:desktop`，就能知道桌面版有没有被改坏。新增作品页行为时，在这里补一条用例。
+
+新的会话行为写进对应的部分并在 `work.test.ts` 里测，不要放回组件的 ref 和 effect 里；界面怎么呈现的状态和文案放在壳里。
 
 ## 手动编辑如何流动
 
@@ -208,7 +225,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 **面向用户的文字要中英双语。** 前端文案在 `apps/web/src/i18n.tsx`，以 `zh` 为基准，`en` 必须有相同的键；共享组件的文案在 `modules/ui/src/words.ts`。服务端内部说中文，错误在离开服务时由 `modules/contracts/messages.ts` 按请求的语言翻译，所以新增的错误信息要在那里补上英文。写给模型的文字保持原样，不翻译。
 
-**测试要验证真实行为。** `agent.test.ts` 用 `vi.mock` 替换掉 `models` 和 `observation`，按脚本逐轮返回工具调用。素材相关的测试用 `@drawy/materials/testing` 的 `serveLibrary`，在临时目录里起一个带种子数据的真实素材库，并拦截 fetch。新测试沿用这两种方式，不要另写素材库的 mock。测试失败时，先判断是实现错了还是测试过时了，不要为了让测试通过去改断言或写特例。
+**测试要验证真实行为。** `agent.test.ts` 用 `vi.mock` 替换掉 `models` 和 `observation`，按脚本逐轮返回工具调用。前端的作品页行为由 `apps/web/regression/desktop.test.ts` 在真实浏览器里验证，见“前端的分层”。素材相关的测试用 `@drawy/materials/testing` 的 `serveLibrary`，在临时目录里起一个带种子数据的真实素材库，并拦截 fetch。新测试沿用这两种方式，不要另写素材库的 mock。测试失败时，先判断是实现错了还是测试过时了，不要为了让测试通过去改断言或写特例。
 
 **`promo/` 是独立工程。** 它是 60 秒宣传片，有自己的 npm 依赖和 `build.sh`，不属于主程序的构建和测试；只有任务明确涉及时才去动它。
 

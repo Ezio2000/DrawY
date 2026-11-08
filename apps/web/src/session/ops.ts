@@ -37,7 +37,7 @@ import {
   type Stacking,
 } from "../../../../modules/editing/index.ts";
 import { api } from "../api.ts";
-import type { Context } from "./types.ts";
+import { SessionError, type Context } from "./types.ts";
 
 /* Everything a person does to a work by hand, whatever they do it with: each operation
  * acts on the parts it is given in the scene in view (what is selected is the shell's to
@@ -79,7 +79,7 @@ function ownCopy(m: Material, locale: "zh" | "en"): Omit<Drawing, "id"> {
 const textSize = (scale: number) => Math.round(Math.min(96, Math.max(14, 22 / scale)));
 
 export function editOps(ctx: Context) {
-  const fail = (e: unknown) => ctx.host.fail(e);
+  const fail = (error: unknown) => ctx.tell({ kind: "failed", error });
   const report = (p: Promise<unknown>) => void p.catch(fail);
   const scene = () => ctx.scenes.sceneId;
   /** The work as shown, with the hand edits on their way laid on it. */
@@ -173,7 +173,7 @@ export function editOps(ctx: Context) {
     /** Puts modules where they were dragged or nudged to. */
     move(moves: { id: string; bounds: Bounds }[]) {
       if (!moves.length) return;
-      if (ctx.runs.working) return fail(Error(ctx.host.words().work.wait));
+      if (ctx.runs.working) return fail(new SessionError("busy"));
       run((w, s) => moveParts(w, s, moves));
     },
     /** The clip of modules, with the links between them and what they draw with. */
@@ -205,7 +205,7 @@ export function editOps(ctx: Context) {
       report(made((work) => paste(work, sceneId, clip, where)));
     },
     /** New words, sized to read in the view; resolves to their module once drawn. */
-    text(at?: Point, text = ctx.host.words().edit.newText) {
+    text(text: string, at?: Point) {
       return place({ kind: "text", text, size: textSize(scale()) }, at);
     },
     /** A library picture, a readable size in the view. */
@@ -215,7 +215,7 @@ export function editOps(ctx: Context) {
     /** A library drawing, with its example data and size. */
     drawing(d: DrawingMaterial, at?: Point) {
       if (d.use === "link") {
-        fail(Error(ctx.host.words().edit.linkDrawing));
+        fail(new SessionError("linkDrawing"));
         return Promise.resolve(undefined);
       }
       return place(
@@ -269,7 +269,7 @@ export function editOps(ctx: Context) {
     },
     /** Words pasted onto the canvas, as words of the work's own. */
     words(text: string) {
-      void ops.text(undefined, text);
+      void ops.text(text);
     },
   };
   return ops;

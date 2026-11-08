@@ -10,9 +10,10 @@ import {
 } from "../../../../modules/editing/index.ts";
 import type { DrawingMaterial, Material, PictureMaterial } from "@drawy/materials/schema";
 import { CLIP_TYPE, Clipboard, newer } from "../session/clip.ts";
-import { useStore } from "../session/store.ts";
-import type { Session } from "../session/work.ts";
+import { useSelect, useStore } from "../session/store.ts";
+import type { WorkSession } from "../session/work.ts";
 import { browserStorage } from "../storage.ts";
+import { useT } from "../i18n.tsx";
 
 /* Editing by hand with a mouse and a keyboard: the tools over the canvas, the menu on a
  * right click, the system clipboard and the shortcuts. The session's operations act on
@@ -37,7 +38,7 @@ export function useEditing({
   pick,
   retype,
 }: {
-  session: Session;
+  session: WorkSession;
   canvas: Canvas | undefined;
   /** Whether the editor is open. */
   editing: boolean;
@@ -52,8 +53,10 @@ export function useEditing({
 }) {
   const [tool, setTool] = useState<Tool>("select");
   const [menu, setMenu] = useState<{ x: number; y: number }>();
+  const t = useT();
   const clipped = useStore(clipboard);
-  const { ops: base, locked, sceneId, scene } = session;
+  const base = session.ops;
+  const { locked, sceneId } = useSelect(session, (s) => ({ locked: s.locked, sceneId: s.sceneId }));
   useEffect(() => canvas?.setTool(tool === "text" ? "place" : tool), [tool, canvas]);
   useEffect(() => {
     if (!editing) {
@@ -77,7 +80,7 @@ export function useEditing({
     selectAll: () => canvas?.selectAll(),
     /** Selects the next module in the stacking order, or the one before. */
     cycle(back: boolean) {
-      const modules = scene?.modules ?? [];
+      const modules = session.get().scene?.modules ?? [];
       if (!modules.length) return;
       const at = modules.findIndex((m) => m.id === selected.at(-1));
       const next =
@@ -103,7 +106,7 @@ export function useEditing({
      * view; words are ready to type once drawn. */
     add(kind: "text" | "picture" | "drawing", at?: Point) {
       if (kind === "text")
-        void base.text(at).then((id) => {
+        void base.text(t.edit.newText, at).then((id) => {
           const words = id && canvas?.wordsIn(id);
           if (words) retype(words);
         });
@@ -173,7 +176,7 @@ export function useEditing({
     ids: new Set(),
   });
   useEffect(() => {
-    if (!editing || !session.work) return;
+    if (!editing) return;
     const key = (e: KeyboardEvent) => {
       if (typing(e.target) || e.defaultPrevented) return;
       const mod = e.metaKey || e.ctrlKey;
@@ -250,7 +253,7 @@ export function useEditing({
     };
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
-  }, [editing, locked, session.work, selected, link, sceneId, tool, menu, canvas]);
+  }, [editing, locked, selected, link, sceneId, tool, menu, canvas]);
 
   return { ops, tool, setTool, menu, setMenu, clipped };
 }

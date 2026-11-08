@@ -14,6 +14,8 @@ export class Runs {
   earlier?: string;
   /** Whether the server's events cannot be heard now. */
   offline = false;
+  /** Why the work could not be opened, if it could not. */
+  unopened?: unknown;
   private stop: () => void;
 
   constructor(private ctx: Context) {
@@ -47,6 +49,14 @@ export class Runs {
 
   /** Opens the work: it shows as soon as it arrives; its runs, which can be long, follow. */
   async load() {
+    try {
+      await this.open();
+    } catch (e) {
+      this.unopened = e;
+      this.ctx.changed();
+    }
+  }
+  private async open() {
     const runs = api<Run[]>("/works/" + this.ctx.id + "/runs");
     runs.catch(() => {});
     this.ctx.revisions.take(await api<Work>("/works/" + this.ctx.id));

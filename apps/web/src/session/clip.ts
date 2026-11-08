@@ -18,13 +18,15 @@ export class Clipboard extends Store<boolean> {
   private held?: Stamped;
   constructor(private storage: KeyValue) {
     super();
-    this.publish(!!this.kept());
+  }
+  protected build() {
+    return !!this.kept();
   }
   keep(clip: Clip) {
     const stamped: Stamped = { ...clip, copiedAt: Date.now() };
     this.held = stamped;
     this.storage.set(CLIP_KEY, JSON.stringify(stamped));
-    this.publish(true);
+    this.changed();
     return stamped;
   }
   kept(): Stamped | undefined {

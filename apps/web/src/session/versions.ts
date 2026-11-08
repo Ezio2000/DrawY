@@ -1,6 +1,6 @@
 import type { Work } from "../../../../modules/contracts/index.ts";
 import { api } from "../api.ts";
-import type { Context } from "./types.ts";
+import type { Back, Context } from "./types.ts";
 
 /** How long going back can be taken back from the note that says it happened. */
 const BACK_FOR = 10_000;
@@ -10,7 +10,7 @@ const BACK_FOR = 10_000;
  * hand edits on their way, and each revision it makes is the person's own. */
 export class Versions {
   /** Going back, to take back while the work is still where it left it. */
-  wentBack?: { at: number; from: number; text: string };
+  wentBack?: Back;
   /** Revisions undone, to bring back while the work is still where undoing left it. */
   undone?: { at: number; revisions: number[] };
   private timer?: ReturnType<typeof setTimeout>;
@@ -64,7 +64,7 @@ export class Versions {
     await this.ctx.edits.settled();
     const number = (this.ctx.revisions.counted.of.versions.at(-1)?.number ?? 0) + 1;
     const w = await this.apply(() => api<Work>("/works/" + this.ctx.id + "/save", "POST"));
-    this.ctx.host.notice(this.ctx.host.words().unsaved.saved(number));
+    this.ctx.tell({ kind: "saved", version: number });
     return w;
   }
 
@@ -75,7 +75,7 @@ export class Versions {
     const from = this.work.revision;
     if (!latest) return this.work;
     const w = await this.restoring(latest.revision);
-    this.wentTo({ at: w.revision, from, text: this.ctx.host.words().unsaved.discarded });
+    this.wentTo({ at: w.revision, from, to: { kind: "discarded" } });
     return w;
   }
 
@@ -90,7 +90,7 @@ export class Versions {
     const w = await this.restoring(revision);
     this.wentTo(
       number !== undefined
-        ? { at: w.revision, from, text: this.ctx.host.words().history.wentBack(number) }
+        ? { at: w.revision, from, to: { kind: "version", version: number } }
         : undefined,
     );
   }

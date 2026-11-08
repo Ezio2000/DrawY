@@ -2,21 +2,22 @@ import { useState } from "react";
 import type { Locale } from "@drawy/ui";
 import type { Material, StyleMaterial } from "@drawy/materials/schema";
 import { api } from "../api.ts";
-import type { Words } from "../i18n.tsx";
-import { Store, useStore } from "./store.ts";
+import { SessionError } from "./types.ts";
+import { Store } from "./store.ts";
 
-/** Something sent along with the message: a picture, or any library material. */
+/** Something sent along with the message: a picture, or any library material, with its
+ * name in each language for whoever shows it to pick from. */
 export interface Attachment {
   id: string;
   kind: string;
-  name: string;
+  name: Record<Locale, string>;
   url?: string;
 }
 /** How a library material rides along with a message. */
-export const attachmentOf = (m: Material, locale: Locale): Attachment => ({
+export const attachmentOf = (m: Material): Attachment => ({
   id: m.id,
   kind: m.kind,
-  name: m.name[locale],
+  name: m.name,
   url:
     m.kind === "picture"
       ? m.file.url
@@ -46,13 +47,12 @@ export interface RequestState {
 
 export class RequestDraft extends Store<RequestState> {
   private state: RequestState = { text: "", attachments: [], uploading: 0, choices: "", handed: "", asked: 0 };
-  constructor(private language: () => { t: Words; locale: Locale }) {
-    super();
-    this.publish(this.state);
+  protected build() {
+    return this.state;
   }
   private set(patch: Partial<RequestState>) {
     this.state = { ...this.state, ...patch };
-    this.publish(this.state);
+    this.changed();
   }
   write = (text: string) => this.set({ text });
   choose = (choices: string) => this.set({ choices });
@@ -61,7 +61,7 @@ export class RequestDraft extends Store<RequestState> {
   use = (m: Material) => {
     if (m.kind === "style") return this.set({ style: m });
     if (this.state.attachments.some((a) => a.id === m.id)) return;
-    this.set({ attachments: [...this.state.attachments, attachmentOf(m, this.language().locale)] });
+    this.set({ attachments: [...this.state.attachments, attachmentOf(m)] });
   };
   detach = (id: string) =>
     this.set({ attachments: this.state.attachments.filter((a) => a.id !== id) });
@@ -72,7 +72,7 @@ export class RequestDraft extends Store<RequestState> {
   /** Uploads pictures and attaches each as it arrives. */
   upload = async (files: FileList | File[]) => {
     const images = Array.from(files).filter((f) => f.type.startsWith("image/"));
-    if (!images.length) throw Error(this.language().t.composer.imagesOnly);
+    if (!images.length) throw new SessionError("imagesOnly");
     this.set({ uploading: this.state.uploading + images.length });
     let left = images.length;
     try {
@@ -82,7 +82,7 @@ export class RequestDraft extends Store<RequestState> {
         const m = await api<Material>("/materials", "POST", data);
         left--;
         this.set({
-          attachments: [...this.state.attachments, attachmentOf(m, this.language().locale)],
+          attachments: [...this.state.attachments, attachmentOf(m)],
           uploading: this.state.uploading - 1,
         });
       }
@@ -95,8 +95,10 @@ export class RequestDraft extends Store<RequestState> {
     this.set({ text: "", attachments: [], style: undefined, choices: "", handed: "" });
 }
 
-/** The request being written, and what can be done with it. */
-export function useRequest(language: () => { t: Words; locale: Locale }) {
-  const [request] = useState(() => new RequestDraft(language));
-  return [useStore(request), request] as const;
+/** The request being written, kept for the life of the page. Reading it is left to the
+ * parts of the page that show it (`useSelect`), so writing a word does not draw the rest
+ * of the page again. */
+export function useRequest() {
+  const [request] = useState(() => new RequestDraft());
+  return request;
 }

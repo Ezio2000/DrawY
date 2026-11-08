@@ -1,6 +1,6 @@
 import type { Run, Work } from "../../../../modules/contracts/index.ts";
 import { addressOf } from "../routes.ts";
-import type { Context } from "./types.ts";
+import { SessionError, type Context } from "./types.ts";
 
 /** Which scene is in view: the one the address names, or the root when the work has no
  * such scene (the address then follows); going into a scene, which asks for it when
@@ -40,14 +40,15 @@ export class Scenes {
     this.ctx.host.go(addressOf(work), "replace");
   }
 
-  /** Goes to a scene; one with nothing drawn yet is asked for at once. */
-  async enter(id: string, title?: string) {
+  /** Goes to a scene. One with nothing drawn yet is asked for at once, with the request
+   * `asking` words for it from the scene's title, as the person would ask. */
+  async enter(id: string, asking?: (title: string) => string) {
     const { revisions, runs, sending, host } = this.ctx;
     const w = revisions.work;
-    if (!w?.scenes[id]) throw Error(host.words().work.noScene);
+    if (!w?.scenes[id]) throw new SessionError("noScene");
     host.go(addressOf(w, id), "push");
-    if (!w.scenes[id].modules.length && !runs.working)
-      await sending.send({ text: host.words().work.expand(title || w.scenes[id].title), scene: id });
+    if (asking && !w.scenes[id].modules.length && !runs.working)
+      await sending.send({ text: asking(w.scenes[id].title), scene: id });
   }
 
   /** A run that ends having drawn only in other scenes takes the viewer to the last one it

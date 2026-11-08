@@ -1,15 +1,17 @@
 import type { SettingsChange } from "../../../modules/contracts/index.ts";
 import type { Models } from "./api.ts";
-import type { RequestDraft, RequestState } from "./session/request.ts";
-import type { Ask, Session } from "./session/work.ts";
+import type { Feedback } from "./feedback.ts";
+import type { RequestDraft } from "./session/request.ts";
+import type { Ask, WorkSession } from "./session/work.ts";
 
 /* What a work page is handed, whatever device it is laid out for. Only what every page
  * needs is here: the account is read from `AccountContext`, and how a page looks and
- * what that needs (panels, menus, selections, widths, shortcuts) is its own. */
+ * what that needs (panels, menus, selections, widths, shortcuts) is its own. Each prop
+ * keeps its identity while the page is open, and the stores among them are read slice by
+ * slice (`useSelect`), so the page is drawn again only where what it shows changed. */
 
 /** The request being written, and sending it. */
 export interface Asking {
-  request: RequestState;
   draft: RequestDraft;
   /** Sends what is written, or what is given in its place, once the app allows it;
    * the request is emptied once it has gone. */
@@ -24,23 +26,11 @@ export interface Asking {
   blocked?: "unconnected" | "spent";
 }
 
-/** How the page tells the person what happened. */
-export interface Feedback {
-  /** What went wrong last, until it is read or replaced. */
-  error: string;
-  /** Something that went well, said briefly. */
-  notice: string;
-  dismiss(): void;
-  fail(error: unknown): void;
-  say(text: string): void;
-  /** Runs an action, saying what went wrong if it fails. */
-  attempt(fn: () => Promise<unknown>): Promise<void>;
-}
-
 export interface ShellProps {
-  /** The open work. */
-  session: Session;
+  /** The open work: its snapshot, read by slices, and its actions. */
+  session: WorkSession;
   asking: Asking;
+  /** How the page tells the person what went wrong or well. */
   feedback: Feedback;
   /** Leaves the work page for another address. */
   go(path: string): void;
