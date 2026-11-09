@@ -215,6 +215,7 @@ export function Composer({
             />
             {setStyle && <StylePicker style={style} pick={setStyle} />}
             <span className={cx("composer-gap")} />
+            {!!models?.labels.length && <ModelBar models={models} pick={choose} quota={quota} />}
             {working ? (
               <button
                 className={cx("composer-stop")}
@@ -243,7 +244,6 @@ export function Composer({
           </div>
         </div>
       </div>
-      {!!models?.labels.length && <ModelBar models={models} pick={choose} quota={quota} />}
     </div>
   );
 }

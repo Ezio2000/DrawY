@@ -1199,9 +1199,8 @@ h2:has(> .title) {
   padding: 2px;
 }
 
-/* The picks a run is made with, in a quiet row under the box at its right, as in Claude
-   Code: the drawing model, its effort and speed, the web search and the picture model,
-   each a menu of its own. */
+/* The label a run is made with, and the requests left, in the box's tool row beside send:
+   no row of their own under the box. */
 .composer-wrap {
   display: flex;
   flex-direction: column;
@@ -1211,11 +1210,9 @@ h2:has(> .title) {
 
 .model-bar {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
   gap: 2px;
-  max-width: 100%;
-  padding: 0 6px;
+  min-width: 0;
 }
 
 /* Requests left to make, beside the label: quiet until none are left. */
@@ -7488,14 +7485,6 @@ body:has(.resizer[data-dragging]) {
   white-space: nowrap;
 }
 
-/* Over the canvas, the picks under the box sit on a veil of their own. */
-.composer-wrap[data-place="dock"] > .model-bar {
-  align-self: flex-end;
-  padding: 2px 4px;
-  border-radius: 10px;
-  background: var(--veil);
-}
-
 /* Toggles where several can be on at once. */
 .chips {
   display: flex;
@@ -8091,14 +8080,28 @@ body:has(.resizer[data-dragging]) {
     overflow: visible;
   }
 
+  /* Solid paper under the box, with the fade above it drawn apart, and a layer of its own:
+     iOS Safari otherwise let the works' outlines show through under the box. */
   .home-composer {
     position: sticky;
     z-index: 3;
     bottom: 0;
     max-width: none;
-    margin-top: 4px;
-    padding: 12px 0 max(12px, env(safe-area-inset-bottom));
-    background: linear-gradient(rgba(255, 255, 255, 0), var(--paper) 16px);
+    margin-top: 16px;
+    padding: 0 0 max(12px, env(safe-area-inset-bottom));
+    background: var(--paper);
+    transform: translateZ(0);
+  }
+
+  .home-composer::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    height: 16px;
+    background: linear-gradient(rgba(255, 255, 255, 0), var(--paper));
+    pointer-events: none;
   }
 
   .composer[data-place="home"] {
