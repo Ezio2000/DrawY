@@ -26,9 +26,19 @@ export function followViewport(root = document.documentElement) {
     if (v.height >= innerHeight - 1 && (scrollX || scrollY)) scrollTo(0, 0);
   };
   const pinch = (e: Event) => e.preventDefault();
+  // Turned, iOS can resize the window before it says so of the visual viewport, and say
+  // it late: the app is laid out again on each, and once more when the turn has settled.
+  let turning: ReturnType<typeof setTimeout>;
+  const turned = () => {
+    settle();
+    clearTimeout(turning);
+    turning = setTimeout(settle, 350);
+  };
   follow();
   v.addEventListener("resize", settle);
   v.addEventListener("scroll", follow);
+  addEventListener("resize", turned);
+  addEventListener("orientationchange", turned);
   // Safari's gestures, which only it fires: two fingers on anything but the drawing (which
   // takes them itself) would zoom the whole page.
   document.addEventListener("gesturestart", pinch, { passive: false });
@@ -36,6 +46,9 @@ export function followViewport(root = document.documentElement) {
   return () => {
     v.removeEventListener("resize", settle);
     v.removeEventListener("scroll", follow);
+    removeEventListener("resize", turned);
+    removeEventListener("orientationchange", turned);
+    clearTimeout(turning);
     document.removeEventListener("gesturestart", pinch);
     document.removeEventListener("gesturechange", pinch);
   };
