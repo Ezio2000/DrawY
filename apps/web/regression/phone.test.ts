@@ -353,10 +353,11 @@ it("keeps the studio a tap away from the top bar after the reply is put away and
   await open(id);
   await composer().fill("Draw the route");
   await composer().press("Enter");
+  await settled();
   const user = { kind: "message", role: "user", text: "Draw the route" } as const;
   await tell({
     type: "run",
-    run: run(id, "r1", "completed", [user, { kind: "message", role: "assistant", text: "Here is the route." }]),
+    run: run(id, "told", "completed", [user, { kind: "message", role: "assistant", text: "Here is the route." }]),
   });
   await settled();
   await dock().getByRole("button", { name: "Collapse" }).tap();
@@ -418,10 +419,11 @@ it("shows only the first lines of a long reply over the drawing", async () => {
   await open(id);
   await composer().fill("Explain");
   await composer().press("Enter");
+  await settled();
   const long = "The figure shows the route from the hills to the sea. ".repeat(12);
   await tell({
     type: "run",
-    run: run(id, "r1", "completed", [
+    run: run(id, "told", "completed", [
       { kind: "message", role: "user", text: "Explain" },
       { kind: "message", role: "assistant", text: long },
     ]),
@@ -504,9 +506,10 @@ it("keeps the drawing large on a phone turned on its side with a reply open, and
   await open(id);
   await composer().fill("Explain");
   await composer().press("Enter");
+  await settled();
   await tell({
     type: "run",
-    run: run(id, "r1", "completed", [
+    run: run(id, "told", "completed", [
       { kind: "message", role: "user", text: "Explain" },
       { kind: "message", role: "assistant", text: "The figure shows the route from the hills to the sea. ".repeat(6) },
     ]),
