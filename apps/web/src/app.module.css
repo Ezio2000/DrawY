@@ -868,23 +868,20 @@ h2:has(> .title) {
 .composer[data-place="home"] {
   position: relative;
   z-index: 2;
-  padding: 12px 8px 8px 18px;
-  border-radius: 12px;
+  padding: 14px 10px 10px 18px;
+  border-radius: 20px;
 }
 
 .composer[data-place="dock"] {
-  padding: 7px 7px 7px 18px;
-  border-radius: 12px;
+  padding: 10px 8px 8px 16px;
+  border-radius: 16px;
   background: var(--paper);
 }
 
+/* Words on top, the tools in a row under them: add, the label's pill, then style and send
+   at the far end, as in Claude's composer. */
 .composer-field {
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.composer[data-place="home"] .composer-field {
   flex-direction: column;
   align-items: stretch;
   gap: 4px;
@@ -912,15 +909,18 @@ h2:has(> .title) {
   font-size: 16px;
 }
 
-/* At home the tools sit a little in from the box's edge, the add button first. */
-.composer[data-place="home"] .composer-tools {
-  margin-left: -10px;
+.composer[data-place="dock"] textarea {
+  padding: 2px 8px 0 2px;
 }
 
-.composer[data-place="home"] .composer-send,
-.composer[data-place="home"] .composer-stop {
-  width: 32px;
-  height: 32px;
+/* The tools sit a little in from the box's edge, the add button first. */
+.composer-tools {
+  gap: 6px;
+  margin-left: -6px;
+}
+
+.composer[data-place="home"] .composer-tools {
+  margin-left: -8px;
 }
 
 .composer textarea:focus,
@@ -932,7 +932,6 @@ h2:has(> .title) {
 .composer-tools {
   display: flex;
   align-items: center;
-  gap: 4px;
 }
 
 .composer-gap {
@@ -944,10 +943,6 @@ h2:has(> .title) {
   border-radius: 12px;
 }
 
-.composer[data-place="dock"] .composer-gap {
-  display: none;
-}
-
 .composer-tool {
   display: inline-flex;
   align-items: center;
@@ -957,14 +952,20 @@ h2:has(> .title) {
   min-width: 36px;
   height: 36px;
   padding: 0 9px;
-  border-radius: 12px;
+  border-radius: 999px;
   font-size: 13.5px;
   color: var(--text-2);
 }
 
+/* The add button is a filled round chip, like the pill beside it. */
+.add-menu > .composer-tool {
+  background: var(--fill);
+  color: var(--text);
+}
+
 .composer-tool:hover,
 .composer-tool[aria-expanded="true"] {
-  background: var(--fill);
+  background: var(--fill-2);
   color: var(--text);
 }
 
@@ -1199,8 +1200,8 @@ h2:has(> .title) {
   padding: 2px;
 }
 
-/* The label a run is made with, and the requests left, in the box's tool row beside send:
-   no row of their own under the box. */
+/* The label a run is made with, and the requests left, in one filled pill in the box's
+   tool row, right after the add button, as in Claude's composer. */
 .composer-wrap {
   display: flex;
   flex-direction: column;
@@ -1209,23 +1210,45 @@ h2:has(> .title) {
 }
 
 .model-bar {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
   min-width: 0;
 }
 
-/* Requests left to make, beside the label: quiet until none are left. */
-.quota {
-  padding: 0 8px;
-  font-size: 12.5px;
+.model-bar > .pick {
+  min-width: 0;
+}
+
+.model-bar .pick-button,
+span.model-bar {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--fill);
+  font-size: 13.5px;
+}
+
+.model-bar .pick-button:hover,
+.model-bar .pick-button[aria-expanded="true"] {
+  background: var(--fill-2);
+}
+
+.model-bar i,
+span.model-bar {
+  font-style: normal;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.quota[data-out] {
+.model-bar i[data-out] {
   color: var(--red-text);
+}
+
+.model-bar .models-menu {
+  right: auto;
+  left: 0;
+  transform-origin: bottom left;
 }
 
 /* Where the row is short of room, the long names give way (the model's last); effort and
