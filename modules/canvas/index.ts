@@ -492,14 +492,16 @@ export class Canvas {
       if (this.abort.signal.aborted) return;
       if (this.renderer !== first) return this.arrived();
       first.element.style.visibility = "";
+      // The view is taken before the fade starts: a layer that is fading is composited,
+      // and Chromium then moves it without laying its SVG text out again.
+      if (this.automatic) this.fit(false);
+      else this.paint();
       // What is already drawn comes in at once, with only a short fade over the paper.
       if (this.options.motion)
         first.element.animate([{ opacity: 0 }, { opacity: 1 }], {
           duration: 240,
           easing: "ease-out",
         });
-      if (this.automatic) this.fit(false);
-      else this.paint();
       // Opening a work or entering a scene shows what is already drawn as it is: only
       // what arrives while it is open unfolds.
       this.options.shown?.(scene);
@@ -684,7 +686,7 @@ export class Canvas {
         text.textContent = s.label;
         text.setAttribute("x", String(width / 2));
         text.setAttribute("y", String(height / 2));
-        text.style.cssText = `fill:${GRAPHITE};font:italic calc(12.5px / var(--zoom)) "Iowan Old Style","Songti SC",Georgia,serif;text-anchor:middle;dominant-baseline:central`;
+        text.style.cssText = `fill:${GRAPHITE};font:italic calc(12.5px / var(--zoom)) "Iowan Old Style","Songti SC",Georgia,serif;text-anchor:middle;dominant-baseline:central;text-rendering:geometricPrecision`;
         element.append(text);
         text.animate([{ opacity: 0 }, { opacity: 1 }], {
           duration: 500,

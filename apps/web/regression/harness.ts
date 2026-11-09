@@ -193,6 +193,14 @@ export const count = (text: string) =>
     (text) => [...document.querySelectorAll("*")].filter((e) => e.shadowRoot?.textContent?.includes(text)).length,
     text,
   );
+/** How many modules the canvas shows as selected, by their outlines. */
+export const outlined = () =>
+  page.evaluate(
+    () =>
+      [...document.querySelectorAll<HTMLElement>("[data-canvas] > div")].filter(
+        (d) => d.style.borderColor === "rgb(51, 102, 214)" && d.style.display !== "none",
+      ).length,
+  );
 export const statuses = () => page.locator("[role=status]").allInnerTexts();
 export const renders = () => page.evaluate(() => ({ ...(window as any).__drawyRenders }) as Record<string, number>);
 export const composer = () => page.locator("[data-dock] textarea");
@@ -272,3 +280,78 @@ export const rectOf = (text: string) =>
     const r = el!.getBoundingClientRect();
     return { x: r.x, y: r.y, width: r.width, height: r.height, cx: r.x + r.width / 2, cy: r.y + r.height / 2 };
   }, text);
+
+/** Where a module's words are laid out and where their ink actually lands on screen, in
+ * CSS pixels. Layout alone cannot tell a drawing that is painted wrong (text at a stale
+ * size, or clipped): this looks at the pixels. The screen is taken first, because asking
+ * the page where things are (a hit test above all) can lay the text out again and hide
+ * what the person would see. The words must be dark on a light drawing, as in `box`, and
+ * not covered by the page. */
+export async function inkOf(text: string) {
+  const png = (await page.screenshot({ scale: "css" })).toString("base64");
+  const laid = await page.evaluate((text) => {
+    const host = [...document.querySelectorAll("*")].find(
+      (e) => e.shadowRoot?.textContent?.includes(text),
+    ) as HTMLElement;
+    const words = [...host.shadowRoot!.querySelectorAll("text")].find((t) => t.textContent?.includes(text))!;
+    const rect = (r: DOMRect) => ({ x: r.x, y: r.y, width: r.width, height: r.height });
+    const at = words.getBoundingClientRect();
+    const seen = [
+      [at.left + 1, at.top + 1],
+      [at.right - 1, at.bottom - 1],
+    ].every(([x, y]) => {
+      const top = document.elementFromPoint(x, y);
+      return top === host || host.contains(top);
+    });
+    return { words: rect(at), host: rect(host.getBoundingClientRect()), seen };
+  }, text);
+  expect(laid.seen, `the words "${text}" are covered or off screen`).toBe(true);
+  // The dark pixels' extent within the module, read back in the page from the screen.
+  const ink = await page.evaluate(
+    async ({ png, host }) => {
+      const image = new Image();
+      image.src = "data:image/png;base64," + png;
+      await image.decode();
+      const c = document.createElement("canvas");
+      c.width = image.width;
+      c.height = image.height;
+      const g = c.getContext("2d")!;
+      g.drawImage(image, 0, 0);
+      const x0 = Math.max(0, Math.floor(host.x)),
+        y0 = Math.max(0, Math.floor(host.y)),
+        x1 = Math.min(c.width, Math.ceil(host.x + host.width)),
+        y1 = Math.min(c.height, Math.ceil(host.y + host.height));
+      const { data } = g.getImageData(0, 0, c.width, c.height);
+      let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+      for (let py = y0; py < y1; py++)
+        for (let px = x0; px < x1; px++) {
+          const i = (py * c.width + px) * 4;
+          const [r, gr, b] = [data[i], data[i + 1], data[i + 2]];
+          // Dark and grey, as words are; not the blue of a selection.
+          if (r * 0.3 + gr * 0.59 + b * 0.11 > 110 || Math.max(r, gr, b) - Math.min(r, gr, b) > 48) continue;
+          left = Math.min(left, px);
+          right = Math.max(right, px + 1);
+          top = Math.min(top, py);
+          bottom = Math.max(bottom, py + 1);
+        }
+      return right < left ? null : { x: left, y: top, width: right - left, height: bottom - top };
+    },
+    { png, host: laid.host },
+  );
+  return { laid: laid.words, ink };
+}
+/** Expects the words to be painted where and as large as they are laid out: their ink
+ * inside the box layout gives them (a pixel or two either way) and filling most of its
+ * width. Text painted larger spills out of it, and text clipped leaves part of it bare. */
+export async function paintedAsLaidOut(text: string) {
+  const { laid, ink } = await inkOf(text);
+  const where = `"${text}" laid out at ${JSON.stringify(laid)}, inked at ${JSON.stringify(ink)}`;
+  expect(ink, where).not.toBeNull();
+  const slack = 2;
+  expect(ink!.x, where).toBeGreaterThanOrEqual(laid.x - slack);
+  expect(ink!.y, where).toBeGreaterThanOrEqual(laid.y - slack);
+  expect(ink!.x + ink!.width, where).toBeLessThanOrEqual(laid.x + laid.width + slack);
+  expect(ink!.y + ink!.height, where).toBeLessThanOrEqual(laid.y + laid.height + slack);
+  expect(ink!.width, where).toBeGreaterThan(laid.width * 0.75);
+  expect(ink!.height, where).toBeGreaterThan(laid.height * 0.4);
+}

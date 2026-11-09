@@ -6,6 +6,7 @@ import {
   module,
   open,
   page,
+  paintedAsLaidOut,
   pinch,
   press,
   rectOf,
@@ -27,9 +28,11 @@ it("gives a tablet held either way the desktop page", async () => {
   await open(await make());
   expect(await page.locator("[data-shell=phone]").count()).toBe(0);
   expect(await page.getByRole("button", { name: "Edit by hand" }).count()).toBe(1);
+  for (const words of ["Alpha", "Beta"]) await paintedAsLaidOut(words);
   await page.setViewportSize({ width: 1024, height: 768 });
   await settled();
   expect(await page.locator("[data-shell=phone]").count()).toBe(0);
+  for (const words of ["Alpha", "Beta"]) await paintedAsLaidOut(words);
 });
 
 it("edits with fingers: a part moves with one, the paper moves the view, and a long press opens the menu", async () => {

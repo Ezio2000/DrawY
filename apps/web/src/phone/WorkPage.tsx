@@ -66,6 +66,12 @@ export default function PhoneWorkPage({ session, asking, feedback, go }: ShellPr
   const putAway = !runId || runId === dismissed || runId === earlier;
   const dismiss = () => setDismissed(session.get().run?.id ?? "");
   const deselect = () => (canvas ? canvas.select([]) : setSelected([]));
+  /** Opens a sheet. The versions are looked at as wholes: what was selected in the one
+   * shown goes, with the actions on it. */
+  const show = (kind: SheetKind) => {
+    if (kind === "versions") deselect();
+    setSheet(kind);
+  };
 
   // What the session tells of, in this page's words.
   useEffect(
@@ -157,7 +163,7 @@ export default function PhoneWorkPage({ session, asking, feedback, go }: ShellPr
           select={setSelected}
           point={point}
         />
-        <TopBar session={session} back={() => go("/")} open={setSheet} undo={undo} />
+        <TopBar session={session} back={() => go("/")} open={show} undo={undo} />
         {retyping && stage.current && (
           <Retype
             key={retyping.moduleId + ":" + retyping.text}

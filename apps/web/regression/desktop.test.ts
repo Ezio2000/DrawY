@@ -11,7 +11,9 @@ import {
   make,
   module,
   open,
+  outlined,
   page,
+  paintedAsLaidOut,
   renders,
   run,
   settled,
@@ -24,6 +26,11 @@ import {
  * a keyboard (see harness.ts for how the app is run). */
 
 setup({ viewport: { width: 1440, height: 900 } });
+
+it("paints the drawing's words as they are laid out", async () => {
+  await open(await make());
+  for (const words of ["Alpha", "Beta"]) await paintedAsLaidOut(words);
+});
 
 it("shows a hand edit at once and lays the saved one over it without drawing it again", async () => {
   await open(await make());
@@ -98,9 +105,12 @@ it("looks at a version without drawing it again, and goes back to it, which can 
   await page.keyboard.press("Control+s");
   await settled();
   const saved = (await module("Alpha"))!;
+  expect(await outlined()).toBe(1);
   await page.getByRole("button", { name: "Versions" }).click();
   const rows = page.locator("[data-kind=drafts] li");
   await expect.poll(() => rows.allInnerTexts()).toHaveLength(3);
+  // The versions are looked at as wholes: what was selected is let go.
+  expect(await outlined()).toBe(0);
   await rows.nth(1).click();
   await settled();
   expect(await statuses()).toContain("Viewing version 1\nBack to current\nGo back to this version");
