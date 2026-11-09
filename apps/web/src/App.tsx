@@ -71,7 +71,10 @@ export function App() {
   const [go] = useState(() => (to: string) => {
     if (to === location.pathname) return;
     if (!leaving()) return;
-    window.history.pushState(null, "", to);
+    // Navigation from an open layer uses its temporary step, leaving the previous
+    // page exactly one Back away when the layer closes.
+    if (window.history.state?.drawyLayer !== undefined) window.history.replaceState(null, "", to);
+    else window.history.pushState(null, "", to);
     setPath(to);
   });
   const refreshList = () =>

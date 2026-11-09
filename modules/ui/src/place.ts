@@ -60,13 +60,16 @@ export function useInView(ref: RefObject<HTMLElement | null>, open: boolean, men
       const top = side === "below" ? anchor.bottom + gap : anchor.top - gap - height;
       const width = Math.min(r.width, view.width - 2 * EDGE);
       const left = Math.min(Math.max(r.left, view.left + EDGE), right - width);
-      const dx = left - r.left,
-        dy = top - r.top;
       if (width < r.width) list.style.maxWidth = `${width}px`;
       if (height < r.height) {
         list.style.maxHeight = `${height}px`;
         list.style.overflowY = "auto";
       }
+      // A bottom- or right-anchored menu moves when constrained; translate from its
+      // resulting position rather than counting that movement a second time.
+      const placed = list.getBoundingClientRect();
+      const dx = left - placed.left,
+        dy = top - placed.top;
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) list.style.translate = `${dx}px ${dy}px`;
     };
     place();

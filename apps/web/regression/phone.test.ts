@@ -562,3 +562,45 @@ it("keeps the send button on screen however long the request, with the keyboard 
   expect(send.y).toBeGreaterThanOrEqual(0);
   expect(send.y + send.height).toBeLessThanOrEqual(360);
 });
+
+it("keeps a tall model menu above the keyboard after limiting its height", async () => {
+  const models = await api("/models");
+  await page.route("**/api/models", (route) => route.fulfill({
+    json: {
+      ...models,
+      chosen: { label: "tier0" },
+      labels: Array.from({ length: 12 }, (_, i) => ({
+        id: "tier" + i, name: "Tier " + i, description: "A drawing model", ready: true,
+      })),
+    },
+  }));
+  await open(await make());
+  await page.evaluate(() => {
+    const viewport = visualViewport!;
+    Object.defineProperty(viewport, "height", { configurable: true, get: () => 360 });
+    viewport.dispatchEvent(new Event("resize"));
+  });
+  await settled();
+  await page.getByRole("button", { name: "Tier: Tier 0", exact: true }).tap();
+  const menu = page.getByRole("menu");
+  const bounds = (await menu.boundingBox())!;
+  expect(bounds.y).toBeGreaterThanOrEqual(8);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(352);
+  expect(await menu.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
+});
+
+it("returns from a scene chosen in a sheet without an extra history step", async () => {
+  const id = await make({ sub: "drawn" });
+  await page.goto(base + "/");
+  await open(id);
+  await top().getByRole("button", { name: "Scenes and title" }).tap();
+  await sheet().getByRole("button", { name: "Sub", exact: true }).tap();
+  await settled();
+  expect(new URL(page.url()).pathname).toBe(`/a/${id}/sub`);
+  await page.goBack();
+  await settled();
+  expect(new URL(page.url()).pathname).toBe(`/a/${id}`);
+  await page.goBack();
+  await settled();
+  expect(new URL(page.url()).pathname).toBe("/");
+});
