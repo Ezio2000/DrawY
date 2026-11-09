@@ -41,7 +41,8 @@ function useFits(list: React.RefObject<HTMLUListElement | null>, deps: unknown[]
 }
 
 /** The first page, laid out like a drawing tool's file browser rather than a chatbot's
- * greeting: ways to start a work (a blank canvas, or one of three requests), then as many of
+ * greeting: ways to start a work (a blank canvas, or one of three requests, as small
+ * tiles that say so, so they do not pass for works of one's own), then as many of
  * the works last drawn on as fit the window. The composer stays at the bottom, where it is on
  * every page. */
 export function Home({
@@ -86,7 +87,10 @@ export function Home({
               <span className={cx("start-art")}>
                 <Plus size={22} strokeWidth={1.6} />
               </span>
-              <span className={cx("start-name")}>{t.rail.blankCanvas}</span>
+              <span className={cx("start-text")}>
+                <span className={cx("start-name")}>{t.rail.blankCanvas}</span>
+                <span className={cx("start-note")}>{t.home.blankNote}</span>
+              </span>
             </button>
           </li>
           {t.home.examples.map((text, i) => {
@@ -97,7 +101,10 @@ export function Home({
                   <span className={cx("start-art")}>
                     <Sketch />
                   </span>
-                  <span className={cx("start-name")}>{text}</span>
+                  <span className={cx("start-text")}>
+                    <span className={cx("start-name")}>{text}</span>
+                    <span className={cx("start-note")}>{t.home.exampleNote}</span>
+                  </span>
                 </button>
               </li>
             );

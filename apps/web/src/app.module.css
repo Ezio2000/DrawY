@@ -542,8 +542,102 @@ h2:has(> .title) {
   color: var(--text-2);
 }
 
-/* Ways to start: a blank canvas, then the examples, each a small sheet with its name under it. */
-.starts,
+/* Ways to start: a blank canvas, then the examples. They are low tiles, a small sketch beside
+   the request and a note saying what it is, so they read as starting points and never as
+   works of one's own, which are the large covers below. */
+.starts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.start {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  padding: 8px 12px 8px 8px;
+  text-align: left;
+  border-radius: 10px;
+  background: var(--bg-2);
+  transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+
+.start:hover {
+  background: var(--paper);
+  box-shadow: 0 0 0 1px var(--line), var(--shadow-float);
+}
+
+.start-art {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 52px;
+  padding: 3px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--paper);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.start-art > svg {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.start[data-blank] .start-art {
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  background: var(--paper);
+}
+
+.start[data-blank] .start-art > svg {
+  width: 22px;
+  height: 22px;
+}
+
+.start[data-blank]:hover .start-art {
+  color: var(--ai-deep);
+  box-shadow: inset 0 0 0 1px var(--ai);
+}
+
+.start-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.start-name {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.start-note {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.start:hover .start-note {
+  color: var(--text-2);
+}
+
+/* Works: each a sheet with its cover, its name under it. */
 .recent {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
@@ -566,7 +660,6 @@ h2:has(> .title) {
   min-width: 0;
 }
 
-.start,
 .recent button {
   display: flex;
   flex-direction: column;
@@ -575,7 +668,6 @@ h2:has(> .title) {
   text-align: left;
 }
 
-.start-art,
 .recent-cover {
   display: grid;
   place-items: center;
@@ -588,39 +680,10 @@ h2:has(> .title) {
   transition: box-shadow 0.15s var(--ease);
 }
 
-.start-art {
-  aspect-ratio: 16 / 9;
-  padding: 6px;
-}
-
-.start-art > svg {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-}
-
-.start[data-blank] .start-art > svg {
-  width: 24px;
-  height: 24px;
-}
-
-.start[data-blank] .start-art {
-  background: var(--bg-2);
-  box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--text-2);
-}
-
-.start:hover .start-art,
 .recent button:hover .recent-cover {
   box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-float);
 }
 
-.start[data-blank]:hover .start-art {
-  color: var(--ai-deep);
-  box-shadow: inset 0 0 0 1px var(--ai);
-}
-
-.start-name,
 .recent b {
   overflow: hidden;
   white-space: nowrap;
@@ -8022,7 +8085,21 @@ body:has(.resizer[data-dragging]) {
     padding-bottom: 20px;
   }
 
-  .starts,
+  /* One low row each, so they stay a short list above the works. */
+  .starts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .start {
+    padding: 6px 12px 6px 6px;
+  }
+
+  .start-art {
+    width: 60px;
+    height: 42px;
+  }
+
   .recent {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px 12px;
