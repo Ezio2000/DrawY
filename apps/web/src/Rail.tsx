@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   House,
   Shapes,
@@ -14,6 +14,7 @@ import { PanelMark } from "@drawy/ui/brand";
 import { useLocale } from "@drawy/ui";
 import type { ShellChoice, Shells } from "./shells.ts";
 import { cx } from "./cx.ts";
+import { useDismiss } from "./popover.ts";
 import { Brand } from "./Title.tsx";
 import { LanguageSwitch, useT } from "./i18n.tsx";
 import type { Summary, User } from "./api.ts";
@@ -40,33 +41,6 @@ export function progressOf(w: Summary, t: Words) {
     default:
       return { tone: "", text: `${where} · ${ago(w.updatedAt)}` };
   }
-}
-
-/** Closes a popover on a press outside `ref` or on Escape. */
-export function useDismiss(
-  open: boolean,
-  close: () => void,
-  ref: React.RefObject<HTMLElement | null>,
-) {
-  const latest = useRef(close);
-  latest.current = close;
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) latest.current();
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      latest.current();
-    };
-    addEventListener("pointerdown", away, true);
-    addEventListener("keydown", key, true);
-    return () => {
-      removeEventListener("pointerdown", away, true);
-      removeEventListener("keydown", key, true);
-    };
-  }, [open]);
 }
 
 /** A title that can be renamed in place: Enter keeps the new name, Escape or an empty

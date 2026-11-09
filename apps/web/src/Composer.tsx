@@ -15,7 +15,7 @@ import { Spinner, useLocale } from "@drawy/ui";
 import type { StyleMaterial } from "@drawy/materials/schema";
 import { api, type Models } from "./api.ts";
 import { cx } from "./cx.ts";
-import { useDismiss } from "./Rail.tsx";
+import { useDismiss } from "./popover.ts";
 import { useT } from "./i18n.tsx";
 import type { Attachment } from "./session/request.ts";
 import { useCan } from "./account.tsx";

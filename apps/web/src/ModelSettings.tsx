@@ -55,7 +55,7 @@ import {
 } from "../../../modules/contracts/index.ts";
 import { cx } from "./cx.ts";
 import { useT, type Words } from "./i18n.tsx";
-import { useDismiss } from "./Rail.tsx";
+import { useDismiss } from "./popover.ts";
 import { Badge, Entry, Group, Head, Row, newId } from "./SettingsParts.tsx";
 
 type W = Words["settings"];

@@ -85,8 +85,14 @@ export function Auth({ done }: { done: (user: User) => void }) {
                 spellCheck={false}
                 value={invite}
                 onChange={(e) => I(e.target.value)}
+                aria-describedby="invite-hint"
                 required
               />
+            )}
+            {signup && needsInvite && (
+              <p className={cx("auth-hint")} id="invite-hint">
+                {t.auth.inviteHint}
+              </p>
             )}
             {error && (
               <p className={cx("error")} role="alert">

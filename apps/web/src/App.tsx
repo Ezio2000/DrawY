@@ -40,6 +40,7 @@ import type { ComponentType } from "react";
 import type { ShellProps } from "./shell.ts";
 import { useShell } from "./shells.ts";
 import { browserStorage } from "./storage.ts";
+import { followViewport } from "./viewport.ts";
 
 export function App() {
   const [locale, setLocale] = useLanguage();
@@ -178,6 +179,7 @@ export function App() {
       await refreshList();
     });
 
+  useEffect(followViewport, []);
   useEffect(() => {
     fetch("/api/auth/me")
       .then(async (r) => U(r.ok ? await r.json() : null))

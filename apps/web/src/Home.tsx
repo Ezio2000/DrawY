@@ -21,6 +21,8 @@ function useFits(list: React.RefObject<HTMLUListElement | null>, deps: unknown[]
     if (!ul) return;
     const measure = () => {
       const style = getComputedStyle(ul);
+      // Where the page scrolls (a phone), every work is shown.
+      if (style.overflowY !== "hidden") return setFits(Infinity);
       const cols = style.gridTemplateColumns.split(" ").filter(Boolean).length || 1;
       const item = ul.firstElementChild as HTMLElement | null;
       if (item) card.current = item.offsetHeight;
@@ -112,7 +114,8 @@ export function Home({
           )}
         </h2>
         {listed && !recent.length ? (
-          <p className={cx("home-empty")}>{t.home.noWorks}</p>
+          // Someone new is told what DrawY does and how to start, where their works will be.
+          <p className={cx("home-empty")}>{t.home.firstSteps}</p>
         ) : (
           <ul className={cx("recent")} ref={shelf}>
             {shown.map((w) => {

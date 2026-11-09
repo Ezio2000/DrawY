@@ -52,6 +52,12 @@ export interface CanvasOptions {
   /** Screen space kept clear above and below the automatic view, for controls laid over
    * the canvas; asked each time the view is fitted, as the controls change size. */
   insets?: () => { top: number; bottom: number };
+  /** How many times larger than the whole drawing the automatic view may show it, to fill
+   * the screen: on a phone held upright a wide drawing fitted whole is a strip too small
+   * to read, while filled to the screen's height it reads and is panned across, from its
+   * left. 1 (the default) always shows it whole; `fit(…, "whole")` does so whatever this
+   * is. */
+  fill?: number;
   /** Mark each module that opens a scene or a page, at its corner. The app's canvas does;
    * the page the capture service and the exports draw has none, as the marks are styled by
    * the app and are not part of the work. */
@@ -206,6 +212,9 @@ export class Canvas {
   private badges = new Map<string, HTMLButtonElement>();
   private abort = new AbortController();
   private automatic: boolean;
+  /** How the automatic view frames the drawing: filling the screen as `fill` allows, or
+   * whole. */
+  private framing: "fill" | "whole" = "fill";
   private gesture?: {
     x: number;
     y: number;
@@ -1246,18 +1255,41 @@ export class Canvas {
     );
     this.changed();
   }
-  fit(glide = true, duration = 1100) {
+  /** The drawing as a whole: its modules and the sketches of those on the way. */
+  private extent() {
+    return union([
+      ...[...this.renderer.instances.values()].map((m) => m.bounds),
+      ...[...this.sketches.values()].map((s) => s.bounds),
+    ]);
+  }
+  /** Takes the automatic view, which follows the drawing as it changes: filling the screen
+   * as far as `fill` allows, or, framed `"whole"`, all of it. */
+  fit(glide = true, duration = 1100, framing?: "fill" | "whole") {
     this.automatic = true;
+    if (framing) this.framing = framing;
     const { top, bottom } = this.options.insets?.() || { top: 0, bottom: 80 },
+      width = this.element.clientWidth,
       height = this.element.clientHeight - top - bottom;
-    const target = fit(
-      union([
-        ...[...this.renderer.instances.values()].map((m) => m.bounds),
-        ...[...this.sketches.values()].map((s) => s.bounds),
-      ]),
-      this.element.clientWidth,
-      height,
-    );
+    const bounds = this.extent();
+    const target = fit(bounds, width, height);
+    const most = this.framing === "fill" ? (this.options.fill ?? 1) : 1;
+    if (most > 1 && bounds.width && bounds.height) {
+      // Filled: the drawing's shorter way across fits the screen and the longer runs off
+      // it, from where reading starts (its left, its top), never more than `fill` times
+      // the whole. The way it runs off is kept centred where it still fits.
+      const scale = Math.min(
+        Math.max((width - 32) / bounds.width, (height - 32) / bounds.height),
+        target.scale * most,
+        1.5,
+      );
+      if (scale > target.scale) {
+        const across = (start: number, size: number, room: number) =>
+          size * scale > room - 32 ? 16 - start * scale : room / 2 - (start + size / 2) * scale;
+        target.scale = scale;
+        target.x = across(bounds.x, bounds.width, width);
+        target.y = across(bounds.y, bounds.height, height);
+      }
+    }
     target.y += top;
     // A view already all but there stays put: a glide of a few pixels reads as drifting.
     // It is still painted, so a drawing just swapped in takes the view it stays at.
@@ -1379,6 +1411,21 @@ export class Canvas {
   }
   get selectedLink() {
     return this.link;
+  }
+  /** Whether the whole drawing is in view, clear of the controls laid over it. */
+  showsWhole() {
+    if (!this.renderer.instances.size && !this.sketches.size) return true;
+    const b = this.extent();
+    if (!(b.width > 0 && b.height > 0)) return true;
+    const { top, bottom } = this.options.insets?.() || { top: 0, bottom: 80 };
+    const { x, y, scale } = this.camera,
+      slack = 4;
+    return (
+      x + b.x * scale >= -slack &&
+      y + b.y * scale >= top - slack &&
+      x + (b.x + b.width) * scale <= this.element.clientWidth + slack &&
+      y + (b.y + b.height) * scale <= this.element.clientHeight - bottom + slack
+    );
   }
   /** The middle of the view, in scene units, clear of the controls laid over it. */
   center() {

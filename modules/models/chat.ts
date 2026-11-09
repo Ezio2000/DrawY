@@ -2,7 +2,7 @@
  * (DeepSeek, Qwen, Kimi…). The conversation goes out as messages, and each streamed answer
  * comes back as the Responses API would report it. */
 import { effortFor, type Role } from "../contracts/index.ts";
-import { events, post } from "./http.ts";
+import { events, post, streamError } from "./http.ts";
 import { textOf } from "./text.ts";
 import { CutOff, type Adapter, type Answer, type Item, type Request } from "./types.ts";
 
@@ -145,7 +145,7 @@ async function generate(
       onEvent({ type: "response.function_call_arguments.delta", item_id: call.id, delta: call.arguments });
   };
   for await (const e of events(r)) {
-    if (e.error) throw Error(JSON.stringify(e.error));
+    if (e.error) throw streamError(e.error);
     id ||= e.id ?? "";
     model = e.model ?? model;
     if (e.usage) usage = e.usage;

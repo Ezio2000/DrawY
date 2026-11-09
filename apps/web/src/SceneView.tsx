@@ -58,6 +58,7 @@ export function SceneView({
   view,
   controls = true,
   resizable = true,
+  fill,
   hold,
 }: {
   work: Work;
@@ -94,6 +95,8 @@ export function SceneView({
   resizable?: boolean;
   /** A finger held still on the canvas, once the selection has followed it. */
   hold?: CanvasOptions["hold"];
+  /** How far the automatic view may zoom past the whole drawing to fill the screen. */
+  fill?: number;
 }) {
   const t = useT(),
     locale = useLocale();
@@ -117,6 +120,7 @@ export function SceneView({
       camera: cameras.current.get(key),
       movable: !disabled,
       resizable,
+      fill,
       motion: !reducedMotion(),
       // The view keeps clear of the title above and of the composer laid over its foot.
       insets: () => {

@@ -1,8 +1,10 @@
 import { devices } from "playwright";
 import { expect, it } from "vitest";
 import {
+  api,
   asked,
   base,
+  box,
   composer,
   count,
   make,
@@ -36,6 +38,35 @@ const actions = () => page.getByRole("toolbar", { name: "Actions on the selectio
 const sheet = () => page.getByRole("dialog");
 const top = () => page.locator("header").first();
 const dock = () => page.locator("[data-dock]");
+/** Shows the whole drawing, when the view opened filled to the screen leaves part out. */
+async function whole() {
+  const button = page.getByRole("button", { name: "Whole drawing" });
+  if (await button.count()) {
+    await button.tap();
+    await settled();
+  }
+}
+/** A work as wide as a slide: one row of five boxes, its words at a slide's size. */
+async function wide() {
+  const w = await api("/works", "POST", { title: "Wide" });
+  await api(`/works/${w.id}/edits`, "POST", {
+    baseRevision: w.revision,
+    edit: {
+      drawings: [{ id: "box", name: "Box", source: box }],
+      modules: ["One", "Two", "Three", "Four", "Five"].map((label, i) => ({
+        id: "m" + i,
+        drawingId: "box",
+        bounds: [i * 320, 0, 280, 900],
+        data: { label },
+      })),
+    },
+  });
+  await api(`/works/${w.id}/save`, "POST");
+  await page.goto(base + "/a/" + w.id);
+  await page.waitForSelector("[data-canvas]");
+  await settled();
+  return w.id as string;
+}
 
 it("fills the screen without the side bar, and follows the window to the desktop page and back", async () => {
   await open(await make());
@@ -51,10 +82,12 @@ it("fills the screen without the side bar, and follows the window to the desktop
 
 it("paints the drawing's words as they are laid out, held upright and on its side, and after a pinch", async () => {
   await open(await make());
+  await whole();
   for (const words of ["Alpha", "Beta"]) await paintedAsLaidOut(words);
   // Turned on its side, a phone keeps the phone page; the view follows the new shape.
   await page.setViewportSize({ width: 844, height: 390 });
   await settled();
+  await whole();
   expect(await page.locator("[data-shell=phone]").count()).toBe(1);
   for (const words of ["Alpha", "Beta"]) await paintedAsLaidOut(words);
   await page.setViewportSize({ width: 390, height: 664 });
@@ -183,7 +216,9 @@ it("looks at a version from the versions sheet in place, goes back to it, and ta
   await dock().getByRole("button", { name: "Save", exact: true }).tap();
   await settled();
   expect(await outlined()).toBe(1);
-  await top().getByRole("button", { name: "Versions" }).tap();
+  // The versions are the other tab of the studio's sheet.
+  await top().getByRole("button", { name: "Studio and versions" }).tap();
+  await sheet().getByRole("button", { name: "Versions" }).tap();
   const rows = sheet().locator("li");
   await expect.poll(() => rows.count()).toBe(3);
   // The versions are looked at as wholes: the part selected is let go, with its actions.
@@ -291,4 +326,175 @@ it("loads the phone page alone, when a work is opened", async () => {
   await open(await make());
   expect(await page.locator("[data-shell=phone]").count()).toBe(1);
   expect(chunks).toHaveLength(1);
+});
+
+it("opens a wide drawing filled to the screen from its left, large enough to read, and shows it whole on a tap", async () => {
+  await wide();
+  const one = await rectOf("One");
+  // Filled: the first box starts at the left and is larger than it would be whole.
+  expect(one.x).toBeGreaterThanOrEqual(0);
+  expect(one.x).toBeLessThan(40);
+  expect((await rectOf("Five")).x).toBeGreaterThan(390);
+  await page.getByRole("button", { name: "Whole drawing" }).tap();
+  await settled();
+  const five = await rectOf("Five");
+  expect(five.x + five.width).toBeLessThanOrEqual(390);
+  expect((await rectOf("One")).width).toBeLessThan(one.width * 0.75);
+  // Whole, the button is not needed until the view leaves part out again.
+  expect(await page.getByRole("button", { name: "Whole drawing" }).count()).toBe(0);
+  const at = await rectOf("Three");
+  await pinch({ x: at.cx, y: at.cy }, 80, 240);
+  await settled();
+  expect(await page.getByRole("button", { name: "Whole drawing" }).count()).toBe(1);
+});
+
+it("keeps the studio a tap away from the top bar after the reply is put away and when the work is opened again", async () => {
+  const id = await make();
+  await open(id);
+  await composer().fill("Draw the route");
+  await composer().press("Enter");
+  const user = { kind: "message", role: "user", text: "Draw the route" } as const;
+  await tell({
+    type: "run",
+    run: run(id, "r1", "completed", [user, { kind: "message", role: "assistant", text: "Here is the route." }]),
+  });
+  await settled();
+  await dock().getByRole("button", { name: "Collapse" }).tap();
+  await settled();
+  await top().getByRole("button", { name: "Studio and versions" }).tap();
+  await expect.poll(() => sheet().getAttribute("aria-label")).toBe("Studio");
+  expect(await sheet().getByRole("button", { name: "Studio" }).getAttribute("aria-pressed")).toBe("true");
+});
+
+it("closes a sheet when pulled down by its grip, and with the browser's way back without leaving the work", async () => {
+  const id = await make();
+  await open(id);
+  await top().getByRole("button", { name: "Studio and versions" }).tap();
+  await settled();
+  const grip = (await sheet().locator("header").boundingBox())!;
+  await swipe({ x: grip.x + 40, y: grip.y + 10 }, { x: grip.x + 40, y: grip.y + 200 });
+  await settled();
+  expect(await sheet().count()).toBe(0);
+  await top().getByRole("button", { name: "Export and share" }).tap();
+  await settled();
+  expect(await sheet().count()).toBe(1);
+  await page.goBack();
+  await settled();
+  expect(await sheet().count()).toBe(0);
+  expect(new URL(page.url()).pathname).toBe(`/a/${id}`);
+  // A sheet closed by its own button leaves no step behind: back then leaves the work.
+  await top().getByRole("button", { name: "Export and share" }).tap();
+  await settled();
+  await sheet().getByRole("button", { name: "Close" }).tap();
+  await settled();
+  await page.goBack();
+  await settled();
+  expect(new URL(page.url()).pathname).not.toBe(`/a/${id}`);
+});
+
+it("keeps the way to let a selected part go in view, however long its name", async () => {
+  const id = await make();
+  await api(`/works/${id}/edits`, "POST", {
+    baseRevision: (await api(`/works/${id}`)).revision,
+    edit: { modules: [{ id: "a", label: "A part with a very long name that would push everything else off the screen" }] },
+  });
+  await open(id);
+  await tap(center(await rectOf("Alpha")));
+  const deselect = actions().getByRole("button", { name: "Deselect" });
+  await expect.poll(() => deselect.count()).toBe(1);
+  const r = (await deselect.boundingBox())!;
+  expect(r.x + r.width).toBeLessThanOrEqual(390);
+  expect(r.x).toBeGreaterThan(200);
+});
+
+it("types into fields at 16px, so iOS does not zoom the page in on them", async () => {
+  await open(await make());
+  const size = await composer().evaluate((e) => getComputedStyle(e).fontSize);
+  expect(parseFloat(size)).toBeGreaterThanOrEqual(16);
+});
+
+it("shows only the first lines of a long reply over the drawing", async () => {
+  const id = await make();
+  await open(id);
+  await composer().fill("Explain");
+  await composer().press("Enter");
+  const long = "The figure shows the route from the hills to the sea. ".repeat(12);
+  await tell({
+    type: "run",
+    run: run(id, "r1", "completed", [
+      { kind: "message", role: "user", text: "Explain" },
+      { kind: "message", role: "assistant", text: long },
+    ]),
+  });
+  await settled();
+  const reply = (await dock().locator("button", { hasText: "The figure shows" }).first().boundingBox())!;
+  expect(reply.height).toBeLessThan(60);
+});
+
+it("keeps a detail page's way back in view as it scrolls, and closes it with the browser's way back", async () => {
+  const id = await make();
+  await api(`/works/${id}/edits`, "POST", {
+    baseRevision: (await api(`/works/${id}`)).revision,
+    edit: {
+      details: [{ id: "notes", title: "Notes", html: "<p>A long note on the route.</p>".repeat(80) }],
+      modules: [{ id: "a", target: { kind: "detail", id: "notes" } }],
+    },
+  });
+  await open(id);
+  await tap(center(await rectOf("Alpha")));
+  await settled();
+  const back = page.getByRole("button", { name: "← Back to the picture" });
+  await expect.poll(() => back.count()).toBe(1);
+  await page.evaluate(() => {
+    const layer = [...document.querySelectorAll<HTMLElement>("div")].find((d) => d.scrollHeight > d.clientHeight * 3);
+    layer!.scrollTop = layer!.scrollHeight;
+  });
+  await settled();
+  const r = (await back.boundingBox())!;
+  expect(r.y).toBeGreaterThanOrEqual(0);
+  expect(r.y).toBeLessThan(120);
+  await page.goBack();
+  await settled();
+  expect(await back.count()).toBe(0);
+  expect(new URL(page.url()).pathname).toBe(`/a/${id}`);
+});
+
+it("catches up on what changed while the page was hidden, as a phone does with a page put away", async () => {
+  const id = await make();
+  await open(id);
+  const shown = (hidden: boolean) =>
+    page.evaluate((hidden) => {
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, hidden);
+  await shown(true);
+  await settled();
+  // Renamed elsewhere while this page cannot hear it.
+  await api(`/works/${id}`, "PATCH", { title: "Renamed elsewhere" });
+  await shown(false);
+  await expect.poll(() => top().innerText(), { timeout: 10_000 }).toContain("Renamed elsewhere");
+});
+
+it("lays the home page out for a phone: it scrolls to every work, and its menus open inside the screen", async () => {
+  for (let i = 0; i < 5; i++) await make();
+  await page.goto(base + "/");
+  await settled();
+  const works = page.locator("ul li button", { hasText: "Check" });
+  // Every work is there to scroll to (the other tests made some too).
+  await expect.poll(() => works.count()).toBeGreaterThanOrEqual(5);
+  const last = works.last();
+  await last.scrollIntoViewIfNeeded();
+  const r = (await last.boundingBox())!;
+  expect(r.y + r.height).toBeLessThanOrEqual(664);
+  // The composer stays at the foot, over the works.
+  const field = (await page.locator("textarea").boundingBox())!;
+  expect(field.y + field.height).toBeLessThanOrEqual(664);
+  for (const name of ["Add", "Style"]) {
+    await page.getByRole("button", { name, exact: true }).tap();
+    await settled();
+    const menu = (await page.getByRole("menu").boundingBox())!;
+    expect([name, menu.x >= 0 && menu.y >= 0 && menu.x + menu.width <= 390 && menu.y + menu.height <= 664]).toEqual([name, true]);
+    await page.getByRole("button", { name, exact: true }).tap();
+    await settled();
+  }
 });
