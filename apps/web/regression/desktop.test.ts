@@ -169,8 +169,8 @@ it("places words ready to type on a blank canvas, and duplicates, copies and pas
   expect(await count("Hello")).toBe(2);
   // The copy is what is selected now, so the request is about it.
   expect(await page.locator("[data-dock] [class*=quote] span").allInnerTexts()).toEqual(["Hello"]);
-  await page.keyboard.press("Control+c");
-  await page.keyboard.press("Control+v");
+  await page.keyboard.press("ControlOrMeta+c");
+  await page.keyboard.press("ControlOrMeta+v");
   await settled();
   expect(await count("Hello")).toBe(3);
   await page.keyboard.press("Delete");
