@@ -46,6 +46,11 @@ export interface RequestState {
 }
 
 export class RequestDraft extends Store<RequestState> {
+  constructor() {
+    // React restores controlled fields after onChange; a deferred notification would
+    // restore the old text first and cancel the browser's active IME composition.
+    super("immediate");
+  }
   private state: RequestState = { text: "", attachments: [], uploading: 0, choices: "", handed: "", asked: 0 };
   protected build() {
     return this.state;

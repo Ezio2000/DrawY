@@ -5,10 +5,12 @@ import { useRef, useSyncExternalStore } from "react";
  * (and tested) in one place, and any page can show it.
  *
  * Changes are cheap to make often: a change only marks the snapshot stale, the snapshot is
- * built when it is next read, and those who listen are told once for all the changes made
- * in the same turn. What did not change keeps its identity from one snapshot to the next
+ * built when it is next read. Listeners normally hear once per turn; a controlled input's
+ * store notifies immediately so React can keep its value in step with the browser.
+ * What did not change keeps its identity from one snapshot to the next
  * (`kept`), so a part of the page that reads only it (`useSelect`) is not drawn again. */
 export abstract class Store<T> {
+  constructor(private readonly notifications: "batched" | "immediate" = "batched") {}
   private listeners = new Set<() => void>();
   private snap?: T;
   private stale = true;
@@ -27,10 +29,13 @@ export abstract class Store<T> {
     this.listeners.add(listener);
     return () => void this.listeners.delete(listener);
   };
-  /** Something changed: the snapshot is built again when read, and listeners hear of it
-   * once the current turn is done. */
+  /** Something changed: invalidate the snapshot before notifying its readers. */
   protected changed() {
     this.stale = true;
+    if (this.notifications === "immediate") {
+      for (const l of [...this.listeners]) l();
+      return;
+    }
     if (this.told) return;
     this.told = true;
     queueMicrotask(() => {

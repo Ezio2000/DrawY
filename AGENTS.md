@@ -101,7 +101,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 - **App**：`App.tsx` 管这些：
   - 路由（`routes.ts` 的 `pageOf`/`workIdOf`/`sceneOf`/`addressOf`）；
   - 作品列表、删除与撤销删除、素材库对话框；
-  - 正在写的请求（`session/request.ts` 的 `RequestDraft`，一个 store：文字、附件、上传中的数量、主页选的风格、问题的选项；`hand` 把要作者做的修改写进去，并让输入框取得焦点）。请求跨页面存在，因为在素材库里选的素材、主页发出的请求都要带到作品页。附件带着素材各语言的名字，由显示的地方挑。
+  - 正在写的请求（`session/request.ts` 的 `RequestDraft`，一个 store：文字、附件、上传中的数量、主页选的风格、问题的选项；`hand` 把要作者做的修改写进去，并让输入框取得焦点）。请求草稿用 `Store` 的 `immediate` 通知，在输入事件里同步更新 React 的受控输入框；不能延迟到微任务，否则 React 会先恢复旧值并打断输入法组词。请求跨页面存在，因为在素材库里选的素材、主页发出的请求都要带到作品页。附件带着素材各语言的名字，由显示的地方挑。
   - 提示：`feedback.ts` 的 `Feedback` 也是一个 store，记着最近的错误和提示，并按时收起；`SessionError` 的措辞也在这里，供不自己措辞的页面使用。
 
   App 不读会话的快照（只有 `OpenWork` 读作品到了没有、打开失败没有），所以作者运行时的事件不会让 App 重新渲染。作品页的壳由 `shells.ts` 选出，App 交给它 `ShellProps`（`shell.ts`），只有每种壳都确实需要的四样：
@@ -121,7 +121,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
   会话只说发生了什么，怎么说、怎么呈现由壳决定：拒绝或做不到时抛 `SessionError`，它的 `reason` 是 `noScene`、`busy`、`linkDrawing` 或 `imagesOnly`；事后要告诉用户的事经 `on(listener)` 发出 `Happening`（`saved` 带版本号；`failed` 是开始后就不再等待的操作失败了）；快照里的 `back` 是结构化的。服务器的错误原样传出，服务端已经按请求的语言翻译好。`SessionHost` 只剩跳转地址、刷新列表、扣提问次数、订阅事件，以及作品内容用的语言（`locale`：从素材库取进作品的名字用哪种语言）。
 
-  动作是会话对象自己的方法（`session.save()` 等，构造时绑定一次）。快照只有数据，`build` 只在被读到时才重建（`Store.changed` 标记过期，并在本轮结束时通知一次），没变的字段沿用上一份快照里的同一个对象（`kept`）。组件用 `useSelect(store, 选择器, 比较)` 只读自己显示的那一片，默认按浅比较，选出的值没变就不重新渲染。这一点必须保持：作者运行时每秒会有很多 `run` 事件，低端手机上也要跑得动。`session/work.test.ts` 换上假的 host 和内存里的假服务器，验证草稿、安静替换、挂起、请求附带的选区、回退与撤销、重做、预览、迟到的旧作品、等模块画出再选中、跟随场景、拒绝的理由和发出的事、一轮变化只通知一次且没变的部分保持原对象。
+  动作是会话对象自己的方法（`session.save()` 等，构造时绑定一次）。快照只有数据，`build` 只在被读到时才重建（`Store.changed` 默认标记过期，并在本轮结束时通知一次；请求草稿按上述规则立即通知），没变的字段沿用上一份快照里的同一个对象（`kept`）。组件用 `useSelect(store, 选择器, 比较)` 只读自己显示的那一片，默认按浅比较，选出的值没变就不重新渲染。这一点必须保持：作者运行时每秒会有很多 `run` 事件，低端手机上也要跑得动。`session/work.test.ts` 换上假的 host 和内存里的假服务器，验证草稿、安静替换、挂起、请求附带的选区、回退与撤销、重做、预览、迟到的旧作品、等模块画出再选中、跟随场景、拒绝的理由和发出的事、一轮变化只通知一次且没变的部分保持原对象。
 - **会话与画布的边界**是 `View`：会话只用 `center()`、`scale`、`select(ids)` 和 `drawn(ids, revision)`。`Canvas.drawn` 不计时：模块真正画出来（不只是排好位置）就是 `drawn`；画过一个不比 `revision` 旧的版本、里面却没有这些模块，就是 `missing`；画布先没了就是 `gone`。慢设备只是等得久一点，不会误判。壳经 `attach` 把 `Canvas` 交给会话。反方向由画布问会话：`quiet(revision)` 为真就原地安静替换。
 
   `session/ops.ts` 的 `editOps` 是与设备无关的手动操作，作用于调用方给的模块或连线（删除、复制、排序、编组、对齐、移动、连线、拷贝出 `Clip`、粘贴，放文字、图片或库画法；新文字的内容由调用方给）。它们都经 `edits` 提交；新做出的模块等到 `drawn` 后才选中；失败作为 `failed` 发出。`session/clip.ts` 的 `Clipboard` 记着最后拷贝的内容，存储由调用方注入（`storage.ts` 的 `KeyValue`：`browserStorage` 吃掉浏览器拒绝时的异常，测试用 `memoryStorage`）。

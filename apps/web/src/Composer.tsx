@@ -11,7 +11,7 @@ import {
   PencilLine,
 } from "lucide-react";
 import type { SettingsChange } from "../../../modules/contracts/index.ts";
-import { Spinner, useLocale } from "@drawy/ui";
+import { Spinner, sendsOnEnter, useLocale } from "@drawy/ui";
 import type { StyleMaterial } from "@drawy/materials/schema";
 import { api, type Models } from "./api.ts";
 import { cx } from "./cx.ts";
@@ -202,11 +202,7 @@ export function Composer({
               }
             }}
             onKeyDown={(e) => {
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                !e.nativeEvent.isComposing
-              ) {
+              if (sendsOnEnter(e)) {
                 e.preventDefault();
                 send();
               }

@@ -4,6 +4,7 @@ import {
   api,
   asked,
   base,
+  cdp,
   composer,
   count,
   drag,
@@ -188,6 +189,31 @@ it("makes a work for a request from the home page and sends the request there", 
   expect(asked).toEqual([expect.objectContaining({ prompt: "A map of the tea route", sceneId: "root" })]);
   expect(await composer().inputValue()).toBe("");
   expect(await page.locator("header nav").first().innerText()).toContain("A map of the tea route");
+});
+
+it.each(["home", "dock"] as const)("keeps Chinese IME composition intact in the %s composer", async (place) => {
+  if (place === "home") await page.goto(base + "/");
+  else await open(await make());
+  const field = place === "home" ? page.locator("textarea").first() : composer();
+  await field.click();
+  for (const text of ["n", "ni", "nihao"]) {
+    await cdp.send("Input.imeSetComposition", {
+      text,
+      selectionStart: text.length,
+      selectionEnd: text.length,
+    });
+    expect(await field.inputValue()).toBe(text);
+  }
+  await cdp.send("Input.insertText", { text: "你好" });
+  expect(await field.inputValue()).toBe("你好");
+  // Some IMEs end composition before the confirming keydown, leaving only keyCode 229.
+  await field.dispatchEvent("keydown", { key: "Enter", keyCode: 229, isComposing: false });
+  expect(asked).toEqual([]);
+  await field.pressSequentially(" DrawY");
+  expect(await field.inputValue()).toBe("你好 DrawY");
+  expect(asked).toEqual([]);
+  await field.press("Enter");
+  await expect.poll(() => asked.map((a) => a.prompt)).toEqual(["你好 DrawY"]);
 });
 
 it("asks for an empty subscene on entering it, and an address naming no scene falls back", async () => {
