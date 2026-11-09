@@ -13,6 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import { Ellipsis, type LucideIcon } from "lucide-react";
 import { reducedMotion } from "./motion.ts";
+import { useInView } from "./place.ts";
 import { cx } from "./cx.ts";
 import { useWords } from "./locale.tsx";
 import { words } from "./words.ts";
@@ -186,6 +187,10 @@ export function Tooltips() {
       });
     };
     const over = (e: PointerEvent) => {
+      // A tip is for a pointer that can rest on a control. A finger only presses, and on
+      // iOS a page that shows something new as a press begins takes that press as a
+      // hover and drops the tap that should follow.
+      if (e.pointerType !== "mouse") return hide();
       const el =
         (e.target as Element).closest?.<HTMLElement>("[data-tip]") ?? null;
       if (el === current) return;
@@ -250,6 +255,7 @@ export function Menu({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  useInView(ref, open);
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => {

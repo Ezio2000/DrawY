@@ -58,6 +58,7 @@ export function SceneView({
   view,
   controls = true,
   resizable = true,
+  fill,
   hold,
 }: {
   work: Work;
@@ -94,6 +95,8 @@ export function SceneView({
   resizable?: boolean;
   /** A finger held still on the canvas, once the selection has followed it. */
   hold?: CanvasOptions["hold"];
+  /** How far the automatic view may zoom past the whole drawing to fill the screen. */
+  fill?: number;
 }) {
   const t = useT(),
     locale = useLocale();
@@ -117,6 +120,7 @@ export function SceneView({
       camera: cameras.current.get(key),
       movable: !disabled,
       resizable,
+      fill,
       motion: !reducedMotion(),
       // The view keeps clear of the title above and of the composer laid over its foot.
       insets: () => {
@@ -148,6 +152,16 @@ export function SceneView({
     });
     setCanvas(view);
     callbacks.current.view(view);
+    // The view keeps clear of the controls over its foot as they change size: a reply
+    // shown or put away, the composer growing with what is typed.
+    const dock = host.current!.parentElement?.querySelector("[data-dock]");
+    let dockHeight = 0;
+    const docked = new ResizeObserver(([entry]) => {
+      const h = Math.round(entry.contentRect.height);
+      if (dockHeight && Math.abs(h - dockHeight) > 8) view.refit();
+      dockHeight = h;
+    });
+    if (dock) docked.observe(dock);
     let mounted = true;
     void view.ready
       .then(() => {
@@ -158,6 +172,7 @@ export function SceneView({
       .finally(() => mounted && setShown(true));
     return () => {
       mounted = false;
+      docked.disconnect();
       callbacks.current.view(undefined);
       view.dispose();
     };

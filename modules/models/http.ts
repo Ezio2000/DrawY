@@ -33,8 +33,41 @@ export async function post(
     body: JSON.stringify({ model: role.model, ...pinnedProvider(role), ...body }),
     signal,
   });
-  if (!r.ok) throw Error(`模型请求 ${r.status}: ${await r.text()}`);
+  if (!r.ok) throw Error(`模型请求 ${r.status}: ${readable(await r.text())}`);
   return r;
+}
+
+/** What a model service said went wrong, in words a person can read: the message of its
+ * error object (`{error: {message, code}}`, or the error itself), with its code, rather
+ * than the JSON it came in. A body that is not one is kept as it is, cut short. */
+export function readable(error: unknown): string {
+  let e = error;
+  if (typeof error === "string") {
+    try {
+      e = JSON.parse(error);
+    } catch {
+      return error.trim().slice(0, 500);
+    }
+  }
+  if (e && typeof e === "object" && "error" in e && e.error) e = (e as { error: unknown }).error;
+  if (!e || typeof e !== "object") return String(e).slice(0, 500);
+  const { message, code, type } = e as { message?: unknown; code?: unknown; type?: unknown };
+  const named = [code, type].find((x) => typeof x === "string" && x);
+  if (typeof message !== "string" || !message) return JSON.stringify(e).slice(0, 500);
+  return named ? `${message} (${named})` : message;
+}
+
+/** A model service's error reported inside a stream that had started well. One that says
+ * the service is busy or failed on its side is told as the status it stands for, so the
+ * run retries it as it would that response; any other (no credit left, a request it
+ * refuses) is not worth retrying. */
+export function streamError(error: unknown) {
+  const e = (error && typeof error === "object" && "error" in error ? error.error : error) as
+    | { code?: string; type?: string }
+    | undefined;
+  const kind = `${e?.code ?? ""} ${e?.type ?? ""}`;
+  const status = /rate_limit/.test(kind) ? 429 : /server_error|overloaded|unavailable/.test(kind) ? 503 : 0;
+  return Error(status ? `模型请求 ${status}: ${readable(error)}` : `模型服务报错：${readable(error)}`);
 }
 
 /** The JSON events of a server-sent event stream, as they arrive. */

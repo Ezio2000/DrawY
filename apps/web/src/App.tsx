@@ -40,6 +40,7 @@ import type { ComponentType } from "react";
 import type { ShellProps } from "./shell.ts";
 import { useShell } from "./shells.ts";
 import { browserStorage } from "./storage.ts";
+import { followViewport } from "./viewport.ts";
 
 export function App() {
   const [locale, setLocale] = useLanguage();
@@ -70,7 +71,10 @@ export function App() {
   const [go] = useState(() => (to: string) => {
     if (to === location.pathname) return;
     if (!leaving()) return;
-    window.history.pushState(null, "", to);
+    // Navigation from an open layer uses its temporary step, leaving the previous
+    // page exactly one Back away when the layer closes.
+    if (window.history.state?.drawyLayer !== undefined) window.history.replaceState(null, "", to);
+    else window.history.pushState(null, "", to);
     setPath(to);
   });
   const refreshList = () =>
@@ -178,6 +182,7 @@ export function App() {
       await refreshList();
     });
 
+  useEffect(followViewport, []);
   useEffect(() => {
     fetch("/api/auth/me")
       .then(async (r) => U(r.ok ? await r.json() : null))

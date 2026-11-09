@@ -2,6 +2,7 @@ export { classes } from "./classes.ts";
 export { vocabulary } from "./cx.ts";
 export { reducedMotion } from "./motion.ts";
 export { ownsScroll } from "./scroll.ts";
+export { seen, useInView } from "./place.ts";
 export {
   Menu,
   Presence,

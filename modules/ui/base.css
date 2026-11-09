@@ -104,6 +104,8 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  /* A double tap is the drawing's own gesture, not a zoom of the page. */
+  touch-action: manipulation;
 }
 
 body {
@@ -132,6 +134,16 @@ input,
 textarea,
 select {
   font-size: 14px;
+}
+
+/* Where fields are typed into with a finger, iOS zooms the page in on a field whose text is
+   under 16px and leaves it zoomed. Fields there are 16px, whatever a page asks. */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em) !important;
+  }
 }
 
 button {

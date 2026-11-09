@@ -43,6 +43,7 @@ const zh = {
     password: "密码",
     atLeast6: "至少 6 位",
     invite: "邀请码",
+    inviteHint: "DrawY 凭邀请注册。邀请码由站点管理员在“设置 → 邀请码”里生成，向邀请你来的人或管理员要一个；一个码只能注册一次。",
     login: "登录",
     signup: "创建账号",
     toSignup: "还没有账号？创建一个",
@@ -90,6 +91,7 @@ const zh = {
     create: "新建",
     recent: "最近的作品",
     noWorks: "还没有作品",
+    firstSteps: "在下面写下想画的主题和看图的人，比如“给初中生讲光合作用”，DrawY 会画出一幅能点开探索的图。也可以先点上面的示例试试，或新建空白画布自己画。",
     all: (n: number) => `全部 ${n} 个`,
   },
   // Composer
@@ -747,6 +749,8 @@ const zh = {
     describe: "说说怎么改",
     deselect: "取消选择",
     actions: "对选中部分的操作",
+    history: "画室与版本",
+    whole: "看全图",
   },
   history: {
     revision: (n: number) => `第 ${n} 版`,
@@ -1210,6 +1214,7 @@ const en: Words = {
     password: "Password",
     atLeast6: "At least 6 characters",
     invite: "Invite code",
+    inviteHint: "DrawY is open by invitation. The site's administrator makes invite codes under Settings → Invites; ask whoever invited you, or the administrator, for one. Each code signs up one account.",
     login: "Log in",
     signup: "Create account",
     toSignup: "No account yet? Create one",
@@ -1255,6 +1260,7 @@ const en: Words = {
     create: "New",
     recent: "Recent work",
     noWorks: "No works yet",
+    firstSteps: "Write below what to draw and who it is for, such as “photosynthesis for a 13-year-old”, and DrawY draws a picture you can open up and explore. Or try one of the examples above, or start a blank canvas and draw it yourself.",
     all: (n) => `All ${n}`,
   },
   composer: {
@@ -1902,6 +1908,8 @@ const en: Words = {
     describe: "Describe a change",
     deselect: "Deselect",
     actions: "Actions on the selection",
+    history: "Studio and versions",
+    whole: "Whole drawing",
   },
   history: {
     revision: (n) => `Version ${n}`,

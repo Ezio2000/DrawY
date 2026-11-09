@@ -249,7 +249,8 @@ export function Now({
     return (
       <div className={cx("now")} data-tone={run.status}>
         <button className={cx("now-reply")} data-tip={t.now.open} onClick={reveal}>
-          {text}
+          {/* The words are clamped in a span: Safari does not clamp a button's own lines. */}
+          <span className={cx("now-words")}>{text}</span>
           {ended?.saved !== undefined && (
             <span className={cx("now-saved")}>
               {ended.clean === undefined ? t.now.saved : t.now.unchecked}

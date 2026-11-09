@@ -90,6 +90,7 @@ const patterns: [RegExp, (...m: string[]) => string][] = [
   [/^画布查看服务不可用([\s\S]*)$/, (d) => "The canvas capture service is unavailable" + d],
   [/^生图失败 (\d+): ([\s\S]*)$/, (s, d) => `Image generation failed (${s}): ${d}`],
   [/^模型请求 (\d+): ([\s\S]*)$/, (s, d) => `Model request failed (${s}): ${d}`],
+  [/^模型服务报错：([\s\S]*)$/, (d) => `The model service reported an error: ${d}`],
   [
     /^与模型的连接中断了（([\s\S]*)），已保存的内容仍可继续修改$/,
     (d) => `The connection to the model was lost (${d}); what was saved can still be edited`,

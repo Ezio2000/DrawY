@@ -1,7 +1,7 @@
 /* The OpenAI Responses API, which the run's conversation is kept in: requests go out as
  * they are, with only the items other formats wrote for themselves left out. */
 import { effortFor, speedFor, type Role, type Speed } from "../contracts/index.ts";
-import { events, post } from "./http.ts";
+import { events, post, streamError } from "./http.ts";
 import { CutOff, type Adapter, type Item } from "./types.ts";
 
 /** The `service_tier` each speed asks for. */
@@ -67,7 +67,7 @@ export const responses: Adapter = {
         response = { id, model, status, service_tier };
       }
       if (e.type === "response.failed" || e.type === "error")
-        throw Error(JSON.stringify(e.error || e.response?.error));
+        throw streamError(e.error || e.response?.error);
       if (e.type === "response.incomplete") {
         const spent = e.response?.usage ?? {};
         throw new CutOff(

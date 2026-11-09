@@ -25,8 +25,10 @@
       )
       0 0 / 8px 8px,
     var(--bg-2);
+  /* What can be seen, less the keyboard on a phone (viewport.ts). */
   position: fixed;
-  inset: 0;
+  inset: var(--seen-top, 0) 0 auto;
+  height: var(--seen-height, 100dvh);
   overflow: hidden;
 }
 
@@ -459,10 +461,12 @@
 }
 
 .home-empty {
+  max-width: 560px;
   margin: 0;
-  padding: 28px 0;
-  font-size: 13.5px;
-  color: var(--text-3);
+  padding: 20px 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-2);
 }
 
 /* Titles in the interface's own sans, semibold and small: the drawing is what is large. */
@@ -737,6 +741,13 @@ h2:has(> .title) {
   font-size: 14.5px;
 }
 
+.auth-hint {
+  margin: -2px 2px 2px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
 .auth-card .error {
   padding: 9px 12px;
   border-radius: 8px;
@@ -764,7 +775,7 @@ h2:has(> .title) {
 .auth-art {
   position: sticky;
   top: 0;
-  height: calc(100vh - 24px);
+  height: calc(100dvh - 24px);
   margin: 12px 12px 12px 0;
   overflow: hidden;
   border-radius: 12px;
@@ -2047,14 +2058,19 @@ button.now:hover .now-line {
 .now-reply {
   flex: 1;
   min-width: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  display: grid;
   text-align: left;
   font-size: 14px;
   line-height: 1.55;
   color: var(--ink);
+}
+
+/* A long reply shows its first lines; the studio holds the rest. */
+.now-words {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .now-reply:hover {
@@ -5466,9 +5482,10 @@ body:has(.resizer[data-dragging]) {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  width: min(360px, calc(100vw - 24px));
+  /* Of what it is laid over: the dialog that holds the library, or the window. */
+  width: min(360px, calc(100% - 24px));
   padding: 18px 18px 14px;
-  overflow: hidden;
+  overflow: hidden auto;
   border-radius: 12px;
   background: var(--paper);
   box-shadow:
@@ -5484,7 +5501,16 @@ body:has(.resizer[data-dragging]) {
   gap: 12px;
 }
 
+.inspector > header > div {
+  min-width: 0;
+}
+
+.inspector > header > button {
+  flex: none;
+}
+
 .inspector h2 {
+  overflow-wrap: anywhere;
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 600;
@@ -5542,7 +5568,7 @@ body:has(.resizer[data-dragging]) {
 
 .inspector dl > div {
   display: grid;
-  grid-template-columns: 64px 1fr;
+  grid-template-columns: minmax(64px, max-content) minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -5584,8 +5610,15 @@ body:has(.resizer[data-dragging]) {
   white-space: pre-wrap;
 }
 
+/* The action stays at the foot of the detail when what it says has to scroll. */
 .inspector footer {
+  position: sticky;
+  bottom: -14px;
+  margin-bottom: -14px;
+  padding-bottom: 14px;
+  background: var(--paper);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin-top: auto;
@@ -6239,7 +6272,7 @@ body:has(.resizer[data-dragging]) {
 /* The library inside a dialog: its inspector slides over the dialog itself. */
 [role="dialog"]:has(.library) {
   contain: layout;
-  height: min(720px, calc(100vh - 48px));
+  height: min(720px, calc(100dvh - 48px));
 }
 
 /* ---------- Run traces: the list of runs beside one run's spans on a shared axis ---------- */
@@ -7908,4 +7941,127 @@ body:has(.resizer[data-dragging]) {
   font-family: var(--font);
   font-size: 11px;
   color: var(--text-3);
+}
+
+/* ---------- Phones ----------
+   A window narrower than 600px (the phone work page's own measure, shells.ts): the side bar
+   folds to one button at the top left that opens it over the page, and the home page
+   scrolls, with the works two to a row and the composer kept at the foot. */
+
+@media (max-width: 599px) {
+  .app {
+    --rail: 0px;
+  }
+
+  .rail:not([data-open="true"]) {
+    inset: max(8px, env(safe-area-inset-top)) auto auto max(8px, env(safe-area-inset-left));
+    width: auto;
+    padding: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  .rail:not([data-open="true"]) > :not(.rail-head) {
+    display: none;
+  }
+
+  .rail:not([data-open="true"]) .rail-head {
+    height: 44px;
+    margin: 0;
+    overflow: visible;
+  }
+
+  .rail:not([data-open="true"]) .rail-head .rail-button {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--paper);
+    box-shadow: var(--shadow-float);
+  }
+
+  .rail[data-open="true"] {
+    width: min(var(--rail-open), calc(100% - 48px));
+    padding-top: max(10px, env(safe-area-inset-top));
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+
+  .rail-button {
+    height: 44px;
+  }
+
+  .rail-recents ul {
+    width: 100%;
+  }
+
+  /* The pages' titles make room for the side bar's button. */
+  .home-head,
+  .page-head {
+    min-height: 44px;
+    padding-left: 52px;
+  }
+
+  .page {
+    padding: max(8px, env(safe-area-inset-top)) 16px 72px;
+  }
+
+  .home {
+    display: block;
+    padding: max(8px, env(safe-area-inset-top)) 16px 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .home-head {
+    display: flex;
+    align-items: center;
+    padding-top: 0;
+    padding-bottom: 12px;
+  }
+
+  .home-section {
+    padding-bottom: 20px;
+  }
+
+  .starts,
+  .recent {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 12px;
+  }
+
+  .recent {
+    overflow: visible;
+  }
+
+  .home-composer {
+    position: sticky;
+    z-index: 3;
+    bottom: 0;
+    max-width: none;
+    margin-top: 4px;
+    padding: 12px 0 max(12px, env(safe-area-inset-bottom));
+    background: linear-gradient(rgba(255, 255, 255, 0), var(--paper) 16px);
+  }
+
+  .composer[data-place="home"] {
+    padding: 10px 6px 6px 14px;
+  }
+
+  /* The library's kinds and its search each take a line. */
+  .library-bar {
+    flex-wrap: wrap;
+  }
+
+  .library-bar .page-search {
+    order: 1;
+    flex: 1 0 calc(100% - 52px);
+  }
+
+  .library-bar > label {
+    order: 2;
+  }
+
+  /* A detail page keeps its way back at the top as it scrolls, so it needs no room above. */
+  .detail {
+    padding: max(8px, env(safe-area-inset-top)) 20px max(48px, env(safe-area-inset-bottom));
+  }
 }

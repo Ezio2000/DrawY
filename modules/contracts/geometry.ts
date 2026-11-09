@@ -21,12 +21,14 @@ export function fit(
   height: number,
   maxScale = 1.5,
 ): Camera {
-  // The drawing keeps a margin of paper in proportion to the view around it.
+  // The drawing keeps a margin of paper in proportion to the view around it, and no more
+  // than 64px of it where the view is small (a phone), whose width the drawing needs.
+  const margin = (side: number, share: number) => Math.max(Math.min(64, side * 0.05), side * share);
   const scale = Math.max(
     0.02,
     Math.min(
-      (width - Math.max(64, width * 0.1)) / bounds.width,
-      (height - Math.max(64, height * 0.08)) / bounds.height,
+      (width - margin(width, 0.1)) / bounds.width,
+      (height - margin(height, 0.08)) / bounds.height,
       maxScale,
     ),
   );

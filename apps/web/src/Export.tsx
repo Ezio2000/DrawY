@@ -14,7 +14,7 @@ import {
 import { Spinner, useLocale } from "@drawy/ui";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
-import { useDismiss } from "./Rail.tsx";
+import { useDismiss } from "./popover.ts";
 import type { Work } from "../../../modules/contracts/index.ts";
 
 type Format =

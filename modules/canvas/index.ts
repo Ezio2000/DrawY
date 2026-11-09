@@ -52,6 +52,12 @@ export interface CanvasOptions {
   /** Screen space kept clear above and below the automatic view, for controls laid over
    * the canvas; asked each time the view is fitted, as the controls change size. */
   insets?: () => { top: number; bottom: number };
+  /** How many times larger than the whole drawing the automatic view may show it, to fill
+   * the screen: on a phone held upright a wide drawing fitted whole is a strip too small
+   * to read, while filled to the screen's height it reads and is panned across, from its
+   * left. 1 (the default) always shows it whole; `fit(…, "whole")` does so whatever this
+   * is. */
+  fill?: number;
   /** Mark each module that opens a scene or a page, at its corner. The app's canvas does;
    * the page the capture service and the exports draw has none, as the marks are styled by
    * the app and are not part of the work. */
@@ -206,6 +212,9 @@ export class Canvas {
   private badges = new Map<string, HTMLButtonElement>();
   private abort = new AbortController();
   private automatic: boolean;
+  /** How the automatic view frames the drawing: filling the screen as `fill` allows, or
+   * whole. */
+  private framing: "fill" | "whole" = "fill";
   private gesture?: {
     x: number;
     y: number;
@@ -254,6 +263,9 @@ export class Canvas {
   private doubled = 0;
   /** Whether the last press was a finger's. */
   private touching = false;
+  /** Where the canvas was last pressed, on screen: which of a module's words a person
+   * means when they change "its words" after selecting it there. */
+  private pressedAt?: { x: number; y: number };
   constructor(
     host: HTMLElement,
     work: Work,
@@ -1246,18 +1258,57 @@ export class Canvas {
     );
     this.changed();
   }
-  fit(glide = true, duration = 1100) {
+  /** The room kept clear above and below the view for the controls laid over it, never
+   * more than half the canvas's height: on a phone on its side the controls can be taller
+   * than the room left, and the drawing then shows under them rather than shrinking to a
+   * dot. */
+  private clear() {
+    const { top, bottom } = this.options.insets?.() || { top: 0, bottom: 80 };
+    const most = this.element.clientHeight * 0.5,
+      both = Math.max(0, top) + Math.max(0, bottom);
+    const keep = both > most ? most / both : 1;
+    return { top: Math.max(0, top) * keep, bottom: Math.max(0, bottom) * keep };
+  }
+  /** The controls over the canvas changed size (a reply put away, the composer grown): an
+   * automatic view takes the room they leave or need. */
+  refit() {
+    if (this.automatic) this.fit(true, 520);
+  }
+  /** The drawing as a whole: its modules and the sketches of those on the way. */
+  private extent() {
+    return union([
+      ...[...this.renderer.instances.values()].map((m) => m.bounds),
+      ...[...this.sketches.values()].map((s) => s.bounds),
+    ]);
+  }
+  /** Takes the automatic view, which follows the drawing as it changes: filling the screen
+   * as far as `fill` allows, or, framed `"whole"`, all of it. */
+  fit(glide = true, duration = 1100, framing?: "fill" | "whole") {
     this.automatic = true;
-    const { top, bottom } = this.options.insets?.() || { top: 0, bottom: 80 },
+    if (framing) this.framing = framing;
+    const { top, bottom } = this.clear(),
+      width = this.element.clientWidth,
       height = this.element.clientHeight - top - bottom;
-    const target = fit(
-      union([
-        ...[...this.renderer.instances.values()].map((m) => m.bounds),
-        ...[...this.sketches.values()].map((s) => s.bounds),
-      ]),
-      this.element.clientWidth,
-      height,
-    );
+    const bounds = this.extent();
+    const target = fit(bounds, width, height);
+    const most = this.framing === "fill" ? (this.options.fill ?? 1) : 1;
+    if (most > 1 && bounds.width && bounds.height) {
+      // Filled: the drawing's shorter way across fits the screen and the longer runs off
+      // it, from where reading starts (its left, its top), never more than `fill` times
+      // the whole. The way it runs off is kept centred where it still fits.
+      const scale = Math.min(
+        Math.max((width - 32) / bounds.width, (height - 32) / bounds.height),
+        target.scale * most,
+        1.5,
+      );
+      if (scale > target.scale) {
+        const across = (start: number, size: number, room: number) =>
+          size * scale > room - 32 ? 16 - start * scale : room / 2 - (start + size / 2) * scale;
+        target.scale = scale;
+        target.x = across(bounds.x, bounds.width, width);
+        target.y = across(bounds.y, bounds.height, height);
+      }
+    }
     target.y += top;
     // A view already all but there stays put: a glide of a few pixels reads as drifting.
     // It is still painted, so a drawing just swapped in takes the view it stays at.
@@ -1380,9 +1431,24 @@ export class Canvas {
   get selectedLink() {
     return this.link;
   }
+  /** Whether the whole drawing is in view, clear of the controls laid over it. */
+  showsWhole() {
+    if (!this.renderer.instances.size && !this.sketches.size) return true;
+    const b = this.extent();
+    if (!(b.width > 0 && b.height > 0)) return true;
+    const { top, bottom } = this.clear();
+    const { x, y, scale } = this.camera,
+      slack = 4;
+    return (
+      x + b.x * scale >= -slack &&
+      y + b.y * scale >= top - slack &&
+      x + (b.x + b.width) * scale <= this.element.clientWidth + slack &&
+      y + (b.y + b.height) * scale <= this.element.clientHeight - bottom + slack
+    );
+  }
   /** The middle of the view, in scene units, clear of the controls laid over it. */
   center() {
-    const { top, bottom } = this.options.insets?.() || { top: 0, bottom: 80 };
+    const { top, bottom } = this.clear();
     const { x, y, scale } = this.camera;
     return {
       x: (this.element.clientWidth / 2 - x) / scale,
@@ -1521,7 +1587,7 @@ export class Canvas {
     if (!el || !text) {
       // A fingertip covers more than the words it means: a finger's double tap anywhere on
       // a module changes its first words.
-      const words = this.touching ? this.wordsIn(moduleId) : undefined;
+      const words = this.touching ? this.wordsIn(moduleId, { x: e.clientX, y: e.clientY }) : undefined;
       if (words) this.options.point(words);
       return;
     }
@@ -1546,38 +1612,64 @@ export class Canvas {
       },
     });
   }
-  /** The first words a module draws, to change where they are as a double click on them
-   * would. */
-  wordsIn(moduleId: string): Extract<Pointed, { kind: "text" }> | undefined {
+  /** The words of a module a person means, to change where they are as a double click on
+   * them would: those under `at` (by default where the canvas was last pressed, which is
+   * where the module was selected), or nearest to it within a fingertip; else its most
+   * prominent words, the largest and longest, rather than the first it draws, which is
+   * often a number or a badge. */
+  wordsIn(
+    moduleId: string,
+    at: { x: number; y: number } | undefined = this.pressedAt,
+  ): Extract<Pointed, { kind: "text" }> | undefined {
     const root = this.renderer.host("module", moduleId)?.shadowRoot;
     if (!root) return undefined;
+    const found: { words: Element; text: string; rect: DOMRect; size: number }[] = [];
+    const seen = new Set<Element>();
     const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     while (walk.nextNode()) {
       const node = walk.currentNode,
         parent = node.parentElement;
-      const text = node.textContent?.trim();
-      if (!text || !parent || parent.closest("style,script,defs")) continue;
+      const own = node.textContent?.trim();
+      if (!own || !parent || parent.closest("style,script,defs")) continue;
       const words = parent.closest("text") ?? parent;
+      if (seen.has(words)) continue;
+      seen.add(words);
       const rect = words.getBoundingClientRect();
       if (!rect.width || !rect.height) continue;
-      return {
-        kind: "text",
-        moduleId,
-        text: words instanceof SVGElement ? words.textContent!.trim() : text,
-        place: () => {
-          const rect = words.getBoundingClientRect();
-          return {
-            rect,
-            size:
-              words instanceof HTMLElement
-                ? parseFloat(getComputedStyle(words).fontSize) *
-                  (rect.width / (words.offsetWidth || rect.width))
-                : rect.height * 0.8,
-          };
-        },
-      };
+      const size =
+        words instanceof HTMLElement
+          ? parseFloat(getComputedStyle(words).fontSize) * (rect.width / (words.offsetWidth || rect.width))
+          : rect.height * 0.8;
+      found.push({ words, text: words instanceof SVGElement ? words.textContent!.trim() : own, rect, size });
     }
-    return undefined;
+    if (!found.length) return undefined;
+    const away = (r: DOMRect) =>
+      at
+        ? Math.hypot(Math.max(r.left - at.x, 0, at.x - r.right), Math.max(r.top - at.y, 0, at.y - r.bottom))
+        : Infinity;
+    const reach = this.touching ? FINGER_SLOP : 4;
+    const near = at && found.filter((f) => away(f.rect) <= reach).sort((a, b) => away(a.rect) - away(b.rect))[0];
+    const chosen =
+      near ??
+      found.reduce((best, f) =>
+        f.size * Math.min(f.text.length, 12) > best.size * Math.min(best.text.length, 12) ? f : best,
+      );
+    const { words, text } = chosen;
+    return {
+      kind: "text",
+      moduleId,
+      text,
+      place: () => {
+        const rect = words.getBoundingClientRect();
+        return {
+          rect,
+          size:
+            words instanceof HTMLElement
+              ? parseFloat(getComputedStyle(words).fontSize) * (rect.width / (words.offsetWidth || rect.width))
+              : rect.height * 0.8,
+        };
+      },
+    };
   }
   /** Words of a link double-clicked while editing, to change where they are. */
   private retypeLink(e: MouseEvent, linkId: string) {
@@ -1642,6 +1734,7 @@ export class Canvas {
     if (e.button !== 0 && e.button !== 1) return;
     const touch = e.pointerType === "touch";
     this.touching = touch;
+    this.pressedAt = { x: e.clientX, y: e.clientY };
     if (touch) {
       this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       // A second finger turns whatever the first began into pinching the view, wherever

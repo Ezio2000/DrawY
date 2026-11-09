@@ -11,11 +11,11 @@ import {
   PencilLine,
 } from "lucide-react";
 import type { SettingsChange } from "../../../modules/contracts/index.ts";
-import { Spinner, useLocale } from "@drawy/ui";
+import { Spinner, sendsOnEnter, useLocale } from "@drawy/ui";
 import type { StyleMaterial } from "@drawy/materials/schema";
 import { api, type Models } from "./api.ts";
 import { cx } from "./cx.ts";
-import { useDismiss } from "./Rail.tsx";
+import { useDismiss } from "./popover.ts";
 import { useT } from "./i18n.tsx";
 import type { Attachment } from "./session/request.ts";
 import { useCan } from "./account.tsx";
@@ -202,11 +202,7 @@ export function Composer({
               }
             }}
             onKeyDown={(e) => {
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                !e.nativeEvent.isComposing
-              ) {
+              if (sendsOnEnter(e)) {
                 e.preventDefault();
                 send();
               }

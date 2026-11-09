@@ -68,6 +68,8 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 一次运行只有一种搜索：`toolsFor(settings)` 在 `builtin` 时加托管 `web_search`，`service` 时加 `tools.ts` 的 `searchTools`（函数 `web_search {queries}` 和 `open_page {url}`，由 `modules/search` 调服务商：DeepSeek 的 `/search`、`/fetch`，Tavily 的 `/search`、`/extract`，Brave 和 SearXNG 只搜索、网页由 DrawY 直接读取并去掉标签），`off` 时都不加。两种搜索都记成 `web_search` 步骤（`open_page` 的 `action` 是 `open_page`），所以 `searchesLeft`、`research` 不分来源；独立搜索的预算在执行时检查，按查询计（`cost`：服务商每个查询收一次费，一次调用带几个查询就算几次；读网页和托管搜索按调用算一次），剩下的不够时只问前面几个查询、结果里用 `notAsked` 列出没问的，预算已用完就去掉这一步并回报搜索已关闭（`research` 对独立搜索给 `searchQueriesLeft`，托管搜索给 `searchCallsLeft`），Responses 协议下用完后还会带 `allowed_tools`（排除两个搜索函数）。`run.usage.searches/pages` 计搜索和读网页次数（托管搜索按 `action` 分，独立搜索的 `searches` 按实际问过的查询数），`run.usage.cacheWrite` 记 Claude 的缓存写入（适配器在 `input_tokens_details.cache_write_tokens` 报出）。`run.services` 记下这次的绘制模型、强度、速度、搜索方式和服务、生图模型的名字，`run.prices` 记下开始时定下的价格，费用是 `costOf(run.usage, run.prices)`，之后改价格不影响已有运行；`/api/traces` 和 `/api/traces/:id` 给每条记录附上对应运行的 `cost` 和 `services`。前端 `Studio.tsx` 的 `spentBy` 只读 `run.usage`，`WorkUsage` 显示作品累计。
 
+模型服务报的错用 `http.ts` 的 `readable` 换成它自己的话（错误对象的 `message` 加 `code`），不把 JSON 原样给用户看：HTTP 错误仍是 `模型请求 <状态>: …`（`transient` 据此决定重试），流里的错误由 `streamError` 按代码分：限流、服务端错误记成对应状态以便重试，其余（额度用完、拒绝请求）是 `模型服务报错：…`，不重试。回复和失败说明在 `Now` 里只显示前两行：限行写在按钮里的 `span` 上，因为 Safari 不对按钮本身限行。作者的结束语只说作品给读者看什么、怎么点开看，不写检查结论（提示词里写明了原因：手机上这段话会盖在画上）；截图旁的 `claims` 说明也要求只在思考里核对、不写进进度和结束语，因为原来的“说出每条是否成立”会让模型把“三项都成立”写给用户。
+
 失败的模型尝试单独计费：`loop` 把每次没完成的尝试（断流、截断、取消）记入 `run.usage.failed`（次数、耗时含等待、输入、缓存、输出），不算进 `input`/`output`；工具参数写坏计 `invalidCalls`（用量在写它的那一轮里，这里只计次数）；生图失败另计失败张数；模型已成功返回的每次图片（包括抠图重画前被弃用的图片）都计入 `run.usage.images` 的张数和 token，后续重试失败也保留已产生的费用。Claude 适配器在流开始和 `message_delta` 时发 `response.usage` 事件报告已知用量，断开时输出没有上报，就按已流式到达的字符数除以 3 估算（`estimated`，不含未显示的思考，所以偏低）；其他格式断流时输入也未知，只有输出估算。`costOf` 单列 `failed` 并计入 `total`，账单在有失败时多一行，失败尝试也作为 `attrs.failed` 的 `turn` 记录进 trace，所以 `meters` 和 token 合计都包含它。
 
 上下文达到 20 万 token 时 `compact` 把对话换成摘要。大小取上一轮 `usage.input_tokens`（记在 `Context.measured`）加之后新增项的估算，估算不计 `encrypted_content` 和图片 base64；摘要请求沿用作者的系统提示词、工具和缓存键，把总结要求作为最后一条用户消息追加在原样的对话后面，所以整段对话从缓存读取；强度在对话里改变的格式在总结要求前追加一个最低档的 `configuration_update`，其余格式在请求上降到 low（会让缓存失效）；输出上限 16k，不设 `tool_choice`（在 Anthropic 上它会让对话缓存失效），作者没写出文字时按失败处理。替换后的对话依次是偏好、摘要和整份作品。摘要失败时只把较早的截图换成文字占位，运行继续。
@@ -86,7 +88,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 提问次数：`users.quota`（`Account.quota`，`null` 为不限）。新账号是 `DEFAULT_QUOTA`（10），第一个账号不限；旧库加列时非管理员得 10、管理员不限。`POST /api/works/:id/runs` 先 `spendQuota`（原子地减一，用完时 403“提问次数已用完”），`agent.start` 失败就 `refundQuota` 退回；回答作者的问题（`/runs/:id/answer`）不扣。管理员在设置的“账号”页逐个改（`PATCH /api/admin/accounts/:id` 的 `{quota}`，可与 `role` 分开）。前端用 `user.quota` 显示剩余并在为 0 时禁用发送（等待回答时仍可回答），发出新请求后在本地减一。
 
-首页（`Home.tsx`）是文件页，整页不滚动：标题，“新建”一行（空白画布加三个示例），和“最近的作品”：`/api/works` 按 `updatedAt` 排，`useFits` 量出剩余高度放得下几整行就显示几个（窗口变化时重算），其余由“全部”打开左侧栏；列表到达前（`listed`）不显示“还没有作品”，封面用 `cover`（作者最近一次全图截图，空白作品不用），状态行和左侧栏共用 `Rail.tsx` 的 `progressOf`。左侧栏：首页下方是“新建空白画布”（建一个“未命名画布”并打开，没有简报也能直接手动编辑：`writeWork` 只要求作者的运行先有简报）；最近作品每项在标题下有一行状态，来自 `/api/works` 的 `progress`（`UserStore.progress`：最近一次运行的状态和提问开头、`versionsOf` 算出的当前版本号、是否空白）——正在绘制、等你回答、上次没有画完、已停止，或“第 N 版 · 时间”。收到 `run` 事件时前端先就地改状态，运行结束再重读列表。
+首页（`Home.tsx`）是文件页，整页不滚动：标题，“新建”一行（空白画布加三个示例），和“最近的作品”：`/api/works` 按 `updatedAt` 排，`useFits` 量出剩余高度放得下几整行就显示几个（窗口变化时重算），其余由“全部”打开左侧栏；窄于 600px 的窗口（手机）里首页整页滚动、每行两个、输入框贴在底部，`useFits` 看到列表不再 `overflow: hidden` 就显示全部；左侧栏收成左上角一个按钮，点开盖在页面上（`app.module.css` 末尾的“Phones”一节）。列表到达前（`listed`）不显示空状态；没有作品时空状态是一段首次使用的说明（`home.firstSteps`）。注册页在需要邀请码时说明邀请码从哪里来（`auth.inviteHint`）。封面用 `cover`（作者最近一次全图截图，空白作品不用），状态行和左侧栏共用 `Rail.tsx` 的 `progressOf`。左侧栏：首页下方是“新建空白画布”（建一个“未命名画布”并打开，没有简报也能直接手动编辑：`writeWork` 只要求作者的运行先有简报）；最近作品每项在标题下有一行状态，来自 `/api/works` 的 `progress`（`UserStore.progress`：最近一次运行的状态和提问开头、`versionsOf` 算出的当前版本号、是否空白）——正在绘制、等你回答、上次没有画完、已停止，或“第 N 版 · 时间”。收到 `run` 事件时前端先就地改状态，运行结束再重读列表。
 
 绘制模型的可选 `provider` 保存 OpenRouter 提供商标识。设置页的“固定提供商”留空时自动路由，填写后 Responses、Chat Completions 和 Messages 都传 `provider: { only: [标识], allow_fallbacks: false }`；不能切到其他提供商，渠道不可用时返回错误。轮次的 `request.provider` 同样记录这个限制。
 
@@ -99,7 +101,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 - **App**：`App.tsx` 管这些：
   - 路由（`routes.ts` 的 `pageOf`/`workIdOf`/`sceneOf`/`addressOf`）；
   - 作品列表、删除与撤销删除、素材库对话框；
-  - 正在写的请求（`session/request.ts` 的 `RequestDraft`，一个 store：文字、附件、上传中的数量、主页选的风格、问题的选项；`hand` 把要作者做的修改写进去，并让输入框取得焦点）。请求跨页面存在，因为在素材库里选的素材、主页发出的请求都要带到作品页。附件带着素材各语言的名字，由显示的地方挑。
+  - 正在写的请求（`session/request.ts` 的 `RequestDraft`，一个 store：文字、附件、上传中的数量、主页选的风格、问题的选项；`hand` 把要作者做的修改写进去，并让输入框取得焦点）。请求草稿用 `Store` 的 `immediate` 通知，在输入事件里同步更新 React 的受控输入框；不能延迟到微任务，否则 React 会先恢复旧值并打断输入法组词。请求跨页面存在，因为在素材库里选的素材、主页发出的请求都要带到作品页。附件带着素材各语言的名字，由显示的地方挑。
   - 提示：`feedback.ts` 的 `Feedback` 也是一个 store，记着最近的错误和提示，并按时收起；`SessionError` 的措辞也在这里，供不自己措辞的页面使用。
 
   App 不读会话的快照（只有 `OpenWork` 读作品到了没有、打开失败没有），所以作者运行时的事件不会让 App 重新渲染。作品页的壳由 `shells.ts` 选出，App 交给它 `ShellProps`（`shell.ts`），只有每种壳都确实需要的四样：
@@ -111,7 +113,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
   这四样在作品页打开期间保持同一个对象（`asking` 只在档位或 `blocked` 变化时更换），注册表又给每个壳包了 `memo`，所以 App 因作品列表等原因重新渲染时，作品页不跟着渲染。账号从 `AccountContext` 读（`useAccount`/`useCan`），没接入模型的提示是 `Composer.tsx` 的 `Unconnected`。
 - **会话层** `session/` 不含 JSX、样式和界面文案，不碰 DOM，也不用浏览器存储。`work.ts` 的 `WorkSession` 是一个外部 store，由六个各管一件事、各有自己状态的部分组成，共用一个 `Context`（`types.ts`）：
   - `revisions.ts`：作品与修订。服务器推来的作品比当前的旧就不采用；修订号变了就重取 `/revisions`，预览随之结束。它还记着哪些修订是用户自己的（`own`、在路上的请求），由 `quiet` 回答；`look` 管预览，`rename` 改标题。
-  - `runs.ts`：运行与 SSE。自己经 `events.ts` 的 `listen` 订阅，同一用户的所有订阅共用一个连接；`offline` 和打开失败的 `unopened` 也在这里；收到 `connected` 时重取作品和运行，用 `merged` 合并。打开作品时先显示作品，运行历史随后合并，`loaded` 之前不能发送、不能手动编辑。`earlier` 是打开作品时已经结束的最后一次运行，它的回复留在画室，不在画布下面重复显示。
+  - `runs.ts`：运行与 SSE。自己经 `events.ts` 的 `listen` 订阅，同一用户的所有订阅共用一个连接（各标签页用 Web Locks 选一个去听，经 BroadcastChannel 转给其他页）。手机会冻结不在前台的页面，流会无声地断掉，持锁的后台页还会一直占着锁，所以只有显示着的页面去听：页面隐藏时放下流和锁，重新显示（`visibilitychange`、从往返缓存回来的 `pageshow`、`online`）时重新打开，新流以 `connected` 开头，于是补取错过的东西；服务器每 20 秒发一次 `ping`，`QUIET`（45 秒）内什么都没收到就当流已死、重新打开。SSE 响应带 `X-Accel-Buffering: no` 和 `Cache-Control: no-transform`，前面有代理时也不被攒着发。`offline` 和打开失败的 `unopened` 也在这里；收到 `connected` 时重取作品和运行，用 `merged` 合并。打开作品时先显示作品，运行历史随后合并，`loaded` 之前不能发送、不能手动编辑。`earlier` 是打开作品时已经结束的最后一次运行，它的回复留在画室，不在画布下面重复显示。
   - `edits.ts`：手动修改的队列与草稿（`commit` 返回保存后的作品，`change` 只返回有没有修改）。
   - `sending.ts`：发送与挂起。有排队中或未保存的手动修改时挂起请求，等 `decide("save"|"discard"|"cancel")`；真正发出后调用 `Ask.sent`。请求关于什么由调用方给（`Ask.focus`：选中的模块或连线），`aboutOf` 把它写在请求后面（写给作者的，不是界面文案）。
   - `versions.ts`：保存、放弃、回退（`back` 记着回到第几版或放弃了修改，十秒内可以撤回，此时 `undo` 先撤回回退）、撤销和重做（`undone`）。
@@ -119,7 +121,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
   会话只说发生了什么，怎么说、怎么呈现由壳决定：拒绝或做不到时抛 `SessionError`，它的 `reason` 是 `noScene`、`busy`、`linkDrawing` 或 `imagesOnly`；事后要告诉用户的事经 `on(listener)` 发出 `Happening`（`saved` 带版本号；`failed` 是开始后就不再等待的操作失败了）；快照里的 `back` 是结构化的。服务器的错误原样传出，服务端已经按请求的语言翻译好。`SessionHost` 只剩跳转地址、刷新列表、扣提问次数、订阅事件，以及作品内容用的语言（`locale`：从素材库取进作品的名字用哪种语言）。
 
-  动作是会话对象自己的方法（`session.save()` 等，构造时绑定一次）。快照只有数据，`build` 只在被读到时才重建（`Store.changed` 标记过期，并在本轮结束时通知一次），没变的字段沿用上一份快照里的同一个对象（`kept`）。组件用 `useSelect(store, 选择器, 比较)` 只读自己显示的那一片，默认按浅比较，选出的值没变就不重新渲染。这一点必须保持：作者运行时每秒会有很多 `run` 事件，低端手机上也要跑得动。`session/work.test.ts` 换上假的 host 和内存里的假服务器，验证草稿、安静替换、挂起、请求附带的选区、回退与撤销、重做、预览、迟到的旧作品、等模块画出再选中、跟随场景、拒绝的理由和发出的事、一轮变化只通知一次且没变的部分保持原对象。
+  动作是会话对象自己的方法（`session.save()` 等，构造时绑定一次）。快照只有数据，`build` 只在被读到时才重建（`Store.changed` 默认标记过期，并在本轮结束时通知一次；请求草稿按上述规则立即通知），没变的字段沿用上一份快照里的同一个对象（`kept`）。组件用 `useSelect(store, 选择器, 比较)` 只读自己显示的那一片，默认按浅比较，选出的值没变就不重新渲染。这一点必须保持：作者运行时每秒会有很多 `run` 事件，低端手机上也要跑得动。`session/work.test.ts` 换上假的 host 和内存里的假服务器，验证草稿、安静替换、挂起、请求附带的选区、回退与撤销、重做、预览、迟到的旧作品、等模块画出再选中、跟随场景、拒绝的理由和发出的事、一轮变化只通知一次且没变的部分保持原对象。
 - **会话与画布的边界**是 `View`：会话只用 `center()`、`scale`、`select(ids)` 和 `drawn(ids, revision)`。`Canvas.drawn` 不计时：模块真正画出来（不只是排好位置）就是 `drawn`；画过一个不比 `revision` 旧的版本、里面却没有这些模块，就是 `missing`；画布先没了就是 `gone`。慢设备只是等得久一点，不会误判。壳经 `attach` 把 `Canvas` 交给会话。反方向由画布问会话：`quiet(revision)` 为真就原地安静替换。
 
   `session/ops.ts` 的 `editOps` 是与设备无关的手动操作，作用于调用方给的模块或连线（删除、复制、排序、编组、对齐、移动、连线、拷贝出 `Clip`、粘贴，放文字、图片或库画法；新文字的内容由调用方给）。它们都经 `edits` 提交；新做出的模块等到 `drawn` 后才选中；失败作为 `failed` 发出。`session/clip.ts` 的 `Clipboard` 记着最后拷贝的内容，存储由调用方注入（`storage.ts` 的 `KeyValue`：`browserStorage` 吃掉浏览器拒绝时的异常，测试用 `memoryStorage`）。
@@ -129,16 +131,19 @@ docker compose up -d --build                      # 完整部署，访问 http:/
   - `phone`（`PHONE`）：窗口窄于 600px（竖拿的手机，或被拉得很窄的电脑窗口），或者触屏且高度不到 500px（横拿的手机）。
   - 其余都用 `desktop`：平板（短边 600px 以上，竖拿横拿都是）、触屏笔记本和电脑。理由有三：平板放得下画布加一块侧面板；人们在平板上仍会用手指或笔排版；桌面壳里每个操作都有按钮，原来要右键的菜单由画布的长按代替，所以手指也能用。横拿的手机高度太矮，放不下桌面壳的输入框和面板，因此归手机壳。
 
-  `whole` 的壳（手机）占满屏幕：App 在 `.app` 上标 `data-whole`，左侧栏不显示，壳自己的返回按钮回到首页。`index.html` 带 `viewport`（`width=device-width, viewport-fit=cover`），手机才按真实宽度排版。以后加别的设备：新建一个壳文件（默认导出一个接收 `ShellProps` 的组件），在 `shells` 里 `desktop` 之前登记一行。
+  `whole` 的壳（手机）占满屏幕：App 在 `.app` 上标 `data-whole`，左侧栏不显示，壳自己的返回按钮回到首页。`index.html` 带 `viewport`（`width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content`），手机才按真实宽度排版，页面本身不缩放（画布自己缩放）。iOS 会在字号小于 16px 的输入框获得焦点时放大页面且不缩回，刷新后还保留，所以 `base.css` 在 `pointer: coarse` 时把所有输入框定为至少 16px；`viewport.ts` 的 `followViewport` 把 `.app` 放进可视视口（`--seen-top`/`--seen-height`，键盘弹出时输入框留在键盘上方，键盘收起后把被 iOS 卷走的页面卷回去），并拦下 Safari 自己的 `gesturestart`/`gesturechange`，双指不会放大整页。`Tooltips` 只认鼠标：手指按下时显示新内容会让 iOS 把这一下当成悬停、吞掉随后的点击。凡是从按钮弹出的菜单都经 `popover.ts` 的 `useDismiss`（按外面或 Esc 关闭），它调用 `@drawy/ui` 的 `useInView`：菜单按自己的 CSS 摆好后量一次，超出可视视口就换到空间大的一侧、沿边滑回、太高就在里面滚动（用 `translate` 和 `max-height` 修正，不管包含块是谁），可视视口变化时重量。`ui` 的 `Menu` 也用它。以后加别的设备：新建一个壳文件（默认导出一个接收 `ShellProps` 的组件），在 `shells` 里 `desktop` 之前登记一行。
 - **手机壳** `phone/`：围绕“看和说”设计，不是桌面版缩小，桌面的界面状态和交互习惯都没有搬过来：
   - **页面**：`WorkPage.tsx` 管页面怎么用：选区、打开的底部面板（`SheetKind`）、详情页、收起的回复、就地改字、换图的素材对话框。只读运行开始结束、换场景时才变的东西。
   - **部件**：`parts.tsx` 里的部件各读各的那一片。
-    - `TopBar`：返回首页、标题（打开 `ScenesSheet`：改名和场景列表）、撤销、版本、导出分享，按钮都是 44px。
-    - `PhoneCanvas`：铺满屏幕，`editing` 始终为 false；`controls={false}` 不显示缩放按钮（靠双指）；`resizable={false}` 不显示缩放手柄（调尺寸属于精细排版）。
+    - `TopBar`：返回首页、标题（打开 `ScenesSheet`：改名和场景列表）、撤销、画室与版本、导出分享，按钮都是 44px。画室和版本是同一个底部面板的两个标签（`StudioSheet`/`VersionsSheet` 头部的 `HistoryTabs`），所以回复收起后、重新打开作品后，画室总能从顶栏打开。
+    - `PhoneCanvas`：铺满屏幕，`editing` 始终为 false；`controls={false}` 不显示缩放按钮（靠双指）；`resizable={false}` 不显示缩放手柄（调尺寸属于精细排版）。`fill={FILL}`（2）：竖拿手机时，宽的图整幅放下字太小，自动视角最多放大到整幅的两倍去铺满屏幕，从图的左上（阅读开始处）摆起；`Whole` 在视图没有放下整幅图时（`Canvas.showsWhole`）浮在底部右上方，点它 `fit(…, "whole")` 看全图。
     - `Notes`：预览、错误、回退可撤销、挂起与未保存修改，按钮横排可换行。
-    - `Actions`：选中一个模块时，在输入框上方出现改字（模块有画出的字时）、换图（模块数据引用了图片素材时，`picturesIn`）、说说怎么改、删除、取消选择。
+    - 手机输入框最多长到可视高度的四分之一（`phone.module.css` 末尾），再多就在框里滚动，发送按钮始终在屏幕上。
+    - `Actions`：选中一个模块时，在输入框上方出现改字（模块有画出的字时）、换图（模块数据引用了图片素材时，`picturesIn`）、说说怎么改、删除；名字和取消选择在上面一行，名字再长也不会把取消选择挤出屏幕。
     - `Status`/`PhoneComposer`：作者作画时输入框收起成进度条。画室不自动打开，因为手机上画布才是要看的；点进度行从底部拉出 `StudioSheet`。
     - `VersionsSheet`：点一个版本就收起面板、在画布上原地预览，预览条里可回到这一版。
+    - `Sheet`：底部面板，点暗处、关闭按钮或按住把手和头部往下拉（超过 `PULLED` 或快速一甩）都会关上；从标签或按钮上开始的拖动也算拉，不算点。标题过长时省略。
+    - `back.ts` 的 `useBackCloses`：打开的面板和详情页各占一步浏览历史（同一地址），浏览器的返回（或从屏幕边缘右滑）先关上它们，不离开作品；用自己的按钮关上时把这一步还回去。面板里跳转页面时，`App.go` 用新地址替换这条临时记录（`drawyLayer`），避免在目标页面下面留下重复的来源地址。详情页的“返回图中”（`runtime/detail.ts`）滚动时贴在顶部。
     - `ShareSheet`：用 `Export.tsx` 的 `useExports`/`ExportItems`，系统分享排第一。
   - **手势**：点一下选中，有跳转目标的模块点一下就进入、长按只选中；选中的模块直接用手指拖动（会话的 `ops.move`）；双击文字就地改字。没有一样操作需要右键、修饰键、悬停或快捷键。超出这些入口的修改用“说说怎么改”带着选中的部分交给作者。
   - **样式**：`phone.module.css` 用 `base.css` 的 token：白纸、中性灰、唯一的蓝、轻阴影、8～12px 圆角，不用毛玻璃，动效只在用户打开面板时出现。`phone/cx.ts` 只解析手机的样式表和共享的 `vocabulary`，不带桌面的 `app.module.css`，以免同名类把桌面布局带进来；要用桌面样式表里的个别类（如 `now`）时显式用 `../cx.ts`。横拿时输入框和面板保持适合阅读的宽度，安全区由 `env(safe-area-inset-*)` 让开。
@@ -168,7 +173,12 @@ docker compose up -d --build                      # 完整部署，访问 http:/
     - 竖拿、横拿和双指缩放后，画法里的 SVG 文字按布局的大小画出、不被截断；
     - 打开版本面板时放开选中的部分，预览、回到此版并撤销；顶栏撤销；
     - 挂起请求；标题面板改名、进入场景；导出面板；
-    - 运行事件和打字时只重新渲染对应部件；手机页单独加载。
+    - 运行事件和打字时只重新渲染对应部件；手机页单独加载；
+    - 宽图打开时从左边铺满屏幕、字够大，点“看全图”看到整幅，双指缩放后按钮再出现；
+    - 回复收起后从顶栏打开画室；底部面板下拉关闭，浏览器返回关面板而不离开作品；详情页滚动后返回仍在顶部，浏览器返回关掉它；
+    - 很长的模块名不挤掉取消选择；输入框至少 16px；长回复只显示前两行；
+    - 页面隐藏期间的变化在重新显示后补上；首页整页滚动到所有作品、菜单在屏幕里打开；
+    - 横拿且回复展开时图不缩成点、收起回复后视图变大；“改字”改的是选中时按的那段字；键盘弹起时长请求也不把发送按钮挤出屏幕。
   - `tablet.test.ts`（模拟 iPad Mini）：平板竖拿横拿都是桌面页，文字按布局的大小画出；编辑时单指拖动模块、在纸上平移而不是框选、长按弹出编辑菜单、手柄有指尖大小；双击改字；双指缩放。
 
   改会话层、画布或接入新壳后跑 `pnpm test:desktop`（三个套件都跑），就能知道各个页面有没有被改坏。新增作品页行为时，在对应套件里补一条用例。
@@ -213,7 +223,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 - `observation`：截图服务的客户端。`capture.ts` 在截图容器里运行，运行时测试也直接调用它。
 - `images`：按作品风格生成图片，并把结果回报给作者。风格参考图由 `styleReferences` 选出，记在素材的 `origin.styleReferences`；生成图一律是该用户的私人素材。抠图角色（object、figure、icon）显影时带 `transparent`，素材库量出没有透明区域就返回 422、不保存，`develop` 用同一提示词再画一次（两次返回图片的张数和 token 都计入，重试失败也保留第一次的用量）；第二次仍不透明就照存，结果带 `opaque`，作者在 `Pictures:` 消息里被告知它会显示成方框。
 - `materials`：主程序访问素材服务的一层，只经 `@drawy/materials/client` 访问，不直接读素材库的数据库。
-- `canvas`：前端画布，负责视角、选择（含多选）、移动、缩放、编辑模式和起稿动画（`ink.ts`）。第一次挂载（打开作品、进入子场景）不播放落笔动画，只有之后 `update` 换上的新版本才落笔。不在编辑时，带跳转目标的模块右上角叠一枚小标记（`paintTargets`，放在画布自己的覆盖层里、样式在前端的 CSS 里；运行时页面用同一个 `Canvas`，所以 `browser.ts` 传 `marks: false` 关掉它，截图服务和导出都看不到它），鼠标在模块上时（`hot`）展开写明去处，点它也能打开。`drawn(ids, revision)` 等指定模块画出来，或者确定画不出来（见“前端的分层”），会话靠它选中新做出的模块。手指的手势（双指缩放平移、单指拖动、长按、双击）见“手动编辑如何流动”。画布尺寸变化（面板展开、窗口缩放）时保持画面中心，自动视角在停下 200ms 后平滑适应一次；`fit` 在目标与当前视角几乎相同时不动，避免小幅滑动。Chromium 排 SVG 文字时把屏幕上的缩放算进字体；图层正在做不透明度、滤镜这类动画时它被合成，视角的 `transform` 交给合成器直接改，文字不再重排，于是按旧的缩放画出（大一倍、被裁到布局框里），直到命中测试或重画才恢复。所以运行时给画法的 SVG（`scene.ts` 影子样式里的 `svg`）和画布自己的草图标签都设 `text-rendering: geometricPrecision`，让字体不随屏幕缩放；打开场景时也先定视角再淡入。不要去掉它们。
+- `canvas`：前端画布，负责视角、选择（含多选）、移动、缩放、编辑模式和起稿动画（`ink.ts`）。自动视角（`fit`）按 `framing` 摆：`fill` 选项允许时铺满屏幕（短边放下、长边从左上开始越出屏幕），`fit(…, "whole")` 之后一直放下整幅；`showsWhole()` 说视图里是否放得下整幅图（除去 `insets`）。`insets` 最多占画布高度的一半（`clear`）：横拿手机时底部的回复和输入框可能比剩下的地方还高，图就从它们下面透出来，而不是缩成一个点；`SceneView` 盯着 `[data-dock]` 的高度，回复收起、输入框变高时调 `refit()` 让自动视角跟上。`wordsIn(id, at?)` 取用户指的那段字：默认是画布上次被按下的位置（也就是选中模块的地方）下面或指尖范围内的字，没有就取最显眼的（字大、字多），不再取画出的第一段（常常是序号）。`geometry.ts` 的 `fit` 在小屏幕上边距最多 64px、按比例收小，不再固定留 64px。第一次挂载（打开作品、进入子场景）不播放落笔动画，只有之后 `update` 换上的新版本才落笔。不在编辑时，带跳转目标的模块右上角叠一枚小标记（`paintTargets`，放在画布自己的覆盖层里、样式在前端的 CSS 里；运行时页面用同一个 `Canvas`，所以 `browser.ts` 传 `marks: false` 关掉它，截图服务和导出都看不到它），鼠标在模块上时（`hot`）展开写明去处，点它也能打开。`drawn(ids, revision)` 等指定模块画出来，或者确定画不出来（见“前端的分层”），会话靠它选中新做出的模块。手指的手势（双指缩放平移、单指拖动、长按、双击）见“手动编辑如何流动”。画布尺寸变化（面板展开、窗口缩放）时保持画面中心，自动视角在停下 200ms 后平滑适应一次；`fit` 在目标与当前视角几乎相同时不动，避免小幅滑动。Chromium 排 SVG 文字时把屏幕上的缩放算进字体；图层正在做不透明度、滤镜这类动画时它被合成，视角的 `transform` 交给合成器直接改，文字不再重排，于是按旧的缩放画出（大一倍、被裁到布局框里），直到命中测试或重画才恢复。所以运行时给画法的 SVG（`scene.ts` 影子样式里的 `svg`）和画布自己的草图标签都设 `text-rendering: geometricPrecision`，让字体不随屏幕缩放；打开场景时也先定视角再淡入。不要去掉它们。
 - `storage`、`identity`：按用户隔离的 `data/drawy.sqlite`，以及账号、角色权限和全站模型配置。`UserStore.viewer`（`{ id, all }`，`all` 来自 `materials.all`）是访问素材库读接口时代表用户的身份，读素材一律传它；写入（预留、显影、上传、记录使用）仍传 `userId`。
 - `trace`：基于 AsyncLocalStorage 嵌套记录，任何模块都可以直接调用 `tracer`，不需要层层传参。每个 span 另存一份 `brief`（时间、状态、用量、计量键和几个字的摘要，`spans` 表的 `brief` 列，旧记录在第一次读取时补上）：列表、汇总和时间线（`/api/traces/:id`）只读它，展开某一步时才由 `whole` 经 `/api/traces/:id/spans/:span` 取完整记录，模型轮次连同服务端拼好的完整输入。不要让列表或时间线重新读取完整 span，那会把整段对话读出来。
 - `ui`：共享的 React 组件和品牌素材。

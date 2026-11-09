@@ -26,8 +26,10 @@ import {
   StudioSheet,
   TopBar,
   VersionsSheet,
+  Whole,
   type SheetKind,
 } from "./parts.tsx";
+import { useBackCloses } from "./back.ts";
 
 /** The work page on a phone, built for looking and asking: the drawing fills the screen,
  * the composer is at the thumb, and the studio, the versions and sharing come up as sheets.
@@ -81,6 +83,9 @@ export default function PhoneWorkPage({ session, asking, feedback, go }: ShellPr
       ),
     [session, t],
   );
+  // The browser's way back closes what is open over the drawing before it leaves the work.
+  useBackCloses(!!sheet, () => setSheet(""));
+  useBackCloses(!!detailId, () => setDetail(undefined));
   // What is selected and open belongs to the scene it was in.
   useEffect(() => {
     setSelected([]);
@@ -173,6 +178,7 @@ export default function PhoneWorkPage({ session, asking, feedback, go }: ShellPr
           />
         )}
         <div className={cx("dock")} data-dock>
+          <Whole canvas={canvas} />
           <Notes session={session} feedback={feedback} restore={restore} undo={undo} />
           {one && !working && (
             <Actions
@@ -220,10 +226,23 @@ export default function PhoneWorkPage({ session, asking, feedback, go }: ShellPr
         <Detail session={session} detailId={detailId} close={() => setDetail(undefined)} />
       </div>
       {sheet === "studio" && (
-        <StudioSheet session={session} close={() => setSheet("")} restore={restore} resume={resume} go={go} />
+        <StudioSheet
+          session={session}
+          close={() => setSheet("")}
+          restore={restore}
+          resume={resume}
+          go={go}
+          show={show}
+        />
       )}
       {sheet === "versions" && (
-        <VersionsSheet session={session} close={() => setSheet("")} restore={restore} feedback={feedback} />
+        <VersionsSheet
+          session={session}
+          close={() => setSheet("")}
+          restore={restore}
+          feedback={feedback}
+          show={show}
+        />
       )}
       {sheet === "share" && <ShareSheet session={session} close={() => setSheet("")} feedback={feedback} />}
       {sheet === "scenes" && (

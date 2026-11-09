@@ -2,7 +2,13 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- The page is an app the size of the screen, which zooms its own drawing: the page
+         itself is not zoomed, by a focused field or after a reload, and the keyboard
+         shrinks what is laid out rather than covering it. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <title>DrawY</title>
   </head>
   <body>

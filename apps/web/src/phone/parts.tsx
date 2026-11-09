@@ -1,10 +1,11 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronLeft,
   Check,
   History,
   ImageUp,
+  Maximize,
   MessageSquareText,
   Share,
   Trash2,
@@ -12,6 +13,7 @@ import {
   Undo2,
   X,
 } from "lucide-react";
+import { Segmented } from "@drawy/ui";
 import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
 import {
   versionOf,
@@ -64,7 +66,7 @@ export function picturesIn(work: Work, m: Instance) {
 export type SheetKind = "" | "studio" | "versions" | "share" | "scenes";
 
 /** The way home, the work's title (which opens its scenes and its name), and undoing,
- * the versions and sharing, floating over the top of the drawing. */
+ * the studio with the versions, and sharing, floating over the top of the drawing. */
 export function TopBar({
   session,
   back,
@@ -97,7 +99,7 @@ export function TopBar({
       <button className={cx("round")} aria-label={t.phone.undo} disabled={!s.undoable} onClick={undo}>
         <Undo2 size={18} />
       </button>
-      <button className={cx("round")} aria-label={t.phone.versions} onClick={() => open("versions")}>
+      <button className={cx("round")} aria-label={t.phone.history} onClick={() => open("studio")}>
         <History size={18} />
       </button>
       <button
@@ -111,6 +113,10 @@ export function TopBar({
     </header>
   );
 }
+
+/** How far past the whole drawing the view opens zoomed, to fill the screen: a wide
+ * drawing on a phone held upright is otherwise a strip with its words too small to read. */
+const FILL = 2;
 
 /** The drawing, filling the screen. Fingers pinch and move it; a tap selects a part (or
  * follows where it leads), a long press selects any part, a double tap changes its words,
@@ -147,6 +153,7 @@ export function PhoneCanvas({
       editing={false}
       controls={false}
       resizable={false}
+      fill={FILL}
       quiet={session.quiet}
       view={view}
       open={open}
@@ -155,6 +162,29 @@ export function PhoneCanvas({
       point={point}
       hold={() => navigator.vibrate?.(8)}
     />
+  );
+}
+
+/** Back to the whole drawing, shown while the view leaves part of it out: opened filled
+ * to the screen, or moved and zoomed by a finger. */
+export function Whole({ canvas }: { canvas?: Canvas }) {
+  const t = useT();
+  const [whole, setWhole] = useState(true);
+  useEffect(() => {
+    if (!canvas) return;
+    const look = () => setWhole(canvas.showsWhole());
+    look();
+    return canvas.watch(look);
+  }, [canvas]);
+  if (whole || !canvas) return null;
+  return (
+    <button
+      className={cx("round whole")}
+      aria-label={t.phone.whole}
+      onClick={() => canvas.fit(true, 600, "whole")}
+    >
+      <Maximize size={18} />
+    </button>
   );
 }
 
@@ -314,7 +344,12 @@ export function Actions({
   if (s.locked) return null;
   return (
     <div className={cx("actions")} role="toolbar" aria-label={t.phone.actions}>
-      <b>{s.name}</b>
+      <header>
+        <b>{s.name}</b>
+        <button aria-label={t.phone.deselect} onClick={deselect}>
+          <X size={18} />
+        </button>
+      </header>
       {words && (
         <button onClick={retype}>
           <Type size={18} />
@@ -334,9 +369,6 @@ export function Actions({
       <button data-danger onClick={remove}>
         <Trash2 size={18} />
         {t.phone.remove}
-      </button>
-      <button aria-label={t.phone.deselect} onClick={deselect}>
-        <X size={18} />
       </button>
     </div>
   );
@@ -469,13 +501,19 @@ export function PhoneComposer({
   );
 }
 
-/** A sheet from the bottom of the screen, over a dimmed page that closes it when tapped. */
+/** How far a sheet is pulled down, in pixels, before letting go closes it. */
+const PULLED = 72;
+
+/** A sheet from the bottom of the screen, over a dimmed page that closes it when tapped.
+ * Its grip and header pull it down: let go far enough (or flicked) it closes, else it
+ * goes back up. */
 export function Sheet({
   title,
   tall = false,
   padded = false,
   close,
   body,
+  head,
   children,
 }: {
   title: string;
@@ -484,9 +522,22 @@ export function Sheet({
   padded?: boolean;
   close: () => void;
   body?: React.Ref<HTMLDivElement>;
+  /** What the header shows in place of the title, such as tabs; the title still names
+   * the sheet. */
+  head?: ReactNode;
   children: ReactNode;
 }) {
   const t = useT();
+  const sheet = useRef<HTMLElement>(null);
+  const pull = useRef<{ id: number; y: number; at: number; dy: number; pulling: boolean }>(undefined);
+  // A pull just let go, whose click is not a tap on what it began on.
+  const pulled = useRef(false);
+  const follow = (dy: number) => {
+    const el = sheet.current;
+    if (!el) return;
+    el.style.transition = "";
+    el.style.transform = dy ? `translateY(${dy}px)` : "";
+  };
   return (
     <>
       <div className={cx("scrim")} onClick={close} />
@@ -496,14 +547,54 @@ export function Sheet({
         role="dialog"
         aria-modal
         aria-label={title}
+        ref={sheet}
       >
-        <i className={cx("grip")} />
-        <header>
-          <h2>{title}</h2>
-          <button aria-label={t.phone.close} onClick={close}>
-            <X size={18} />
-          </button>
-        </header>
+        <div
+          className={cx("handle")}
+          onPointerDown={(e) => {
+            pull.current = { id: e.pointerId, y: e.clientY, at: e.timeStamp, dy: 0, pulling: false };
+          }}
+          onPointerMove={(e) => {
+            const p = pull.current;
+            if (!p || p.id !== e.pointerId) return;
+            p.dy = Math.max(0, e.clientY - p.y);
+            // A press that moves is a pull, even one that began on a tab or the close
+            // button; one that does not stays their tap.
+            if (!p.pulling && p.dy > 8) {
+              p.pulling = true;
+              e.currentTarget.setPointerCapture(e.pointerId);
+            }
+            if (p.pulling) follow(p.dy);
+          }}
+          onClickCapture={(e) => {
+            if (pulled.current) e.stopPropagation();
+            pulled.current = false;
+          }}
+          onPointerUp={(e) => {
+            const p = pull.current;
+            pull.current = undefined;
+            if (!p || p.id !== e.pointerId || !p.pulling) return;
+            pulled.current = true;
+            setTimeout(() => (pulled.current = false));
+            const flicked = p.dy > 24 && p.dy / Math.max(1, e.timeStamp - p.at) > 0.6;
+            if (p.dy > PULLED || flicked) return close();
+            const el = sheet.current;
+            if (el) el.style.transition = "transform 0.2s var(--ease-out)";
+            if (el) el.style.transform = "";
+          }}
+          onPointerCancel={() => {
+            pull.current = undefined;
+            follow(0);
+          }}
+        >
+          <i className={cx("grip")} />
+          <header>
+            {head ?? <h2>{title}</h2>}
+            <button aria-label={t.phone.close} onClick={close}>
+              <X size={18} />
+            </button>
+          </header>
+        </div>
         <div className={cx("body")} data-padded={padded || undefined} ref={body}>
           {children}
         </div>
@@ -512,19 +603,37 @@ export function Sheet({
   );
 }
 
-/** The studio in a tall sheet, following the run at its foot. */
+/** The tabs of the sheet that holds the studio and the versions: what the author did
+ * and said, and what it came to, are looked back on together. */
+function HistoryTabs({ tab, show }: { tab: "studio" | "versions"; show: (tab: "studio" | "versions") => void }) {
+  const t = useT();
+  return (
+    <Segmented className={cx("tabs")} label={t.phone.history}>
+      {(["studio", "versions"] as const).map((k) => (
+        <button key={k} aria-pressed={tab === k} onClick={() => show(k)}>
+          {t.phone[k]}
+        </button>
+      ))}
+    </Segmented>
+  );
+}
+
+/** The studio in a tall sheet, following the run at its foot; the versions are its other
+ * tab. */
 export function StudioSheet({
   session,
   close,
   restore,
   resume,
   go,
+  show,
 }: {
   session: WorkSession;
   close: () => void;
   restore: (revision: number) => void;
   resume: () => void;
   go: (path: string) => void;
+  show: (tab: "studio" | "versions") => void;
 }) {
   counted("phone.studio");
   const t = useT();
@@ -535,7 +644,14 @@ export function StudioSheet({
     if (el) el.scrollTop = el.scrollHeight;
   }, [s.runs]);
   return (
-    <Sheet title={t.phone.studio} tall padded close={close} body={body}>
+    <Sheet
+      title={t.phone.studio}
+      head={<HistoryTabs tab="studio" show={show} />}
+      tall
+      padded
+      close={close}
+      body={body}
+    >
       <Studio
         runs={s.runs}
         loaded={s.loaded}
@@ -556,11 +672,13 @@ export function VersionsSheet({
   close,
   restore,
   feedback,
+  show,
 }: {
   session: WorkSession;
   close: () => void;
   restore: (revision: number) => void;
   feedback: Feedback;
+  show: (tab: "studio" | "versions") => void;
 }) {
   counted("phone.versions");
   const t = useT();
@@ -573,7 +691,12 @@ export function VersionsSheet({
     locked: s.engaged || !s.loaded,
   }));
   return (
-    <Sheet title={t.phone.versions} close={close}>
+    <Sheet
+      title={t.phone.versions}
+      head={<HistoryTabs tab="versions" show={show} />}
+      tall
+      close={close}
+    >
       <Drafts
         versions={s.versions}
         unsaved={s.unsaved}

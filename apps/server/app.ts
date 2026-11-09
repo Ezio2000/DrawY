@@ -625,8 +625,11 @@ export function createApp(storage: Storage) {
     if (!trace) throw new DomainError("没有这次运行的记录", 404);
     return c.json({ ...trace, trace: costed(c.get("store"), trace.trace) });
   });
-  app.get("/api/events", (c) =>
-    streamSSE(c, async (stream) => {
+  app.get("/api/events", (c) => {
+    // A proxy in front (nginx, a CDN) must pass each event on as it is written, not hold
+    // the stream back to compress or buffer it.
+    c.header("X-Accel-Buffering", "no");
+    const response = streamSSE(c, async (stream) => {
       const userId = c.get("user").id;
       const set = listeners.get(userId) || new Set();
       listeners.set(userId, set);
@@ -643,8 +646,10 @@ export function createApp(storage: Storage) {
       clearInterval(timer);
       set.delete(write);
       if (!set.size) listeners.delete(userId);
-    }),
-  );
+    });
+    response.headers.set("Cache-Control", "no-cache, no-transform");
+    return response;
+  });
   // Pictures and geographic data are served by the library, as the signed-in user when
   // there is one.
   app.get("/materials/:route{files|thumbs|geo}/*", async (c) => {
