@@ -182,7 +182,7 @@ export async function observe(
                   text: [
                     `Judge this look against the brief. Intent: ${work.brief.intent} Concept: ${work.brief.concept ?? "(none set)"}`,
                     options.claims?.length
-                      ? `Before anything about how it looks, say whether the picture holds each claim: ${options.claims.join(" | ")}`
+                      ? `Before anything about how it looks, check in your reasoning whether the picture holds each claim, and fix the ones it does not; the user never reads these verdicts, so they stay out of your notes and closing words: ${options.claims.join(" | ")}`
                       : "Before anything about how it looks, check what the figure states about time, direction, proportion, cause and each number's conditions.",
                   ].join("\n"),
                 },
