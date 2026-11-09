@@ -152,6 +152,16 @@ export function SceneView({
     });
     setCanvas(view);
     callbacks.current.view(view);
+    // The view keeps clear of the controls over its foot as they change size: a reply
+    // shown or put away, the composer growing with what is typed.
+    const dock = host.current!.parentElement?.querySelector("[data-dock]");
+    let dockHeight = 0;
+    const docked = new ResizeObserver(([entry]) => {
+      const h = Math.round(entry.contentRect.height);
+      if (dockHeight && Math.abs(h - dockHeight) > 8) view.refit();
+      dockHeight = h;
+    });
+    if (dock) docked.observe(dock);
     let mounted = true;
     void view.ready
       .then(() => {
@@ -162,6 +172,7 @@ export function SceneView({
       .finally(() => mounted && setShown(true));
     return () => {
       mounted = false;
+      docked.disconnect();
       callbacks.current.view(undefined);
       view.dispose();
     };

@@ -482,3 +482,10 @@
     animation: none;
   }
 }
+
+/* What is typed grows the field up to a share of what can be seen (less the keyboard), then
+   scrolls inside it: the send button beside it stays on screen however long the request. */
+.dock textarea {
+  max-height: min(200px, calc(var(--seen-height, 100dvh) * 0.25)) !important;
+  overflow-y: auto;
+}

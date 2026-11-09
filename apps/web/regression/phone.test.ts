@@ -498,3 +498,64 @@ it("lays the home page out for a phone: it scrolls to every work, and its menus 
     await settled();
   }
 });
+
+it("keeps the drawing large on a phone turned on its side with a reply open, and takes the room back when it is put away", async () => {
+  const id = await make();
+  await open(id);
+  await composer().fill("Explain");
+  await composer().press("Enter");
+  await tell({
+    type: "run",
+    run: run(id, "r1", "completed", [
+      { kind: "message", role: "user", text: "Explain" },
+      { kind: "message", role: "assistant", text: "The figure shows the route from the hills to the sea. ".repeat(6) },
+    ]),
+  });
+  await settled();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await settled();
+  await whole();
+  const shown = await rectOf("Alpha");
+  // Not a dot: the drawing keeps at least half the screen's height to show in.
+  expect(shown.width).toBeGreaterThan(120);
+  await dock().getByRole("button", { name: "Collapse" }).tap();
+  await settled();
+  expect((await rectOf("Alpha")).width).toBeGreaterThanOrEqual(shown.width - 1);
+});
+
+it("changes the words a part was selected by, not the first it draws", async () => {
+  const w = await api("/works", "POST", { title: "Steps" });
+  const step = `return api.svg('<svg viewBox="0 0 '+api.width+' '+api.height+'"><circle cx="40" cy="40" r="26" fill="#3a6fd8"/><text x="40" y="52" font-size="32" fill="#fff" text-anchor="middle">'+api.data.n+'</text><text x="84" y="54" font-size="30">'+api.data.label+'</text></svg>')`;
+  await api(`/works/${w.id}/edits`, "POST", {
+    baseRevision: w.revision,
+    edit: {
+      drawings: [{ id: "step", name: "Step", source: step }],
+      modules: [{ id: "s", drawingId: "step", bounds: [0, 0, 300, 90], data: { n: "1", label: "Measure" } }],
+    },
+  });
+  await page.goto(base + "/a/" + w.id);
+  await page.waitForSelector("[data-canvas]");
+  await settled();
+  const words = await page.evaluate(() => {
+    const host = [...document.querySelectorAll("*")].find((e) => e.shadowRoot?.textContent?.includes("Measure"))!;
+    const r = [...host.shadowRoot!.querySelectorAll("text")].find((t) => t.textContent === "Measure")!.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await tap(words);
+  await actions().getByRole("button", { name: "Edit text" }).tap();
+  await expect
+    .poll(() => page.evaluate(() => (document.activeElement as HTMLTextAreaElement)?.value))
+    .toBe("Measure");
+});
+
+it("keeps the send button on screen however long the request, with the keyboard up", async () => {
+  await open(await make());
+  // The keyboard takes the bottom of the screen.
+  await page.setViewportSize({ width: 390, height: 360 });
+  await settled();
+  await composer().fill(Array.from({ length: 8 }, (_, i) => `Line ${i + 1} of what to draw`).join("\n"));
+  await settled();
+  const send = (await page.getByRole("button", { name: "Send" }).boundingBox())!;
+  expect(send.y).toBeGreaterThanOrEqual(0);
+  expect(send.y + send.height).toBeLessThanOrEqual(360);
+});
