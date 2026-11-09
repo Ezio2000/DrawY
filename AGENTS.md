@@ -13,12 +13,13 @@ pnpm install
 pnpm typecheck                                    # tsc --noEmit；项目没有 linter
 pnpm build                                        # dist/web（前端）与 dist/runtime/runtime.js（运行时 IIFE）
 pnpm test                                         # 先 build 再 vitest run
+pnpm test:desktop                                 # 先 build 再只跑作品页（电脑、手机、平板）的回归验证
 pnpm exec vitest run modules/agent/agent.test.ts  # 单个文件
 pnpm exec vitest run -t "用例名片段"               # 单个用例
 docker compose up -d --build                      # 完整部署，访问 http://localhost:8088
 ```
 
-`modules/runtime/runtime.test.ts` 会加载 `dist/runtime/runtime.js`，并在 Playwright Chromium 里执行。所以只要改了 `modules/runtime`、`modules/observation/capture.ts` 或它们依赖的协议代码，就要先 `pnpm build`，否则测到的是旧的 bundle。其他测试不依赖构建产物。
+`modules/runtime/runtime.test.ts` 会加载 `dist/runtime/runtime.js`，并在 Playwright Chromium 里执行。所以只要改了 `modules/runtime`、`modules/observation/capture.ts` 或它们依赖的协议代码，就要先 `pnpm build`，否则测到的是旧的 bundle。`apps/web/regression/` 下的作品页回归验证测的是构建出的 `dist/web`，改了前端也要先 build。其他测试不依赖构建产物。Playwright 自带的浏览器没装时，作品页的回归验证可以用 `DRAWY_CHROMIUM` 指定一个 Chromium 可执行文件。
 
 本地开发要同时起几个进程：
 - `pnpm --dir materials start`：素材服务，端口 8090，数据在 `data/materials`。
@@ -45,15 +46,13 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
    拒绝时一次说全：`readEdit` 把 schema 问题、`layOn` 把落不上的记录、`problemsIn` 把引用不到的东西、`pictureProblems` 把这次改到的部件里不存在的图片、`codeProblems` 把这次改的代码里的语法错误都收进 `EditRejected.problems`（`{at, problem}`，`at` 形如 `links.l-a1.from`）；依赖某条落不上的记录的引用不重复报（`pending`）。作者的写入被拒时 `Context.held` 留住它（工具结果说明留住了哪些 ID），下一次带 `amend: true` 的写入只发改正的部分，`composed` 按 ID 把两次合成一次，作为一个版本保存；参数不是合法 JSON 时 `completedRecords` 留住已经完整到达的记录，同样可以 `amend`。不带 `amend` 的写入替换留住的内容。
 5. `view_canvas` 经 `modules/observation` 请求截图服务。截图服务用 `modules/runtime/document.ts` 生成页面，加载 `/runtime/runtime.js` 渲染场景，截下图片，作为图片消息送回同一段对话。默认每个场景一张开场全图（加声明的交互检查），没有自动网格局部图；`regions` 按需加最多三张局部，取景框按区域比例定，不发多余画面；同一版本已看过全图且无错误时，局部查看只返回局部。交互检查（`checks`）和 `actions` 是给场景脚本和画法里的按钮用的；一次点击打开了详情页时，截图服务不拍它（详情是作者写的 HTML，由应用排版），而是关掉详情、在结果里写明打开了哪一页（`Shot.opened`，没有 `base64`），点的是模块自己的跳转目标时还提示作者把这条检查去掉，因为跳转不需要代码。运行时页面的详情页是铺满屏幕的一层（`data-drawy-detail`），文章在里面保持自己的宽度；内边距不能加在文章本身上，否则会从它 680px 的最大宽度里扣掉。模块几何只放在全图旁，且只列上次之后变了的（`Context.reported`，压缩时清空）。`figure.smallestText`、`figure.tooSmall`（每个字小于 `MIN_TEXT` 的部件）和 `clippedText` 由 `capture.ts` 的 `readText` 在页面里量出，`tooSmall` 的每项带部件当前的 `size` 和看得清要用的 `sizeThatReads`（不管这段字按 `size` 的几成画），`readableFrom` 说明这个图里多大字号才看得清（`geometry.ts` 的 `opening`），一次写入就能全部改好。开场取景比例 `min(1296/宽, 828/高, 1.5)` 和 `note` 按 0.8 倍绘制写在提示词里，作者第一稿就能按它定字号。`claims` 是作者看图前写下的检查项（时间、方向、比例、因果、数字的条件，图里每条路线和支线都要有），放在截图旁要求逐条核对；核对结果不写给用户，进度说明只一句，因为 Opus 5.5 会把一两句以上的说明作为思考块返回。`Observation.overview` 如实记录这次有没有全图，`requireObserved` 要求最新版本有全图、且最后一次查看没有错误。
-6. 运行过程中的每个变化，都以 `run` 事件经 SSE（`/api/events`）推给前端。前端由 `modules/canvas` 把过程画成石墨线起稿和图片显影的动画（没有跟着笔尖走的铅笔）。整个过程同时由 `modules/trace` 记入 `trace.sqlite`。前端右侧的画室（`apps/web/src/Studio.tsx`）把每次运行的步骤按工具分别呈现（每种 `ToolActivity` 一个视图，未知的托管工具走 `hosted`），步骤里不标中间稿的编号，只在运行结束处标出成稿是第几版；预览和恢复在单独的版本面板（`Drafts.tsx`）。用户按提问数版本，不管中间过程：`contracts` 的 `historyOf` 把 `/revisions` 归成当前的版本栈和未保存的手动修改（`versionsOf` 只取前者）。同一次运行保存的所有稿算一版，空白画布是第 0 版；手动修改存成 `{ kind: "edit" }` 的修订，不算版本，直到用户 `POST /works/:id/save`（`workspace` 的 `saveEdits`）记下一个 `{ kind: "save" }` 修订，把它们收成一版；只有同一次运行连续的修订会合成一版（`sameRun`）；运行开始前留下的未保存修改并入那次运行的版本。恢复是回退：目标是某版结束时的修订，就回到那一版（恢复修订加进它的 `revisions`，之后的版本离开列表，下一版接着它编号，`sealed` 让下一次修订另起一版）；目标是一条未保存的修改，就回到那一步；目标是某次运行中间的一稿，才另记一个 `restore` 版本。每个版本记着创建时下面的版本（`chain`），所以恢复到已离开列表的版本会把它连同下面的一起带回，前端的“撤销回退”和重做就靠这个。修订本身一直追加、修订号不复用，作者的 `Context.known` 不受影响。面板每版一行，未保存的修改在最上面一行（保存、放弃），点一行在画布上预览，“回到此版”按钮一直可见；`versionOf` 把修订号换成版本号，画室的成稿、预览条、回退后的提示和左侧栏都用它（`WorkProgress.unsaved` 是未保存的修改数）。撤销（`stepBefore`）有未保存的修改时退一步修改，否则退到当前版本的上一版。输入框（`Composer.tsx`）一直在页面下方，模型选择 `ModelBar` 在它右下方，`engaged`（运行中或等待回答）时不显示模型选择；作者运行中（`collapsed`）输入框收起成一条，只有当前进度（`Now`）和停止按钮，等待回答时展开；作者开始运行时画室自动打开。输入框上方的 `unsaved-bar` 提示未保存的手动修改（保存、放弃，⌘S 保存）；有未保存的修改时发请求，`send` 先把请求挂在 `holding` 上，让用户选保存后发送、放弃后发送或取消。回到某版和放弃修改后，提示条上可以撤销（`wentBack`，⌘Z 也走它）。预览版本、回到当前和回退都把修订号放进 `own`，画布安静替换，不重播落笔动画。画室、草稿和编辑面板宽度分开（`panelWidths`，`--journal`/`--drafts`/`--edit`），由 `Resizer` 拖动并按面板记在 `localStorage`。用量由 `Studio.tsx` 的 `spentBy`/`Stats` 按 `costOf(run.usage, run.prices)` 算出：运行标题行右侧的费用按钮展开这次的卡片（费用、token 与缓存命中、耗时、搜索、图片几块数字，按服务分色的费用构成条，每个服务一行），画室顶部的累计行展开整个作品的同样卡片。回复用 `Markdown.tsx` 渲染，`tidy` 去掉模型留下的 `\ue200…\ue201` 引用记号并移动引用位置。
+6. 运行过程中的每个变化，都以 `run` 事件经 SSE（`/api/events`）推给前端。前端由 `modules/canvas` 把过程画成石墨线起稿和图片显影的动画（没有跟着笔尖走的铅笔）。整个过程同时由 `modules/trace` 记入 `trace.sqlite`。前端右侧的画室（`apps/web/src/Studio.tsx`）把每次运行的步骤按工具分别呈现（每种 `ToolActivity` 一个视图，未知的托管工具走 `hosted`），步骤里不标中间稿的编号，只在运行结束处标出成稿是第几版；预览和恢复在单独的版本面板（`Drafts.tsx`）。用户按提问数版本，不管中间过程：`contracts` 的 `historyOf` 把 `/revisions` 归成当前的版本栈和未保存的手动修改（`versionsOf` 只取前者）。同一次运行保存的所有稿算一版，空白画布是第 0 版；手动修改存成 `{ kind: "edit" }` 的修订，不算版本，直到用户 `POST /works/:id/save`（`workspace` 的 `saveEdits`）记下一个 `{ kind: "save" }` 修订，把它们收成一版；只有同一次运行连续的修订会合成一版（`sameRun`）；运行开始前留下的未保存修改并入那次运行的版本。恢复是回退：目标是某版结束时的修订，就回到那一版（恢复修订加进它的 `revisions`，之后的版本离开列表，下一版接着它编号，`sealed` 让下一次修订另起一版）；目标是一条未保存的修改，就回到那一步；目标是某次运行中间的一稿，才另记一个 `restore` 版本。每个版本记着创建时下面的版本（`chain`），所以恢复到已离开列表的版本会把它连同下面的一起带回，前端的“撤销回退”和重做就靠这个。修订本身一直追加、修订号不复用，作者的 `Context.known` 不受影响。面板每版一行，未保存的修改在最上面一行（保存、放弃）；打开它时画布放开选区（桌面壳的 `toggle`、手机壳的 `show`），因为版本是整体看的。点一行在画布上预览，“回到此版”按钮一直可见；`versionOf` 把修订号换成版本号，画室的成稿、预览条、回退后的提示和左侧栏都用它（`WorkProgress.unsaved` 是未保存的修改数）。撤销（`stepBefore`）有未保存的修改时退一步修改，否则退到当前版本的上一版。输入框（`Composer.tsx`）一直在页面下方，模型选择 `ModelBar` 在它右下方，`engaged`（运行中或等待回答）时不显示模型选择；作者运行中（`collapsed`）输入框收起成一条，只有当前进度（`Now`）和停止按钮，等待回答时展开；作者开始运行时画室自动打开。输入框上方的 `unsaved-bar` 提示未保存的手动修改（保存、放弃，⌘S 保存）；有未保存的修改时发请求，会话的 `send` 先把请求挂起（`holding`），让用户选保存后发送、放弃后发送或取消（`decide`）。回到某版和放弃修改后，提示条上可以撤销（会话的 `back`，⌘Z 也走它）。预览版本、回到当前和回退都把修订号放进 `own`，画布安静替换，不重播落笔动画。画室、草稿和编辑面板宽度分开（桌面壳的 `panelWidths`，`--journal`/`--drafts`/`--edit`），由 `Resizer` 拖动并按面板记在 `localStorage`。用量由 `Studio.tsx` 的 `spentBy`/`Stats` 按 `costOf(run.usage, run.prices)` 算出：运行标题行右侧的费用按钮展开这次的卡片（费用、token 与缓存命中、耗时、搜索、图片几块数字，按服务分色的费用构成条，每个服务一行），画室顶部的累计行展开整个作品的同样卡片。回复用 `Markdown.tsx` 渲染，`tidy` 去掉模型留下的 `\ue200…\ue201` 引用记号并移动引用位置。
 
 托管工具（模型服务方自己执行、输出项类型以 `_call` 结尾的，如 `web_search_call`）在 `agent/index.ts` 里统一处理：成为运行步骤（`web_search` 有专门的活动，其余是 `{ name: "hosted", tool, detail }`），按 `run.usage.hosted` 计数，并用 `tracer.record` 记成所在轮次下的 `tool` 记录（`attrs.hosted`、`args` 是动作、`output` 是原始项）。`trace` 的 `meters` 按 `attrs.meter`、工具名或种类汇总次数、耗时和 token，所以新增工具不用改 trace。`run.usage` 累计每轮和压缩的 token、托管工具次数与生图用量（`images` 从图片接口返回的 `usage` 取）。搜索是否合理由 `prompts.ts` 的 `# Research` 一节约束，`set_brief` 和 `view_canvas` 的结果在本次运行搜索过时附上 `research`（次数、打开过的网页），提醒作者按已有来源判断。硬预算在 `steering`：每次请求 `SEARCH_LIMIT` 次、第一稿保存后 `SEARCH_AFTER_DRAFT` 次，预算内的轮次带 `max_tool_calls`，用完后带 `tool_choice: allowed_tools`（只列函数工具）；两者都不改 `tools`，所以不破坏缓存前缀，不要改成增删 `tools` 的做法。轮次的 trace 在 `request.steer` 里记下这次的限制。
 
 导出：`/api/works/:id/scenes/:scene/picture`（PNG，`?format=pdf` 为一页矢量 PDF，截图服务 `render` 的 `format`），`/page` 是可离线打开的单文件交互网页（`runtime/document.ts` 的 `standaloneDocument`：内嵌 `dist/runtime/runtime.js` 和作品图片；SVG 以文本 data URL 内嵌，`scene.ts` 在它上面替换 `currentColor` 完成着色；详情 HTML 和画法代码里写成地址的 `/materials/files|thumbs/…` 也连同查询串整个换成 data URL（`color` 交给素材库着色、`size` 定缩略图大小，HTML 里的 `&amp;` 也认），SVG 的引号和括号一并转义；以 `/` 开头的 fetch 改到导出时的站点，`/materials/geo` 因此带 `Access-Control-Allow-Origin: *`）。JPG、社交卡片、复制和系统分享在前端由 PNG 生成（`Export.tsx`）。剪贴板和系统分享要在点击的临时授权内调用，截图可能要好几秒：复制在点击时立即 `clipboard.write`，传入图片的 Promise；分享不能等，所以菜单一打开就开始截图，图好之前分享项显示准备中，点击时直接 `share`。
 
 ## 创作、搜索与生图的组合
-
-打开作品时 `App.tsx` 先显示作品，随后合并运行历史；`runsOf` 标记历史已加载的作品，`loadingRuns` 在历史未到时禁用发送（按钮与 Enter）和手动编辑。主页新建的作品没有旧历史，创建成功即设置 `runsOf`，不等待一次多余的历史请求。
 
 模型配置的结构是“规格 + 适配器”，新增接入方式、接口格式或搜索服务商都是加条目，读它们的代码不改：
 - `contracts/models.ts`（由 `contracts/index.ts` 转出）是唯一说明“谁能做什么”的地方：`channelSpecs`（`api`/`oauth` 各自的固定地址、能说的接口格式、速度档、能否内置搜索、能否固定提供商、要不要 Account ID）、`protocolSpecs`（每种接口格式的官方地址、能否内置搜索、是否有速度档）、`searchProviderSpecs`（地址、是否必须有 Key、是否由服务商读网页）。`settleWriter`/`settleProvider` 按规格改正模型（格式不被支持时退回接入方式的第一种、内置搜索不能用就不开放、可选速度只留连接和格式提供的、默认档位取可选的），`modelCatalogSchema` 和设置页都用它；`reconnect` 在供应商换接入方式时把地址换成 `endpointFor` 给的地址。`offersBuiltinSearch`、`speedsOf`、`pinnedProvider`、`searchReady`、`protocolFor`（新模型按地址猜格式）都从规格推出。`picked`/`settingsFor`/`menuFor` 是“用户选了哪个档位、落到哪个组合”的唯一实现，`UserStore.settings()` 和 `/api/models` 只调用它们；`costOf` 是费用的唯一算法，前端账单和运行记录都用它。
@@ -93,6 +92,89 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 模型配置全站共用：`ModelCatalog` 存在 `system` 表，只有 `models.manage` 能读写（`/api/admin/models`）。每个用户自己只存 `UserSettings`（长期偏好和档位），`/api/models`（`ModelMenu`）只给出每个档位的 ID、名称、说明、是否可用（绘制模型已接入且能调工具），以及落定的档位，不给模型、凭证和价格。`UserStore.settings()` 把这两者合成运行要用的 `Settings`，`agent` 和 `images` 只读这个结果。
 
+## 前端的分层
+
+`apps/web/src` 分三层。作品页可以按设备换成完全不同的界面，会话逻辑不用重写：
+
+- **App**：`App.tsx` 管这些：
+  - 路由（`routes.ts` 的 `pageOf`/`workIdOf`/`sceneOf`/`addressOf`）；
+  - 作品列表、删除与撤销删除、素材库对话框；
+  - 正在写的请求（`session/request.ts` 的 `RequestDraft`，一个 store：文字、附件、上传中的数量、主页选的风格、问题的选项；`hand` 把要作者做的修改写进去，并让输入框取得焦点）。请求跨页面存在，因为在素材库里选的素材、主页发出的请求都要带到作品页。附件带着素材各语言的名字，由显示的地方挑。
+  - 提示：`feedback.ts` 的 `Feedback` 也是一个 store，记着最近的错误和提示，并按时收起；`SessionError` 的措辞也在这里，供不自己措辞的页面使用。
+
+  App 不读会话的快照（只有 `OpenWork` 读作品到了没有、打开失败没有），所以作者运行时的事件不会让 App 重新渲染。作品页的壳由 `shells.ts` 选出，App 交给它 `ShellProps`（`shell.ts`），只有每种壳都确实需要的四样：
+  - `session`：会话本身（store 加动作）；
+  - `asking`：`draft`、`send`、打开素材库的 `pick`、档位和 `choose`，以及 `blocked`（没接入模型或提问次数用完；等待回答时仍能回答）。`send` 检查完上传和 `blocked` 后交给会话；在主页没有打开的作品时，`send` 先建作品、用 `begin` 打开，再发出；
+  - `feedback`；
+  - `go`：去另一个地址。
+
+  这四样在作品页打开期间保持同一个对象（`asking` 只在档位或 `blocked` 变化时更换），注册表又给每个壳包了 `memo`，所以 App 因作品列表等原因重新渲染时，作品页不跟着渲染。账号从 `AccountContext` 读（`useAccount`/`useCan`），没接入模型的提示是 `Composer.tsx` 的 `Unconnected`。
+- **会话层** `session/` 不含 JSX、样式和界面文案，不碰 DOM，也不用浏览器存储。`work.ts` 的 `WorkSession` 是一个外部 store，由六个各管一件事、各有自己状态的部分组成，共用一个 `Context`（`types.ts`）：
+  - `revisions.ts`：作品与修订。服务器推来的作品比当前的旧就不采用；修订号变了就重取 `/revisions`，预览随之结束。它还记着哪些修订是用户自己的（`own`、在路上的请求），由 `quiet` 回答；`look` 管预览，`rename` 改标题。
+  - `runs.ts`：运行与 SSE。自己经 `events.ts` 的 `listen` 订阅，同一用户的所有订阅共用一个连接；`offline` 和打开失败的 `unopened` 也在这里；收到 `connected` 时重取作品和运行，用 `merged` 合并。打开作品时先显示作品，运行历史随后合并，`loaded` 之前不能发送、不能手动编辑。`earlier` 是打开作品时已经结束的最后一次运行，它的回复留在画室，不在画布下面重复显示。
+  - `edits.ts`：手动修改的队列与草稿（`commit` 返回保存后的作品，`change` 只返回有没有修改）。
+  - `sending.ts`：发送与挂起。有排队中或未保存的手动修改时挂起请求，等 `decide("save"|"discard"|"cancel")`；真正发出后调用 `Ask.sent`。请求关于什么由调用方给（`Ask.focus`：选中的模块或连线），`aboutOf` 把它写在请求后面（写给作者的，不是界面文案）。
+  - `versions.ts`：保存、放弃、回退（`back` 记着回到第几版或放弃了修改，十秒内可以撤回，此时 `undo` 先撤回回退）、撤销和重做（`undone`）。
+  - `scenes.ts`：地址里的场景（`locate`），地址里的场景不存在时换回根场景的地址；`enter(id, asking)` 进入场景，场景还是空的就用壳给的 `asking(标题)` 作为请求请作者画；一次运行只在别的场景画了东西时，结束后跟过去（`follow`）。
+
+  会话只说发生了什么，怎么说、怎么呈现由壳决定：拒绝或做不到时抛 `SessionError`，它的 `reason` 是 `noScene`、`busy`、`linkDrawing` 或 `imagesOnly`；事后要告诉用户的事经 `on(listener)` 发出 `Happening`（`saved` 带版本号；`failed` 是开始后就不再等待的操作失败了）；快照里的 `back` 是结构化的。服务器的错误原样传出，服务端已经按请求的语言翻译好。`SessionHost` 只剩跳转地址、刷新列表、扣提问次数、订阅事件，以及作品内容用的语言（`locale`：从素材库取进作品的名字用哪种语言）。
+
+  动作是会话对象自己的方法（`session.save()` 等，构造时绑定一次）。快照只有数据，`build` 只在被读到时才重建（`Store.changed` 标记过期，并在本轮结束时通知一次），没变的字段沿用上一份快照里的同一个对象（`kept`）。组件用 `useSelect(store, 选择器, 比较)` 只读自己显示的那一片，默认按浅比较，选出的值没变就不重新渲染。这一点必须保持：作者运行时每秒会有很多 `run` 事件，低端手机上也要跑得动。`session/work.test.ts` 换上假的 host 和内存里的假服务器，验证草稿、安静替换、挂起、请求附带的选区、回退与撤销、重做、预览、迟到的旧作品、等模块画出再选中、跟随场景、拒绝的理由和发出的事、一轮变化只通知一次且没变的部分保持原对象。
+- **会话与画布的边界**是 `View`：会话只用 `center()`、`scale`、`select(ids)` 和 `drawn(ids, revision)`。`Canvas.drawn` 不计时：模块真正画出来（不只是排好位置）就是 `drawn`；画过一个不比 `revision` 旧的版本、里面却没有这些模块，就是 `missing`；画布先没了就是 `gone`。慢设备只是等得久一点，不会误判。壳经 `attach` 把 `Canvas` 交给会话。反方向由画布问会话：`quiet(revision)` 为真就原地安静替换。
+
+  `session/ops.ts` 的 `editOps` 是与设备无关的手动操作，作用于调用方给的模块或连线（删除、复制、排序、编组、对齐、移动、连线、拷贝出 `Clip`、粘贴，放文字、图片或库画法；新文字的内容由调用方给）。它们都经 `edits` 提交；新做出的模块等到 `drawn` 后才选中；失败作为 `failed` 发出。`session/clip.ts` 的 `Clipboard` 记着最后拷贝的内容，存储由调用方注入（`storage.ts` 的 `KeyValue`：`browserStorage` 吃掉浏览器拒绝时的异常，测试用 `memoryStorage`）。
+- **壳的选择**：`shells.ts` 的注册表里每个壳一行，`shell(按需加载, 媒体查询, 中英文名, 是否占满屏幕)`。查询只看宽度和 `pointer`，不看 User-Agent；按注册顺序取第一个匹配的，都不匹配时用没有查询的那个（`desktop`）。窗口变化时跟着重新判断（`useShell`）。用户可以在账号菜单里依次换成“自动”或某一种，选择记在 `drawy.shell`；只有一种壳时不显示这个开关。每个壳由 `React.lazy` 单独分包，在 `Suspense` 里加载，并包了 `memo`。
+
+  设备怎么分：
+  - `phone`（`PHONE`）：窗口窄于 600px（竖拿的手机，或被拉得很窄的电脑窗口），或者触屏且高度不到 500px（横拿的手机）。
+  - 其余都用 `desktop`：平板（短边 600px 以上，竖拿横拿都是）、触屏笔记本和电脑。理由有三：平板放得下画布加一块侧面板；人们在平板上仍会用手指或笔排版；桌面壳里每个操作都有按钮，原来要右键的菜单由画布的长按代替，所以手指也能用。横拿的手机高度太矮，放不下桌面壳的输入框和面板，因此归手机壳。
+
+  `whole` 的壳（手机）占满屏幕：App 在 `.app` 上标 `data-whole`，左侧栏不显示，壳自己的返回按钮回到首页。`index.html` 带 `viewport`（`width=device-width, viewport-fit=cover`），手机才按真实宽度排版。以后加别的设备：新建一个壳文件（默认导出一个接收 `ShellProps` 的组件），在 `shells` 里 `desktop` 之前登记一行。
+- **手机壳** `phone/`：围绕“看和说”设计，不是桌面版缩小，桌面的界面状态和交互习惯都没有搬过来：
+  - **页面**：`WorkPage.tsx` 管页面怎么用：选区、打开的底部面板（`SheetKind`）、详情页、收起的回复、就地改字、换图的素材对话框。只读运行开始结束、换场景时才变的东西。
+  - **部件**：`parts.tsx` 里的部件各读各的那一片。
+    - `TopBar`：返回首页、标题（打开 `ScenesSheet`：改名和场景列表）、撤销、版本、导出分享，按钮都是 44px。
+    - `PhoneCanvas`：铺满屏幕，`editing` 始终为 false；`controls={false}` 不显示缩放按钮（靠双指）；`resizable={false}` 不显示缩放手柄（调尺寸属于精细排版）。
+    - `Notes`：预览、错误、回退可撤销、挂起与未保存修改，按钮横排可换行。
+    - `Actions`：选中一个模块时，在输入框上方出现改字（模块有画出的字时）、换图（模块数据引用了图片素材时，`picturesIn`）、说说怎么改、删除、取消选择。
+    - `Status`/`PhoneComposer`：作者作画时输入框收起成进度条。画室不自动打开，因为手机上画布才是要看的；点进度行从底部拉出 `StudioSheet`。
+    - `VersionsSheet`：点一个版本就收起面板、在画布上原地预览，预览条里可回到这一版。
+    - `ShareSheet`：用 `Export.tsx` 的 `useExports`/`ExportItems`，系统分享排第一。
+  - **手势**：点一下选中，有跳转目标的模块点一下就进入、长按只选中；选中的模块直接用手指拖动（会话的 `ops.move`）；双击文字就地改字。没有一样操作需要右键、修饰键、悬停或快捷键。超出这些入口的修改用“说说怎么改”带着选中的部分交给作者。
+  - **样式**：`phone.module.css` 用 `base.css` 的 token：白纸、中性灰、唯一的蓝、轻阴影、8～12px 圆角，不用毛玻璃，动效只在用户打开面板时出现。`phone/cx.ts` 只解析手机的样式表和共享的 `vocabulary`，不带桌面的 `app.module.css`，以免同名类把桌面布局带进来；要用桌面样式表里的个别类（如 `now`）时显式用 `../cx.ts`。横拿时输入框和面板保持适合阅读的宽度，安全区由 `env(safe-area-inset-*)` 让开。
+- **桌面壳** `desktop/`：
+  - `WorkPage.tsx` 管页面怎么用：选区和连线选择、详情页、收起回复、面板（画室、版本、编辑）及其宽度（`panels.tsx`）、作者开始运行时自动打开画室、场景菜单、改标题、就地改字（`Retype`）、换图时的素材对话框、画室跟着滚动、会话发出的事怎么说（`saved` 说成“已保存为第 N 版”，`failed` 交给 `feedback`），以及 ⌘Z/⇧⌘Z、⌘S 和 Esc（结束预览、收起回复）。它从会话只读运行开始或结束、换场景时才变的东西，快捷键在按下时才读会话。
+  - `parts.tsx` 是读各自那片快照的部件：`Topbar`、`CanvasArea`、`EditOverlay`、`Status`、`Bars`、`DockComposer`（自己读请求，所以打字只重新渲染它）、`DetailLayer`、`SideTools`、`StudioPane`、`DraftsPane`、`EditPane`。作者运行时，只有画布、状态行和画室会跟着重新渲染。
+  - `editing.ts` 的 `useEditing` 是鼠标和键盘的编辑方式：工具、右键菜单、系统剪贴板事件、编辑快捷键、方向键微调、全选和 Tab 轮选。它把会话的 `ops` 绑到当前选区上，再加上要先选素材的 `add(kind)`；桌面的剪贴板是这里的一个 `Clipboard(browserStorage)`，所有作品共用。
+- **作品页的回归验证** `apps/web/regression/`：`harness.ts` 在临时目录里起真实的素材服务和主程序（各用一个空闲端口），用 Playwright 打开构建出的前端。它导出的 `page`、`asked` 等是活绑定，每条用例拿到的都是为它新开的页面。手指经 CDP 的 `Input.dispatchTouchEvent` 按下，也就是浏览器自己的触屏输入：`fingers`、`swipe`、`pinch`、`press`、`tap`。作者不是真的：请求被拦下，回一个已结束的运行；作者的运行事件经页面收事件的 BroadcastChannel 发给页面，和服务器推来的事件走同一条路；档位菜单显示为已接入。部件经 `probe.ts` 的 `counted` 计数，只在测试设置了 `window.__drawyRenders` 时计数。布局对不代表画出来对，所以 `paintedAsLaidOut` 看像素：先截整屏，再量文字的布局框，要求截图里模块内深色像素的范围落在布局框里、并铺满它的大部分宽度（字画大了会溢出，被裁掉会留空）；必须先截图，因为命中测试（`elementFromPoint`）会让浏览器重新排版文字，把用户看到的错误盖掉。`outlined` 数画布上选中框的个数。三个套件：
+  - `desktop.test.ts`（电脑屏幕、鼠标和键盘）：
+    - 画法里的 SVG 文字按布局的大小画出；
+    - 手动修改先以草稿显示，保存后原地替换、模块元素不重建；
+    - 有未保存修改时挂起请求（取消、保存后发送并附上选区）；
+    - ⌘Z/⇧⌘Z/⌘S；打开版本面板时放开选区，预览和回到某版都不重画，回退和放弃修改都可撤销；
+    - 空白画布放文字后直接就地改字，⌘D、⌘C/⌘V、Delete；
+    - 主页发请求建作品；进入空的子场景时请作者画，地址里没有的场景回到根场景；
+    - 作者运行时自动打开画室、收起输入框，结束后的回复按 Esc 收起；运行只画了子场景时跟过去；打开前已结束的回复留在画室；
+    - 作者运行事件只让画布和状态行重新渲染，打字只让输入框重新渲染；
+    - 桌面页按需加载、单独分包。
+  - `phone.test.ts`（模拟 iPhone，手指）：
+    - 铺满屏幕、没有侧栏，窗口变成平板大小时换成桌面页、再变回来时换回；
+    - 发请求，作者作画时画布不被遮挡，从进度行拉出画室，回复可收起；
+    - 点选后出现的操作，以及带着选区“说说怎么改”；
+    - 手指拖动选中的模块，原地替换并保存成新版本；
+    - 双击就地改字，删除；
+    - 长按选中有跳转目标的模块而不进入，点一下才进入；
+    - 单指在纸上平移、双指缩放；
+    - 竖拿、横拿和双指缩放后，画法里的 SVG 文字按布局的大小画出、不被截断；
+    - 打开版本面板时放开选中的部分，预览、回到此版并撤销；顶栏撤销；
+    - 挂起请求；标题面板改名、进入场景；导出面板；
+    - 运行事件和打字时只重新渲染对应部件；手机页单独加载。
+  - `tablet.test.ts`（模拟 iPad Mini）：平板竖拿横拿都是桌面页，文字按布局的大小画出；编辑时单指拖动模块、在纸上平移而不是框选、长按弹出编辑菜单、手柄有指尖大小；双击改字；双指缩放。
+
+  改会话层、画布或接入新壳后跑 `pnpm test:desktop`（三个套件都跑），就能知道各个页面有没有被改坏。新增作品页行为时，在对应套件里补一条用例。
+
+新的会话行为写进对应的部分并在 `work.test.ts` 里测，不要放回组件的 ref 和 effect 里；界面怎么呈现的状态和文案放在壳里。
+
 ## 手动编辑如何流动
 
 原则：手动编辑的能力等于作者 `write_work` 的能力，不多也不少。每个手动操作都算出一份只含变化的 `WorkEdit`，经 `POST /api/works/:id/edits`（`{baseRevision, edit}`）交给 `writeWork`，和作者的写入是同一种写法、同一套校验，落到作品上是同一个 `layOn`。所以协议里没有的东西（旋转、透明度、锁定之类）手动编辑也不能有；要加这类能力，得先改协议，让作者同时拥有。反过来，作者能写的（模块的名字、位置、编组、跳转目标和数据，连线及其两端，场景及其脚本，详情，作品画法的代码、默认值与参数，共享样式，取用素材），手动编辑都有入口。`set_brief`、`generate_images` 和 `view_canvas` 是作者的创作工具，不是对作品的修改，不进编辑器。
@@ -101,11 +183,20 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 画布（`modules/canvas`）在 `Canvas.setEditing(true)` 时于捕获阶段接住点击，画法里的按钮和模块的跳转目标都不响应。编辑模式下按下的位置由 `pick` 决定：先是在那里真正画了东西的模块，再是经过附近（屏幕 10px 内）的连线，最后是框住这一点的最小模块；连线画在底图之上，所以按在底图上、连线附近的点选中连线（`beneath`），铺在底下的大模块不会挡住它上面的连线。连线的命中按它画出来的样子算：`traceOf` 把连线影子 DOM 里每个 SVG 几何元素沿路径取样、文字取外框，换成场景坐标缓存到连线重画为止，HTML 画的连线退回两端间的直线。悬停的连线和选中的连线都描一层半透明的强调色；选中连线（`selectLink`，与模块选区互斥，变化经 `options.selectLink` 告诉前端）时两端出现圆点（`data-link-end`），拖到某个模块上调用 `options.reconnect`（不能接到另一端所在的模块），拖动时虚线吸到目标边的中点上并画一个圈。其余手势：单击选中，Shift 加选，拖空白处框选（触到即选）；任何模块按下即可拖动，编组的模块带着整组走（Alt 只动自己），Shift 锁定水平或垂直；拖动和自由缩放时边缘与中线吸附到其他模块（`editing` 的 `snap`，屏幕上 6px 内，红色参考线，按住 ⌘/Ctrl 不吸附），选区下方显示位置或尺寸；选区外框有 8 个手柄（`resized`：Shift 保持比例、Alt 从中心），多选时按 `scaled` 整体缩放；手柄和圆点是比画出来的标记大得多的透明按钮，好按；单选时四边外各有一个圆点，拖到另一个模块上调用 `options.connect`，由 `facing` 定终点的边，同样标出目标边；右键先让选区（模块或连线）跟上再调用 `options.menu`（前端的 `EditMenu`）；按住空格、中键或平移工具拖动平移，放置工具和双击空白处调用 `options.place`；双击按坐标找到模块影子 DOM 里的文字或图片，交给 `options.point`，双击连线上的字也交给它（`link: true`，`moduleId` 是连线 ID）；`wordsIn` 给出模块画出的第一段文字，供 Enter 就地改字。拖动和缩放时模块先由 `SceneRenderer.position` 立即放到新位置（缩放先拉伸外框），需要重画的部分（改了尺寸的模块、连到它们的连线）每帧最多画一次、总用最新的位置（`drag`），松手时提交手势记下的最终位置；`SceneRenderer.move` 只重画连到被移动模块的连线。
 
-`apps/web/src/handEdits.ts` 的 `useHandEdits` 是前端唯一的操作集合 `ops`：面板、右键菜单、工具条、浮动操作条和键盘都调用它；`remove` 在没选模块时删选中的连线，`reverse`、`reconnect` 作用于连线。剪贴板走系统的 `copy`/`cut`/`paste` 事件：拷贝时写入 `application/x-drawy+json` 的 `Clip`（`editing` 的 `copy`：模块、它们之间的连线、用到的作品画法和库画法，以及素材 ID），同时存进 `localStorage`，所以能粘贴到别的场景、作品或标签页；粘贴回原处时每次错开一步，粘到别处时放在视图中央；剪贴板里是图片就上传后作为图片模块放进来，是文字就作为文字模块。快捷键：⌘A 全选、Tab 轮选、⌘D 复制、⌘G/⇧⌘G 编组/解组、⌘]/⌘[ 置顶/置底（加 Alt 为一层）、Alt+A/D/W/S/H/V 对齐、Alt+Shift+H/V 等距分布、方向键微调、Delete 删除（选中连线时删连线，⌘X 也是）、Enter 就地改选中模块的字、R 调转选中的连线、Esc 取消。选中连线时发给作者的请求附上 `Selected link: <id> (<起点模块> → <终点模块>)`。
+触屏手势是画布自己的能力，所有壳都有。画布带 `touch-action: none`，所以浏览器不会拿手指去滚动或缩放页面。指针事件按 `pointerType` 区分手指和鼠标：
+- 每根手指的位置记在 `touches` 里；第二根手指落下（落在画法里的按钮上也算）时，第一根手指开始的手势作废（拖动中的模块回到原位），换成 `pinch`：两指的中点带着视角走，两指间距按比例缩放（`zoom`）。抬起一根手指就结束，剩下那根不再起作用。单指手势只认开始它的那根手指（`gesture.pointer`）。
+- 单指在模块上的效果和鼠标一样（选中、拖动选中的或编辑中的模块）；在纸上总是平移视图，编辑时也一样（框选留给鼠标）。
+- 手指不动按住 `HOLD_MS`（500ms）是长按：先让选区跟上手指下的东西，再调用 `options.hold`；没有提供 `hold` 时，编辑中就调用 `options.menu`，相当于右键。之后浏览器自己发出的 `contextmenu` 被拦下。
+- 两次点按相隔 `DOUBLE_TAP_MS` 以内、距离 `DOUBLE_TAP_PX` 以内，算双击，走 `dblclick` 的逻辑；随后浏览器补发的 `dblclick` 不再处理（`doubledJustNow`）。手指双击到模块上没有字的地方时，改它画出的第一段字（`wordsIn`），因为指尖盖住的不止一个点。
+- 手指移动 `FINGER_STILL`（8px）以内仍算按住，连线命中范围是 `FINGER_SLOP`（24px）。
+- 设备有粗指针（`any-pointer: coarse`）时，缩放手柄、连线圆点和连线端点的可按范围都是 44px。
+- `resizable: false` 去掉缩放手柄，选中的模块仍可拖动。
+
+桌面壳 `useEditing` 的 `ops`（会话的 `ops` 绑到选区，加上 `add`）是前端唯一的操作集合：面板、右键菜单、工具条、浮动操作条和键盘都调用它；`remove` 在没选模块时删选中的连线，`reverse`、`reconnect` 作用于连线。剪贴板走系统的 `copy`/`cut`/`paste` 事件：拷贝时写入 `application/x-drawy+json` 的 `Clip`（`editing` 的 `copy`：模块、它们之间的连线、用到的作品画法和库画法，以及素材 ID），同时存进 `Clipboard`（桌面用 `browserStorage`），所以能粘贴到别的场景、作品或标签页；粘贴回原处时每次错开一步，粘到别处时放在视图中央；剪贴板里是图片就上传后作为图片模块放进来，是文字就作为文字模块。快捷键：⌘A 全选、Tab 轮选、⌘D 复制、⌘G/⇧⌘G 编组/解组、⌘]/⌘[ 置顶/置底（加 Alt 为一层）、Alt+A/D/W/S/H/V 对齐、Alt+Shift+H/V 等距分布、方向键微调、Delete 删除（选中连线时删连线，⌘X 也是）、Enter 就地改选中模块的字、R 调转选中的连线、Esc 取消。选中连线时发给作者的请求附上 `Selected link: <id> (<起点模块> → <终点模块>)`。
 
 每个操作都是 `modules/editing` 里的纯函数（按职责分文件：`fields`、`parts`、`layout`、`links`、`words`、`clipboard`、`work`、`changes`），从当前作品算出一份 `WorkEdit`（`apply.ts` 的 `applied` 把它叠到作品上，和 `writeWork` 用的是同一个 `layOn`；两步合成一步用 `composed`）：`setData`、`moveParts`、`rename`、`removeParts`（连带删掉相关连线和检查）、`duplicate`（复制品自成一组，并复制它们之间的连线）、`arrange`（置顶、置底、上移或下移一层：越过下一个与它重叠的模块）、`restack`、`group`/`ungroup`、`setTarget`、`useDrawing`、`setModule`、`add`（文字、图片或库画法，库画法带它的示例数据和尺寸）、`align`/`distribute`、`connect`（连到两个模块的边上，不动模块；新连线沿用场景里最近一条连线的画法和数据，`linkLook`，没有时用库里的 `arrow`）、`reattach`（换一端所在的边，不给边就回到自动跟随，给了模块 ID 就换到那个模块上，不能接到另一端所在的模块）/`reverse`、`replace`（给的是连线 ID 时只改连线数据里的字或图片）、`paste`（新 ID；同 ID 而代码不同的作品画法换新 ID；剪贴板也带着用到的库画法，目标作品有同 ID 的自带画法时，库画法连同默认值以新 ID 作为作品画法放进去；目标作品没有的跳转目标置空）、`setStyle`/`setStyles`、`addScene`/`renameScene`/`removeScene`（连同下面的子场景，指向它们的模块不再跳转）、`setDetail`/`removeDetail`、`setInteraction`、`setDrawing`、`fork`。`replace` 先在模块数据里找要改的字或图片 ID（改的若是某一项的 `name`，数据里所有与它完全相同的字串一起改，比如地图的路线、区域、`highlights` 按地点名引用它，只改一处路线就会丢掉这个点）；找不到时，如果它在画法代码里只出现一次，就按所在位置转义后替换，画法被别的模块共用时先为这个模块复制一份，替换后代码必须还能解析；都不行就返回 `null`，前端把修改要求写进输入框交给作者。`fieldsOf` 决定面板显示哪些普通控件：先是画法 `params` 声明的（名字可写可不写，没写时来自 `i18n.tsx` 的 `edit.params`），再是画法 `defaults` 和数据里其余的文字、颜色、数字和开关；小写的英文单词当作代码里的状态，不显示。其余的数据（列表、记录、状态词，`restOf`）进数据编辑器：列表可增删、上下移动（新增一项是复制最后一项），记录可增删字段。
 
-前端的 `change()` 把这些修改排成队，依次从上一次结果出发，服务端把原因记为 `{ kind: "edit" }`（未保存的修改，见上文 `historyOf`），作者运行期间返回 409。修改不等服务器回应就显示：`change()` 先在“排队修改都完成后的作品”（`drafted`）上算一次，`showable` 时用 `applied` 得到草稿交给画布和面板（`SceneView` 的 `version` 区分同一版本号的不同显示），队列清空时换回服务器的作品，任何一次失败都丢掉草稿；要取用作品还没有的素材的修改（换图、新库画法，包括模块或新连线用到作品还没取过的库画法，比如空白画布上的第一个文字）等服务器取到素材再显示（`showable`）。所以 `make` 可能被调用两次（草稿一次、提交一次），里面不要放只能执行一次的副作用。用户自己造成的版本（手动编辑、撤销、重做）在画布上安静替换，不播放起稿动画：`Canvas.update(…, quiet)` 在 `SceneRenderer.patchable`（同一场景、样式和交互脚本没变、两边都有的素材没变）时调用 `patch` 原地更新，只重画画法、数据或尺寸变了的模块，移动的只改位置，删掉的拿走，新的画上，按新顺序调整层级，连线全部重画；其他情况才另起一个渲染器整体替换。重做只在撤销后作品没有别的变动时可用，记录在前端。下次作者运行时，`changesBetween` 列出的不只是场景里模块的增删改移和层级，还有场景本身的标题、父场景、脚本和交互检查清单，整个新增或删除的场景，以及画法、详情的增删改，提示词要求作者保留。
+会话的 `edits` 把这些修改排成队，依次从上一次结果出发，服务端把原因记为 `{ kind: "edit" }`（未保存的修改，见上文 `historyOf`），作者运行期间返回 409。修改不等服务器回应就显示：`commit` 先在“排队修改都完成后的作品”（`drafted`）上算一次，`showable` 时用 `applied` 得到草稿交给画布和面板（`SceneView` 的 `version` 区分同一版本号的不同显示），队列清空时换回服务器的作品，任何一次失败都丢掉草稿；要取用作品还没有的素材的修改（换图、新库画法，包括模块或新连线用到作品还没取过的库画法，比如空白画布上的第一个文字）等服务器取到素材再显示（`showable`）。所以 `make` 可能被调用两次（草稿一次、提交一次），里面不要放只能执行一次的副作用。用户自己造成的版本（手动编辑、撤销、重做）在画布上安静替换，不播放起稿动画：`SceneView` 问会话的 `quiet`，再调用 `Canvas.update(…, quiet)`； `SceneRenderer.patchable`（同一场景、样式和交互脚本没变、两边都有的素材没变）时调用 `patch` 原地更新，只重画画法、数据或尺寸变了的模块，移动的只改位置，删掉的拿走，新的画上，按新顺序调整层级，连线全部重画；其他情况才另起一个渲染器整体替换。重做只在撤销后作品没有别的变动时可用，记录在会话里（`undone`）。下次作者运行时，`changesBetween` 列出的不只是场景里模块的增删改移和层级，还有场景本身的标题、父场景、脚本和交互检查清单，整个新增或删除的场景，以及画法、详情的增删改，提示词要求作者保留。
 
 ## 模块职责
 
@@ -122,7 +213,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 - `observation`：截图服务的客户端。`capture.ts` 在截图容器里运行，运行时测试也直接调用它。
 - `images`：按作品风格生成图片，并把结果回报给作者。风格参考图由 `styleReferences` 选出，记在素材的 `origin.styleReferences`；生成图一律是该用户的私人素材。抠图角色（object、figure、icon）显影时带 `transparent`，素材库量出没有透明区域就返回 422、不保存，`develop` 用同一提示词再画一次（两次返回图片的张数和 token 都计入，重试失败也保留第一次的用量）；第二次仍不透明就照存，结果带 `opaque`，作者在 `Pictures:` 消息里被告知它会显示成方框。
 - `materials`：主程序访问素材服务的一层，只经 `@drawy/materials/client` 访问，不直接读素材库的数据库。
-- `canvas`：前端画布，负责视角、选择（含多选）、移动、缩放、编辑模式和起稿动画（`ink.ts`）。第一次挂载（打开作品、进入子场景）不播放落笔动画，只有之后 `update` 换上的新版本才落笔。不在编辑时，带跳转目标的模块右上角叠一枚小标记（`paintTargets`，放在画布自己的覆盖层里、样式在前端的 CSS 里；运行时页面用同一个 `Canvas`，所以 `browser.ts` 传 `marks: false` 关掉它，截图服务和导出都看不到它），鼠标在模块上时（`hot`）展开写明去处，点它也能打开。画布尺寸变化（面板展开、窗口缩放）时保持画面中心，自动视角在停下 200ms 后平滑适应一次；`fit` 在目标与当前视角几乎相同时不动，避免小幅滑动。
+- `canvas`：前端画布，负责视角、选择（含多选）、移动、缩放、编辑模式和起稿动画（`ink.ts`）。第一次挂载（打开作品、进入子场景）不播放落笔动画，只有之后 `update` 换上的新版本才落笔。不在编辑时，带跳转目标的模块右上角叠一枚小标记（`paintTargets`，放在画布自己的覆盖层里、样式在前端的 CSS 里；运行时页面用同一个 `Canvas`，所以 `browser.ts` 传 `marks: false` 关掉它，截图服务和导出都看不到它），鼠标在模块上时（`hot`）展开写明去处，点它也能打开。`drawn(ids, revision)` 等指定模块画出来，或者确定画不出来（见“前端的分层”），会话靠它选中新做出的模块。手指的手势（双指缩放平移、单指拖动、长按、双击）见“手动编辑如何流动”。画布尺寸变化（面板展开、窗口缩放）时保持画面中心，自动视角在停下 200ms 后平滑适应一次；`fit` 在目标与当前视角几乎相同时不动，避免小幅滑动。Chromium 排 SVG 文字时把屏幕上的缩放算进字体；图层正在做不透明度、滤镜这类动画时它被合成，视角的 `transform` 交给合成器直接改，文字不再重排，于是按旧的缩放画出（大一倍、被裁到布局框里），直到命中测试或重画才恢复。所以运行时给画法的 SVG（`scene.ts` 影子样式里的 `svg`）和画布自己的草图标签都设 `text-rendering: geometricPrecision`，让字体不随屏幕缩放；打开场景时也先定视角再淡入。不要去掉它们。
 - `storage`、`identity`：按用户隔离的 `data/drawy.sqlite`，以及账号、角色权限和全站模型配置。`UserStore.viewer`（`{ id, all }`，`all` 来自 `materials.all`）是访问素材库读接口时代表用户的身份，读素材一律传它；写入（预留、显影、上传、记录使用）仍传 `userId`。
 - `trace`：基于 AsyncLocalStorage 嵌套记录，任何模块都可以直接调用 `tracer`，不需要层层传参。每个 span 另存一份 `brief`（时间、状态、用量、计量键和几个字的摘要，`spans` 表的 `brief` 列，旧记录在第一次读取时补上）：列表、汇总和时间线（`/api/traces/:id`）只读它，展开某一步时才由 `whole` 经 `/api/traces/:id/spans/:span` 取完整记录，模型轮次连同服务端拼好的完整输入。不要让列表或时间线重新读取完整 span，那会把整段对话读出来。
 - `ui`：共享的 React 组件和品牌素材。
@@ -172,11 +263,11 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 工具说明写清做什么、什么时候用、返回什么和失败时怎样；字段的含义写在 schema 的 `.describe` 里（JSDoc 模型看不到），不在系统提示词里重复。
 
-**界面像绘图工具，不像聊天机器人。** “AI 味”的界面有两波：第一波是靛紫渐变、居中大标语、三张圆角卡片；第二波是有人要求“去 AI 味”后模型给出的米色底、衬线标题、赤陶色点缀（正是 Claude 的配色）。两种都不要。颜色都在 `modules/ui/base.css` 的 token 里：白底和中性浅灰（不带暖色），文字近黑，`--blue`/`--ai`/`--ai-deep` 是唯一的强调色，用于选中、焦点、链接、进行中的标记和主要按钮（`.primary`、发送），画布里的 `ACCENT` 与它相同；`--brand` 只给灯笼标志；还没出现的图片和截图用 `--hatch` 铅笔排线（`hatch` 动画）。标题用 `--font-display` 无衬线半粗体，`--font-serif` 只留给作品里的内容；不用毛玻璃（`backdrop-filter`），页面加载时不做上浮动画，动效只回应用户的操作；卡片圆角 8～12px、阴影很轻，不加彩色色块底。不要加模糊色块、流光、闪烁星星这类“AI 生成中”的样子，图标里也不用 `Sparkles`。画室里用户的请求是左对齐的引文，不是对话气泡。页面上不放解释性的提示段落（版本说明、手势说明、代码说明之类），按钮和标签自己说清；作者的思考和简报的 `ideas`/`concept` 要显示，绘制过程靠它们才有看头：画室把连续的思考合成一行（`Thoughts`），进度行在两次工具之间显示最新思考的标题（`Studio.tsx` 的 `thinkingOf`）：GPT 的思考摘要无论怎么要求都是英文，与页面语言不同的思考照样显示，只用 `lang` 标出并调浅（`foreign`），因为模型推理的几秒到十几秒里，这是唯一能看的东西；画布还空着时 `SceneView` 的便签先抄请求原话，下面一行与进度行同出 `currentOf`（是思考时标“正在想”，否则是正在做的事或作者最新的进度说明），`set_brief` 之后换成主题、想过的画法、选定的想法、受众和画风；语域（严谨/个性）不显示。收起的输入框条用 `Stages` 显示五格进度（`stageOf`：构思、定内容、备素材、起稿、检查，跳过的阶段算已过），画室关着时再加当前一行和 `Clock` 已用时间。token 和费用只给有 `models.manage` 的账号看（`WorkUsage`、运行的费用按钮），普通用户按提问次数计。模块在界面上的名字用 `shownName`（没有名字和文字时是画法名，不露出 ID），`labelOf` 仍是作者看到的名字。界面文案不必处处说“AI”：作者在做的事直接说“正在画”“等你回答”，生成图片的来源标注“AI 生成”保留。
+**界面像绘图工具，不像聊天机器人。** “AI 味”的界面有两波：第一波是靛紫渐变、居中大标语、三张圆角卡片；第二波是有人要求“去 AI 味”后模型给出的米色底、衬线标题、赤陶色点缀（正是 Claude 的配色）。两种都不要。颜色都在 `modules/ui/base.css` 的 token 里：白底和中性浅灰（不带暖色），文字近黑，`--blue`/`--ai`/`--ai-deep` 是唯一的强调色，用于选中、焦点、链接、进行中的标记和主要按钮（`.primary`、发送），画布里的 `ACCENT` 与它相同；`--brand` 只给灯笼标志；还没出现的图片和截图用 `--hatch` 铅笔排线（`hatch` 动画）。标题用 `--font-display` 无衬线半粗体，`--font-serif` 只留给作品里的内容；不用毛玻璃（`backdrop-filter`），页面加载时不做上浮动画，动效只回应用户的操作；卡片圆角 8～12px、阴影很轻，不加彩色色块底。不要加模糊色块、流光、闪烁星星这类“AI 生成中”的样子，图标里也不用 `Sparkles`。手机页同样遵守这些：浮在画布上的按钮和底部面板是白底、轻阴影、圆角，没有渐变和毛玻璃。画室里用户的请求是左对齐的引文，不是对话气泡。页面上不放解释性的提示段落（版本说明、手势说明、代码说明之类），按钮和标签自己说清；作者的思考和简报的 `ideas`/`concept` 要显示，绘制过程靠它们才有看头：画室把连续的思考合成一行（`Thoughts`），进度行在两次工具之间显示最新思考的标题（`Studio.tsx` 的 `thinkingOf`）：GPT 的思考摘要无论怎么要求都是英文，与页面语言不同的思考照样显示，只用 `lang` 标出并调浅（`foreign`），因为模型推理的几秒到十几秒里，这是唯一能看的东西；画布还空着时 `SceneView` 的便签先抄请求原话，下面一行与进度行同出 `currentOf`（是思考时标“正在想”，否则是正在做的事或作者最新的进度说明），`set_brief` 之后换成主题、想过的画法、选定的想法、受众和画风；语域（严谨/个性）不显示。收起的输入框条用 `Stages` 显示五格进度（`stageOf`：构思、定内容、备素材、起稿、检查，跳过的阶段算已过），画室关着时再加当前一行和 `Clock` 已用时间。token 和费用只给有 `models.manage` 的账号看（`WorkUsage`、运行的费用按钮），普通用户按提问次数计。模块在界面上的名字用 `shownName`（没有名字和文字时是画法名，不露出 ID），`labelOf` 仍是作者看到的名字。界面文案不必处处说“AI”：作者在做的事直接说“正在画”“等你回答”，生成图片的来源标注“AI 生成”保留。
 
 **面向用户的文字要中英双语。** 前端文案在 `apps/web/src/i18n.tsx`，以 `zh` 为基准，`en` 必须有相同的键；共享组件的文案在 `modules/ui/src/words.ts`。服务端内部说中文，错误在离开服务时由 `modules/contracts/messages.ts` 按请求的语言翻译，所以新增的错误信息要在那里补上英文。写给模型的文字保持原样，不翻译。
 
-**测试要验证真实行为。** `agent.test.ts` 用 `vi.mock` 替换掉 `models` 和 `observation`，按脚本逐轮返回工具调用。素材相关的测试用 `@drawy/materials/testing` 的 `serveLibrary`，在临时目录里起一个带种子数据的真实素材库，并拦截 fetch。新测试沿用这两种方式，不要另写素材库的 mock。测试失败时，先判断是实现错了还是测试过时了，不要为了让测试通过去改断言或写特例。
+**测试要验证真实行为。** `agent.test.ts` 用 `vi.mock` 替换掉 `models` 和 `observation`，按脚本逐轮返回工具调用。前端的作品页行为由 `apps/web/regression/` 的三个套件在真实浏览器里验证，见“前端的分层”。素材相关的测试用 `@drawy/materials/testing` 的 `serveLibrary`，在临时目录里起一个带种子数据的真实素材库，并拦截 fetch。新测试沿用这两种方式，不要另写素材库的 mock。测试失败时，先判断是实现错了还是测试过时了，不要为了让测试通过去改断言或写特例。
 
 **`promo/` 是独立工程。** 它是 60 秒宣传片，有自己的 npm 依赖和 `build.sh`，不属于主程序的构建和测试；只有任务明确涉及时才去动它。
 

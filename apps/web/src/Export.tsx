@@ -185,30 +185,29 @@ async function jpeg(png: Blob) {
 
 /** Saving or sending the scene in the form the place it goes to wants: the picture itself,
  * a card for social posts, a page for print, or the work as a file that stays explorable. */
-export function ExportMenu({
+/** Exporting a scene: its picture as a file, a copy, a share or a card, and the work as
+ * a page or a PDF. Whoever shows the choices (a menu, a sheet) holds this while they are
+ * shown, so the picture is made ahead of a share, which must be called within the tap. */
+export function useExports({
   work,
   sceneId,
-  disabled,
   fail,
   done,
+  close,
 }: {
   work: Work;
   sceneId: string;
-  disabled: boolean;
   fail: (e: unknown) => void;
   /** Says something went well, such as a copy. */
   done: (message: string) => void;
+  /** The choices are done with. */
+  close: () => void;
 }) {
   const t = useT(),
     locale = useLocale();
   const w = t.exports;
-  const [open, setOpen] = useState(false),
-    [busy, setBusy] = useState<Format>();
-  const ref = useRef<HTMLDivElement>(null);
-  useDismiss(open, () => setOpen(false), ref);
-  // The picture is drawn once per revision and reused by every form made from it.
+  const [busy, setBusy] = useState<Format>();
   const cache = useRef<{ key: string; blob: Promise<Response> }>(undefined);
-  useEffect(() => setOpen(false), [sceneId]);
   const base = `/api/works/${work.id}/scenes/${encodeURIComponent(sceneId)}`;
   const fetchFile = async (path: string) => {
     const r = await fetch(path, { headers: { "x-drawy-locale": locale } });
@@ -225,12 +224,9 @@ export function ExportMenu({
     })).clone();
     return { blob: await r.blob(), name: nameOf(r, "drawy.png") };
   };
-  // Sharing needs the click that asked for it, which a picture still being drawn would
-  // outlast: the picture is drawn when the menu opens and sharing waits until it is ready.
   const [ready, setReady] = useState<{ key: string; blob: Blob; name: string }>();
   const key = `${work.id}:${sceneId}:${work.revision}`;
   useEffect(() => {
-    if (!open) return;
     let live = true;
     png().then(
       (p) => live && setReady({ key, ...p }),
@@ -239,7 +235,7 @@ export function ExportMenu({
     return () => {
       live = false;
     };
-  }, [open, key]);
+  }, [key]);
   const title =
     work.scenes[sceneId]?.parentId ? `${work.title} · ${work.scenes[sceneId].title}` : work.title;
   const share =
@@ -248,13 +244,12 @@ export function ExportMenu({
   async function run(format: Format) {
     setBusy(format);
     try {
-      // The clipboard is written within the click, handed the picture still to come.
       if (format === "copy") {
         await navigator.clipboard.write([
           new ClipboardItem({ "image/png": png().then((p) => p.blob) }),
         ]);
         done(w.copied);
-        setOpen(false);
+        close();
         return;
       }
       if (format === "share") {
@@ -264,7 +259,7 @@ export function ExportMenu({
           .catch((e) => {
             if (e?.name !== "AbortError") throw e;
           });
-        setOpen(false);
+        close();
         return;
       }
       if (format === "pdf" || format === "html") {
@@ -277,25 +272,91 @@ export function ExportMenu({
         else if (format === "jpeg") save(await jpeg(blob), stem + ".jpg");
         else save(await card(blob, title, w.credit, cards[format]), `${stem} · ${w[format]}.png`);
       }
-      setOpen(false);
+      close();
     } catch (e) {
       fail(e);
     } finally {
       setBusy(undefined);
     }
   }
-  const preparing = (format: Format) => format === "share" && ready?.key !== key;
+  return {
+    run,
+    busy,
+    share,
+    /** Whether a share waits for its picture. */
+    preparing: (format: Format) => format === "share" && ready?.key !== key,
+  };
+}
+
+/** The export choices, in the order they are shown: sharing first where the device can. */
+export function ExportItems({
+  exports: x,
+  shareFirst = false,
+}: {
+  exports: ReturnType<typeof useExports>;
+  shareFirst?: boolean;
+}) {
+  const w = useT().exports;
   const item = (format: Format, Icon: typeof Download, label: string) => (
     <button
       key={format}
       role="menuitem"
-      disabled={!!busy || preparing(format)}
-      onClick={() => void run(format)}
+      disabled={!!x.busy || x.preparing(format)}
+      onClick={() => void x.run(format)}
     >
-      {busy === format || preparing(format) ? <Spinner size={15} /> : <Icon size={16} />}
+      {x.busy === format || x.preparing(format) ? <Spinner size={15} /> : <Icon size={16} />}
       <span>{label}</span>
     </button>
   );
+  return (
+    <>
+      {shareFirst && x.share && item("share", Share2, w.share)}
+      <h4>{w.picture}</h4>
+      {item("png", FileImage, w.png)}
+      {item("jpeg", ImageDown, w.jpeg)}
+      {item("copy", Clipboard, w.copy)}
+      {!shareFirst && x.share && item("share", Share2, w.share)}
+      <h4>{w.cards}</h4>
+      <div className={cx("export-cards")}>
+        {(["square", "portrait", "wide"] as const).map((f) => {
+          const Icon = { square: Square, portrait: RectangleVertical, wide: RectangleHorizontal }[f];
+          return (
+            <button key={f} role="menuitem" disabled={!!x.busy} onClick={() => void x.run(f)}>
+              {x.busy === f ? <Spinner size={15} /> : <Icon size={18} />}
+              <span>{w[f]}</span>
+              <small>{w.ratio[f]}</small>
+            </button>
+          );
+        })}
+      </div>
+      <h4>{w.other}</h4>
+      {item("html", FileCode2, w.html)}
+      {item("pdf", FileText, w.pdf)}
+    </>
+  );
+}
+
+/** The export button and its menu, beside the canvas on a computer. */
+export function ExportMenu({
+  work,
+  sceneId,
+  disabled,
+  fail,
+  done,
+}: {
+  work: Work;
+  sceneId: string;
+  disabled: boolean;
+  fail: (e: unknown) => void;
+  /** Says something went well, such as a copy. */
+  done: (message: string) => void;
+}) {
+  const w = useT().exports;
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useDismiss(open, () => setOpen(false), ref);
+  useEffect(() => setOpen(false), [sceneId]);
   return (
     <div className={cx("export")} ref={ref}>
       <button
@@ -310,29 +371,25 @@ export function ExportMenu({
       </button>
       {open && (
         <div className={cx("export-menu")} role="menu">
-          <h4>{w.picture}</h4>
-          {item("png", FileImage, w.png)}
-          {item("jpeg", ImageDown, w.jpeg)}
-          {item("copy", Clipboard, w.copy)}
-          {share && item("share", Share2, w.share)}
-          <h4>{w.cards}</h4>
-          <div className={cx("export-cards")}>
-            {(["square", "portrait", "wide"] as const).map((f) => {
-              const Icon = { square: Square, portrait: RectangleVertical, wide: RectangleHorizontal }[f];
-              return (
-                <button key={f} role="menuitem" disabled={!!busy} onClick={() => void run(f)}>
-                  {busy === f ? <Spinner size={15} /> : <Icon size={18} />}
-                  <span>{w[f]}</span>
-                  <small>{w.ratio[f]}</small>
-                </button>
-              );
-            })}
-          </div>
-          <h4>{w.other}</h4>
-          {item("html", FileCode2, w.html)}
-          {item("pdf", FileText, w.pdf)}
+          <Exports
+            work={work}
+            sceneId={sceneId}
+            fail={fail}
+            done={done}
+            close={() => setOpen(false)}
+            busy={setBusy}
+          />
         </div>
       )}
     </div>
   );
+}
+function Exports({
+  busy,
+  ...props
+}: Parameters<typeof useExports>[0] & { busy: (busy: boolean) => void }) {
+  const exports = useExports(props);
+  useEffect(() => busy(!!exports.busy), [exports.busy]);
+  useEffect(() => () => busy(false), []);
+  return <ExportItems exports={exports} />;
 }

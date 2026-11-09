@@ -21,7 +21,7 @@ import type {
   Work,
 } from "../../../modules/contracts/index.ts";
 import type { PictureMaterial } from "@drawy/materials/schema";
-import type { Change } from "./handEdits.ts";
+import type { Change } from "./session/work.ts";
 import { cx } from "./cx.ts";
 import { useT, type Words as Dictionary } from "./i18n.tsx";
 

@@ -22,7 +22,8 @@ import type {
 import { cx } from "./cx.ts";
 import { styleList } from "./Composer.tsx";
 import { useT } from "./i18n.tsx";
-import { currentOf, live, thinkingOf } from "./Studio.tsx";
+import { currentOf, thinkingOf } from "./Studio.tsx";
+import { live } from "./session/work.ts";
 import type { StyleMaterial } from "@drawy/materials/schema";
 type ToolStep = Extract<Step, { kind: "tool" }>;
 /** What the canvas shows of a work: its revision and which pictures have developed. */
@@ -55,6 +56,9 @@ export function SceneView({
   quiet,
   version = "",
   view,
+  controls = true,
+  resizable = true,
+  hold,
 }: {
   work: Work;
   /** What tells this showing of the work from another of the same revision: a hand edit
@@ -84,6 +88,12 @@ export function SceneView({
   place?: CanvasOptions["place"];
   /** Receives the canvas the scene is drawn on, for the editor to work with. */
   view: (canvas: Canvas | undefined) => void;
+  /** Whether the zoom buttons show: where fingers pinch, they need not. */
+  controls?: boolean;
+  /** Whether the selection can be resized by its handles. */
+  resizable?: boolean;
+  /** A finger held still on the canvas, once the selection has followed it. */
+  hold?: CanvasOptions["hold"];
 }) {
   const t = useT(),
     locale = useLocale();
@@ -95,9 +105,9 @@ export function SceneView({
     // work goes from the spinner straight to the picture, without a blank page between.
     [shown, setShown] = useState(false),
     [error, setError] = useState("");
-  const callbacks = useRef({ open, select, commit, point, connect, selectLink, reconnect, menu, place: placeAt, view, quiet });
+  const callbacks = useRef({ open, select, commit, point, connect, selectLink, reconnect, menu, place: placeAt, view, quiet, hold });
   const picked = useRef<{ key: string; ids: string[] } | null>(null);
-  callbacks.current = { open, select, commit, point, connect, selectLink, reconnect, menu, place: placeAt, view, quiet };
+  callbacks.current = { open, select, commit, point, connect, selectLink, reconnect, menu, place: placeAt, view, quiet, hold };
   useEffect(() => {
     setError("");
     setShown(false);
@@ -106,10 +116,12 @@ export function SceneView({
     const view = new Canvas(host.current!, work, work.scenes[sceneId], {
       camera: cameras.current.get(key),
       movable: !disabled,
+      resizable,
       motion: !reducedMotion(),
       // The view keeps clear of the title above and of the composer laid over its foot.
       insets: () => {
-        const stage = host.current!.getBoundingClientRect(),
+        if (!host.current) return { top: 56, bottom: 96 };
+        const stage = host.current.getBoundingClientRect(),
           dock = host
             .current!.parentElement?.querySelector("[data-dock]")
             ?.getBoundingClientRect();
@@ -129,6 +141,7 @@ export function SceneView({
       selectLink: (id) => callbacks.current.selectLink?.(id),
       reconnect: (id, end, to) => callbacks.current.reconnect?.(id, end, to),
       menu: (at) => callbacks.current.menu?.(at),
+      ...(hold ? { hold: (at: { x: number; y: number }) => callbacks.current.hold?.(at) } : {}),
       place: (at) => callbacks.current.place?.(at),
       cameraChanged: (c) => cameras.current.set(key, c),
       error: setError,
@@ -355,7 +368,7 @@ export function SceneView({
           )}
         </div>
       )}
-      <div className={cx("camera")}>
+      {controls && <div className={cx("camera")}>
         <button
           aria-label={t.work.zoomOut}
           data-tip={t.work.zoomOut}
@@ -380,7 +393,7 @@ export function SceneView({
         >
           <Scan size={15} />
         </button>
-      </div>
+      </div>}
       {error && !run && (
         <div role="alert" className={cx("render-error")}>
           {error}

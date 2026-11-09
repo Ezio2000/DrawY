@@ -24,6 +24,9 @@ import type {
   Target,
   Work,
 } from "../contracts/index.ts";
+/** How waiting for modules to be drawn ended: they are drawn; a revision as new as theirs
+ * was drawn without them; or the canvas went (the scene was left). */
+export type Drawn = "drawn" | "missing" | "gone";
 /** Words or a picture a person pointed at in a module, to change them. */
 export type Pointed =
   | {
@@ -41,6 +44,9 @@ export interface CanvasOptions {
   camera?: Camera;
   /** Whether modules can be moved and resized: a selected module follows a drag. */
   movable?: boolean;
+  /** Whether the selection has handles to resize it by; a page that leaves resizing to a
+   * larger screen turns them off, and selected modules still move. */
+  resizable?: boolean;
   /** Unfold drawings as they appear and glide the camera between compositions. */
   motion?: boolean;
   /** Screen space kept clear above and below the automatic view, for controls laid over
@@ -73,6 +79,10 @@ export interface CanvasOptions {
   /** A right click while editing, at a point on screen, after the selection has followed
    * it; for the menu of what can be done there. */
   menu?: (at: { x: number; y: number }) => void;
+  /** A finger held still on the canvas, at a point on screen, after the selection has
+   * followed it (whether editing or not). Without it, a long press while editing asks for
+   * the menu, as a right click does. */
+  hold?: (at: { x: number; y: number }) => void;
   /** A press with the placing tool, at a point in the scene. */
   place?: (at: Point) => void;
   /** A scene has been drawn and is now on screen. */
@@ -89,8 +99,22 @@ const seed = (id: string) =>
   );
 const GRAPHITE = "rgba(70,70,70,.45)";
 const ACCENT = "#3d72e0";
-/** How far from a link's line, in screen pixels, a press still takes the link. */
-const SLOP = 10;
+/** How far from a link's line, in screen pixels, a press still takes the link: a finger
+ * covers far more than a mouse's point does. */
+const SLOP = 10,
+  FINGER_SLOP = 24;
+/** How far a press may wander and still be a press, not a drag. */
+const STILL = 3,
+  FINGER_STILL = 8;
+/** How long a finger is held still for a long press, and how soon a second tap must come
+ * (and how near the first) to be a double tap. */
+const HOLD_MS = 500,
+  DOUBLE_TAP_MS = 320,
+  DOUBLE_TAP_PX = 30;
+/** Whether the device has a coarse pointer (a finger): the controls laid over the canvas
+ * then get places to press as big as a fingertip. */
+const fingers = () =>
+  typeof matchMedia === "function" && matchMedia("(any-pointer: coarse)").matches;
 /** Distance from a point to a segment. */
 function distance(p: Point, a: Point, b: Point) {
   const dx = b.x - a.x,
@@ -186,8 +210,19 @@ export class Canvas {
     x: number;
     y: number;
     moved: boolean;
+    /** The pointer driving it: other fingers do not move it. */
+    pointer: number;
+    /** Whether a finger made it. */
+    touch: boolean;
   } & (
     | { kind: "pan"; camera: Camera }
+    | {
+        kind: "pinch";
+        camera: Camera;
+        /** Where the two fingers' middle was and how far apart they were, at the start. */
+        mid: Point;
+        span: number;
+      }
     | {
         kind: "move";
         moves: { id: string; bounds: Bounds }[];
@@ -209,6 +244,16 @@ export class Canvas {
     | { kind: "relink"; linkId: string; end: "from" | "to" }
     | { kind: "press" }
   );
+  /** The fingers on the canvas now, where they are on screen. */
+  private touches = new Map<number, Point>();
+  /** A finger held still, until it is long enough to be a long press. */
+  private holding?: ReturnType<typeof setTimeout>;
+  /** The last tap with a finger, to tell a double tap; and when one was handled, so the
+   * browser's own double click after it is not taken twice. */
+  private tapped?: { at: number; x: number; y: number };
+  private doubled = 0;
+  /** Whether the last press was a finger's. */
+  private touching = false;
   constructor(
     host: HTMLElement,
     work: Work,
@@ -221,7 +266,7 @@ export class Canvas {
     this.element.dataset.canvas = "";
     this.element.tabIndex = 0;
     this.element.style.cssText =
-      "position:relative;width:100%;height:100%;overflow:hidden;outline:none;background-image:radial-gradient(#dcd6c9 .7px,transparent .7px)";
+      "position:relative;width:100%;height:100%;overflow:hidden;outline:none;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;background-image:radial-gradient(#dcd6c9 .7px,transparent .7px)";
     host.append(this.element);
     this.renderer = this.renderFor(work, scene);
     this.renderer.element.style.visibility = "hidden";
@@ -236,6 +281,9 @@ export class Canvas {
       "position:absolute;border:1px dashed rgba(44,99,212,.55);border-radius:6px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
     this.element.append(this.hover);
     const english = /^en/i.test(document.documentElement.lang);
+    // Controls are pressed by their invisible place, which grows to a fingertip on touch.
+    const finger = fingers(),
+      hit = (n: number) => (finger ? 44 : n);
     this.frame.style.cssText =
       "position:absolute;pointer-events:none;display:none;z-index:4;box-sizing:border-box";
     this.frame.dataset.canvasControl = "";
@@ -245,8 +293,8 @@ export class Canvas {
       const cursor = { nw: "nwse", se: "nwse", ne: "nesw", sw: "nesw", n: "ns", s: "ns", e: "ew", w: "ew" }[h];
       const handle = control(
         { handle: h },
-        18,
-        `width:10px;height:10px;border-radius:3px;background:#fff;border:1.5px solid ${ACCENT};box-shadow:0 1px 3px rgba(0,0,0,.18)`,
+        hit(18),
+        `width:${finger ? 14 : 10}px;height:${finger ? 14 : 10}px;border-radius:3px;background:#fff;border:1.5px solid ${ACCENT};box-shadow:0 1px 3px rgba(0,0,0,.18)`,
         english ? "Resize" : "调整大小",
       );
       Object.assign(handle.style, { left: x, top: y, cursor: cursor + "-resize" });
@@ -254,10 +302,10 @@ export class Canvas {
     }
     for (const side of sides) {
       const at = sidePoint[side];
-      const out = 20;
+      const out = finger ? 34 : 20;
       const dot = control(
         { connect: side },
-        22,
+        hit(22),
         `width:12px;height:12px;border-radius:50%;background:${ACCENT};box-shadow:0 0 0 2.5px #fff,0 1px 4px rgba(0,0,0,.22);transition:transform .15s`,
         english ? "Draw a link" : "拖出连线",
       );
@@ -290,7 +338,7 @@ export class Canvas {
     for (const end of ["from", "to"] as const) {
       const handle = control(
         { linkEnd: end },
-        22,
+        hit(22),
         `width:13px;height:13px;border-radius:50%;background:#fff;border:2.5px solid ${ACCENT};box-shadow:0 1px 4px rgba(0,0,0,.2)`,
         english
           ? end === "from"
@@ -318,14 +366,14 @@ export class Canvas {
           if (!this.editing) return;
           e.stopPropagation();
           if (type === "pointerdown") this.down(e as PointerEvent);
-          if (type === "dblclick") this.dblclick(e as MouseEvent);
+          if (type === "dblclick" && !this.doubledJustNow()) this.dblclick(e as MouseEvent);
         },
         { capture: true, signal },
       );
     // A press on the canvas itself reaches both listeners; editing has taken it already.
     this.element.addEventListener(
       "dblclick",
-      (e) => !this.editing && !this.interactive(e) && this.dblclick(e),
+      (e) => !this.editing && !this.interactive(e) && !this.doubledJustNow() && this.dblclick(e),
       { signal },
     );
     this.element.addEventListener(
@@ -352,13 +400,15 @@ export class Canvas {
       signal,
     });
     this.element.addEventListener("pointerup", (e) => this.up(e), { signal });
-    this.element.addEventListener("pointercancel", () => this.cancel(), {
+    this.element.addEventListener("pointercancel", (e) => this.cancel(e), {
       signal,
     });
     // While editing, a right click selects what it lands on and asks for the menu.
     this.element.addEventListener(
       "contextmenu",
       (e) => {
+        // A finger's long press is handled as it happens; the browser's menu after it is not.
+        if (this.touching) return e.preventDefault();
         if (!this.editing || !this.options.menu) return;
         e.preventDefault();
         const { module: m, link } = this.pick(e.clientX, e.clientY);
@@ -437,19 +487,25 @@ export class Canvas {
     this.observer.observe(this.element);
     const first = this.renderer;
     this.ready = first.mount().finally(() => {
-      if (this.renderer !== first) return;
+      this.mounting = false;
+      // A canvas let go before its first drawing was done has nothing to show it in.
+      if (this.abort.signal.aborted) return;
+      if (this.renderer !== first) return this.arrived();
       first.element.style.visibility = "";
+      // The view is taken before the fade starts: a layer that is fading is composited,
+      // and Chromium then moves it without laying its SVG text out again.
+      if (this.automatic) this.fit(false);
+      else this.paint();
       // What is already drawn comes in at once, with only a short fade over the paper.
       if (this.options.motion)
         first.element.animate([{ opacity: 0 }, { opacity: 1 }], {
           duration: 240,
           easing: "ease-out",
         });
-      if (this.automatic) this.fit(false);
-      else this.paint();
       // Opening a work or entering a scene shows what is already drawn as it is: only
       // what arrives while it is open unfolds.
       this.options.shown?.(scene);
+      this.arrived();
     });
   }
   /** Keeps the selection on what is still drawn, as it is now. */
@@ -458,6 +514,39 @@ export class Canvas {
     if (this.link && !this.renderer.links.has(this.link)) this.selectLink(null);
     if (paint) this.paint();
   }
+  /** Modules waited for, each with the revision that made them. */
+  private awaited = new Set<{ ids: string[]; revision: number; done: (how: Drawn) => void }>();
+  /** Settles once these modules, made in `revision`, are drawn (not only laid out):
+   * `drawn`; `missing` once a revision as new as theirs has been drawn without them (a
+   * later change took them out); `gone` if the canvas goes first. No clock is involved, so
+   * a slow device only makes it wait longer. */
+  drawn(ids: string[], revision: number) {
+    return new Promise<Drawn>((done) => {
+      const wait = {
+        ids,
+        revision,
+        done: (how: Drawn) => {
+          this.awaited.delete(wait);
+          done(how);
+        },
+      };
+      this.awaited.add(wait);
+      this.arrived();
+    });
+  }
+  /** Patches being drawn: a module laid out by one is not drawn until it is done. */
+  private patching = 0;
+  /** Whether the first drawing of the scene is still being made. */
+  private mounting = true;
+  private arrived() {
+    if (this.mounting || this.patching || this.pending) return;
+    const shown = this.renderer.work.revision;
+    for (const wait of [...this.awaited]) {
+      if (wait.ids.every((id) => this.renderer.instances.has(id))) wait.done("drawn");
+      else if (shown >= wait.revision) wait.done("missing");
+    }
+  }
+
   private renderFor(work: Work, scene: Scene) {
     return new SceneRenderer(work, scene, {
       open: (t) => this.options.open(t),
@@ -471,14 +560,21 @@ export class Canvas {
     // A change the person made is laid over what is drawn, redrawing only what changed.
     if (quiet && !this.pending && this.renderer.patchable(work, scene)) {
       const renderer = this.renderer;
-      void renderer.patch(work, scene).then(
-        () => {
-          if (this.renderer !== renderer) return;
-          this.refresh();
-          this.options.shown?.(scene);
-        },
-        (e) => this.options.error(String(e)),
-      );
+      this.patching++;
+      void renderer
+        .patch(work, scene)
+        .then(
+          () => {
+            if (this.renderer !== renderer) return;
+            this.refresh();
+            this.options.shown?.(scene);
+          },
+          (e) => this.options.error(String(e)),
+        )
+        .finally(() => {
+          this.patching--;
+          this.arrived();
+        });
       this.refresh();
       return;
     }
@@ -496,6 +592,7 @@ export class Canvas {
       // The selection stays on what is still there, as it is now, and the drawing takes
       // the current view at once; an automatic view then glides on to fit it.
       this.refresh();
+      this.arrived();
       if (this.automatic && !quiet) this.fit(true);
       if (quiet) before.dispose();
       else this.unfold(before, next);
@@ -589,7 +686,7 @@ export class Canvas {
         text.textContent = s.label;
         text.setAttribute("x", String(width / 2));
         text.setAttribute("y", String(height / 2));
-        text.style.cssText = `fill:${GRAPHITE};font:italic calc(12.5px / var(--zoom)) "Iowan Old Style","Songti SC",Georgia,serif;text-anchor:middle;dominant-baseline:central`;
+        text.style.cssText = `fill:${GRAPHITE};font:italic calc(12.5px / var(--zoom)) "Iowan Old Style","Songti SC",Georgia,serif;text-anchor:middle;dominant-baseline:central;text-rendering:geometricPrecision`;
         element.append(text);
         text.animate([{ opacity: 0 }, { opacity: 1 }], {
           duration: 500,
@@ -862,9 +959,10 @@ export class Canvas {
         chosen.length > 1 ? "1px dashed rgba(61,114,224,.7)" : "none";
       const small =
         frame.width * scale < 36 || frame.height * scale < 36;
+      const handles = this.options.resizable !== false;
       for (const h of this.frame.querySelectorAll<HTMLElement>("[data-handle]"))
         h.style.display =
-          small && h.dataset.handle!.length === 1 ? "none" : "block";
+          !handles || (small && h.dataset.handle!.length === 1) ? "none" : "block";
       const linking =
         this.editing &&
         chosen.length === 1 &&
@@ -1052,7 +1150,7 @@ export class Canvas {
   /** The link drawn nearest a point on screen, if one passes within a few pixels of it. */
   private linkAt(clientX: number, clientY: number) {
     const p = this.toScene(clientX, clientY),
-      slop = SLOP / this.camera.scale;
+      slop = (this.touching ? FINGER_SLOP : SLOP) / this.camera.scale;
     let best: string | null = null,
       nearest = slop;
     for (const id of this.renderer.links.keys()) {
@@ -1420,7 +1518,13 @@ export class Canvas {
       while (el && !own(el)) el = el.parentElement;
     }
     const text = el && (el.closest("text,tspan") ? el.textContent!.trim() : own(el));
-    if (!el || !text) return;
+    if (!el || !text) {
+      // A fingertip covers more than the words it means: a finger's double tap anywhere on
+      // a module changes its first words.
+      const words = this.touching ? this.wordsIn(moduleId) : undefined;
+      if (words) this.options.point(words);
+      return;
+    }
     e.preventDefault();
     getSelection()?.removeAllRanges();
     const words = el;
@@ -1535,14 +1639,21 @@ export class Canvas {
     return { x: (clientX - r.left - x) / scale, y: (clientY - r.top - y) / scale };
   }
   private down(e: PointerEvent) {
-    if (
-      (e.button !== 0 && e.button !== 1) ||
-      (!this.editing && this.interactive(e))
-    )
-      return;
+    if (e.button !== 0 && e.button !== 1) return;
+    const touch = e.pointerType === "touch";
+    this.touching = touch;
+    if (touch) {
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      // A second finger turns whatever the first began into pinching the view, wherever
+      // it lands.
+      if (this.touches.size === 2) return this.pinch(e);
+      if (this.touches.size > 2) return;
+    }
+    if (!this.editing && this.interactive(e)) return;
     // While editing, a press on the canvas leaves any field in the panel, which keeps it.
     if (this.editing) this.element.focus({ preventScroll: true });
-    const start = { x: e.clientX, y: e.clientY, moved: false };
+    const start = { x: e.clientX, y: e.clientY, moved: false, pointer: e.pointerId, touch };
+    if (touch) this.holdFrom(e);
     const target = e.target as HTMLElement;
     const capture = () => {
       this.element.setPointerCapture(e.pointerId);
@@ -1623,7 +1734,8 @@ export class Canvas {
       );
     else if (m && !was) this.select([m.id]);
     else if (!m && !(this.editing && e.shiftKey)) this.select([]);
-    if (!m && this.editing) {
+    // A finger on the paper moves the view: boxing a selection in is a mouse's job.
+    if (!m && this.editing && !touch) {
       this.gesture = {
         ...start,
         kind: "marquee",
@@ -1771,7 +1883,12 @@ export class Canvas {
         for (const [m, badge] of this.badges) badge.toggleAttribute("data-hot", m === id);
       }
     }
+    if (e.pointerType === "touch" && this.touches.has(e.pointerId))
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (g?.kind === "pinch") return this.pinched(g);
+    if (g && e.pointerId !== g.pointer) return;
     if (!g) {
+      if (e.pointerType === "touch") return;
       if (this.editing && this.tool === "select" && !this.spacing) {
         const { module: m, link } = this.pick(e.clientX, e.clientY);
         this.hoverOver(m?.id ?? null, m ? null : (link ?? null));
@@ -1781,7 +1898,10 @@ export class Canvas {
     }
     const dx = e.clientX - g.x,
       dy = e.clientY - g.y;
-    if (Math.hypot(dx, dy) > 3) g.moved = true;
+    if (Math.hypot(dx, dy) > (g.touch ? FINGER_STILL : STILL)) {
+      g.moved = true;
+      clearTimeout(this.holding);
+    }
     if (!g.moved) return;
     const scale = this.camera.scale;
     // Snapping lines a dragged box up with its neighbours; Cmd or Ctrl turns it off.
@@ -1910,17 +2030,103 @@ export class Canvas {
     this.paint();
   }
   /** A gesture the system took away: what it moved goes back. */
-  private cancel() {
+  private cancel(e?: PointerEvent) {
+    if (e) this.touches.delete(e.pointerId);
+    clearTimeout(this.holding);
+    const g = this.gesture;
+    if (e && g && e.pointerId !== g.pointer && g.kind !== "pinch") return;
+    if (g && (g.kind === "move" || g.kind === "resize")) this.drag(g.moves);
+    if (g) this.finish();
+  }
+  /** Two fingers: what the first began is let go, and the view follows both, zooming as
+   * they spread or close and moving as they move together. */
+  private pinch(e: PointerEvent) {
+    clearTimeout(this.holding);
     const g = this.gesture;
     if (g && (g.kind === "move" || g.kind === "resize")) this.drag(g.moves);
-    this.finish();
+    if (g) this.finish();
+    const [a, b] = [...this.touches.values()];
+    this.element.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    this.gesture = {
+      kind: "pinch",
+      x: e.clientX,
+      y: e.clientY,
+      moved: true,
+      pointer: e.pointerId,
+      touch: true,
+      camera: { ...this.camera },
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      span: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+    };
+  }
+  private pinched(g: Extract<NonNullable<Canvas["gesture"]>, { kind: "pinch" }>) {
+    const [a, b] = [...this.touches.values()];
+    if (!a || !b) return;
+    const r = this.element.getBoundingClientRect();
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      span = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+    const moved = {
+      ...g.camera,
+      x: g.camera.x + mid.x - g.mid.x,
+      y: g.camera.y + mid.y - g.mid.y,
+    };
+    this.camera = zoom(moved, { x: mid.x - r.left, y: mid.y - r.top }, span / g.span);
+    this.changed();
+  }
+  /** A finger held still long enough selects what it is on and asks what to do there. */
+  private holdFrom(e: PointerEvent) {
+    clearTimeout(this.holding);
+    const at = { x: e.clientX, y: e.clientY },
+      pointer = e.pointerId;
+    this.holding = setTimeout(() => {
+      const g = this.gesture;
+      if (!g || g.pointer !== pointer || g.moved || this.touches.size !== 1) return;
+      this.cancel();
+      if (this.element.hasPointerCapture(pointer)) this.element.releasePointerCapture(pointer);
+      const { module: m, link } = this.pick(at.x, at.y);
+      if (link && !m) this.selectLink(link);
+      else if (m && !this.selection.includes(m.id)) this.select([m.id]);
+      else if (!m) this.select([]);
+      if (this.options.hold) this.options.hold(at);
+      else if (this.editing) this.options.menu?.(at);
+    }, HOLD_MS);
+  }
+  /** Whether a finger's double tap was just handled, so the double click the browser may
+   * send after it is not handled again. */
+  private doubledJustNow() {
+    return performance.now() - this.doubled < 600;
+  }
+  /** A tap with a finger: a second one soon after and near the first is a double tap,
+   * which does what a double click does. */
+  private tap(e: PointerEvent) {
+    const now = performance.now(),
+      last = this.tapped;
+    if (
+      last &&
+      now - last.at < DOUBLE_TAP_MS &&
+      Math.hypot(e.clientX - last.x, e.clientY - last.y) < DOUBLE_TAP_PX
+    ) {
+      this.tapped = undefined;
+      this.doubled = now;
+      this.dblclick(new MouseEvent("dblclick", { clientX: e.clientX, clientY: e.clientY }));
+      return;
+    }
+    this.tapped = { at: now, x: e.clientX, y: e.clientY };
   }
   private up(e: PointerEvent) {
+    const touch = e.pointerType === "touch";
+    if (touch) this.touches.delete(e.pointerId);
     const g = this.gesture;
-    if (!g) return;
+    if (g && g.pointer !== e.pointerId && g.kind !== "pinch") return;
+    clearTimeout(this.holding);
     if (this.element.hasPointerCapture(e.pointerId))
       this.element.releasePointerCapture(e.pointerId);
+    if (!g) return;
     this.finish();
+    // Lifting a finger ends a pinch; the one left on the glass does nothing more.
+    if (g.kind === "pinch") return;
+    if (touch && !g.moved) this.tap(e);
     if (g.moved && (g.kind === "move" || g.kind === "resize") && g.last) {
       this.changed();
       this.options.commit?.(g.last.map((m) => ({ id: m.id, bounds: { ...m.bounds } })));
@@ -1944,6 +2150,7 @@ export class Canvas {
     }
   }
   dispose() {
+    for (const wait of [...this.awaited]) wait.done("gone");
     cancelAnimationFrame(this.gliding);
     clearTimeout(this.settling);
     this.abort.abort();

@@ -17,14 +17,9 @@ import { api, type Models } from "./api.ts";
 import { cx } from "./cx.ts";
 import { useDismiss } from "./Rail.tsx";
 import { useT } from "./i18n.tsx";
+import type { Attachment } from "./session/request.ts";
+import { useCan } from "./account.tsx";
 
-/** Something sent along with the message: a picture, or any library material. */
-export interface Attachment {
-  id: string;
-  kind: string;
-  name: string;
-  url?: string;
-}
 let styles: Promise<StyleMaterial[]> | undefined;
 /** The library's styles, loaded once. */
 export const styleList = () =>
@@ -45,6 +40,7 @@ export function Composer({
   attachments,
   detach,
   uploading,
+  focus,
   quote,
   unquote,
   edit,
@@ -70,6 +66,9 @@ export function Composer({
   attachments: Attachment[];
   detach: (id: string) => void;
   uploading: number;
+  /** Changes each time something is handed to the field to send, which then takes the
+   * focus. */
+  focus?: number;
   quote?: string;
   unquote: () => void;
   /** Changes what is quoted by hand instead. */
@@ -98,12 +97,16 @@ export function Composer({
    * happening and the button that stops it. */
   collapsed?: boolean;
 }) {
-  const t = useT();
+  const t = useT(),
+    locale = useLocale();
   const picker = useRef<HTMLInputElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (place === "home") field.current?.focus();
   }, [place]);
+  useEffect(() => {
+    if (focus) requestAnimationFrame(() => field.current?.focus());
+  }, [focus]);
   if (collapsed)
     return (
       <div className={cx("composer-wrap")} data-place={place} data-collapsed>
@@ -169,10 +172,10 @@ export function Composer({
                 className={cx("attached")}
                 data-kind={a.kind}
                 key={a.id}
-                title={a.name}
+                title={a.name[locale]}
               >
-                {a.url ? <img src={a.url} alt={a.name} /> : <b>{a.name}</b>}
-                <button aria-label={t.composer.detach(a.name)} onClick={() => detach(a.id)}>
+                {a.url ? <img src={a.url} alt={a.name[locale]} /> : <b>{a.name[locale]}</b>}
+                <button aria-label={t.composer.detach(a.name[locale])} onClick={() => detach(a.id)}>
                   <X size={11} />
                 </button>
               </span>
@@ -499,6 +502,25 @@ function StylePicker({
             </button>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Until a drawing model is connected, the composer says so: those who manage models are
+ * led to Settings, the rest are told an administrator has to. */
+export function Unconnected({ go }: { go: (path: string) => void }) {
+  const t = useT();
+  const manages = useCan()("models.manage");
+  return (
+    <div className={cx("now")} data-tone="failed">
+      <span className={cx("now-line")}>
+        {manages ? t.composer.unconnected : t.composer.unconnectedMember}
+      </span>
+      {manages && (
+        <button className={cx("primary small")} onClick={() => go("/settings")}>
+          {t.composer.connect}
+        </button>
       )}
     </div>
   );

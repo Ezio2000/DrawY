@@ -11,7 +11,7 @@ import {
 } from "../../../modules/editing/index.ts";
 import type { Instance, Work } from "../../../modules/contracts/index.ts";
 import type { Material } from "@drawy/materials/schema";
-import type { Change } from "./handEdits.ts";
+import type { Change } from "./session/work.ts";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 

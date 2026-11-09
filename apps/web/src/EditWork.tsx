@@ -30,7 +30,7 @@ import { useLocale } from "@drawy/ui";
 import { styleList } from "./Composer.tsx";
 import { Code } from "./EditCode.tsx";
 import { hex, Picker } from "./EditControls.tsx";
-import type { Change } from "./handEdits.ts";
+import type { Change } from "./session/work.ts";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 

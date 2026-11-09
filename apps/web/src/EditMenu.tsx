@@ -15,7 +15,7 @@ import {
   Ungroup,
 } from "lucide-react";
 import type { Canvas } from "../../../modules/canvas/index.ts";
-import type { EditOps, Tool } from "./handEdits.ts";
+import type { EditOps, Tool } from "./desktop/editing.ts";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 

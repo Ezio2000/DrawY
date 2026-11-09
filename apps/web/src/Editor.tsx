@@ -75,11 +75,11 @@ import {
 } from "./EditControls.tsx";
 import { keys } from "./EditMenu.tsx";
 import { Details, Layers, Look, SceneScript, SceneSettings } from "./EditWork.tsx";
-import type { Change, EditOps } from "./handEdits.ts";
+import type { Change } from "./session/work.ts";
+import type { EditOps } from "./desktop/editing.ts";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 
-export type { Change } from "./handEdits.ts";
 
 /** Two edits of the same revision as one, so a change that makes a scene or a detail and
  * points a module at it is one step. */

@@ -24,6 +24,7 @@ import { Spinner, useLocale } from "@drawy/ui";
 import { localize } from "../../../modules/contracts/messages.ts";
 import { money } from "./money.ts";
 import { useCan } from "./account.tsx";
+import { live } from "./session/work.ts";
 import {
   costOf,
   type Run,
@@ -33,8 +34,6 @@ import {
 } from "../../../modules/contracts/index.ts";
 type ToolStep = Extract<Step, { kind: "tool" }>;
 type Tool<N extends ToolStep["name"]> = Extract<ToolStep, { name: N }>;
-export const live = (run?: Run) =>
-  !!run && ["running", "viewing"].includes(run.status);
 /** The language a thought is written in, when it is not the page's: some models summarise
  * their thoughts in English whatever the user writes. Such a thought still shows, since a
  * line of the author's thinking tells more than a blank while it thinks, but marked as
