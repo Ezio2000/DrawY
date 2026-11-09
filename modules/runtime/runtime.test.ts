@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { documentFor } from "./document.ts";
 import { fixture } from "./fixture.ts";
-import { capture, readText } from "../observation/capture.ts";
+import { capture, readText, render } from "../observation/capture.ts";
 import { fit, zoom } from "../contracts/geometry.ts";
 import { useOf } from "../materials/index.ts";
 import type { DrawingMaterial, Material } from "@drawy/materials/schema";
@@ -729,6 +729,51 @@ it("disposes drawing and scene resources when leaving the canvas", async () => {
   await page.waitForTimeout(60);
   expect(await page.getAttribute("body", "data-ticks")).toBe(ticks);
   expect(await page.getAttribute("body", "data-cleaned")).toBe("yes");
+});
+it("renders a picture to keep cropped to the drawing, with no paper around it", async () => {
+  // One module painting its whole frame: every edge of the picture must be its colour.
+  work.drawings.block = {
+    id: "block",
+    name: "色块",
+    source: `return api.svg('<svg viewBox="0 0 '+api.width+' '+api.height+'" preserveAspectRatio="none"><rect width="'+api.width+'" height="'+api.height+'" fill="#2a6b4f"/></svg>');`,
+  };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      { id: "wall", drawingId: "block", data: {}, bounds: { x: -40, y: 30, width: 800, height: 440 } },
+    ],
+    links: [],
+    checks: [],
+    interaction: undefined,
+  };
+  const png = await render(browser, {
+    origin,
+    cookie: "fixture",
+    url: origin + "/api/works/fixture/scenes/root?revision=1",
+  });
+  const seen = await page.evaluate(async (src) => {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(img, 0, 0);
+    const at = (x: number, y: number) => [...ctx.getImageData(x, y, 1, 1).data.slice(0, 3)];
+    const w = img.width - 1, h = img.height - 1, mx = Math.round(w / 2), my = Math.round(h / 2);
+    return {
+      width: img.width,
+      height: img.height,
+      edges: [at(0, 0), at(w, 0), at(0, h), at(w, h), at(mx, 0), at(mx, h), at(0, my), at(w, my)],
+    };
+  }, "data:image/png;base64," + png.toString("base64"));
+  expect(seen.width / seen.height).toBeCloseTo(800 / 440, 1);
+  for (const [r, g, b] of seen.edges) {
+    expect(Math.abs(r - 0x2a)).toBeLessThan(6);
+    expect(Math.abs(g - 0x6b)).toBeLessThan(6);
+    expect(Math.abs(b - 0x4f)).toBeLessThan(6);
+  }
 });
 it("captures full scenes and completed interaction states through the same runtime", async () => {
   const shots = await capture(browser, {

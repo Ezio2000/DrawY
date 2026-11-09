@@ -1258,6 +1258,17 @@ export class Canvas {
     );
     this.changed();
   }
+  /** The view filled edge to edge with these bounds, no paper around them: a picture to
+   * keep is the drawing itself. Where the view's shape differs by a rounding pixel, the
+   * drawing covers it rather than leaving a hairline of paper. */
+  crop(bounds: Bounds) {
+    const scale = Math.max(
+      this.element.clientWidth / bounds.width,
+      this.element.clientHeight / bounds.height,
+    );
+    this.camera = { scale, x: -bounds.x * scale, y: -bounds.y * scale };
+    this.changed();
+  }
   /** The room kept clear above and below the view for the controls laid over it, never
    * more than half the canvas's height: on a phone on its side the controls can be taller
    * than the room left, and the drawing then shows under them rather than shrinking to a
