@@ -98,8 +98,12 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
   const putAway = !runId || runId === dismissed || runId === earlier;
   const replying = !putAway && !working && !waiting;
   const dismiss = () => setDismissed(session.get().run?.id ?? "");
+  const deselect = () => (canvas ? canvas.select([]) : (setSelected([]), setLink(null)));
   const toggle = (p: Panel) => {
-    setPanel(panel === p ? "" : p);
+    const next = panel === p ? "" : p;
+    // The versions are looked at as wholes: what was selected in the one shown goes.
+    if (next === "drafts") deselect();
+    setPanel(next);
     session.endPreview();
   };
   /** Asks for a material of one kind from the library, for what it is chosen for. */
@@ -337,7 +341,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
                 ? selected.map((x) => x.label || x.moduleId).join(t.now.list)
                 : linkName
             }
-            unquote={() => (canvas ? canvas.select([]) : (setSelected([]), setLink(null)))}
+            unquote={deselect}
             selecting={!!selected.length || !!chosenLink}
             edit={editing || locked ? undefined : () => setPanel("edit")}
             send={() => send()}

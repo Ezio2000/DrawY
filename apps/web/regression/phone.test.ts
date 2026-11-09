@@ -8,7 +8,9 @@ import {
   make,
   module,
   open,
+  outlined,
   page,
+  paintedAsLaidOut,
   pinch,
   press,
   rectOf,
@@ -45,6 +47,22 @@ it("fills the screen without the side bar, and follows the window to the desktop
   expect(await page.locator("[data-shell=phone]").count()).toBe(0);
   await page.setViewportSize({ width: 390, height: 664 });
   await expect.poll(() => page.locator("[data-shell=phone]").count()).toBe(1);
+});
+
+it("paints the drawing's words as they are laid out, held upright and on its side, and after a pinch", async () => {
+  await open(await make());
+  for (const words of ["Alpha", "Beta"]) await paintedAsLaidOut(words);
+  // Turned on its side, a phone keeps the phone page; the view follows the new shape.
+  await page.setViewportSize({ width: 844, height: 390 });
+  await settled();
+  expect(await page.locator("[data-shell=phone]").count()).toBe(1);
+  for (const words of ["Alpha", "Beta"]) await paintedAsLaidOut(words);
+  await page.setViewportSize({ width: 390, height: 664 });
+  await settled();
+  const a = await rectOf("Alpha");
+  await pinch({ x: a.cx, y: a.cy }, 80, 120);
+  await settled();
+  await paintedAsLaidOut("Alpha");
 });
 
 it("asks from the composer, shows the author drawing without covering the drawing, and opens the studio from the status line", async () => {
@@ -164,9 +182,13 @@ it("looks at a version from the versions sheet in place, goes back to it, and ta
   const moved = (await module("Alpha"))!;
   await dock().getByRole("button", { name: "Save", exact: true }).tap();
   await settled();
+  expect(await outlined()).toBe(1);
   await top().getByRole("button", { name: "Versions" }).tap();
   const rows = sheet().locator("li");
   await expect.poll(() => rows.count()).toBe(3);
+  // The versions are looked at as wholes: the part selected is let go, with its actions.
+  expect(await outlined()).toBe(0);
+  expect(await actions().count()).toBe(0);
   await rows.nth(1).tap();
   await settled();
   // The sheet makes way for the version, shown in place rather than drawn again.
