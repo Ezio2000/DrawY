@@ -57,14 +57,14 @@ export class Edits {
       }
     };
     const job = this.chain.then(async () => {
-      const w = revisions.work;
-      const edit = w && make(w);
-      if (!w || !edit) {
-        settle(false);
-        this.ctx.changed();
-        return undefined;
-      }
       try {
+        const w = revisions.work;
+        const edit = w && make(w);
+        if (!w || !edit) {
+          settle(false);
+          this.ctx.changed();
+          return undefined;
+        }
         const saved = await revisions.mine(() =>
           api<Work>("/works/" + w.id + "/edits", "POST", { baseRevision: w.revision, edit }),
         );

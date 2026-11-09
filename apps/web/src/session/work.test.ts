@@ -133,6 +133,28 @@ it("takes back what a failed hand edit showed", async () => {
   expect(store.quiet(2)).toBe(false);
 });
 
+it("recovers the edit queue and draft when constructing an edit throws", async () => {
+  const { store, s } = await open();
+  const make = vi.fn(moved).mockImplementationOnce(moved).mockImplementationOnce(() => {
+    throw Error("invalid drawing parameter");
+  });
+  const job = store.change(make);
+  expect(heading(s().display!.work)).toBe(0);
+  await expect(job).rejects.toThrow("invalid drawing parameter");
+  expect(s().display!.version).toBe("");
+  expect(heading(s().display!.work)).toBe(100);
+  expect(posted).toEqual([]);
+
+  expect(await store.change(moved)).toBe(true);
+  expect(s().display!.version).toBe("");
+  expect(s().display!.work.revision).toBe(2);
+  await store.save();
+  await store.send({ text: "make it blue" });
+  expect(s().holding).toBe(false);
+  expect(posted.map((p) => p.path.split("/").at(-1))).toEqual(["edits", "save", "runs"]);
+  expect(s().run?.id).toBe("run-0");
+});
+
 it("holds a request back while hand edits are unsaved, then saves them and sends it", async () => {
   const { store, s, told } = await open();
   await store.change(moved);
