@@ -332,7 +332,7 @@ export async function capture(
     await context.close();
   }
 }
-/** The whole scene as a picture to keep: framed to its drawing, at twice the screen's
+/** The whole scene as a picture to keep: cropped to its drawing, at twice the screen's
  * pixel density, with the longest side at most 4800 pixels. */
 export async function render(
   browser: Browser,
@@ -356,15 +356,13 @@ export async function render(
     await ready(page);
     const bounds = await page.evaluate(() => window.drawyView.renderer.bounds);
     const scale = Math.min(1.5, 2400 / Math.max(bounds.width, bounds.height));
-    // The view keeps a margin of paper around the drawing, as the canvas does.
+    // Framed to the drawing's edges with no paper around it: the picture is kept as a
+    // wallpaper or put in a document, where a white border is in the way.
     await page.setViewportSize({
-      width: Math.round((bounds.width * scale) / 0.9),
-      height: Math.round((bounds.height * scale) / 0.92),
+      width: Math.max(1, Math.round(bounds.width * scale)),
+      height: Math.max(1, Math.round(bounds.height * scale)),
     });
-    await page.evaluate(
-      ({ bounds, scale }) => window.drawyView.focus(bounds, scale),
-      { bounds, scale },
-    );
+    await page.evaluate((bounds) => window.drawyView.crop(bounds), bounds);
     // The paper's dot grid is for working on the canvas, not part of the picture.
     await page.evaluate(() => {
       window.drawyView.element.style.backgroundImage = "none";
