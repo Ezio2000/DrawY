@@ -551,7 +551,23 @@ it("edits like a drawing app: a box selects, handles resize a selection as one, 
   await page.evaluate(() => window.drawyView.setSnap({ guides: true, grid: 20 }));
   await drag(await screen(903, 296), await screen(1108, 377));
   expect(JSON.parse((await data("placed"))!).box).toEqual({ x: 900, y: 300, width: 200, height: 80 });
-  await page.evaluate(() => window.drawyView.setSnap({ guides: true, grid: 0 }));
+  // Shift keeps a shared side length even when the origin is between grid lines.
+  for (const grid of [20, 0]) {
+    await page.evaluate((grid) => window.drawyView.setSnap({ guides: true, grid }), grid);
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+      await page.keyboard.down("Shift");
+      await drag(await screen(909, 311), await screen(909 + sx * 92, 311 + sy * 60));
+      await page.keyboard.up("Shift");
+      const box = JSON.parse((await data("placed"))!).box;
+      const side = grid ? 100 : 92;
+      expect(box.width).toBe(side);
+      expect(box.height).toBe(side);
+      if (grid) {
+        expect(box.x % grid).toBe(0);
+        expect(box.y % grid).toBe(0);
+      }
+    }
+  }
   // The link tool joins the module pressed to the one it is let go on, as they face each
   // other.
   await page.evaluate(() => window.drawyView.setTool("link"));

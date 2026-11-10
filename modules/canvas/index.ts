@@ -2382,18 +2382,14 @@ export class Canvas {
     } else if (g.kind === "draw") {
       // The box of something new: Shift keeps it square, and it ends on the grid's lines.
       const at = this.toScene(e.clientX, e.clientY);
-      let w = at.x - g.start.x,
+      const w = at.x - g.start.x,
         h = at.y - g.start.y;
-      if (e.shiftKey) {
-        const side = Math.max(Math.abs(w), Math.abs(h));
-        w = Math.sign(w || 1) * side;
-        h = Math.sign(h || 1) * side;
-      }
       const to = (v: number) => (grid ? Math.round(v / grid) * grid : Math.round(v));
       const x0 = to(g.start.x),
         y0 = to(g.start.y),
-        x1 = to(g.start.x + w),
-        y1 = to(g.start.y + h);
+        side = to(Math.max(Math.abs(w), Math.abs(h))),
+        x1 = e.shiftKey ? x0 + Math.sign(w || 1) * side : to(g.start.x + w),
+        y1 = e.shiftKey ? y0 + Math.sign(h || 1) * side : to(g.start.y + h);
       g.box = {
         x: Math.min(x0, x1),
         y: Math.min(y0, y1),
