@@ -318,9 +318,9 @@ export function App() {
                 if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
               }}
               onDrop={(e) => {
-                if (!droppable) return;
-                e.preventDefault();
                 setDragging(false);
+                if (!droppable || e.defaultPrevented) return;
+                e.preventDefault();
                 if (e.dataTransfer.files.length)
                   void attempt(() => draft.upload(e.dataTransfer.files));
               }}

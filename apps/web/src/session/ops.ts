@@ -21,18 +21,24 @@ import {
   distribute,
   drawingFor,
   duplicate,
+  extend,
   group,
   linkLook,
+  lookOf,
+  matchSize,
   moveParts,
   paste,
+  pasteLook,
   reattach,
   removeParts,
+  restyle,
   reverse,
   shadowed,
   ungroup,
   type Addition,
   type Alignment,
   type Clip,
+  type Look,
   type Side,
   type Stacking,
 } from "../../../../modules/editing/index.ts";
@@ -103,10 +109,11 @@ export function editOps(ctx: Context) {
     if (!saved || !ids.length || !view || view !== ctx.view) return;
     if ((await view.drawn(ids, saved.revision)) !== "drawn") return;
     view.select(ids);
+    view.reveal?.(ids);
     return ids[0];
   };
-  /** Adds something at a point, or in the middle of the view. */
-  const place = async (what: Addition, at?: Point) => {
+  /** Adds something at a point, in the middle of the view, or filling a box drawn for it. */
+  const place = async (what: Addition, at?: Point, box?: Bounds) => {
     const w = shown(),
       view = ctx.view;
     if (!w || !view) return;
@@ -117,13 +124,41 @@ export function editOps(ctx: Context) {
       const own = shadowed(w, what)
         ? ownCopy(await api<Material>("/materials/" + drawingFor(what)), ctx.host.locale())
         : undefined;
+      if (scene() !== sceneId || ctx.view !== view) return;
       return await made((work) => {
-        const r = add(work, sceneId, centre, what, own);
+        const r = add(work, sceneId, centre, what, own, box);
         return { edit: r.edit, ids: [r.id] };
       });
     } catch (e) {
       fail(e);
     }
+  };
+  /** Library drawings asked for by id, each fetched once. */
+  const library = new Map<string, Promise<DrawingMaterial>>();
+  const fromLibrary = (id: string) => {
+    let known = library.get(id);
+    if (!known) {
+      known = api<Material>("/materials/" + id).then((m) => {
+        if (m.kind !== "drawing") throw Error(id);
+        return m;
+      });
+      known.catch(() => library.delete(id));
+      library.set(id, known);
+    }
+    return known;
+  };
+  /** What a link drawn by hand is drawn with: like the scene's other links, or with the
+   * library's arrow when it has none, which comes in as a copy when one of the work's own
+   * drawings already uses its id. */
+  const linkWith = async (w: Work, sceneId: string) => {
+    const like = linkLook(w, sceneId);
+    return {
+      look: like ?? { drawingId: "arrow", data: {} },
+      own:
+        !like && w.drawings.arrow
+          ? ownCopy(await api<Material>("/materials/arrow"), ctx.host.locale())
+          : undefined,
+    };
   };
   const picture = (p: PictureMaterial, width: number): Addition => {
     const c = p.form.content;
@@ -150,10 +185,31 @@ export function editOps(ctx: Context) {
     reconnect(link: string, end: "from" | "to", to: { moduleId: string; side: Side }) {
       run((w, s) => reattach(w, s, link, end, to.side, to.moduleId));
     },
-    /** Copies modules a step off, with the links between them; the copies are selected. */
-    duplicate(ids: string[]) {
+    /** Copies modules a step off, or as far as copies of them were dragged, with the links
+     * between them; the copies are selected. */
+    duplicate(ids: string[], by?: Point) {
       const sceneId = scene();
-      if (ids.length) report(made((w) => duplicate(w, sceneId, ids, 24 / scale())));
+      if (!ids.length) return;
+      if (ctx.runs.working) return fail(new SessionError("busy"));
+      report(made((w) => duplicate(w, sceneId, ids, by ?? 24 / scale())));
+    },
+    /** Gives modules the size of the first of them, one way or both. */
+    matchSize(ids: string[], what: "width" | "height" | "both") {
+      if (ids.length > 1) run((w, s) => matchSize(w, s, ids, what));
+    },
+    /** Changes the same values on every part given: a colour, a shape, a size of type. */
+    restyle(ids: string[], patch: Record<string, unknown>) {
+      if (ids.length) run((w, s) => restyle(w, s, ids, patch));
+    },
+    /** How a part looks, to give to others. */
+    look(id: string): Look | null {
+      const s = shown()?.scenes[scene()];
+      const part = s?.modules.find((m) => m.id === id) ?? s?.links.find((l) => l.id === id);
+      return part ? lookOf(shown()!, part) : null;
+    },
+    /** Gives parts a look copied from another. */
+    pasteLook(ids: string[], look: Look) {
+      if (ids.length) run((w, s) => pasteLook(w, s, ids, look));
     },
     stack(ids: string[], to: Stacking) {
       if (ids.length) run((w, s) => arrange(w, s, ids, to));
@@ -205,8 +261,8 @@ export function editOps(ctx: Context) {
       report(made((work) => paste(work, sceneId, clip, where)));
     },
     /** New words, sized to read in the view; resolves to their module once drawn. */
-    text(text: string, at?: Point) {
-      return place({ kind: "text", text, size: textSize(scale()) }, at);
+    text(text: string, at?: Point, box?: Bounds) {
+      return place({ kind: "text", text, size: textSize(scale()) }, at, box);
     },
     /** A library picture, a readable size in the view. */
     picture(p: PictureMaterial, at?: Point) {
@@ -229,33 +285,60 @@ export function editOps(ctx: Context) {
         at,
       );
     },
-    /** Links one module's side to another's, drawn like the scene's other links, or with
-     * the library's arrow when it has none. */
-    connect(from: { moduleId: string; side: Side }, to: { moduleId: string; side: Side }) {
+    /** A library drawing by its id with the data given: a shape of a figure, at a point or
+     * filling the box drawn for it. It is called by its words; resolves to its module once
+     * drawn. */
+    async shape(material: string, data: Record<string, unknown>, at?: Point, box?: Bounds) {
+      const sceneId = scene(), view = ctx.view;
+      const centre = at ?? view?.center();
+      try {
+        const d = await fromLibrary(material);
+        if (scene() !== sceneId || ctx.view !== view) return;
+        return await place({ kind: "drawing", material, size: d.size, data }, centre, box);
+      } catch (e) {
+        fail(e);
+      }
+    },
+    /** Links one module to another, between the sides named or as they face each other,
+     * drawn like the scene's other links, or with the library's arrow when it has none. */
+    connect(from: { moduleId: string; side?: Side }, to: { moduleId: string; side?: Side }) {
       const w = shown(),
         sceneId = scene();
       if (!w) return;
       report(
         (async () => {
-          const like = linkLook(w, sceneId);
-          const look = like ?? { drawingId: "arrow", data: {} };
-          // The library's arrow comes in as a copy when one of the work's own drawings
-          // already uses its id.
-          const own =
-            !like && w.drawings.arrow
-              ? ownCopy(await api<Material>("/materials/arrow"), ctx.host.locale())
-              : undefined;
+          const { look, own } = await linkWith(w, sceneId);
           await ctx.edits.commit((work) => connect(work, sceneId, from, to, look, own).edit);
         })(),
       );
     },
-    /** Uploads pictures pasted or dropped onto the canvas and places them, a step apart. */
-    pictures(files: File[]) {
+    /** Grows the figure from a module: a new one like it beyond the side named, or at a
+     * point, saying `words` and linked to it. Resolves to the new module once drawn. */
+    async extend(from: { moduleId: string; side: Side }, words: string, at?: Point) {
+      const w = shown(),
+        sceneId = scene();
+      const source = w?.scenes[sceneId]?.modules.find((m) => m.id === from.moduleId);
+      if (!w || !source) return;
+      try {
+        const { look, own } = await linkWith(w, sceneId);
+        const least = Math.min(source.bounds.width, source.bounds.height);
+        const gap = Math.round(Math.min(120, Math.max(40, least * 0.7)) / 10) * 10;
+        return await made((work) => {
+          const r = extend(work, sceneId, from, { at, gap, words }, look, own);
+          return { edit: r.edit, ids: [r.id] };
+        });
+      } catch (e) {
+        fail(e);
+      }
+    },
+    /** Uploads pictures pasted or dropped onto the canvas and places them, a step apart,
+     * from the middle of the view or from where they were dropped. */
+    pictures(files: File[], from?: Point) {
       const view = ctx.view;
       if (!view) return;
       report(
         (async () => {
-          let at = view.center();
+          let at = from ?? view.center();
           for (const file of files) {
             const data = new FormData();
             data.append("file", file);

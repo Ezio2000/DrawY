@@ -7,7 +7,10 @@ import { useAccount } from "../account.tsx";
 import { Composer, Unconnected } from "../Composer.tsx";
 import { cx } from "../cx.ts";
 import { Drafts } from "../Drafts.tsx";
-import { EditMenu, EditTools, SelectionBar } from "../EditMenu.tsx";
+import { SelectionBar } from "../EditBar.tsx";
+import { EditMenu } from "../EditMenu.tsx";
+import { EditTray } from "../EditTray.tsx";
+import type { BoardSettings } from "../EditView.tsx";
 import { EditPanel } from "../Editor.tsx";
 import { ExportMenu } from "../Export.tsx";
 import type { Feedback } from "../feedback.ts";
@@ -153,6 +156,9 @@ export function CanvasArea({
   selectLink,
   point,
   hand,
+  board,
+  setBoard,
+  help,
 }: {
   session: WorkSession;
   editing: boolean;
@@ -162,6 +168,11 @@ export function CanvasArea({
   selectLink: NonNullable<CanvasOptions["selectLink"]>;
   point: (pointed: Pointed) => void;
   hand: ReturnType<typeof useEditing>;
+  /** How the drawing board is set up while editing. */
+  board: BoardSettings;
+  setBoard: (change: Partial<BoardSettings>) => void;
+  /** Shows the shortcuts and gestures. */
+  help: () => void;
 }) {
   counted("canvas");
   const { display, sceneId, locked, run, id } = useSelect(session, (s) => ({
@@ -187,19 +198,21 @@ export function CanvasArea({
       commit={hand.ops.move}
       point={point}
       connect={hand.ops.connect}
+      extend={hand.ops.extend}
+      duplicate={hand.ops.duplicateBy}
       selectLink={selectLink}
       reconnect={hand.ops.reconnect}
       menu={hand.setMenu}
-      place={(at) => {
-        hand.setTool("select");
-        hand.ops.add("text", at);
-      }}
+      place={hand.place}
+      board={board}
+      setBoard={setBoard}
+      help={help}
     />
   );
 }
 
-/** The tools over the canvas while editing, the bar over what is selected and the menu on
- * a right click. */
+/** The tools beside the canvas while editing, the bar over what is selected and the menu
+ * on a right click. */
 export function EditOverlay({
   session,
   hand,
@@ -220,22 +233,30 @@ export function EditOverlay({
   ask: () => void;
 }) {
   counted("overlay");
-  const { some, all } = useSelect(session, (s) => {
+  const { some, all, work, sceneId } = useSelect(session, (s) => {
     const groups = ids.map((id) => s.scene?.modules.find((m) => m.id === id)?.group);
-    return { some: groups.some(Boolean), all: !!groups.length && groups.every((g) => g && g === groups[0]) };
+    return {
+      some: groups.some(Boolean),
+      all: !!groups.length && groups.every((g) => g && g === groups[0]),
+      work: s.shown!,
+      sceneId: s.sceneId,
+    };
   });
   return (
     <>
-      <EditTools tool={hand.tool} setTool={hand.setTool} ops={hand.ops} />
+      <EditTray tool={hand.tool} setTool={hand.setTool} ops={hand.ops} />
       <SelectionBar
         canvas={canvas}
         stage={stage}
+        work={work}
+        sceneId={sceneId}
         ops={hand.ops}
         selected={ids}
         link={link}
         grouped={all}
         hidden={!!hand.menu || retyping || hand.tool !== "select"}
         ask={ask}
+        more={hand.setMenu}
       />
       {hand.menu && (
         <EditMenu
@@ -245,8 +266,10 @@ export function EditOverlay({
           link={link}
           grouped={some}
           clipped={hand.clipped}
+          brushed={hand.brushed}
           close={() => hand.setMenu(undefined)}
           ask={ask}
+          fit={() => canvas?.fit(true, 520, "whole")}
         />
       )}
     </>

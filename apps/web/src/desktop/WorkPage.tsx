@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { Dialog } from "@drawy/ui";
 import type { Material } from "@drawy/materials/schema";
 import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
 import type { Selection, Target } from "../../../../modules/contracts/index.ts";
-import { removeParts, replace } from "../../../../modules/editing/index.ts";
+import { fieldsOf, removeParts, replace, setData } from "../../../../modules/editing/index.ts";
 import { cx } from "../cx.ts";
 import { useT } from "../i18n.tsx";
 import { Library } from "../Library.tsx";
 import { counted } from "../probe.ts";
-import { Retype } from "../Editor.tsx";
+import { Retype, ShortcutSheet } from "../Editor.tsx";
+import { DRAWING_TYPE, drawingById } from "../EditTray.tsx";
+import { useBoard } from "../EditView.tsx";
 import { useSelect } from "../session/store.ts";
 import type { Ask } from "../session/work.ts";
 import type { ShellProps } from "../shell.ts";
@@ -69,6 +72,12 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     chosen: (m: Material) => void;
   }>();
   const [canvas, setCanvas] = useState<Canvas>();
+  // The sheet of shortcuts, and how the drawing board is set up.
+  const [help, setHelp] = useState(false);
+  const [board, setBoard] = useBoard();
+  // The editor's panel put away, leaving the canvas and its tools: where the panel would
+  // cover the canvas it starts that way, and it is a press from coming back.
+  const [tucked, setTucked] = useState(false);
   const stage = useRef<HTMLElement>(null);
   const conversation = useRef<HTMLElement>(null);
   const following = useRef(true);
@@ -103,6 +112,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     const next = panel === p ? "" : p;
     // The versions are looked at as wholes: what was selected in the one shown goes.
     if (next === "drafts") deselect();
+    if (next === "edit") setTucked(!roomy());
     setPanel(next);
     session.endPreview();
   };
@@ -117,6 +127,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     link: linkId,
     pick,
     retype: setRetyping,
+    help: () => setHelp(true),
   });
   /** Hands a change to the author, written into the composer for the person to send. */
   const ask = (text?: string, why = "") => draft.hand(text, why);
@@ -212,7 +223,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
    * written up for the author to do. */
   function point(p: Pointed) {
     if (session.get().locked) return;
-    if (!editing) setPanel("edit");
+    if (!editing) edit();
     if (p.kind === "text") return setRetyping(p);
     pick("picture", (m) =>
       void attempt(async () => {
@@ -230,12 +241,27 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     const p = retyping!;
     setRetyping(undefined);
     if (text === null || text === p.text) return;
+    // A link that said nothing is given its first words, where its drawing takes words.
+    if (p.link && !p.text)
+      return void attempt(async () => {
+        const done = await session.change((w) => {
+          const l = w.scenes[sceneId]?.links.find((x) => x.id === p.moduleId);
+          const words = l && fieldsOf(w, l).find((f) => f.type === "text");
+          return words ? setData(w, sceneId, p.moduleId, { [words.key]: text.trim() }) : null;
+        });
+        if (!done) ask(t.edit.askLabel(nameOf(p.moduleId), text.trim()), t.edit.handedText);
+      });
     if (!text.trim())
       return void attempt(() => session.change((w) => removeParts(w, sceneId, [p.moduleId])));
     void attempt(async () => {
       if (!(await session.change((w) => replace(w, sceneId, p.moduleId, "text", p.text, text))))
         ask(t.edit.askText(nameOf(p.moduleId), p.text, text), t.edit.handedText);
     });
+  }
+  /** Takes up editing by hand. */
+  function edit() {
+    setTucked(!roomy());
+    setPanel("edit");
   }
   /** Stopping hands what was asked back to the composer, to change and send again. */
   const stop = () =>
@@ -257,6 +283,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     <div
       className={cx("workspace")}
       data-panel={panel || undefined}
+      data-tucked={(editing && tucked) || undefined}
       style={
         {
           "--journal": widths.journal + "px",
@@ -269,8 +296,32 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
         ref={stage}
         className={cx("stage")}
         data-working={working || undefined}
+        data-editing={(editing && !locked) || undefined}
+        data-ruled={(editing && !locked && board.rulers) || undefined}
         onPointerDown={(e) => {
           if (replying && (e.target as Element).closest("[data-canvas]")) dismiss();
+        }}
+        // While editing, pictures and the library's drawings are dropped where they belong.
+        onDragOver={(e) => {
+          if (!editing || locked) return;
+          const types = [...e.dataTransfer.types];
+          if (types.includes("Files") || types.includes(DRAWING_TYPE)) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          if (e.defaultPrevented || !editing || locked || !canvas) return;
+          const drawing = e.dataTransfer.getData(DRAWING_TYPE);
+          const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
+          if (!drawing && !files.length) return;
+          e.preventDefault();
+          const r = canvas.element.getBoundingClientRect(),
+            v = canvas.view;
+          const at = { x: (e.clientX - r.left - v.x) / v.scale, y: (e.clientY - r.top - v.y) / v.scale };
+          if (drawing)
+            void attempt(async () => {
+              const m = await drawingById(drawing);
+              if (m) await hand.ops.drawing(m, at);
+            });
+          else hand.ops.pictures(files, at);
         }}
       >
         <Topbar
@@ -296,6 +347,9 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           selectLink={setLink}
           point={point}
           hand={hand}
+          board={board}
+          setBoard={setBoard}
+          help={() => setHelp(true)}
         />
         {editing && !locked && (
           <EditOverlay
@@ -345,16 +399,31 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             }
             unquote={deselect}
             selecting={!!selected.length || !!chosenLink}
-            edit={editing || locked ? undefined : () => setPanel("edit")}
+            edit={editing || locked ? undefined : edit}
             send={() => send()}
             stop={stop}
           />
         </div>
+        {editing && tucked && (
+          <button
+            className={cx("untuck")}
+            aria-label={t.edit.panel.show}
+            data-tip={t.edit.panel.show}
+            onClick={() => setTucked(false)}
+          >
+            <PanelRightOpen size={16} />
+            <span>{t.edit.tabs.properties}</span>
+          </button>
+        )}
         <DetailLayer session={session} detailId={detailId} close={() => setDetail(undefined)} />
       </section>
       <aside className={cx("side")} aria-label={t.work.panel}>
         <SideTools session={session} panel={panel} toggle={toggle} undo={undo} feedback={feedback} />
-        <div className={cx("side-panel")} data-kind={panel || undefined} inert={!panel}>
+        <div
+          className={cx("side-panel")}
+          data-kind={panel || undefined}
+          inert={!panel || (editing && tucked)}
+        >
           {panel && (
             <Resizer
               kind={editing ? "edit" : drafting ? "drafts" : "journal"}
@@ -367,6 +436,16 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             <h2>
               <Title name={editing ? "edit" : drafting ? "drafts" : "journal"} size="section" />
             </h2>
+            {editing && (
+              <button
+                className={cx("tuck")}
+                aria-label={t.edit.panel.hide}
+                data-tip={t.edit.panel.hide}
+                onClick={() => setTucked(true)}
+              >
+                <PanelRightClose size={16} />
+              </button>
+            )}
           </header>
           <section
             className={cx("side-body")}
@@ -405,6 +484,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           </section>
         </div>
       </aside>
+      {help && <ShortcutSheet close={() => setHelp(false)} />}
       {choosing && (
         <Dialog
           title={choosing.kind === "picture" ? t.titles.choosePicture : t.titles.chooseDrawing}

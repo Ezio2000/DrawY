@@ -2119,6 +2119,7 @@ span.model-bar {
 .camera {
   position: absolute;
   z-index: 10;
+  user-select: none;
   right: 16px;
   bottom: 20px;
   display: flex;
@@ -2129,12 +2130,7 @@ span.model-bar {
   box-shadow: var(--shadow-float);
 }
 
-.camera:hover,
-.camera:focus-within {
-  opacity: 1;
-}
-
-.camera button {
+.camera > button {
   display: grid;
   place-items: center;
   width: 32px;
@@ -2143,14 +2139,25 @@ span.model-bar {
   color: var(--text-2);
 }
 
-.camera button:hover:not(:disabled) {
+.camera > button:hover:not(:disabled),
+.camera > button[aria-expanded="true"] {
   background: var(--fill);
   color: var(--text);
 }
 
-.camera button[data-on] {
-  color: var(--ai-deep);
-  background: var(--blue-soft);
+.camera[data-compact] > button:not(.camera-scale):not(:last-of-type) {
+  display: none;
+}
+
+/* The scale of the view, in figures. */
+.camera > .camera-scale {
+  width: auto;
+  min-width: 50px;
+  padding: 0 4px;
+  font-size: 12.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
 }
 
 .render-error {
@@ -3101,49 +3108,6 @@ body:has(.resizer[data-dragging]) {
   color: var(--ai-deep);
 }
 
-/* With nothing selected: what can be added, and a word on how to start. */
-.edit-start {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.edit-adds {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.edit-adds button {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 14px 6px 12px;
-  border-radius: 12px;
-  background: var(--bg);
-  box-shadow: inset 0 0 0 0.5px var(--line-strong);
-  font-size: 13px;
-  color: var(--text);
-}
-
-.edit-adds button svg {
-  color: var(--ai-deep);
-}
-
-.edit-adds button span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.edit-adds button:hover {
-  background: var(--bg-2);
-}
-
 /* The selection's name and actions stay at the top while the panel scrolls. */
 .edit-head {
   position: sticky;
@@ -3210,7 +3174,7 @@ body:has(.resizer[data-dragging]) {
   align-items: center;
   gap: 2px;
   padding: 3px;
-  border-radius: 11px;
+  border-radius: 8px;
   background: var(--field);
 }
 
@@ -3227,7 +3191,7 @@ body:has(.resizer[data-dragging]) {
   display: grid;
   place-items: center;
   height: 32px;
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--text-2);
 }
 
@@ -3520,19 +3484,22 @@ body:has(.resizer[data-dragging]) {
   z-index: 12;
   max-width: 60%;
   padding: 3px 6px;
-  border-radius: 6px;
+  border-radius: 3px;
   background: var(--bg);
   box-shadow:
     0 0 0 1.5px var(--ai),
-    0 0 0 5px var(--blue-soft),
+    0 0 0 4px var(--blue-soft),
     var(--shadow-float);
   font: inherit;
   line-height: 1.3;
   color: var(--text);
+  text-align: center;
+  translate: -50% 0;
   resize: none;
   overflow: hidden;
   outline: none;
-  animation: pop 0.25s var(--spring) both;
+  field-sizing: content;
+  animation: fade-in 0.15s var(--ease-out) both;
 }
 
 /* The panel's two tabs, and the folding sections inside it. */
@@ -4261,48 +4228,6 @@ body:has(.resizer[data-dragging]) {
   padding: 3px 8px;
 }
 
-/* The keyboard. */
-.shortcuts {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-}
-
-.shortcuts div {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.shortcuts dt {
-  flex: none;
-  width: 118px;
-}
-
-.shortcuts dd {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--text-2);
-}
-
-.shortcuts kbd,
-.edit-menu kbd {
-  font-family: var(--font-sans, inherit);
-  font-size: 11.5px;
-  color: var(--text-3);
-  white-space: nowrap;
-}
-
-.shortcuts kbd {
-  padding: 1px 6px;
-  border-radius: 5px;
-  background: var(--field);
-  box-shadow: inset 0 -1px 0 var(--line);
-  color: var(--text-2);
-}
-
 .connection-head > button:not(:first-child) {
   display: grid;
   place-items: center;
@@ -4430,7 +4355,453 @@ body:has(.resizer[data-dragging]) {
   color: var(--text-2);
 }
 
-/* The selection's actions, in a bar over it on the canvas. */
+/* ---------- The drawing board: the canvas while a work is edited by hand ----------
+   Tools lie in a tray beside the sheet, rulers run along its top and left edge, and what is
+   selected is measured as a drawing is dimensioned. The tool in hand is inked; everything
+   that measures or marks the selection is the blue pencil. */
+
+/* The composer waits as one line while the hand is at work, and opens when it is written
+   in: what is selected is said by its placeholder, and asking about it is a press away. */
+.stage[data-editing]
+  .composer[data-place="dock"]:not(:focus-within):not(:has(textarea:not(:placeholder-shown)))
+  :is(.composer-tools, .composer-extras) {
+  display: none;
+}
+
+.stage[data-editing]
+  .composer[data-place="dock"]:not(:focus-within):not(:has(textarea:not(:placeholder-shown))) {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.stage[data-editing] .dock {
+  width: min(600px, calc(100% - 380px));
+}
+
+/* The editor's panel put away: the canvas and its tools alone, and a tab at its corner to
+   bring the panel back. */
+.workspace[data-tucked] .side-panel[data-kind="edit"] {
+  width: 0;
+  margin-left: 0;
+  box-shadow: none;
+}
+
+.side-panel > header {
+  justify-content: space-between;
+}
+
+.tuck {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-right: -8px;
+  border-radius: 6px;
+  color: var(--text-3);
+}
+
+.tuck:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.untuck {
+  position: absolute;
+  z-index: 11;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 12px 0 10px;
+  border-radius: 9px;
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  animation: fade-in 0.3s var(--ease-out) both;
+}
+
+.untuck:hover {
+  color: var(--text);
+}
+
+.stage[data-ruled] .untuck {
+  top: 30px;
+}
+
+@media (any-pointer: coarse) {
+  .tuck,
+  .untuck {
+    min-width: 44px;
+    height: 44px;
+  }
+}
+
+/* Rulers along the top and the left, with a square where they meet. */
+.ruler,
+.ruler-corner {
+  position: absolute;
+  z-index: 9;
+  top: 0;
+  left: 0;
+  background: var(--paper);
+  pointer-events: none;
+  animation: fade-in 0.3s var(--ease-out) both;
+}
+
+.ruler[data-axis="x"] {
+  width: 100%;
+  height: 20px;
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+
+.ruler[data-axis="y"] {
+  width: 20px;
+  height: 100%;
+  box-shadow: inset -1px 0 0 var(--line);
+}
+
+.ruler-corner {
+  z-index: 10;
+  width: 20px;
+  height: 20px;
+  box-shadow:
+    inset -1px 0 0 var(--line),
+    inset 0 -1px 0 var(--line);
+}
+
+/* The title and the tray stand clear of the rulers. */
+.stage[data-ruled] .topbar {
+  top: 30px;
+  left: 30px;
+  max-width: calc(100% - 50px);
+}
+
+/* The tray: a column of tools down the left of the sheet. */
+.tray {
+  position: absolute;
+  z-index: 11;
+  top: 62px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
+  user-select: none;
+  animation: tray-in 0.36s var(--ease-out) both;
+}
+
+@keyframes tray-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
+.stage[data-ruled] .tray {
+  top: 82px;
+  left: 30px;
+}
+
+/* What opens from the tray lies over the composer. */
+.tray:has([data-flyout]) {
+  z-index: 13;
+}
+
+.tray > button,
+.tray-more > button:first-child {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 7px;
+  color: var(--text-2);
+  transition:
+    background 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+
+.tray > button:hover,
+.tray-more > button:first-child:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.tray > button:active,
+.tray-more > button:first-child:active {
+  transform: scale(0.94);
+}
+
+/* The tool in hand. */
+.tray button[aria-pressed="true"],
+.tray button[aria-pressed="true"]:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.tray button[aria-expanded="true"]:not(.tray-caret) {
+  background: var(--fill-2);
+  color: var(--text);
+}
+
+/* The key that takes a tool up, in its corner. */
+.tray kbd {
+  position: absolute;
+  right: 3.5px;
+  bottom: 2.5px;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-family: var(--font);
+  font-size: 8.5px;
+  font-weight: 650;
+  line-height: 1;
+  color: var(--text-3);
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.tray button[aria-pressed="true"] kbd {
+  color: var(--paper);
+  opacity: 0.6;
+}
+
+.tray > i {
+  width: 22px;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--line-strong);
+}
+
+.tray-more {
+  position: relative;
+  display: grid;
+}
+
+/* A corner to open what lies behind a tool. */
+.tray-caret {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: end;
+  width: 14px;
+  height: 14px;
+  padding: 2.5px;
+  border-radius: 0 0 7px 0;
+  color: var(--text-3);
+}
+
+.tray-caret:hover,
+.tray-caret[aria-expanded="true"] {
+  color: var(--ai-deep);
+}
+
+.tray-more:has(> button[aria-pressed="true"]) .tray-caret {
+  color: var(--paper);
+}
+
+.tray-more:has(.tray-caret) kbd {
+  display: none;
+}
+
+.tray-flyout {
+  position: absolute;
+  z-index: 30;
+  top: -4px;
+  left: calc(100% + 12px);
+  border-radius: var(--r-card);
+  background: var(--paper);
+  box-shadow: var(--shadow-2);
+  animation: flyout-in 0.18s var(--ease-out) both;
+}
+
+@keyframes flyout-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+}
+
+.tray-shapes {
+  display: flex;
+  flex-direction: column;
+  min-width: 148px;
+  padding: 5px;
+}
+
+.tray-shapes button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 8px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tray-shapes button svg {
+  flex: none;
+  color: var(--text-2);
+}
+
+.tray-shapes button:hover,
+.tray-shapes button[aria-checked="true"] {
+  background: var(--fill);
+}
+
+/* The library's drawings beside the tray. */
+.drawings {
+  top: auto;
+  bottom: -4px;
+  display: flex;
+  flex-direction: column;
+  width: 308px;
+  max-height: min(520px, calc(100vh - 150px));
+}
+
+.drawings-search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 8px 0;
+  padding: 0 10px;
+  height: 34px;
+  border-radius: var(--r-control);
+  background: var(--field);
+  color: var(--text-3);
+}
+
+.drawings-search:focus-within {
+  background: var(--paper);
+  box-shadow:
+    0 0 0 1.5px var(--ai),
+    0 0 0 4px var(--blue-soft);
+}
+
+.drawings-search input,
+.drawings-search input:focus {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  box-shadow: none;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.drawings-body {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 8px 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.drawings-body h4 {
+  margin: 12px 4px 6px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-3);
+}
+
+.drawings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.drawings-grid button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 4px 5px;
+  border-radius: var(--r-control);
+  cursor: grab;
+}
+
+.drawings-grid button:hover {
+  background: var(--fill);
+}
+
+/* Each is drawn from its example, once it scrolls into view. */
+.drawings-look {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--line);
+  pointer-events: none;
+}
+
+.drawings-look > span {
+  position: absolute;
+  inset: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.drawings-look [data-canvas] {
+  background-image: none !important;
+}
+
+.drawings-grid span {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawings-none {
+  margin: 28px 0 24px;
+  font-size: 13px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+.drawings-all {
+  flex: none;
+  margin: 0 8px 8px;
+  height: 32px;
+  border-radius: var(--r-control);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text);
+}
+
+.drawings-all:hover {
+  background: var(--fill);
+}
+
+/* The selection's look and actions, in a bar over it on the canvas. */
 .selection-bar {
   position: absolute;
   z-index: 11;
@@ -4440,11 +4811,9 @@ body:has(.resizer[data-dragging]) {
   align-items: center;
   gap: 1px;
   padding: 3px;
-  border-radius: 12px;
-  background: var(--bg);
-  box-shadow:
-    0 0 0 0.5px var(--line-strong),
-    0 6px 20px rgba(0, 0, 0, 0.084);
+  border-radius: 9px;
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
   transition: opacity 0.15s var(--ease);
 }
 
@@ -4454,12 +4823,31 @@ body:has(.resizer[data-dragging]) {
 }
 
 .selection-bar button {
-  display: grid;
-  place-items: center;
-  width: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: 6px;
   color: var(--text-2);
+}
+
+.selection-bar button[data-worded] {
+  padding: 0 9px 0 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Asking the author about the selection: the one thing here no drawing tool has. */
+.selection-bar > button[data-worded]:last-child {
+  color: var(--ai-deep);
+}
+
+.selection-bar > button[data-worded]:last-child:hover {
+  background: var(--blue-soft);
+  color: var(--blue-press);
 }
 
 .selection-bar button:hover:not(:disabled) {
@@ -4467,107 +4855,340 @@ body:has(.resizer[data-dragging]) {
   color: var(--text);
 }
 
+.selection-bar button:disabled {
+  opacity: 0.35;
+}
+
+.selection-bar button[aria-pressed="true"] {
+  background: var(--fill-2);
+  color: var(--ink);
+}
+
 .selection-bar button[data-tone="danger"]:hover {
   color: var(--red-text);
   background: #fdf0ef;
 }
 
-.selection-bar i {
-  width: 1px;
-  height: 18px;
-  margin: 0 3px;
-  background: var(--line-strong);
-}
-
-/* The tools over the canvas while editing. */
-.edit-tools {
-  position: absolute;
-  z-index: 11;
-  top: 64px;
-  left: 50%;
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--glass);
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.042),
-    0 6px 20px rgba(0, 0, 0, 0.056);
-  translate: -50% 0;
-  animation: rise 0.35s var(--ease-out) both;
-}
-
-.edit-tools button {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 36px;
-  border-radius: 10px;
-  color: var(--text-2);
-}
-
-.edit-tools button:hover {
-  background: var(--fill);
-  color: var(--text);
-}
-
-.edit-tools button[aria-pressed="true"] {
-  color: var(--ai-deep);
-  background: var(--blue-soft);
-}
-
-.edit-tools i {
+.selection-bar > i {
+  flex: none;
   width: 1px;
   height: 18px;
   margin: 0 4px;
   background: var(--line-strong);
 }
 
-/* The menu on a right click. */
-.edit-menu {
+.bar-pop {
+  position: relative;
+  display: inline-flex;
+}
+
+.bar-stepper {
+  display: inline-flex;
+  align-items: center;
+}
+
+.bar-stepper button {
+  min-width: 26px;
+}
+
+.bar-stepper output {
+  min-width: 24px;
+  font-size: 12.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  text-align: center;
+}
+
+/* A colour as the bar shows it: a disc of it; none of its own is paper struck through. */
+.bar-swatch {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--swatch, var(--paper));
+  box-shadow: inset 0 0 0 1px rgba(22, 26, 34, 0.18);
+}
+
+.bar-swatch[data-large] {
+  width: 20px;
+  height: 20px;
+}
+
+.bar-swatch[data-auto] {
+  background:
+    linear-gradient(to top right, transparent 46%, var(--red) 46% 54%, transparent 54%),
+    var(--paper);
+}
+
+.bar-swatch[data-plain] {
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1.5px var(--text-2);
+}
+
+.bar-unset {
+  display: inline-flex;
+  opacity: 0.4;
+}
+
+.bar-popover {
+  position: absolute;
+  z-index: 2;
+  bottom: calc(100% + 9px);
+  left: 50%;
+  display: flex;
+  gap: 2px;
+  padding: 5px;
+  border-radius: 9px;
+  background: var(--paper);
+  box-shadow: var(--shadow-2);
+  translate: -50% 0;
+  animation: pop 0.16s var(--ease-out) both;
+}
+
+/* It opens away from the selection, which then shows the change; where there is no room
+   above the bar, below it. */
+.selection-bar:is([data-under], [data-low]) .bar-popover {
+  top: calc(100% + 9px);
+  bottom: auto;
+}
+
+.bar-popover button {
+  min-width: 34px;
+  height: 34px;
+}
+
+.bar-popover button[aria-checked="true"] {
+  background: var(--blue-soft);
+  color: var(--ai-deep);
+}
+
+.bar-popover[data-list] {
+  flex-direction: column;
+  min-width: 124px;
+}
+
+.bar-popover[data-list] button {
+  justify-content: flex-start;
+  gap: 9px;
+  padding: 0 10px;
+  font-size: 13.5px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.bar-popover .swatches {
+  width: max-content;
+  max-width: 236px;
+  padding: 3px;
+}
+
+.bar-popover .swatches button {
+  min-width: 0;
+  height: auto;
+}
+
+/* The menu on a right click, and the view's. */
+.edit-menu,
+.camera-menu {
   position: fixed;
   z-index: 60;
   display: flex;
   flex-direction: column;
-  min-width: 210px;
+  min-width: 224px;
   padding: 5px;
-  border-radius: 12px;
-  background: var(--bg);
-  box-shadow:
-    0 0 0 0.5px var(--line-strong),
-    var(--shadow-float);
+  border-radius: var(--r-card);
+  background: var(--paper);
+  box-shadow: var(--shadow-2);
   animation: pop 0.16s var(--ease-out) both;
 }
 
-.edit-menu button {
+.edit-menu button,
+.camera-menu button {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 6px 10px;
-  border-radius: 7px;
+  gap: 10px;
+  padding: 6px 10px 6px 8px;
+  border-radius: 6px;
   font-size: 13.5px;
   color: var(--text);
   text-align: left;
 }
 
-.edit-menu button:hover:not(:disabled) {
+.edit-menu button > svg,
+.camera-menu button > svg {
+  flex: none;
+  color: var(--text-3);
+}
+
+.edit-menu button > span,
+.camera-menu button > span {
+  flex: 1;
+}
+
+.edit-menu button:hover:not(:disabled),
+.camera-menu button:hover:not(:disabled) {
   background: var(--fill);
 }
 
 .edit-menu button:disabled {
   color: var(--text-3);
+  opacity: 0.6;
 }
 
-.edit-menu button[data-tone="danger"] {
+.edit-menu button[data-tone="danger"],
+.edit-menu button[data-tone="danger"] > svg {
   color: var(--red-text);
 }
 
-.edit-menu hr {
+.edit-menu hr,
+.camera-menu hr {
   margin: 4px 6px;
   border: 0;
   border-top: 1px solid var(--separator);
+}
+
+.edit-menu kbd,
+.camera-menu kbd,
+.keys-sheet kbd {
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.camera-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  min-width: 232px;
+}
+
+.camera-menu button[aria-checked="true"] > svg:last-child {
+  color: var(--ai-deep);
+}
+
+/* The sheet of shortcuts: what each key does, then what the hand does. */
+.keys-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.keys-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px 40px;
+}
+
+.keys-columns h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-3);
+}
+
+.keys-columns dl {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.keys-columns dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  border-top: 1px solid var(--separator);
+}
+
+.keys-columns dt {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.keys-columns dd {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  margin: 0;
+}
+
+.keys-sheet kbd {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--field);
+  box-shadow: inset 0 -1px 0 var(--line-strong);
+  font-weight: 550;
+  color: var(--text-2);
+}
+
+.keys-sheet .gestures {
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@media (max-width: 720px) {
+  .keys-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Where a fingertip is what presses, the tools are as large as one. */
+@media (any-pointer: coarse) {
+  .tray > button,
+  .tray-more > button:first-child {
+    width: 44px;
+    height: 44px;
+  }
+
+  .tray kbd {
+    display: none;
+  }
+
+  .tray-caret {
+    width: 20px;
+    height: 20px;
+  }
+
+  .selection-bar button {
+    min-width: 40px;
+    height: 40px;
+  }
+
+  .bar-popover button {
+    min-width: 42px;
+    height: 42px;
+  }
+
+  .edit-menu button,
+  .camera-menu button {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+}
+
+/* A low window: the tray keeps to what fits, and scrolls for the rest. */
+@media (max-height: 640px) {
+  .tray {
+    top: 56px;
+    max-height: calc(100% - 150px);
+  }
+
+  .tray > i {
+    margin: 2px 0;
+  }
 }
 
 .quote-edit {
@@ -7548,6 +8169,10 @@ body:has(.resizer[data-dragging]) {
   .dock {
     width: min(660px, calc(100% - 32px));
     bottom: 72px;
+  }
+
+  .stage[data-editing] .dock {
+    width: min(600px, calc(100% - 140px));
   }
 
   .traces {

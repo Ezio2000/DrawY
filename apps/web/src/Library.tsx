@@ -353,7 +353,7 @@ function Look({ m, large = false }: { m: Material; large?: boolean }) {
   }
 }
 /** A drawing material drawn live from its example data. */
-function DrawingLook({ m }: { m: DrawingMaterial }) {
+export function DrawingLook({ m }: { m: DrawingMaterial }) {
   const host = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     let view: Canvas | undefined,

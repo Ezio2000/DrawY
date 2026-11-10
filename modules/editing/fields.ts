@@ -126,3 +126,104 @@ export function restOf(work: Work, part: Instance | Link) {
   const shown = new Set(fieldsOf(work, part).map((f) => f.key));
   return Object.keys(part.data).filter((k) => !shown.has(k));
 }
+
+/** How a part looks, apart from what it says and shows: the values it sets that are choices,
+ * colours, numbers and switches, with the drawing they belong to. Copied from one part and
+ * given to others, as a format painter does. */
+export interface Look {
+  workId: string;
+  drawingId: string;
+  data: Record<string, unknown>;
+}
+export function lookOf(work: Work, part: Instance | Link): Look {
+  const data: Record<string, unknown> = {};
+  for (const f of fieldsOf(work, part))
+    if (f.set && f.type !== "text" && f.type !== "picture")
+      data[f.key] = structuredClone(part.data[f.key]);
+  return { workId: work.id, drawingId: part.drawingId, data };
+}
+/** The values of a look that a part can take: all of them within the same work and
+ * drawing (those the look leaves to the drawing are given back to it too), and elsewhere
+ * those its own drawing has under the same name and kind. */
+export function lookFor(work: Work, part: Instance | Link, look: Look): Record<string, unknown> {
+  const fields = fieldsOf(work, part).filter((f) => f.type !== "text" && f.type !== "picture");
+  const kind = (v: unknown) =>
+    typeof v === "number" ? "number" : typeof v === "boolean" ? "boolean" : "string";
+  const patch: Record<string, unknown> = {};
+  if (work.id === look.workId && part.drawingId === look.drawingId) {
+    for (const f of fields) if (f.set && f.optional && !(f.key in look.data)) patch[f.key] = undefined;
+    Object.assign(patch, structuredClone(look.data));
+    return patch;
+  }
+  for (const f of fields) {
+    const value = look.data[f.key];
+    if (value === undefined) continue;
+    const fits =
+      f.type === "number" || f.type === "boolean"
+        ? kind(value) === f.type
+        : f.type === "choice"
+          ? typeof value === "string" && !!f.options?.includes(value)
+          : typeof value === "string";
+    if (fits) patch[f.key] = structuredClone(value);
+  }
+  return patch;
+}
+
+/** A value several parts can be given at once, with whether they now differ in it. */
+export type SharedField = Field & { mixed: boolean };
+/** How the parts given look, as the values they can all be given at once: the choices,
+ * colours, numbers and switches every one of them has under the same name and of the same
+ * kind (a choice among the same options). What each says and shows is its own. A field's
+ * value is the first part's; `mixed` says the others differ. */
+export function sharedFields(work: Work, parts: (Instance | Link)[]): SharedField[] {
+  if (!parts.length) return [];
+  const each = parts.map((p) => fieldsOf(work, p));
+  return each[0]
+    .filter((f) => f.type !== "text" && f.type !== "picture")
+    .flatMap((f) => {
+      const same = each.map((fields) =>
+        fields.find(
+          (x) =>
+            x.key === f.key &&
+            x.type === f.type &&
+            (x.options ?? []).join() === (f.options ?? []).join(),
+        ),
+      );
+      if (same.some((x) => !x)) return [];
+      return [
+        {
+          ...f,
+          set: same.some((x) => x!.set),
+          optional: same.every((x) => x!.optional),
+          mixed: same.some((x) => JSON.stringify(x!.value) !== JSON.stringify(f.value)),
+        },
+      ];
+    });
+}
+/** The few values of a look worth a control right beside the selection, in the order a
+ * person reaches for them: what shape, what colour, how filled, how large its words, how its
+ * line runs. The names are those the library's drawings share; a drawing of the work's own
+ * that declares the same names gets the same controls. */
+const QUICK = [
+  "shape",
+  "tone",
+  "color",
+  "fillStyle",
+  "size",
+  "route",
+  "head",
+  "dashed",
+  "both",
+  "align",
+  "weight",
+];
+export function quickFields(fields: SharedField[], most = 5): SharedField[] {
+  return fields
+    .filter(
+      (f) =>
+        QUICK.includes(f.key) &&
+        (f.type !== "number" || (f.min !== undefined && f.max !== undefined)),
+    )
+    .sort((a, b) => QUICK.indexOf(a.key) - QUICK.indexOf(b.key))
+    .slice(0, most);
+}

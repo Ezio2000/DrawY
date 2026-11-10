@@ -9,6 +9,7 @@ import type {
   WorkEdit,
 } from "../contracts/index.ts";
 import { boxOf, boxSchema, diffValue, instanceSchema } from "../contracts/index.ts";
+import { lookFor, type Look } from "./fields.ts";
 import { drawingIds, fresh, partIds, sceneOf } from "./shared.ts";
 
 /* Hand edits to the parts of a scene: their values, places, names, stacking, groups and
@@ -37,6 +38,42 @@ export function setData(
     ...(part && isLink(part) ? { links: [change] } : { modules: [change] }),
     ...(pictures.length ? { materials: pictures } : {}),
   };
+}
+
+/** The same values changed on several parts of a scene at once, modules and links alike:
+ * a selection given one colour, one shape, one size of type. */
+export function restyle(
+  work: Work,
+  sceneId: string,
+  ids: string[],
+  patch: Record<string, unknown>,
+): WorkEdit | null {
+  const modules: NonNullable<WorkEdit["modules"]> = [],
+    links: NonNullable<WorkEdit["links"]> = [];
+  for (const id of ids) {
+    const part = partIn(work, sceneId, id);
+    if (!part) continue;
+    const data = diffValue(part.data, { ...part.data, ...patch });
+    if (!Object.keys(data).length) continue;
+    (isLink(part) ? links : modules).push({ id, scene: sceneId, data });
+  }
+  if (!modules.length && !links.length) return null;
+  return { ...(modules.length ? { modules } : {}), ...(links.length ? { links } : {}) };
+}
+
+/** Gives parts the look copied from another: each takes what of it its drawing can. */
+export function pasteLook(work: Work, sceneId: string, ids: string[], look: Look): WorkEdit | null {
+  const modules: NonNullable<WorkEdit["modules"]> = [],
+    links: NonNullable<WorkEdit["links"]> = [];
+  for (const id of ids) {
+    const part = partIn(work, sceneId, id);
+    if (!part) continue;
+    const data = diffValue(part.data, { ...part.data, ...lookFor(work, part, look) });
+    if (!Object.keys(data).length) continue;
+    (isLink(part) ? links : modules).push({ id, scene: sceneId, data });
+  }
+  if (!modules.length && !links.length) return null;
+  return { ...(modules.length ? { modules } : {}), ...(links.length ? { links } : {}) };
 }
 
 /** A place in scene units to the hundredth: a drag lands between pixels, and the author
@@ -96,15 +133,17 @@ export const newModule = (sceneId: string, m: Instance): ModuleEdit => {
   const { bounds, ...rest } = m;
   return { ...rest, scene: sceneId, bounds: boxOf(bounds) };
 };
-/** Copies modules a little way off, on top of everything, with the links between them;
- * copies of grouped modules form a group of their own. Returns the copies' ids. */
+/** Copies modules a little way off (the same step across and down, or a distance each
+ * way, as a copy dragged off its original), on top of everything, with the links between
+ * them; copies of grouped modules form a group of their own. Returns the copies' ids. */
 export function duplicate(
   work: Work,
   sceneId: string,
   ids: string[],
-  offset: number,
+  offset: number | { x: number; y: number },
 ): { edit: WorkEdit; ids: string[] } {
   const scene = sceneOf(work, sceneId);
+  const by = typeof offset === "number" ? { x: offset, y: offset } : offset;
   const taken = partIds(work),
     groups = new Set(scene.modules.flatMap((m) => (m.group ? [m.group] : []))),
     copyOf = new Map<string, string>(),
@@ -128,7 +167,7 @@ export function duplicate(
         ...structuredClone(m),
         id,
         ...(group ? { group } : {}),
-        bounds: { ...m.bounds, x: m.bounds.x + offset, y: m.bounds.y + offset },
+        bounds: { ...m.bounds, x: m.bounds.x + by.x, y: m.bounds.y + by.y },
       };
     });
   const links = scene.links
@@ -371,7 +410,8 @@ export type Addition =
   | {
       kind: "drawing";
       material: string;
-      name: string;
+      /** What the module is called; without one it is called by its words. */
+      name?: string;
       size: { width: number; height: number };
       data: Record<string, unknown>;
     };
@@ -388,15 +428,17 @@ export const drawingFor = (what: Addition | Addition["kind"]) => {
  * addition is drawn with, so the addition needs a copy of the library's. */
 export const shadowed = (work: Work, what: Addition | Addition["kind"]) =>
   !!work.drawings[drawingFor(what)];
-/** Adds a module centred on a point, on top of everything, drawn with the library's
- * drawing for it, or with a copy of that drawing the work takes under an id of its own
- * when its own drawings already use the library's. Returns the module's id. */
+/** Adds a module centred on a point, or filling a box drawn for it, on top of everything,
+ * drawn with the library's drawing for it, or with a copy of that drawing the work takes
+ * under an id of its own when its own drawings already use the library's. Returns the
+ * module's id. */
 export function add(
   work: Work,
   sceneId: string,
   at: { x: number; y: number },
   what: Addition,
   copy?: Omit<Drawing, "id">,
+  box?: Bounds,
 ): { edit: WorkEdit; id: string } {
   sceneOf(work, sceneId);
   const taken = partIds(work);
@@ -416,8 +458,11 @@ export function add(
         : [what.size.width, what.size.height];
   const module: Instance = {
     id: fresh(what.kind === "drawing" ? what.material : what.kind, taken),
-    ...(what.kind === "text" ? {} : { label: what.name }),
-    bounds: { x: at.x - width / 2, y: at.y - height / 2, width, height },
+    ...(what.kind === "text" || !what.name ? {} : { label: what.name }),
+    // Placed by hand, it stands on whole units: these are figures a person reads.
+    bounds: box
+      ? tidy(box)
+      : { x: Math.round(at.x - width / 2), y: Math.round(at.y - height / 2), width, height },
     drawingId: drawing?.id ?? library,
     data:
       what.kind === "text"

@@ -10,6 +10,7 @@ import {
   snap,
   sidePoint,
   sides,
+  type Gap,
   type Guide,
   type Handle,
   type Side,
@@ -49,9 +50,10 @@ export interface CanvasOptions {
   resizable?: boolean;
   /** Unfold drawings as they appear and glide the camera between compositions. */
   motion?: boolean;
-  /** Screen space kept clear above and below the automatic view, for controls laid over
-   * the canvas; asked each time the view is fitted, as the controls change size. */
-  insets?: () => { top: number; bottom: number };
+  /** Screen space kept clear above and below the automatic view (and, where given, at its
+   * sides), for controls laid over the canvas; asked each time the view is fitted, as the
+   * controls change size. */
+  insets?: () => { top: number; bottom: number; left?: number; right?: number };
   /** How many times larger than the whole drawing the automatic view may show it, to fill
    * the screen: on a phone held upright a wide drawing fitted whole is a strip too small
    * to read, while filled to the screen's height it reads and is panned across, from its
@@ -68,11 +70,20 @@ export interface CanvasOptions {
   point?: (pointed: Pointed) => void;
   cameraChanged?: (camera: Camera) => void;
   commit?: (moves: { id: string; bounds: Bounds }[]) => void;
-  /** A link drawn while editing, from the side of one module to another. */
+  /** Modules dragged off with Alt held while editing: copies of them go that far from
+   * where they stand, and they stay. */
+  duplicate?: (ids: string[], by: Point) => void;
+  /** A link drawn while editing, from one module to another: between the sides named when
+   * it was drawn from a side's dot and dropped on a side, or between the modules as they
+   * face each other when drawn with the link tool. */
   connect?: (
-    from: { moduleId: string; side: Side },
-    to: { moduleId: string; side: Side },
+    from: { moduleId: string; side?: Side },
+    to: { moduleId: string; side?: Side },
   ) => void;
+  /** The dot on a side of a module pressed, or a link from it let go over the paper: a new
+   * module like it is wanted there (beyond that side, when no point is given), linked to
+   * it. */
+  extend?: (from: { moduleId: string; side: Side }, at?: Point) => void;
   /** A link selected while editing, or none. Selecting a link leaves no module selected,
    * and selecting modules leaves no link selected. */
   selectLink?: (id: string | null) => void;
@@ -89,8 +100,9 @@ export interface CanvasOptions {
    * followed it (whether editing or not). Without it, a long press while editing asks for
    * the menu, as a right click does. */
   hold?: (at: { x: number; y: number }) => void;
-  /** A press with the placing tool, at a point in the scene. */
-  place?: (at: Point) => void;
+  /** A press with the drawing tool at a point in the scene, or a box dragged out with it;
+   * and a double click on the paper while editing, at its point. */
+  place?: (at: Point, box?: Bounds) => void;
   /** A scene has been drawn and is now on screen. */
   shown?: (scene: Scene) => void;
   error: (message: string) => void;
@@ -105,6 +117,13 @@ const seed = (id: string) =>
   );
 const GRAPHITE = "rgba(70,70,70,.45)";
 const ACCENT = "#3366d6";
+/** The red pencil: what a dragged box lines up with, and the gaps it keeps. */
+const CHECK = "#e5484d";
+/** Figures on the canvas are set in the interface's face, as the lettering of a drawing. */
+const FIGURES = "'Sofia Sans Letters','Sofia Sans',system-ui,sans-serif";
+/** What a press does while editing: select and move, move the view, draw a box for
+ * something new, or draw a link from one module to another. */
+export type CanvasTool = "select" | "hand" | "draw" | "link";
 /** How far from a link's line, in screen pixels, a press still takes the link: a finger
  * covers far more than a mouse's point does. */
 const SLOP = 10,
@@ -173,6 +192,18 @@ export class Canvas {
   /** The box around the selection, with its handles, and the dots links are drawn from. */
   private frame = document.createElement("div");
   private dots = new Map<Side, HTMLElement>();
+  /** The side of the selected module the pointer is nearest, whose dot shows. */
+  private near: Side | null = null;
+  /** The selection's measure, as a drawing is dimensioned, and the equal gaps a dragged box
+   * keeps: drawn over the canvas in screen units. */
+  private dims = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  private dimsDrawn = "";
+  private gaps: Gap[] = [];
+  /** Where modules dragged off as copies came from, outlined while they are dragged. */
+  private origin = document.createElement("div");
+  /** What a dragged box snaps to: its neighbours' lines and gaps, and a grid's lines (0 for
+   * none), in scene units. */
+  private snapping = { guides: true, grid: 0 };
   /** The box around the group of a selected module. */
   private groupBox = document.createElement("div");
   /** The link selected while editing, and the one under the pointer. */
@@ -199,7 +230,7 @@ export class Canvas {
   private guides: HTMLDivElement[] = [];
   private line = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   /** What a press does while editing: select and move, move the view, or place. */
-  private tool: "select" | "hand" | "place" = "select";
+  private tool: CanvasTool = "select";
   /** The space bar held: the view moves under a drag, whatever the tool. */
   private spacing = false;
   private observer: ResizeObserver;
@@ -239,6 +270,10 @@ export class Canvas {
         others: Bounds[];
         /** Where they are now. */
         last?: { id: string; bounds: Bounds }[];
+        /** Whether copies are being dragged off: the modules themselves stay. */
+        copy: boolean;
+        /** The modules that were selected, of which the others moved are group mates. */
+        chosen: string[];
       }
     | {
         kind: "resize";
@@ -249,7 +284,8 @@ export class Canvas {
         last?: { id: string; bounds: Bounds }[];
       }
     | { kind: "marquee"; start: Point; base: string[]; picked: string }
-    | { kind: "connect"; from: { moduleId: string; side: Side } }
+    | { kind: "draw"; start: Point; box?: Bounds }
+    | { kind: "connect"; from: { moduleId: string; side?: Side } }
     | { kind: "relink"; linkId: string; end: "from" | "to" }
     | { kind: "press" }
   );
@@ -290,7 +326,7 @@ export class Canvas {
       "position:absolute;inset:0;pointer-events:none;z-index:3;overflow:hidden";
     this.element.append(this.targets);
     this.hover.style.cssText =
-      "position:absolute;border:1px dashed rgba(44,99,212,.55);border-radius:6px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
+      "position:absolute;border:1px solid rgba(51,102,214,.5);border-radius:2px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
     this.element.append(this.hover);
     const english = /^en/i.test(document.documentElement.lang);
     // Controls are pressed by their invisible place, which grows to a fingertip on touch.
@@ -306,7 +342,7 @@ export class Canvas {
       const handle = control(
         { handle: h },
         hit(18),
-        `width:${finger ? 14 : 10}px;height:${finger ? 14 : 10}px;border-radius:3px;background:#fff;border:1.5px solid ${ACCENT};box-shadow:0 1px 3px rgba(0,0,0,.18)`,
+        `width:${finger ? 13 : 8}px;height:${finger ? 13 : 8}px;border-radius:1.5px;background:#fff;border:1.5px solid ${ACCENT}`,
         english ? "Resize" : "调整大小",
       );
       Object.assign(handle.style, { left: x, top: y, cursor: cursor + "-resize" });
@@ -314,28 +350,39 @@ export class Canvas {
     }
     for (const side of sides) {
       const at = sidePoint[side];
-      const out = finger ? 34 : 20;
+      const out = finger ? 34 : 22;
+      // A plus in a ring: pressed, it adds a module beyond that side; dragged, it draws a link.
+      const plus = `linear-gradient(${ACCENT},${ACCENT}) center/8px 1.5px no-repeat,linear-gradient(${ACCENT},${ACCENT}) center/1.5px 8px no-repeat,#fff`;
       const dot = control(
         { connect: side },
-        hit(22),
-        `width:12px;height:12px;border-radius:50%;background:${ACCENT};box-shadow:0 0 0 2.5px #fff,0 1px 4px rgba(0,0,0,.22);transition:transform .15s`,
-        english ? "Draw a link" : "拖出连线",
+        hit(26),
+        `width:18px;height:18px;border-radius:50%;background:${plus};border:1.5px solid ${ACCENT};box-shadow:0 0 0 2px rgba(255,255,255,.9);transition:transform .15s,opacity .15s`,
+        english ? "Add a linked element, or drag a link" : "延伸一个元素，或拖出连线",
       );
-      dot.title = english ? "Drag to another element to link them" : "拖到另一个元素上连线";
+      dot.title = english
+        ? "Click to add a linked element here; drag to another element to link them"
+        : "点一下在这一侧延伸出一个元素；拖到另一个元素上连线";
       Object.assign(dot.style, {
         left: `calc(${at.x * 100}% + ${(at.x - 0.5) * 2 * out * (at.y === 0.5 ? 1 : 0)}px)`,
         top: `calc(${at.y * 100}% + ${(at.y - 0.5) * 2 * out * (at.x === 0.5 ? 1 : 0)}px)`,
         cursor: "crosshair",
       });
-      dot.addEventListener("pointerenter", () => ((dot.firstChild as HTMLElement).style.transform = "scale(1.3)"));
+      dot.addEventListener("pointerenter", () => ((dot.firstChild as HTMLElement).style.transform = "scale(1.18)"));
       dot.addEventListener("pointerleave", () => ((dot.firstChild as HTMLElement).style.transform = ""));
       this.dots.set(side, dot as HTMLButtonElement);
       this.frame.append(dot);
     }
     this.element.append(this.frame);
     this.groupBox.style.cssText =
-      "position:absolute;border:1px dashed rgba(61,114,224,.45);border-radius:8px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
+      "position:absolute;border:1px dashed rgba(51,102,214,.5);border-radius:3px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
     this.element.append(this.groupBox);
+    this.origin.style.cssText =
+      "position:absolute;border:1px dashed rgba(51,102,214,.6);border-radius:2px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
+    this.element.append(this.origin);
+    this.dims.style.cssText =
+      "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4;overflow:visible";
+    this.dims.setAttribute("aria-hidden", "true");
+    this.element.append(this.dims);
     this.marquee.style.cssText =
       "position:absolute;border:1px solid rgba(61,114,224,.8);background:rgba(61,114,224,.07);pointer-events:none;display:none;z-index:5;box-sizing:border-box";
     this.element.append(this.marquee);
@@ -366,7 +413,7 @@ export class Canvas {
       this.element.append(handle);
     }
     this.readout.style.cssText =
-      "position:absolute;z-index:6;display:none;padding:2px 7px;border-radius:6px;background:#2b2a27;color:#fff;font:500 11px/1.5 system-ui,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none;transform:translate(-50%,0)";
+      `position:absolute;z-index:6;display:none;padding:1px 6px;border-radius:4px;background:${ACCENT};color:#fff;font:600 11px/1.55 ${FIGURES};font-variant-numeric:tabular-nums;letter-spacing:.01em;white-space:nowrap;pointer-events:none;transform:translate(-50%,0)`;
     this.element.append(this.readout);
     const signal = this.abort.signal;
     // While editing, the canvas takes every press and click before the drawings do, so
@@ -391,7 +438,9 @@ export class Canvas {
     this.element.addEventListener(
       "pointerleave",
       () => {
+        if (this.near && !this.gesture) this.near = null;
         this.hoverOver(null);
+        this.paint();
         if (this.hot) {
           this.hot = null;
           for (const badge of this.badges.values()) badge.removeAttribute("data-hot");
@@ -462,7 +511,7 @@ export class Canvas {
       "keydown",
       (e) => {
         if (this.interactive(e)) return;
-        if (e.key === "0") {
+        if (e.key === "0" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
           this.fit();
           e.preventDefault();
         }
@@ -931,14 +980,31 @@ export class Canvas {
       layer.style.transformOrigin = "0 0";
       layer.style.transform = `translate(${x}px,${y}px) scale(${scale})`;
     }
-    // The paper's dots move with the drawing and keep a comfortable spacing at any zoom.
-    let dots = 24 * scale;
-    while (dots < 14) dots *= 2;
-    while (dots > 42) dots /= 2;
-    Object.assign(this.element.style, {
-      backgroundSize: `${dots}px ${dots}px`,
-      backgroundPosition: `${x}px ${y}px`,
-    });
+    if (this.editing) {
+      // On the drawing board the paper is squared: a line every 20 units and a heavier one
+      // every 100, both taking five times the step while they would crowd the screen.
+      let unit = 20;
+      while (unit * scale < 9) unit *= 5;
+      const fine = unit * scale,
+        coarse = fine * 5;
+      const rule = (to: string, alpha: number) =>
+        `linear-gradient(${to},rgba(51,102,214,${alpha}) 1px,transparent 1px)`;
+      Object.assign(this.element.style, {
+        backgroundImage: [rule("to right", 0.1), rule("to bottom", 0.1), rule("to right", 0.045), rule("to bottom", 0.045)].join(),
+        backgroundSize: `${coarse}px ${coarse}px,${coarse}px ${coarse}px,${fine}px ${fine}px,${fine}px ${fine}px`,
+        backgroundPosition: `${x}px ${y}px`,
+      });
+    } else {
+      // The paper's dots move with the drawing and keep a comfortable spacing at any zoom.
+      let dots = 24 * scale;
+      while (dots < 14) dots *= 2;
+      while (dots > 42) dots /= 2;
+      Object.assign(this.element.style, {
+        backgroundImage: "radial-gradient(#dcd6c9 .7px,transparent .7px)",
+        backgroundSize: `${dots}px ${dots}px`,
+        backgroundPosition: `${x}px ${y}px`,
+      });
+    }
     this.element.style.setProperty("--zoom", String(scale));
     const box = (el: HTMLElement, b: Bounds) =>
       Object.assign(el.style, {
@@ -954,21 +1020,27 @@ export class Canvas {
     });
     while (this.outlines.length < chosen.length) {
       const outline = document.createElement("div");
+      // A line of the blue pencil, as fine as a drawn one; a ring softens it where the
+      // drawing is only read.
       outline.style.cssText =
-        "position:absolute;border:1px solid #3366d6;border-radius:6px;box-shadow:0 0 0 4px rgba(61,114,224,.12);pointer-events:none;display:none;z-index:3;box-sizing:border-box";
+        "position:absolute;border:1px solid #3366d6;border-radius:2px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
       this.element.append(outline);
       this.outlines.push(outline);
     }
-    this.outlines.forEach((outline, i) =>
-      chosen[i] ? box(outline, chosen[i].bounds) : (outline.style.display = "none"),
-    );
+    this.outlines.forEach((outline, i) => {
+      if (!chosen[i]) return void (outline.style.display = "none");
+      box(outline, chosen[i].bounds);
+      outline.style.borderWidth = this.editing && chosen.length === 1 ? "1.5px" : "1px";
+      outline.style.boxShadow = this.editing ? "none" : "0 0 0 4px rgba(61,114,224,.12)";
+      outline.style.borderRadius = this.editing ? "1px" : "6px";
+    });
     // The selection is resized as one by the handles on the box around it; while editing
     // a single module also offers the dots links are drawn from.
     if (chosen.length && this.movable) {
       const frame = union(chosen.map((m) => m.bounds));
       box(this.frame, frame);
       this.frame.style.border =
-        chosen.length > 1 ? "1px dashed rgba(61,114,224,.7)" : "none";
+        chosen.length > 1 ? "1px dashed rgba(51,102,214,.75)" : "none";
       const small =
         frame.width * scale < 36 || frame.height * scale < 36;
       const handles = this.options.resizable !== false;
@@ -981,9 +1053,13 @@ export class Canvas {
         !!this.options.connect &&
         (!this.gesture || this.gesture.kind === "press") &&
         this.tool === "select";
-      for (const dot of this.dots.values())
-        dot.style.display = linking ? "block" : "none";
+      // A side's dot shows as the pointer nears that side; fingers, which do not hover,
+      // have all four.
+      const all = fingers();
+      for (const [side, dot] of this.dots)
+        dot.style.display = linking && (all || this.near === side) ? "grid" : "none";
     } else this.frame.style.display = "none";
+    this.paintDims(chosen.length ? union(chosen.map((m) => m.bounds)) : undefined);
     // A grouped module shows the box of the group it moves with.
     const group =
       this.editing && chosen.length === 1 && chosen[0].group
@@ -1009,6 +1085,72 @@ export class Canvas {
     this.paintLinks();
     this.paintTargets();
     for (const fn of this.watchers) fn();
+  }
+  /** The measure of the selection while editing, set down as a drawing is dimensioned:
+   * its width under it and its height beside it, each between two ticks; and, in the red
+   * pencil, the equal gaps a dragged box keeps with its neighbours. A side whose dot is out
+   * gives its figure up to it; fingers get the measure only while they resize. */
+  private paintDims(frame?: Bounds) {
+    const g = this.gesture;
+    const drawing = g?.kind === "draw" ? g.box : undefined;
+    const box = drawing ?? frame;
+    const shown =
+      this.editing &&
+      !!box &&
+      (drawing ||
+        (this.movable &&
+          this.tool === "select" &&
+          (!g || g.kind === "press" || g.kind === "move" || g.kind === "resize") &&
+          (!fingers() || g?.kind === "resize")));
+    const { x, y, scale } = this.camera;
+    const parts: string[] = [];
+    const n = (v: number) => v.toFixed(1);
+    const figure = (cx: number, cy: number, text: string, color: string, turn = false) =>
+      `<text x="${n(cx)}" y="${n(cy)}"${turn ? ` transform="rotate(-90 ${n(cx)} ${n(cy)})"` : ""} fill="${color}" stroke="#fff" stroke-width="4" stroke-linejoin="round" paint-order="stroke" text-anchor="middle" dominant-baseline="central" style="font:600 11px ${FIGURES};font-variant-numeric:tabular-nums">${text}</text>`;
+    // A measure between two points along one axis: the line, a tick at each end as an
+    // architect draws them, and the figure on the line.
+    const measure = (a: number, b: number, at: number, across: boolean, text: string | null, color: string) => {
+      const line = across ? `M${n(a)} ${n(at)}H${n(b)}` : `M${n(at)} ${n(a)}V${n(b)}`;
+      const tick = (v: number) =>
+        across
+          ? `M${n(v - 3)} ${n(at + 3)}L${n(v + 3)} ${n(at - 3)}`
+          : `M${n(at - 3)} ${n(v + 3)}L${n(at + 3)} ${n(v - 3)}`;
+      parts.push(
+        `<path d="${line}${tick(a)}${tick(b)}" fill="none" stroke="${color}" stroke-width="1" stroke-linecap="round"/>`,
+      );
+      if (text !== null)
+        parts.push(
+          across ? figure((a + b) / 2, at, text, color) : figure(at, (a + b) / 2, text, color, true),
+        );
+    };
+    if (shown && box) {
+      const l = x + box.x * scale,
+        t = y + box.y * scale,
+        w = box.width * scale,
+        h = box.height * scale;
+      if (w >= 24 || h >= 24) {
+        const out = 15,
+          dot = !g || g.kind === "press" ? this.near : null;
+        // The lines carried out from the corners to the measure.
+        parts.push(
+          `<path d="M${n(l)} ${n(t + h + 6)}v${out}M${n(l + w)} ${n(t + h + 6)}v${out}M${n(l + w + 6)} ${n(t)}h${out}M${n(l + w + 6)} ${n(t + h)}h${out}" fill="none" stroke="${ACCENT}" stroke-opacity=".5" stroke-width="1"/>`,
+        );
+        const figures = (v: number) => String(Math.round(v));
+        measure(l, l + w, t + h + out, true, w >= 34 && dot !== "bottom" ? figures(box.width) : null, ACCENT);
+        measure(t, t + h, l + w + out, false, h >= 34 && dot !== "right" ? figures(box.height) : null, ACCENT);
+      }
+    }
+    for (const gap of this.editing ? this.gaps : []) {
+      const at = (gap.axis === "x" ? y : x) + gap.at * scale,
+        from = (gap.axis === "x" ? x : y) + gap.from * scale,
+        to = (gap.axis === "x" ? x : y) + gap.to * scale;
+      measure(from, to, at, gap.axis === "x", to - from >= 26 ? String(Math.round(gap.to - gap.from)) : null, CHECK);
+    }
+    const html = parts.join("");
+    if (this.dimsDrawn !== html) {
+      this.dimsDrawn = html;
+      this.dims.innerHTML = html;
+    }
   }
   /** A small mark at the corner of each module that opens a scene or a page, while not
    * editing; it says where it leads when the module or the mark is under the pointer. */
@@ -1274,11 +1416,18 @@ export class Canvas {
    * than the room left, and the drawing then shows under them rather than shrinking to a
    * dot. */
   private clear() {
-    const { top, bottom } = this.options.insets?.() || { top: 0, bottom: 80 };
+    const { top, bottom, left = 0, right = 0 } = this.options.insets?.() || { top: 0, bottom: 80 };
     const most = this.element.clientHeight * 0.5,
       both = Math.max(0, top) + Math.max(0, bottom);
     const keep = both > most ? most / both : 1;
-    return { top: Math.max(0, top) * keep, bottom: Math.max(0, bottom) * keep };
+    // The sides give way sooner: on a narrow canvas the drawing matters more than the tools.
+    const wide = left + right < this.element.clientWidth * 0.25;
+    return {
+      top: Math.max(0, top) * keep,
+      bottom: Math.max(0, bottom) * keep,
+      left: wide ? Math.max(0, left) : 0,
+      right: wide ? Math.max(0, right) : 0,
+    };
   }
   /** The controls over the canvas changed size (a reply put away, the composer grown): an
    * automatic view takes the room they leave or need. */
@@ -1297,8 +1446,8 @@ export class Canvas {
   fit(glide = true, duration = 1100, framing?: "fill" | "whole") {
     this.automatic = true;
     if (framing) this.framing = framing;
-    const { top, bottom } = this.clear(),
-      width = this.element.clientWidth,
+    const { top, bottom, left, right } = this.clear(),
+      width = this.element.clientWidth - left - right,
       height = this.element.clientHeight - top - bottom;
     const bounds = this.extent();
     const target = fit(bounds, width, height);
@@ -1321,6 +1470,7 @@ export class Canvas {
       }
     }
     target.y += top;
+    target.x += left;
     // A view already all but there stays put: a glide of a few pixels reads as drifting.
     // It is still painted, so a drawing just swapped in takes the view it stays at.
     const near =
@@ -1339,7 +1489,7 @@ export class Canvas {
     }
     // Glide around the view's centre in world space, zooming at an even pace.
     const from = { ...this.camera },
-      w = this.element.clientWidth / 2,
+      w = left + width / 2,
       h = top + height / 2,
       a = { x: (w - from.x) / from.scale, y: (h - from.y) / from.scale },
       b = {
@@ -1369,6 +1519,68 @@ export class Canvas {
     );
     this.changed();
   }
+  /** Shows the drawing at a scale (1 is a screen pixel to a scene unit), about the middle
+   * of the view. */
+  zoomTo(scale: number) {
+    this.zoom(scale / this.camera.scale);
+  }
+  /** Brings what is selected into view, as large as fits; without a selection, the whole
+   * drawing. */
+  frameSelection() {
+    const boxes = this.selection.flatMap((id) => {
+      const m = this.renderer.instances.get(id);
+      return m ? [m.bounds] : [];
+    });
+    if (!boxes.length) return this.fit(true, 520, "whole");
+    const b = union(boxes),
+      pad = Math.max(b.width, b.height) * 0.25 + 40;
+    this.focus({ x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 }, 2);
+  }
+  /** Brings modules into view where they are not, clear of what is laid over the canvas:
+   * the view moves the least that shows them whole (or, larger than the view, from their
+   * top left), at the scale it has. */
+  reveal(ids: string[]) {
+    const boxes = ids.flatMap((id) => {
+      const m = this.renderer.instances.get(id);
+      return m ? [m.bounds] : [];
+    });
+    if (!boxes.length) return;
+    const b = union(boxes),
+      { top, bottom, left, right } = this.clear(),
+      { x, y, scale } = this.camera,
+      pad = 28;
+    const shift = (start: number, size: number, from: number, to: number) => {
+      const lo = from + pad,
+        hi = to - pad;
+      if (start >= lo && start + size <= hi) return 0;
+      return start < lo || size > hi - lo ? lo - start : hi - start - size;
+    };
+    const dx = shift(x + b.x * scale, b.width * scale, left, this.element.clientWidth - right),
+      dy = shift(y + b.y * scale, b.height * scale, top, this.element.clientHeight - bottom);
+    if (!dx && !dy) return;
+    const target = { scale, x: x + dx, y: y + dy };
+    cancelAnimationFrame(this.gliding);
+    this.automatic = false;
+    if (!this.options.motion) {
+      this.camera = target;
+      return this.changed();
+    }
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / 320),
+        e = 1 - (1 - t) ** 3;
+      this.camera = { scale, x: x + dx * e, y: y + dy * e };
+      this.paint();
+      if (t < 1) this.gliding = requestAnimationFrame(tick);
+      else this.options.cameraChanged?.({ ...this.camera });
+    };
+    this.gliding = requestAnimationFrame(tick);
+  }
+  /** What a dragged box snaps to while editing: its neighbours (their edges, centres and
+   * equal gaps), and the lines of a grid this many scene units apart (0 for none). */
+  setSnap(snapping: { guides: boolean; grid: number }) {
+    this.snapping = { ...snapping };
+  }
   setMovable(value: boolean) {
     this.movable = value;
     this.paint();
@@ -1383,10 +1595,11 @@ export class Canvas {
     this.cursor();
     this.paint();
   }
-  /** What a press does while editing: select and move, move the view, or place something
-   * where it lands. */
-  setTool(tool: "select" | "hand" | "place") {
+  /** What a press does while editing: select and move, move the view, draw the box of
+   * something new, or draw a link between two modules. */
+  setTool(tool: CanvasTool) {
     this.tool = tool;
+    if (tool !== "select") this.hoverOver(null);
     this.cursor();
     this.paint();
   }
@@ -1397,7 +1610,7 @@ export class Canvas {
         ? this.gesture?.kind === "pan"
           ? "grabbing"
           : "grab"
-        : this.tool === "place"
+        : this.tool === "draw" || this.tool === "link"
           ? "crosshair"
           : "";
     this.element.toggleAttribute(
@@ -1459,10 +1672,10 @@ export class Canvas {
   }
   /** The middle of the view, in scene units, clear of the controls laid over it. */
   center() {
-    const { top, bottom } = this.clear();
+    const { top, bottom, left, right } = this.clear();
     const { x, y, scale } = this.camera;
     return {
-      x: (this.element.clientWidth / 2 - x) / scale,
+      x: (left + (this.element.clientWidth - left - right) / 2 - x) / scale,
       y: (top + (this.element.clientHeight - top - bottom) / 2 - y) / scale,
     };
   }
@@ -1539,6 +1752,40 @@ export class Canvas {
     return hosts
       .flatMap((h) => of(h) ?? [])
       .sort((a, b) => area(a.bounds) - area(b.bounds))[0];
+  }
+  /** Which side of the one selected module the pointer is nearest, when it is on the
+   * module or close by: that side's dot shows. */
+  private nearSide(e: PointerEvent) {
+    const one =
+      this.selection.length === 1 ? this.renderer.instances.get(this.selection[0]) : undefined;
+    let near: Side | null = null;
+    const on = (e.target as Element | null)?.closest?.<HTMLElement>("[data-connect]");
+    if (on) near = on.dataset.connect as Side;
+    else if (one && this.options.connect) {
+      const p = this.toScene(e.clientX, e.clientY),
+        b = one.bounds,
+        reach = 44 / this.camera.scale,
+        out = 22 / this.camera.scale;
+      if (
+        p.x > b.x - reach &&
+        p.x < b.x + b.width + reach &&
+        p.y > b.y - reach &&
+        p.y < b.y + b.height + reach
+      ) {
+        let best = Infinity;
+        for (const side of sides) {
+          const a = sidePoint[side];
+          const d = Math.hypot(
+            b.x + a.x * b.width + (a.x - 0.5) * 2 * out - p.x,
+            b.y + a.y * b.height + (a.y - 0.5) * 2 * out - p.y,
+          );
+          if (d < best) (best = d), (near = side);
+        }
+      }
+    }
+    if (near === this.near) return;
+    this.near = near;
+    this.paint();
   }
   private hoverOver(id: string | null, link: string | null = null) {
     if (this.hovered === id && this.hoveredLink === link) return;
@@ -1695,7 +1942,20 @@ export class Canvas {
       );
     });
     const text = words?.textContent?.trim();
-    if (!words || !text || !this.options.point) return;
+    if (!this.options.point) return;
+    // A link that says nothing yet is given words where it was pressed.
+    if (!words || !text) {
+      if (!this.editing) return;
+      e.preventDefault();
+      const rect = new DOMRect(e.clientX - 30, e.clientY - 9, 60, 18);
+      return this.options.point({
+        kind: "text",
+        moduleId: linkId,
+        link: true,
+        text: "",
+        place: () => ({ rect, size: 14 }),
+      });
+    }
     e.preventDefault();
     getSelection()?.removeAllRanges();
     this.options.point({
@@ -1772,10 +2032,17 @@ export class Canvas {
       this.cursor();
       return capture();
     }
-    if (this.editing && this.tool === "place") {
-      e.preventDefault();
-      this.options.place?.(this.toScene(e.clientX, e.clientY));
-      return;
+    // The drawing tool draws the box of something new, or places it at a press.
+    if (this.editing && this.tool === "draw") {
+      this.gesture = { ...start, kind: "draw", start: this.toScene(e.clientX, e.clientY) };
+      return capture();
+    }
+    // The link tool draws a link from the module pressed to the one it is let go on.
+    if (this.editing && this.tool === "link") {
+      const from = this.moduleAt(e.clientX, e.clientY);
+      if (!from) return e.preventDefault();
+      this.gesture = { ...start, kind: "connect", from: { moduleId: from.id } };
+      return capture();
     }
     const chosen = () =>
       this.selection.flatMap((id) => {
@@ -1851,11 +2118,12 @@ export class Canvas {
     }
     const held = !!m && this.selection.includes(m.id) && (was || this.editing);
     if (this.movable && held) {
-      // A grouped module takes its group along, unless Alt is held.
+      // A grouped module takes its group along. With Alt held while editing, copies are
+      // dragged off and the modules stay, so they are among what the copies line up with.
       const moving = [
         ...new Set(
           chosen().flatMap((d) =>
-            d.group && !e.altKey
+            d.group
               ? [...this.renderer.instances.values()].filter(
                   (v) => v.group === d.group,
                 )
@@ -1863,12 +2131,16 @@ export class Canvas {
           ),
         ),
       ];
+      const copy = this.editing && e.altKey && !!this.options.duplicate;
       this.gesture = {
         ...start,
         kind: "move",
         moves: moving.map((v) => ({ id: v.id, bounds: { ...v.bounds } })),
-        others: others(new Set(moving.map((v) => v.id))),
+        others: others(copy ? new Set() : new Set(moving.map((v) => v.id))),
+        copy,
+        chosen: [...this.selection],
       };
+      if (copy) this.element.style.cursor = "copy";
     } else this.gesture = { ...start, kind: "pan", camera: { ...this.camera } };
     capture();
   }
@@ -1905,15 +2177,17 @@ export class Canvas {
       );
     });
   }
-  /** The size or place of what is dragged, in a tag under it. */
+  /** The place of what is dragged, in a tag at its top left corner, where it is measured
+   * from. */
   private showReadout(text: string | null, b?: Bounds) {
     if (!text || !b) return void (this.readout.style.display = "none");
     const { x, y, scale } = this.camera;
     this.readout.textContent = text;
     Object.assign(this.readout.style, {
       display: "block",
-      left: x + (b.x + b.width / 2) * scale + "px",
-      top: y + (b.y + b.height) * scale + 10 + "px",
+      transform: "none",
+      left: x + b.x * scale + "px",
+      top: y + b.y * scale - 26 + "px",
     });
   }
   /** Puts dragged modules where they are going at once, and draws what has to be drawn
@@ -1995,9 +2269,11 @@ export class Canvas {
       if (e.pointerType === "touch") return;
       if (this.editing && this.tool === "select" && !this.spacing) {
         const { module: m, link } = this.pick(e.clientX, e.clientY);
+        this.nearSide(e);
         this.hoverOver(m?.id ?? null, m ? null : (link ?? null));
         this.element.style.cursor = !m && link ? "pointer" : "";
-      }
+      } else if (this.editing && this.tool === "link" && !this.spacing)
+        this.hoverOver(this.moduleAt(e.clientX, e.clientY)?.id ?? null);
       return;
     }
     const dx = e.clientX - g.x,
@@ -2009,7 +2285,8 @@ export class Canvas {
     if (!g.moved) return;
     const scale = this.camera.scale;
     // Snapping lines a dragged box up with its neighbours; Cmd or Ctrl turns it off.
-    const snapping = this.editing && !e.metaKey && !e.ctrlKey;
+    const snapping = this.editing && this.snapping.guides && !e.metaKey && !e.ctrlKey;
+    const grid = this.editing && !e.metaKey && !e.ctrlKey ? this.snapping.grid : 0;
     const threshold = 6 / scale;
     const round = (n: number) => Math.round(n);
     if (g.kind === "pan") {
@@ -2023,15 +2300,30 @@ export class Canvas {
         Math.abs(mx) > Math.abs(my) ? (my = 0) : (mx = 0);
       let guides: Guide[] = [];
       const frame = union(g.moves.map((m) => m.bounds));
+      // What lines up with a neighbour stays there; the rest settles on the grid's lines.
+      let lined = { x: false, y: false };
+      this.gaps = [];
       if (snapping) {
         const s = snap(
           { ...frame, x: frame.x + mx, y: frame.y + my },
           g.others,
           threshold,
+          undefined,
+          undefined,
+          true,
         );
         mx += s.dx;
         my += s.dy;
         guides = s.guides;
+        this.gaps = s.gaps;
+        lined = {
+          x: !!s.dx || s.guides.some((l) => l.axis === "x") || s.gaps.some((l) => l.axis === "x"),
+          y: !!s.dy || s.guides.some((l) => l.axis === "y") || s.gaps.some((l) => l.axis === "y"),
+        };
+      }
+      if (grid) {
+        if (!lined.x && mx) mx = Math.round((frame.x + mx) / grid) * grid - frame.x;
+        if (!lined.y && my) my = Math.round((frame.y + my) / grid) * grid - frame.y;
       }
       this.showGuides(guides);
       g.last = g.moves.map((m) => ({
@@ -2041,6 +2333,17 @@ export class Canvas {
       this.drag(g.last);
       const now = { ...frame, x: frame.x + mx, y: frame.y + my };
       if (this.editing) this.showReadout(`${round(now.x)}, ${round(now.y)}`, now);
+      // Where copies are dragged from stays outlined: the modules there are not leaving.
+      if (g.copy) {
+        const { x, y } = this.camera;
+        Object.assign(this.origin.style, {
+          display: "block",
+          left: x + frame.x * scale + "px",
+          top: y + frame.y * scale + "px",
+          width: frame.width * scale + "px",
+          height: frame.height * scale + "px",
+        });
+      }
     } else if (g.kind === "resize") {
       const options = {
         keep: e.shiftKey,
@@ -2061,14 +2364,46 @@ export class Canvas {
         next = resized(g.frame, g.handle, rx, ry, options);
         guides = s.guides;
       }
+      // A free resize ends on the grid's lines where it lined up with nothing.
+      if (grid && !options.keep && !options.centred) {
+        const to = (v: number) => Math.round(v / grid) * grid;
+        if (!guides.some((l) => l.axis === "x") && g.handle.includes("e")) rx = to(g.frame.x + g.frame.width + rx) - g.frame.x - g.frame.width;
+        if (!guides.some((l) => l.axis === "x") && g.handle.includes("w")) rx = to(g.frame.x + rx) - g.frame.x;
+        if (!guides.some((l) => l.axis === "y") && g.handle.includes("s")) ry = to(g.frame.y + g.frame.height + ry) - g.frame.y - g.frame.height;
+        if (!guides.some((l) => l.axis === "y") && g.handle.includes("n")) ry = to(g.frame.y + ry) - g.frame.y;
+        next = resized(g.frame, g.handle, rx, ry, options);
+      }
       this.showGuides(guides);
       g.last = g.moves.map((m) => ({
         id: m.id,
         bounds: g.moves.length === 1 ? next : scaled(m.bounds, g.frame, next),
       }));
       this.drag(g.last);
-      if (this.editing)
-        this.showReadout(`${round(next.width)} × ${round(next.height)}`, next);
+    } else if (g.kind === "draw") {
+      // The box of something new: Shift keeps it square, and it ends on the grid's lines.
+      const at = this.toScene(e.clientX, e.clientY);
+      const w = at.x - g.start.x,
+        h = at.y - g.start.y;
+      const to = (v: number) => (grid ? Math.round(v / grid) * grid : Math.round(v));
+      const x0 = to(g.start.x),
+        y0 = to(g.start.y),
+        side = to(Math.max(Math.abs(w), Math.abs(h))),
+        x1 = e.shiftKey ? x0 + Math.sign(w || 1) * side : to(g.start.x + w),
+        y1 = e.shiftKey ? y0 + Math.sign(h || 1) * side : to(g.start.y + h);
+      g.box = {
+        x: Math.min(x0, x1),
+        y: Math.min(y0, y1),
+        width: Math.abs(x1 - x0),
+        height: Math.abs(y1 - y0),
+      };
+      const { x, y } = this.camera;
+      Object.assign(this.marquee.style, {
+        display: "block",
+        left: x + g.box.x * scale + "px",
+        top: y + g.box.y * scale + "px",
+        width: g.box.width * scale + "px",
+        height: g.box.height * scale + "px",
+      });
     } else if (g.kind === "marquee") {
       const at = this.toScene(e.clientX, e.clientY);
       const box = {
@@ -2103,7 +2438,8 @@ export class Canvas {
     } else if (g.kind === "connect") {
       const from = this.renderer.instances.get(g.from.moduleId);
       if (!from) return;
-      const a = sidePoint[g.from.side],
+      // Without a side named, the link leaves by the side facing the pointer.
+      const a = sidePoint[g.from.side ?? facing(from.bounds, this.toScene(e.clientX, e.clientY))],
         { x, y } = this.camera;
       this.drawLine(
         {
@@ -2127,7 +2463,9 @@ export class Canvas {
     this.gesture = undefined;
     this.ghost.clear();
     this.marquee.style.display = "none";
+    this.origin.style.display = "none";
     this.line.style.display = "none";
+    this.gaps = [];
     this.showGuides([]);
     this.showReadout(null);
     this.cursor();
@@ -2234,15 +2572,43 @@ export class Canvas {
     // Lifting a finger ends a pinch; the one left on the glass does nothing more.
     if (g.kind === "pinch") return;
     if (touch && !g.moved) this.tap(e);
-    if (g.moved && (g.kind === "move" || g.kind === "resize") && g.last) {
+    if (g.moved && g.kind === "move" && g.copy && g.last) {
+      // Copies were dragged off: the modules go back, and copies are asked for that far away.
+      this.drag(g.moves, false);
+      const by = {
+        x: g.last[0].bounds.x - g.moves[0].bounds.x,
+        y: g.last[0].bounds.y - g.moves[0].bounds.y,
+      };
+      if (by.x || by.y) this.options.duplicate?.(g.moves.map((m) => m.id), by);
+    } else if (g.moved && (g.kind === "move" || g.kind === "resize") && g.last) {
       this.changed();
       this.options.commit?.(g.last.map((m) => ({ id: m.id, bounds: { ...m.bounds } })));
     }
+    if (g.kind === "draw") {
+      const big = g.box && g.box.width * this.camera.scale >= 12 && g.box.height * this.camera.scale >= 12;
+      this.options.place?.(
+        big ? { x: g.box!.x + g.box!.width / 2, y: g.box!.y + g.box!.height / 2 } : g.start,
+        big ? g.box : undefined,
+      );
+    }
+    // The dot on a side pressed without a drag grows the figure beyond that side.
+    if (g.kind === "connect" && !g.moved && g.from.side)
+      this.options.extend?.({ moduleId: g.from.moduleId, side: g.from.side });
     if ((g.kind === "connect" || g.kind === "relink") && g.moved) {
       const to = this.moduleAt(e.clientX, e.clientY);
-      const at = to && { moduleId: to.id, side: facing(to.bounds, this.toScene(e.clientX, e.clientY)) };
+      const here = this.toScene(e.clientX, e.clientY);
+      const at = to && { moduleId: to.id, side: facing(to.bounds, here) };
       if (g.kind === "connect" && at && at.moduleId !== g.from.moduleId)
-        this.options.connect?.(g.from, at);
+        // A link drawn with the tool joins the modules as they face each other, then and
+        // after they move; one drawn from a side's dot keeps to the sides it was given.
+        this.options.connect?.(g.from, g.from.side ? at : { moduleId: at.moduleId });
+      // Let go over the paper, well clear of where it began, it ends in a new module there.
+      const source = this.renderer.instances.get(g.kind === "connect" ? g.from.moduleId : "");
+      if (g.kind === "connect" && !to && source && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 36)
+        this.options.extend?.(
+          { moduleId: source.id, side: g.from.side ?? facing(source.bounds, here) },
+          here,
+        );
       if (g.kind === "relink" && at) {
         const link = this.renderer.links.get(g.linkId);
         const fixed = link?.[g.end === "from" ? "to" : "from"];

@@ -371,3 +371,31 @@ it("tells those who listen once for the changes of one turn, and keeps what did 
   expect(after.versions).toBe(before.versions);
   expect(after.display).toBe(before.display);
 });
+
+ it.each(["scene", "view"])("cancels a shape whose %s changes during library lookup", async (change) => {
+  head.scenes.sub = { ...structuredClone(head.scenes.root), id: "sub", modules: [], links: [] };
+  const { store } = await open();
+  store.attach(slowView());
+  let release!: (m: unknown) => void;
+  const normal = server.handle;
+  server.handle = (path, method, data) => path === "/materials/node"
+    ? new Promise((r) => { release = r; }) : normal(path, method, data);
+  const job = store.ops.shape("node", { title: "Hi" }, { x: 5, y: 6 });
+  if (change === "scene") store.locate("sub");
+  else store.attach(slowView());
+  release({ kind: "drawing", size: { width: 100, height: 50 } });
+  await job;
+  expect(posted).toHaveLength(0);
+ });
+
+ it("keeps the drawn text box in the saved module", async () => {
+  const { store, s } = await open();
+  const view = slowView();
+  store.attach(view);
+  const box = { x: 10, y: 20, width: 180, height: 90 };
+  const job = store.ops.text("Hi", { x: 0, y: 0 }, box);
+  await settle(); await settle();
+  view.waits[0]("drawn");
+  await job;
+  expect(s().scene!.modules.at(-1)!.bounds).toEqual(box);
+ });

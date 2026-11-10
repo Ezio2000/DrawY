@@ -411,7 +411,7 @@ it("selects what is pressed while editing, instead of opening or operating it, a
     .toBe("已突出基础需要");
   expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
 });
-it("edits like a drawing app: a box selects, handles resize a selection as one, drags snap, dots draw links, and a right click asks for the menu", async () => {
+it("edits like a drawing app: a box selects, handles resize a selection as one, drags snap, dots draw links and grow the figure, tools draw boxes and links, Alt drags copies off, and a right click asks for the menu", async () => {
   await open();
   await page.evaluate(() => {
     const view = window.drawyView,
@@ -424,7 +424,9 @@ it("edits like a drawing app: a box selects, handles resize a selection as one, 
     view.options.connect = (from, to) =>
       (body.linked = JSON.stringify({ from, to }));
     view.options.menu = (at) => (body.menu = JSON.stringify(at));
-    view.options.place = (at) => (body.placed = JSON.stringify(at));
+    view.options.place = (at, box) => (body.placed = JSON.stringify({ at, box }));
+    view.options.extend = (from, at) => (body.extended = JSON.stringify({ from, at: at ?? null }));
+    view.options.duplicate = (ids, by) => (body.copied = JSON.stringify({ ids, by }));
   });
   const data = (key: string) =>
     page.evaluate((k) => document.body.dataset[k], key);
@@ -476,7 +478,19 @@ it("edits like a drawing app: a box selects, handles resize a selection as one, 
   await drag(moved, { x: moved.x + 5, y: moved.y });
   await page.keyboard.up("Control");
   expect(JSON.parse((await data("moves"))!)[0].bounds.x).toBeCloseTo(100 + 5 / scale);
-  // A dot beside the selected module draws a link to the module it is dropped on.
+  // The selection is dimensioned: its width and its height stand beside it.
+  const heading0 = await page.evaluate(() => window.drawyView.renderer.instances.get("heading")!.bounds);
+  const figures = () => page.locator("[data-canvas] > svg text").allTextContents();
+  const away = await screen(980, 620);
+  await page.mouse.move(away.x, away.y);
+  expect(await figures()).toEqual([String(Math.round(heading0.width)), String(Math.round(heading0.height))]);
+  // The dot of the side the pointer nears comes out, and only that one; dragged, it draws a
+  // link to the module it is dropped on.
+  const right = await screen(heading0.x + heading0.width - 4, heading0.y + heading0.height / 2);
+  await page.mouse.move(right.x, right.y);
+  expect(await page.locator("[data-connect]:visible").count()).toBe(1);
+  // That side's figure gives way to its dot.
+  expect(await figures()).toEqual([String(Math.round(heading0.width))]);
   const dot = (await page.locator('[data-connect="right"]').boundingBox())!;
   const level = await screen(500, 350);
   await drag({ x: dot.x + dot.width / 2, y: dot.y + dot.height / 2 }, level);
@@ -484,6 +498,38 @@ it("edits like a drawing app: a box selects, handles resize a selection as one, 
     from: { moduleId: "heading", side: "right" },
     to: { moduleId: "level-2", side: expect.any(String) },
   });
+  // Pressed without a drag, the dot asks for a new module beyond its side; dragged out and
+  // let go over the paper, for one there.
+  await page.mouse.move(right.x, right.y);
+  await page.mouse.click(dot.x + dot.width / 2, dot.y + dot.height / 2);
+  expect(JSON.parse((await data("extended"))!)).toEqual({
+    from: { moduleId: "heading", side: "right" },
+    at: null,
+  });
+  const empty = await screen(980, 60);
+  await page.mouse.move(right.x, right.y);
+  await drag({ x: dot.x + dot.width / 2, y: dot.y + dot.height / 2 }, empty);
+  const grown = JSON.parse((await data("extended"))!);
+  expect(grown.from).toEqual({ moduleId: "heading", side: "right" });
+  expect(grown.at.x).toBeCloseTo(980, 0);
+  // With Alt held, a drag takes copies off and the module stays where it is.
+  await page.evaluate(() => delete document.body.dataset.moves);
+  const grip = await screen(heading0.x + heading0.width / 2, heading0.y + heading0.height / 2);
+  await page.keyboard.down("Alt");
+  await page.keyboard.down("Control");
+  await drag(grip, { x: grip.x + 40, y: grip.y + 20 });
+  await page.keyboard.up("Control");
+  await page.keyboard.up("Alt");
+  const copied = JSON.parse((await data("copied"))!);
+  expect(copied.ids).toEqual(["heading"]);
+  expect(copied.by.x).toBeCloseTo(40 / scale);
+  expect(copied.by.y).toBeCloseTo(20 / scale);
+  expect(await data("moves")).toBeUndefined();
+  expect(
+    parseFloat(
+      await page.evaluate(() => window.drawyView.renderer.host("module", "heading")!.style.left),
+    ),
+  ).toBeCloseTo(heading0.x, 2);
   // A right click selects what it lands on and asks for the menu there.
   const safety = await screen(450, 450);
   await page.mouse.click(safety.x, safety.y, { button: "right" });
@@ -491,13 +537,45 @@ it("edits like a drawing app: a box selects, handles resize a selection as one, 
   const menu = JSON.parse((await data("menu"))!);
   expect(Math.abs(menu.x - safety.x)).toBeLessThan(2);
   expect(Math.abs(menu.y - safety.y)).toBeLessThan(2);
-  // The placing tool says where in the scene it was pressed.
-  await page.evaluate(() => window.drawyView.setTool("place"));
+  // The drawing tool says where in the scene it was pressed, or the box dragged out.
+  await page.evaluate(() => window.drawyView.setTool("draw"));
   const spot = await screen(900, 300);
   await page.mouse.click(spot.x, spot.y);
   const placed = JSON.parse((await data("placed"))!);
-  expect(placed.x).toBeCloseTo(900, 0);
-  expect(placed.y).toBeCloseTo(300, 0);
+  expect(placed.at.x).toBeCloseTo(900, 0);
+  expect(placed.at.y).toBeCloseTo(300, 0);
+  expect(placed.box).toBeUndefined();
+  await drag(await screen(900, 300), await screen(1100, 380));
+  expect(JSON.parse((await data("placed"))!).box).toEqual({ x: 900, y: 300, width: 200, height: 80 });
+  // On a grid, a box drawn ends on its lines.
+  await page.evaluate(() => window.drawyView.setSnap({ guides: true, grid: 20 }));
+  await drag(await screen(903, 296), await screen(1108, 377));
+  expect(JSON.parse((await data("placed"))!).box).toEqual({ x: 900, y: 300, width: 200, height: 80 });
+  // Shift keeps a shared side length even when the origin is between grid lines.
+  for (const grid of [20, 0]) {
+    await page.evaluate((grid) => window.drawyView.setSnap({ guides: true, grid }), grid);
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+      await page.keyboard.down("Shift");
+      await drag(await screen(909, 311), await screen(909 + sx * 92, 311 + sy * 60));
+      await page.keyboard.up("Shift");
+      const box = JSON.parse((await data("placed"))!).box;
+      const side = grid ? 100 : 92;
+      expect(box.width).toBe(side);
+      expect(box.height).toBe(side);
+      if (grid) {
+        expect(box.x % grid).toBe(0);
+        expect(box.y % grid).toBe(0);
+      }
+    }
+  }
+  // The link tool joins the module pressed to the one it is let go on, as they face each
+  // other.
+  await page.evaluate(() => window.drawyView.setTool("link"));
+  await drag(await screen(450, 450), await screen(500, 350));
+  expect(JSON.parse((await data("linked"))!)).toEqual({
+    from: { moduleId: "level-3" },
+    to: { moduleId: "level-2" },
+  });
   await page.evaluate(() => {
     window.drawyView.setTool("select");
     window.drawyView.selectAll();
