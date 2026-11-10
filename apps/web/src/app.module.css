@@ -8556,6 +8556,7 @@ body:has(.resizer[data-dragging]) {
   /* The ways to start run off the side: a row to slide, not a list to scroll past. */
   .home-start {
     justify-content: flex-start;
+    max-width: none;
     margin: 0 -16px;
     padding: 2px 0 8px;
   }
