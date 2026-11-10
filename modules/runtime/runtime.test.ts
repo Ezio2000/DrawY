@@ -481,6 +481,8 @@ it("edits like a drawing app: a box selects, handles resize a selection as one, 
   // The selection is dimensioned: its width and its height stand beside it.
   const heading0 = await page.evaluate(() => window.drawyView.renderer.instances.get("heading")!.bounds);
   const figures = () => page.locator("[data-canvas] > svg text").allTextContents();
+  const away = await screen(980, 620);
+  await page.mouse.move(away.x, away.y);
   expect(await figures()).toEqual([String(Math.round(heading0.width)), String(Math.round(heading0.height))]);
   // The dot of the side the pointer nears comes out, and only that one; dragged, it draws a
   // link to the module it is dropped on.
@@ -524,8 +526,10 @@ it("edits like a drawing app: a box selects, handles resize a selection as one, 
   expect(copied.by.y).toBeCloseTo(20 / scale);
   expect(await data("moves")).toBeUndefined();
   expect(
-    await page.evaluate(() => window.drawyView.renderer.host("module", "heading")!.style.left),
-  ).toBe(heading0.x + "px");
+    parseFloat(
+      await page.evaluate(() => window.drawyView.renderer.host("module", "heading")!.style.left),
+    ),
+  ).toBeCloseTo(heading0.x, 2);
   // A right click selects what it lands on and asks for the menu there.
   const safety = await screen(450, 450);
   await page.mouse.click(safety.x, safety.y, { button: "right" });

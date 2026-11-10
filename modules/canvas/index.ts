@@ -120,7 +120,7 @@ const ACCENT = "#3366d6";
 /** The red pencil: what a dragged box lines up with, and the gaps it keeps. */
 const CHECK = "#e5484d";
 /** Figures on the canvas are set in the interface's face, as the lettering of a drawing. */
-const FIGURES = `"Sofia Sans Letters","Sofia Sans",system-ui,sans-serif`;
+const FIGURES = "'Sofia Sans Letters','Sofia Sans',system-ui,sans-serif";
 /** What a press does while editing: select and move, move the view, draw a box for
  * something new, or draw a link from one module to another. */
 export type CanvasTool = "select" | "hand" | "draw" | "link";

@@ -180,7 +180,8 @@ export function SceneView({
     let dockHeight = 0;
     const docked = new ResizeObserver(([entry]) => {
       const h = Math.round(entry.contentRect.height);
-      if (dockHeight && Math.abs(h - dockHeight) > 8) view.refit();
+      // Not while editing by hand: what a person is working on stays where it is.
+      if (dockHeight && Math.abs(h - dockHeight) > 8 && !boarded.current) view.refit();
       dockHeight = h;
     });
     if (dock) docked.observe(dock);

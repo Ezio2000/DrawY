@@ -3492,10 +3492,13 @@ body:has(.resizer[data-dragging]) {
   font: inherit;
   line-height: 1.3;
   color: var(--text);
+  text-align: center;
+  translate: -50% 0;
   resize: none;
   overflow: hidden;
   outline: none;
-  animation: pop 0.25s var(--spring) both;
+  field-sizing: content;
+  animation: fade-in 0.15s var(--ease-out) both;
 }
 
 /* The panel's two tabs, and the folding sections inside it. */
@@ -4356,6 +4359,24 @@ body:has(.resizer[data-dragging]) {
    selected is measured as a drawing is dimensioned. The tool in hand is inked; everything
    that measures or marks the selection is the blue pencil. */
 
+/* The composer waits as one line while the hand is at work, and opens when it is written
+   in: what is selected is said by its placeholder, and asking about it is a press away. */
+.stage[data-editing]
+  .composer[data-place="dock"]:not(:focus-within):not(:has(textarea:not(:placeholder-shown)))
+  :is(.composer-tools, .composer-extras) {
+  display: none;
+}
+
+.stage[data-editing]
+  .composer[data-place="dock"]:not(:focus-within):not(:has(textarea:not(:placeholder-shown))) {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.stage[data-editing] .dock {
+  width: min(600px, calc(100% - 380px));
+}
+
 /* Rulers along the top and the left, with a square where they meet. */
 .ruler,
 .ruler-corner {
@@ -4423,6 +4444,11 @@ body:has(.resizer[data-dragging]) {
 .stage[data-ruled] .tray {
   top: 82px;
   left: 30px;
+}
+
+/* What opens from the tray lies over the composer. */
+.tray:has([data-flyout]) {
+  z-index: 13;
 }
 
 .tray > button,
@@ -4576,10 +4602,12 @@ body:has(.resizer[data-dragging]) {
 
 /* The library's drawings beside the tray. */
 .drawings {
+  top: auto;
+  bottom: -4px;
   display: flex;
   flex-direction: column;
   width: 308px;
-  max-height: min(540px, calc(100vh - 140px));
+  height: min(520px, calc(100vh - 150px));
 }
 
 .drawings-search {
@@ -4602,11 +4630,16 @@ body:has(.resizer[data-dragging]) {
     0 0 0 4px var(--blue-soft);
 }
 
-.drawings-search input {
+.drawings-search input,
+.drawings-search input:focus {
   flex: 1;
   min-width: 0;
+  height: auto;
+  padding: 0;
   border: 0;
+  border-radius: 0;
   outline: 0;
+  box-shadow: none;
   background: none;
   font: inherit;
   font-size: 13.5px;
@@ -4954,6 +4987,12 @@ body:has(.resizer[data-dragging]) {
 .edit-menu kbd,
 .camera-menu kbd,
 .keys-sheet kbd {
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
   font-family: var(--font);
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;

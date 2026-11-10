@@ -1029,10 +1029,11 @@ export function Retype({
         area = stage.getBoundingClientRect(),
         { rect: r, size: s } = pointed.place(),
         size = Math.min(48, Math.max(13, s));
+      // Over the middle of the words, growing both ways as they are typed.
       Object.assign(el.style, {
-        left: r.left - area.left - 6 + "px",
+        left: r.left - area.left + r.width / 2 + "px",
         top: r.top - area.top + r.height / 2 - size * 0.75 - 4 + "px",
-        minWidth: Math.max(120, r.width + 24) + "px",
+        minWidth: Math.max(96, r.width + 28) + "px",
         fontSize: size + "px",
       });
       frame = requestAnimationFrame(follow);

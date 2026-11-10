@@ -83,11 +83,22 @@ function glyphOf(key: string, option: string): ReactNode {
     return <LineGlyph kind={line} />;
   return null;
 }
-/** The colour a tone of the work's style stands for. */
-const toneOf = (work: Work, tone: string) =>
-  tone === "plain"
+/** The colour a tone of the work's style stands for, as the library's drawings read it:
+ * a second accent falls back to the first, and each to a colour of its own. */
+const toneOf = (work: Work, tone: string) => {
+  const s = work.style;
+  return tone === "plain"
     ? undefined
-    : (work.style[tone] ?? (tone === "ink" ? work.style.ink : undefined));
+    : tone === "accent2"
+      ? s.accent2 || s.accent || "#4f7c8a"
+      : tone === "accent"
+        ? s.accent || "#d97757"
+        : tone === "muted"
+          ? s.muted || "#8a8f98"
+          : tone === "ink"
+            ? s.ink || "#161a22"
+            : s[tone];
+};
 
 /** The selection's look and most used actions in a bar over it on the canvas, following it
  * as the view moves: what shape, colour and size of type everything selected takes at once,
