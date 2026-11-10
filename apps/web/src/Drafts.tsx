@@ -1,5 +1,6 @@
 import { Check, FilePlus2, Hand, MessageSquareText, PencilLine, RotateCcw } from "lucide-react";
 import { cx } from "./cx.ts";
+import { Seal } from "./Title.tsx";
 import { ago } from "./time.ts";
 import { useT, type Words } from "./i18n.tsx";
 import { versionOf, type Version } from "../../../modules/contracts/index.ts";
@@ -116,9 +117,13 @@ export function Drafts({
                 data-tip={now ? undefined : t.history.look}
                 onClick={() => look(now && !unsaved ? current : v.revision)}
               >
-                <i>
-                  <Icon size={13} />
-                </i>
+                {v.cause.kind === "create" ? (
+                  <i>
+                    <Icon size={13} />
+                  </i>
+                ) : (
+                  <Seal version={v.number} quiet={!now} size="large" />
+                )}
                 <span>
                   <b>
                     {v.cause.kind === "create"
@@ -126,7 +131,12 @@ export function Drafts({
                       : t.history.revision(v.number)}
                   </b>
                   <small>{ago(v.updatedAt)}</small>
-                  {v.cause.kind !== "create" && <q title={title}>{title}</q>}
+                  {v.cause.kind !== "create" && (
+                    <q title={title}>
+                      <Icon size={12} />
+                      {title}
+                    </q>
+                  )}
                 </span>
               </button>
               {now && !unsaved ? (

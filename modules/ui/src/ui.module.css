@@ -44,20 +44,20 @@
   gap: 6px;
   min-height: 36px;
   padding: 8px 16px;
-  border-radius: 8px;
-  background: var(--blue);
+  border-radius: var(--r-control);
+  background: var(--ink);
   color: #fff;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
 }
 
 .primary:hover:not(:disabled) {
-  background: var(--blue-hover);
+  background: var(--ink-hover);
 }
 
 .primary:active:not(:disabled) {
-  background: var(--blue-press);
+  background: var(--ink-press);
   transform: scale(0.97);
   transition-duration: 0.1s;
 }
@@ -66,7 +66,7 @@
 .secondary.small {
   min-height: 30px;
   padding: 5px 12px;
-  border-radius: 7px;
+  border-radius: 6px;
   font-size: 13px;
 }
 
@@ -82,7 +82,7 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--r-control);
   color: var(--text-2);
 }
 
@@ -110,7 +110,7 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 12px;
+  border-radius: 9px;
   background: var(--blue-soft);
   color: var(--blue);
   flex-shrink: 0;
@@ -144,9 +144,8 @@
   display: inline-flex;
   align-items: center;
   padding: 3px;
-  border-radius: 10px;
-  background: var(--bg-2);
-  box-shadow: inset 0 0 0 0.5px var(--line-strong);
+  border-radius: 9px;
+  background: var(--desk);
 }
 
 .segmented::before {
@@ -158,11 +157,11 @@
   left: 0;
   width: var(--thumb-w, 0);
   transform: translateX(var(--thumb-x, 0));
-  border-radius: 7px;
+  border-radius: 6px;
   background: #fff;
   box-shadow:
-    0 0 0 0.5px var(--line-strong),
-    0 1px 3px rgba(0, 0, 0, 0.056);
+    0 0 0 1px rgba(22, 26, 34, 0.07),
+    0 1px 2px rgba(22, 26, 34, 0.1);
   opacity: 0;
 }
 
@@ -184,7 +183,7 @@
   gap: 5px;
   min-height: 28px;
   padding: 4px 14px;
-  border-radius: 7px;
+  border-radius: 6px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-2);
@@ -211,8 +210,8 @@
   z-index: 200;
   translate: -50% 0;
   max-width: 260px;
-  padding: 5px 9px;
-  border-radius: 6px;
+  padding: 5px 8px;
+  border-radius: 5px;
   background: var(--ink);
   color: var(--paper);
   font-size: 12px;
@@ -220,7 +219,7 @@
   line-height: 1.35;
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.126);
+  box-shadow: 0 6px 16px -4px rgba(22, 26, 34, 0.3);
   animation: tip-in 0.16s var(--ease-out) both;
 }
 
@@ -244,13 +243,11 @@
   flex-direction: column;
   min-width: 196px;
   padding: 5px;
-  border-radius: 12px;
+  border-radius: var(--r-card);
   background: var(--bg);
-  box-shadow:
-    0 0 0 0.5px var(--line-strong),
-    0 8px 28px rgba(0, 0, 0, 0.07);
+  box-shadow: var(--shadow-2);
   transform-origin: top right;
-  animation: menu-in 0.34s var(--spring);
+  animation: menu-in 0.2s var(--ease-out);
 }
 
 .menu-list.closing {
@@ -264,7 +261,7 @@
   gap: 10px;
   height: 34px;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 14px;
   color: var(--text);
   text-align: left;
@@ -314,7 +311,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.32);
+  background: rgba(22, 26, 34, 0.36);
   transition: background-color 0.4s var(--ease);
   animation: fade-in 0.3s var(--ease) both;
 }
@@ -331,13 +328,13 @@
   width: min(560px, 100%);
   max-height: min(780px, calc(100dvh - 48px));
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--r-sheet);
   background: var(--paper);
   outline: none;
   box-shadow:
-    0 0 0 0.5px var(--line-strong),
-    0 24px 64px rgba(0, 0, 0, 0.16);
-  animation: dialog-in 0.6s var(--spring) both;
+    0 0 0 1px rgba(22, 26, 34, 0.1),
+    0 32px 72px -16px rgba(22, 26, 34, 0.36);
+  animation: dialog-in 0.36s var(--ease-out) both;
 }
 
 .dialog-header {
@@ -363,9 +360,10 @@
 
 .dialog-header h2 {
   font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 500;
+  font-size: 20px;
+  font-weight: 700;
   line-height: 1.25;
+  letter-spacing: -0.015em;
 }
 
 .dialog-header p {
@@ -437,8 +435,8 @@
 
 .dialog .error {
   padding: 11px 14px;
-  border-radius: 10px;
-  background: rgba(191, 77, 67, 0.08);
+  border-radius: 8px;
+  background: rgba(198, 42, 47, 0.07);
   animation: pane-in 0.35s var(--ease-out) backwards;
 }
 
@@ -453,45 +451,46 @@
 .switch {
   position: relative;
   flex-shrink: 0;
-  width: 46px;
-  height: 28px;
-  border-radius: 980px;
-  background: var(--fill-2);
+  width: 42px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--line-strong);
   transition: background-color 0.25s var(--ease);
 }
 
+/* On is ink, as a box that has been filled in. */
 .switch[aria-checked="true"] {
-  background: var(--ai);
+  background: var(--ink);
 }
 
 .switch i {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
   background: #fff;
   box-shadow:
-    0 3px 8px rgba(0, 0, 0, 0.15),
-    0 1px 1px rgba(0, 0, 0, 0.06);
+    0 2px 5px rgba(22, 26, 34, 0.2),
+    0 0 0 0.5px rgba(22, 26, 34, 0.06);
   transition:
     translate 0.4s var(--spring),
     width 0.25s var(--ease);
 }
 
 .switch[aria-checked="true"] i {
-  translate: 18px 0;
+  translate: 16px 0;
 }
 
 /* Pressing stretches the knob towards where it will go. */
 
 .switch:active:not(:disabled) i {
-  width: 30px;
+  width: 25px;
 }
 
 .switch[aria-checked="true"]:active:not(:disabled) i {
-  translate: 12px 0;
+  translate: 11px 0;
 }
 
 .switch:disabled {
@@ -512,9 +511,9 @@
   width: max-content;
   max-width: min(560px, calc(100vw - 32px));
   padding: 8px 8px 8px 16px;
-  border-radius: 12px;
+  border-radius: var(--r-card);
   background: var(--ink);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 16px 36px -10px rgba(22, 26, 34, 0.45);
   font-size: 13px;
   color: var(--paper);
   animation: toast-in 0.6s var(--spring) both;
@@ -535,7 +534,7 @@
   width: 26px;
   height: 26px;
   flex-shrink: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   color: rgba(255, 255, 255, 0.7);
 }
 
@@ -548,7 +547,7 @@
   width: auto;
   padding: 0 12px;
   font-weight: 600;
-  color: #f0a585;
+  color: #9dbbff;
 }
 
 .toast.closing {
@@ -563,12 +562,14 @@
   gap: 6px;
   min-height: 36px;
   padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: var(--r-control);
   background: var(--bg);
-  box-shadow: inset 0 0 0 0.5px var(--line-strong);
+  box-shadow:
+    inset 0 0 0 1px var(--line-strong),
+    0 1px 1px rgba(22, 26, 34, 0.04);
   color: var(--text);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -697,10 +698,7 @@
 @keyframes dialog-in {
   from {
     opacity: 0;
-    transform: translateY(18px) scale(0.94);
-  }
-  40% {
-    opacity: 1;
+    transform: translateY(12px) scale(0.97);
   }
 }
 
@@ -720,7 +718,7 @@
 @keyframes menu-in {
   from {
     opacity: 0;
-    transform: scale(0.88) translateY(-4px);
+    transform: scale(0.96) translateY(-3px);
   }
 }
 

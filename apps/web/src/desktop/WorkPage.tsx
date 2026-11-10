@@ -281,6 +281,8 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           setMenu={setScenes}
           enter={enter}
           rename={(title) => void attempt(() => session.rename(title))}
+          drafting={panel === "drafts"}
+          versions={() => toggle("drafts")}
         />
         <CanvasArea
           session={session}
