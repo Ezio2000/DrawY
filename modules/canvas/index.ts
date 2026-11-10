@@ -2178,17 +2178,20 @@ export class Canvas {
     this.camera = zoom(moved, { x: mid.x - r.left, y: mid.y - r.top }, span / g.span);
     this.changed();
   }
-  /** A finger held still long enough selects what it is on and asks what to do there. */
+  /** A finger held still long enough selects what it is on and asks what to do there. What
+   * it is on is found when it goes down: selecting it can grow what is laid over the canvas
+   * (a phone's actions) and refit the view under the still finger. */
   private holdFrom(e: PointerEvent) {
     clearTimeout(this.holding);
     const at = { x: e.clientX, y: e.clientY },
-      pointer = e.pointerId;
+      pointer = e.pointerId,
+      under = this.pick(at.x, at.y);
     this.holding = setTimeout(() => {
       const g = this.gesture;
       if (!g || g.pointer !== pointer || g.moved || this.touches.size !== 1) return;
       this.cancel();
       if (this.element.hasPointerCapture(pointer)) this.element.releasePointerCapture(pointer);
-      const { module: m, link } = this.pick(at.x, at.y);
+      const { module: m, link } = under;
       if (link && !m) this.selectLink(link);
       else if (m && !this.selection.includes(m.id)) this.select([m.id]);
       else if (!m) this.select([]);

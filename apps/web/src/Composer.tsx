@@ -213,8 +213,9 @@ export function Composer({
               upload={() => picker.current?.click()}
               pick={pick}
             />
-            {setStyle && <StylePicker style={style} pick={setStyle} />}
+            {!!models?.labels.length && <ModelBar models={models} pick={choose} quota={quota} />}
             <span className={cx("composer-gap")} />
+            {setStyle && <StylePicker style={style} pick={setStyle} />}
             {working ? (
               <button
                 className={cx("composer-stop")}
@@ -243,7 +244,6 @@ export function Composer({
           </div>
         </div>
       </div>
-      {!!models?.labels.length && <ModelBar models={models} pick={choose} quota={quota} />}
     </div>
   );
 }
@@ -351,40 +351,48 @@ export function ModelBar({
   if (!label) return null;
   const name = (l: { id: string; name: string }) =>
     l.id === "default" && l.name === "默认" ? w.defaultLabel : l.name;
+  const left = quota !== undefined && quota !== null && (
+    <i data-out={quota <= 0 || undefined}>{w.quotaShort(quota)}</i>
+  );
+  // One pill, as in Claude's composer: the label in ink, the requests left after it in grey.
+  if (models.labels.length < 2)
+    return left ? (
+      <span className={cx("model-bar")} data-tip={w.quotaHint}>
+        {left}
+      </span>
+    ) : null;
   return (
     <div className={cx("model-bar")}>
-      {quota !== undefined && quota !== null && (
-        <span
-          className={cx("quota")}
-          data-out={quota <= 0 || undefined}
-          data-tip={w.quotaHint}
-        >
-          {w.quota(quota)}
-        </span>
-      )}
-      {models.labels.length > 1 && (
-        <Pick label={w.labelSection} value={name(label)}>
-          {(close) => (
-            <>
-              <p className={cx("models-head")}>{w.labelSection}</p>
-              {models.labels.map((l) => (
-                <Option
-                  key={l.id}
-                  on={l.id === label.id}
-                  disabled={!l.ready}
-                  note={l.ready ? l.description : w.modelUnconnected}
-                  pick={() => {
-                    close();
-                    pick({ label: l.id });
-                  }}
-                >
-                  {name(l)}
-                </Option>
-              ))}
-            </>
-          )}
-        </Pick>
-      )}
+      <Pick
+        label={w.labelSection}
+        value={name(label)}
+        shown={
+          <span className={cx("pick-writer")}>
+            <b>{name(label)}</b>
+            {left}
+          </span>
+        }
+      >
+        {(close) => (
+          <>
+            <p className={cx("models-head")}>{w.labelSection}</p>
+            {models.labels.map((l) => (
+              <Option
+                key={l.id}
+                on={l.id === label.id}
+                disabled={!l.ready}
+                note={l.ready ? l.description : w.modelUnconnected}
+                pick={() => {
+                  close();
+                  pick({ label: l.id });
+                }}
+              >
+                {name(l)}
+              </Option>
+            ))}
+          </>
+        )}
+      </Pick>
     </div>
   );
 }

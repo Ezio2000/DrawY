@@ -41,7 +41,8 @@ function useFits(list: React.RefObject<HTMLUListElement | null>, deps: unknown[]
 }
 
 /** The first page, laid out like a drawing tool's file browser rather than a chatbot's
- * greeting: ways to start a work (a blank canvas, or one of three requests), then as many of
+ * greeting: ways to start a work (a blank canvas, or one of three requests, as low
+ * tiles beside a small sketch, so they do not pass for works of one's own), then as many of
  * the works last drawn on as fit the window. The composer stays at the bottom, where it is on
  * every page. */
 export function Home({
