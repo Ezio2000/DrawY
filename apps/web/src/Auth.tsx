@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ArrowUp, Eye, EyeOff } from "lucide-react";
 import { Spinner } from "@drawy/ui";
-import { Brand } from "./Title.tsx";
+import { ModelSketch, KinshipSketch } from "@drawy/ui/sketches";
+import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
+import { Brand, Seal } from "./Title.tsx";
 import { LanguageSwitch, useT } from "./i18n.tsx";
 import { api, type User } from "./api.ts";
 import { cx } from "./cx.ts";
 
-/** Signing in or up: a headline and one card on the left, what DrawY makes on the right. */
+/** Signing in or up: a headline and a form on a sheet at the left; on the desk at the right,
+ * what DrawY makes: a request as it is typed, and the drawings that came of three. */
 export function Auth({ done }: { done: (user: User) => void }) {
   const t = useT();
   const [signup, S] = useState(false),
@@ -15,6 +18,7 @@ export function Auth({ done }: { done: (user: User) => void }) {
     [invite, I] = useState(""),
     // Whether signing up takes an invite: it does once the app has its first account.
     [needsInvite, setNeedsInvite] = useState(true),
+    [shown, setShown] = useState(false),
     [busy, B] = useState(false),
     [error, E] = useState("");
   useEffect(() => {
@@ -58,36 +62,56 @@ export function Auth({ done }: { done: (user: User) => void }) {
             <p className={cx("auth-greeting")}>
               {signup ? t.auth.join : t.auth.welcome}
             </p>
-            <input
-              aria-label={t.auth.username}
-              placeholder={t.auth.username}
-              autoComplete="username"
-              value={name}
-              onChange={(e) => N(e.target.value)}
-              required
-              autoFocus
-            />
-            <input
-              type="password"
-              aria-label={t.auth.password}
-              placeholder={signup ? `${t.auth.password} · ${t.auth.atLeast6}` : t.auth.password}
-              autoComplete={signup ? "new-password" : "current-password"}
-              value={password}
-              onChange={(e) => P(e.target.value)}
-              required
-              minLength={6}
-            />
-            {signup && needsInvite && (
+            <label>
+              <span>{t.auth.username}</span>
               <input
-                aria-label={t.auth.invite}
-                placeholder={t.auth.invite}
-                autoComplete="off"
-                spellCheck={false}
-                value={invite}
-                onChange={(e) => I(e.target.value)}
-                aria-describedby="invite-hint"
+                autoComplete="username"
+                autoCapitalize="none"
+                value={name}
+                onChange={(e) => N(e.target.value)}
                 required
+                autoFocus
               />
+            </label>
+            <label>
+              <span>
+                {t.auth.password}
+                {signup && <small>{t.auth.atLeast6}</small>}
+              </span>
+              <span className={cx("auth-secret")}>
+                <input
+                  type={shown ? "text" : "password"}
+                  autoComplete={signup ? "new-password" : "current-password"}
+                  value={password}
+                  onChange={(e) => P(e.target.value)}
+                  required
+                  minLength={6}
+                />
+                {/* What was typed can be read back before it is sent: a mistyped password
+                    is otherwise found out only by being refused. */}
+                <button
+                  type="button"
+                  aria-label={shown ? t.auth.hidePassword : t.auth.showPassword}
+                  aria-pressed={shown}
+                  data-tip={shown ? t.auth.hidePassword : t.auth.showPassword}
+                  onClick={() => setShown(!shown)}
+                >
+                  {shown ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </span>
+            </label>
+            {signup && needsInvite && (
+              <label>
+                <span>{t.auth.invite}</span>
+                <input
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={invite}
+                  onChange={(e) => I(e.target.value)}
+                  aria-describedby="invite-hint"
+                  required
+                />
+              </label>
             )}
             {signup && needsInvite && (
               <p className={cx("auth-hint")} id="invite-hint">
@@ -109,7 +133,6 @@ export function Auth({ done }: { done: (user: User) => void }) {
                 </>
               )}
             </button>
-            <hr />
             <button
               type="button"
               className={cx("auth-switch")}
@@ -123,8 +146,36 @@ export function Auth({ done }: { done: (user: User) => void }) {
           </form>
         </div>
       </section>
-      <figure className={cx("auth-art")}>
-        <img src="/sketch-to-drawing.webp" alt={t.auth.art} />
+      <figure className={cx("auth-art")} role="img" aria-label={t.auth.art}>
+        <div className={cx("auth-desk")} aria-hidden>
+          <div className={cx("auth-sheet")} data-at="back">
+            <KinshipSketch />
+            <p>
+              <b>{t.home.examples[2]}</b>
+              <Seal version={1} quiet />
+            </p>
+          </div>
+          <div className={cx("auth-sheet")} data-at="mid">
+            <ModelSketch />
+            <p>
+              <b>{t.home.examples[1]}</b>
+              <Seal version={3} quiet />
+            </p>
+          </div>
+          <div className={cx("auth-sheet")} data-at="front">
+            <OrbitSketch />
+            <p>
+              <b>{t.home.examples[0]}</b>
+              <Seal version={2} />
+            </p>
+          </div>
+          <div className={cx("auth-slip")}>
+            <span>{t.home.examples[0]}</span>
+            <i>
+              <ArrowUp size={15} strokeWidth={2.4} />
+            </i>
+          </div>
+        </div>
       </figure>
     </div>
   );

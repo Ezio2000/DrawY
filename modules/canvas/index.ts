@@ -104,7 +104,7 @@ const seed = (id: string) =>
     2166136261,
   );
 const GRAPHITE = "rgba(70,70,70,.45)";
-const ACCENT = "#3d72e0";
+const ACCENT = "#3366d6";
 /** How far from a link's line, in screen pixels, a press still takes the link: a finger
  * covers far more than a mouse's point does. */
 const SLOP = 10,

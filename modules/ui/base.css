@@ -1,9 +1,52 @@
-/* DrawY · a light, plain drawing tool
-   White paper and neutral greys, the way drawing tools are: nothing warm-tinted, no serif
-   display type, no glass, nothing that moves unless the person moved it. Type is near-black;
-   a blue editing pencil marks what is selected, focused or linked and fills the one primary
-   button; graphite hatching stands in for what is still being drawn; the lantern keeps its
-   seal colour as the logo. The canvas fills the space and controls stay quiet around it. */
+/* DrawY · a drafting desk
+   Four things on it, and each colour has one job. Paper: white sheets, where a drawing or a
+   page of controls lies. The desk under them: a cool, even grey, never warm. Ink: blue-black,
+   for words and for the button that commits. The blue pencil: what is selected, focused or
+   still being drawn. The vermilion seal: what is finished (a version) and the lantern.
+   Latin and figures are set in Sofia Sans, a face in the line of the lettering of technical
+   drawings; Chinese in the system's own sans. Corners are those of cut paper (6 to 12px),
+   not pills; nothing is glass; what moves answers something the person did. */
+
+/* Sofia Sans (SIL OFL 1.1, see fonts/LICENSE), a little larger than drawn so its x-height
+   sits level with the Chinese beside it. Where the page is Chinese the face is kept to
+   letters and figures: quotation marks, dashes and the middle dot stay with the Chinese
+   face, which sets them at its own width. */
+@font-face {
+  font-family: "Sofia Sans";
+  font-style: normal;
+  font-weight: 1 1000;
+  font-display: swap;
+  size-adjust: 106%;
+  src: url("./fonts/sofia-sans-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Sofia Sans";
+  font-style: normal;
+  font-weight: 1 1000;
+  font-display: swap;
+  size-adjust: 106%;
+  src: url("./fonts/sofia-sans-latin-ext.woff2") format("woff2");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF,
+    U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Sofia Sans Letters";
+  font-style: normal;
+  font-weight: 1 1000;
+  font-display: swap;
+  size-adjust: 106%;
+  src: url("./fonts/sofia-sans-latin.woff2") format("woff2");
+  unicode-range:
+    U+0020-007E, U+00A0-00B6, U+00B8-00FF, U+0131, U+0152-0153, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215;
+}
 
 @property --angle {
   syntax: "<angle>";
@@ -12,65 +55,87 @@
 }
 
 :root {
+  --font-cjk:
+    "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Hiragino Sans GB", "Source Han Sans SC",
+    "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei";
   --font:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "PingFang SC",
-    "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
-  --font-display:
-    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", "PingFang SC",
-    "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+    "Sofia Sans Letters", var(--font-cjk), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Helvetica Neue", Arial, sans-serif;
+  /* Titles are the same face, heavier and tighter: one voice at two volumes. */
+  --font-display: var(--font);
   --font-mono:
     ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  /* A bookish serif for titles;
-  a hand for what the page writes itself. */
   /* Kept for what is set as writing inside a work (details); the interface uses sans. */
   --font-serif:
     "Iowan Old Style", "Palatino Linotype", Palatino, "Noto Serif SC",
     "Source Han Serif SC", "Songti SC", "STSong", Georgia, serif;
-  /* Near-black for type; the blue pencil for selection, focus, links and the primary
-     button; yellow is the highlighter. */
+
+  /* Paper and the desk under it. */
   --paper: #ffffff;
-  --ink: #1f1f1f;
-  --ink-hover: #3a3a3a;
-  --blue: #2c63d4;
-  --blue-hover: #2454b8;
-  --blue-press: #1d4598;
-  --blue-soft: rgba(61, 114, 224, 0.1);
-  --link: #2c63d4;
+  --desk: #eef0f3;
+  --desk-deep: #e4e7ec;
+  /* Ink: words, and the button that commits. */
+  --ink: #161a22;
+  --ink-hover: #2a303c;
+  --ink-press: #0c0e13;
+  /* The blue pencil: selection, focus, links and what is still being drawn. `--ai` is the
+     mark (the canvas draws its outlines in the same blue), `--ai-deep` the words. */
+  --blue: #2a56c6;
+  --blue-hover: #2149ad;
+  --blue-press: #1a3c90;
+  --blue-soft: rgba(51, 102, 214, 0.1);
+  --link: #2a56c6;
   --marker: #ffe066;
-  /* The accent at two weights: marks and rings, and words and icons that carry it. */
-  --ai: #3d72e0;
-  --ai-deep: #2c63d4;
-  /* The logo's own colours: a seal red for the lantern, lamplight for its flame. */
-  --brand: #c8553d;
+  --ai: #3366d6;
+  --ai-deep: #2a56c6;
+  /* The seal: a version that is finished, and the lantern. Lamplight for its flame. */
+  --seal: #d23f2b;
+  --seal-deep: #b53220;
+  --seal-soft: rgba(210, 63, 43, 0.09);
+  --brand: var(--seal);
   --lamp: #e9a93a;
   /* Graphite on paper: hatching for what is still being drawn. */
-  --pencil: rgba(0, 0, 0, 0.1);
-  --red: #ef4444;
-  --red-text: #c81e1e;
-  --green: #16a34a;
+  --pencil: rgba(22, 26, 34, 0.1);
+  --red: #e5484d;
+  --red-text: #c62a2f;
+  --green: #18794e;
   --orange: #f59e0b;
   --purple: #8b5cf6;
   --indigo: #4f46e5;
-  --text: #1f1f1f;
-  --text-2: #666666;
-  --text-3: #8f8f8f;
+  --text: #161a22;
+  --text-2: #4d5464;
+  --text-3: #6f7686;
+  /* The quietest words that lie on the desk, not on paper: a shade darker, to read as well. */
+  --text-desk: #5a6171;
   --bg: #fff;
-  --bg-2: #f7f7f7;
+  --bg-2: #f4f5f7;
   --surface: #ffffff;
-  --fill: rgba(0, 0, 0, 0.04);
-  --fill-2: rgba(0, 0, 0, 0.07);
-  --field: #f7f7f7;
-  --line: #ebebeb;
-  --line-strong: #dcdcdc;
-  --separator: #f0f0f0;
+  --fill: rgba(22, 26, 34, 0.05);
+  --fill-2: rgba(22, 26, 34, 0.085);
+  --field: #f4f5f7;
+  --line: #e4e7eb;
+  --line-strong: #d0d5dc;
+  /* The edge of a field to type in: between the two, so it is seen on paper and is not heavy
+     on a field that is filled. */
+  --field-line: #d9dde3;
+  --separator: #eceef1;
   --nav-bg: transparent;
   --glass: #ffffff;
   --canvas-bg: #ffffff;
-  --canvas-dots: #e0e0e0;
-  --shadow-1: 0 0 0 1px var(--line), 0 1px 2px rgba(0, 0, 0, 0.03);
-  --shadow-2: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(0, 0, 0, 0.08);
-  --shadow-glass: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 4px 14px rgba(0, 0, 0, 0.06);
-  --shadow-float: 0 0 0 1px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.06);
+  --canvas-dots: #d7dbe2;
+  /* Corners of cut paper: a control, a card, a sheet. */
+  --r-control: 7px;
+  --r-card: 10px;
+  --r-sheet: 12px;
+  /* A sheet lying on the desk; one lifted (a menu, a dialog); one that floats over a drawing. */
+  --shadow-1: 0 0 0 1px var(--line), 0 1px 2px rgba(22, 26, 34, 0.04);
+  --shadow-2: 0 0 0 1px rgba(22, 26, 34, 0.08), 0 2px 4px rgba(22, 26, 34, 0.04),
+    0 14px 32px -8px rgba(22, 26, 34, 0.16);
+  --shadow-glass: 0 0 0 1px rgba(22, 26, 34, 0.08), 0 4px 14px rgba(22, 26, 34, 0.07);
+  --shadow-float: 0 0 0 1px rgba(22, 26, 34, 0.07), 0 1px 2px rgba(22, 26, 34, 0.05),
+    0 8px 20px -6px rgba(22, 26, 34, 0.12);
+  --shadow-sheet: 0 0 0 1px var(--line), 0 1px 1px rgba(22, 26, 34, 0.03),
+    0 6px 16px -10px rgba(22, 26, 34, 0.1);
   --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   /* The curve iOS moves sheets and app launches along. */
@@ -98,6 +163,13 @@
   color-scheme: light;
 }
 
+/* A page in a language written in Latin letters takes the whole face, marks included. */
+:root:not(:lang(zh)) {
+  --font:
+    "Sofia Sans", var(--font-cjk), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Helvetica Neue", Arial, sans-serif;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -114,7 +186,8 @@ body {
   font-size: 15px;
   line-height: 1.47;
   color: var(--text);
-  background: var(--paper);
+  background: var(--desk);
+  font-feature-settings: "tnum" 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -196,12 +269,12 @@ img {
 }
 
 ::selection {
-  background: rgba(61, 114, 224, 0.16);
+  background: rgba(51, 102, 214, 0.18);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  scrollbar-color: rgba(22, 26, 34, 0.22) transparent;
 }
 
 ::-webkit-scrollbar {
@@ -210,7 +283,7 @@ img {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.18);
+  background: rgba(22, 26, 34, 0.2);
   border: 2px solid transparent;
   background-clip: padding-box;
   border-radius: 8px;
@@ -221,7 +294,7 @@ img {
 }
 
 :focus-visible {
-  outline: 2px solid rgba(61, 114, 224, 0.5);
+  outline: 2px solid var(--ai);
   outline-offset: 2px;
 }
 
@@ -243,11 +316,11 @@ kbd {
   line-height: 1;
   color: var(--text-3);
   padding: 3px 6px;
-  border-radius: 6px;
+  border-radius: 5px;
   background: var(--bg);
   box-shadow:
-    inset 0 0 0 1px rgba(0, 0, 0, 0.1),
-    0 1px 0 rgba(0, 0, 0, 0.05);
+    inset 0 0 0 1px var(--line-strong),
+    0 1px 0 var(--line-strong);
 }
 
 code {
@@ -261,8 +334,8 @@ code {
 ) {
   max-width: 100%;
   padding: 9px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  border: 1px solid var(--field-line);
+  border-radius: var(--r-control);
   background: var(--bg);
   outline: none;
   transition:
@@ -276,7 +349,7 @@ code {
   textarea,
   select
 ):where(:hover) {
-  border-color: var(--line-strong);
+  border-color: #b9c0ca;
 }
 
 :where(
@@ -286,7 +359,7 @@ code {
 ):where(:focus) {
   background: var(--bg);
   border-color: var(--ai);
-  box-shadow: 0 0 0 3px rgba(61, 114, 224, 0.12);
+  box-shadow: 0 0 0 3px rgba(51, 102, 214, 0.16);
 }
 
 :where(textarea) {
@@ -300,7 +373,7 @@ code {
   height: 38px;
   padding-block: 0;
   padding-right: 34px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236e6e73' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234d5464' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 13px center;
   cursor: pointer;
@@ -330,13 +403,13 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 4px;
-  background: linear-gradient(to right, var(--ai) var(--progress, 0%), #e6e6e6 var(--progress, 0%));
+  background: linear-gradient(to right, var(--ai) var(--progress, 0%), var(--desk-deep) var(--progress, 0%));
 }
 
 input[type="range"]::-moz-range-track {
   height: 4px;
   border-radius: 4px;
-  background: #e3e3e8;
+  background: var(--desk-deep);
 }
 
 input[type="range"]::-moz-range-progress {

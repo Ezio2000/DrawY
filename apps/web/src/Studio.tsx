@@ -18,6 +18,7 @@ import {
 import { Questions } from "./Questions.tsx";
 import { Markdown, plain, sourcesOf } from "./Markdown.tsx";
 import { cx } from "./cx.ts";
+import { Seal } from "./Title.tsx";
 import { span } from "./time.ts";
 import { useT, type Words } from "./i18n.tsx";
 import { Spinner, useLocale } from "@drawy/ui";
@@ -389,8 +390,13 @@ function Clock({ since }: { since: number }) {
 
 /** The version a request ended in, by its number; the versions panel looks at and
  * restores it. */
-function Revision({ label }: { label: string }) {
-  return <span className={cx("revision")}>{label}</span>;
+function Revision({ label, version }: { label: string; version: number }) {
+  return (
+    <span className={cx("revision")}>
+      <Seal version={version} />
+      {label}
+    </span>
+  );
 }
 
 /** A thumbnail of a picture, opened large when pressed. */
@@ -1266,7 +1272,7 @@ function RunView({
       )}
       {!working && saved?.revision !== undefined && versionOf(saved.revision) !== undefined && (
         <div className={cx("run-result")}>
-          <Revision label={t.journal.result(versionOf(saved.revision)!)} />
+          <Revision label={t.journal.result(versionOf(saved.revision)!)} version={versionOf(saved.revision)!} />
         </div>
       )}
       {r.status === "failed" && (

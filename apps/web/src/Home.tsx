@@ -1,10 +1,10 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Plus } from "lucide-react";
+import { ArrowRight, Plus } from "lucide-react";
 import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
 import { ModelSketch, KinshipSketch } from "@drawy/ui/sketches";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
-import { Title } from "./Title.tsx";
+import { Seal, Title } from "./Title.tsx";
 import { progressOf } from "./Rail.tsx";
 import type { Summary } from "./api.ts";
 
@@ -28,7 +28,8 @@ function useFits(list: React.RefObject<HTMLUListElement | null>, deps: unknown[]
       if (item) card.current = item.offsetHeight;
       if (!card.current) return;
       const gap = parseFloat(style.rowGap) || 0;
-      const rows = Math.floor((ul.clientHeight + gap) / (card.current + gap));
+      const room = ul.clientHeight - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0);
+      const rows = Math.floor((room + gap) / (card.current + gap));
       setFits(cols * rows);
     };
     measure();
@@ -41,9 +42,9 @@ function useFits(list: React.RefObject<HTMLUListElement | null>, deps: unknown[]
 }
 
 /** The first page, laid out like a drawing tool's file browser rather than a chatbot's
- * greeting: ways to start a work (a blank canvas, or one of three requests, as low
- * tiles beside a small sketch, so they do not pass for works of one's own), then as many of
- * the works last drawn on as fit the window. The composer stays at the bottom, where it is on
+ * greeting: as many of the works last drawn on as fit the window, each a sheet with the
+ * seal of its version, then the ways to start (a blank canvas, or one of three requests)
+ * in a row over the composer they lead to. The composer stays at the bottom, where it is on
  * every page. */
 export function Home({
   works,
@@ -75,17 +76,60 @@ export function Home({
   return (
     <div className={cx("home")}>
       <header className={cx("home-head")}>
-        <h1>
+        <h1 id="home-recent">
           <Title name="home" />
         </h1>
+        {recent.length > 0 && <span className={cx("home-count")}>{recent.length}</span>}
+        {hidden > 0 && (
+          <button className={cx("home-all")} onClick={all}>
+            {t.home.all}
+            <ArrowRight size={14} />
+          </button>
+        )}
       </header>
-      <section className={cx("home-section")} aria-labelledby="home-new">
+      <section className={cx("home-recent")} aria-labelledby="home-recent">
+        {listed && !recent.length ? (
+          // Someone new is told what DrawY does and how to start, where their works will be.
+          <p className={cx("home-empty")}>
+            <b>{t.home.noWorks}</b>
+            <span>{t.home.firstSteps}</span>
+          </p>
+        ) : (
+          <ul className={cx("recent")} ref={shelf}>
+            {shown.map((w) => {
+              const state = progressOf(w, t);
+              return (
+                <li key={w.id}>
+                  <button onClick={() => open(w.id)} title={w.progress.prompt || undefined}>
+                    <span className={cx("recent-cover")}>
+                      {w.cover && !w.progress.blank ? (
+                        <img src={w.cover} alt="" loading="lazy" decoding="async" />
+                      ) : (
+                        <i aria-hidden>{w.progress.blank ? "" : w.title.slice(0, 1)}</i>
+                      )}
+                      {!w.progress.blank && w.progress.version > 0 && (
+                        <Seal version={w.progress.version} />
+                      )}
+                    </span>
+                    <b>{w.title}</b>
+                    <span className={cx("work-state")} data-tone={state.tone || undefined}>
+                      {state.text}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+      <div className={cx("home-foot")}>
+      <section className={cx("home-start")} aria-labelledby="home-new">
         <h2 id="home-new">{t.home.create}</h2>
         <ul className={cx("starts")}>
           <li>
             <button className={cx("start")} data-blank onClick={blank}>
               <span className={cx("start-art")}>
-                <Plus size={22} strokeWidth={1.6} />
+                <Plus size={18} strokeWidth={2} />
               </span>
               <span className={cx("start-name")}>{t.rail.blankCanvas}</span>
             </button>
@@ -105,44 +149,8 @@ export function Home({
           })}
         </ul>
       </section>
-      <section className={cx("home-section", "home-recent")} aria-labelledby="home-recent">
-        <h2 id="home-recent">
-          {t.home.recent}
-          {hidden > 0 && (
-            <button className={cx("home-all")} onClick={all}>
-              {t.home.all(recent.length)}
-            </button>
-          )}
-        </h2>
-        {listed && !recent.length ? (
-          // Someone new is told what DrawY does and how to start, where their works will be.
-          <p className={cx("home-empty")}>{t.home.firstSteps}</p>
-        ) : (
-          <ul className={cx("recent")} ref={shelf}>
-            {shown.map((w) => {
-              const state = progressOf(w, t);
-              return (
-                <li key={w.id}>
-                  <button onClick={() => open(w.id)} title={w.progress.prompt || undefined}>
-                    <span className={cx("recent-cover")}>
-                      {w.cover && !w.progress.blank ? (
-                        <img src={w.cover} alt="" loading="lazy" decoding="async" />
-                      ) : (
-                        <i aria-hidden>{w.progress.blank ? "" : w.title.slice(0, 1)}</i>
-                      )}
-                    </span>
-                    <b>{w.title}</b>
-                    <span className={cx("work-state")} data-tone={state.tone || undefined}>
-                      {state.text}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
       <div className={cx("home-composer")}>{composer}</div>
+      </div>
     </div>
   );
 }

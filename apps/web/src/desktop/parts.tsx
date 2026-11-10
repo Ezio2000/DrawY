@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import { ChevronDown, X, MessagesSquare, PencilLine, History, Check, Undo2, Redo2 } from "lucide-react";
 import type { Canvas, CanvasOptions, Pointed } from "../../../../modules/canvas/index.ts";
 import { versionOf, type Selection, type Target } from "../../../../modules/contracts/index.ts";
@@ -15,6 +15,7 @@ import { useT } from "../i18n.tsx";
 import { counted } from "../probe.ts";
 import { Rename } from "../Rail.tsx";
 import { SceneView, DetailView } from "../SceneView.tsx";
+import { Seal } from "../Title.tsx";
 import { useSelect } from "../session/store.ts";
 import type { Change, Snapshot, WorkSession } from "../session/work.ts";
 import type { Asking } from "../shell.ts";
@@ -45,6 +46,8 @@ export function Topbar({
   setMenu,
   enter,
   rename,
+  drafting,
+  versions,
 }: {
   session: WorkSession;
   titling: boolean;
@@ -53,18 +56,26 @@ export function Topbar({
   setMenu: (on: boolean) => void;
   enter: (id: string) => void;
   rename: (title: string) => void;
+  /** Whether the versions are open, and the way to open or close them. */
+  drafting: boolean;
+  versions: () => void;
 }) {
   counted("topbar");
   const t = useT();
-  const { title, sceneId, scenes } = useSelect(
+  const { title, sceneId, scenes, version, unsaved } = useSelect(
     session,
     (s) => ({
       title: s.work!.title,
       sceneId: s.sceneId,
       scenes: Object.values(s.work!.scenes).map((p) => ({ id: p.id, title: p.title, parentId: p.parentId })),
+      version: s.versions.at(-1)?.number ?? 0,
+      unsaved: s.unsaved,
     }),
     same,
   );
+  // The seal is pressed down when a version is made while the page is open, not on arrival.
+  const arrived = useRef(version);
+  if (!arrived.current) arrived.current = version;
   const crumbs: typeof scenes = [];
   for (let at = scenes.find((p) => p.id === sceneId); at; )
     crumbs.unshift(at), (at = at.parentId ? scenes.find((p) => p.id === at!.parentId) : undefined);
@@ -115,6 +126,18 @@ export function Topbar({
           </span>
         )}
       </nav>
+      {version > 0 && (
+        <button
+          className={cx("topbar-version")}
+          aria-label={unsaved ? `${t.rail.version(version)} · ${t.rail.unsaved}` : t.rail.version(version)}
+          aria-pressed={drafting}
+          data-tip={unsaved ? `${t.rail.version(version)} · ${t.rail.unsaved}` : t.rail.version(version)}
+          onClick={versions}
+        >
+          <Seal key={version} version={version} fresh={version !== arrived.current} />
+          {unsaved > 0 && <i />}
+        </button>
+      )}
     </header>
   );
 }

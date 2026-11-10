@@ -17,7 +17,7 @@ const zh = {
   retry: "重试",
   // Titles
   titles: {
-    home: "首页",
+    home: "作品",
     library: "素材库",
     settings: "设置",
     traces: "运行记录",
@@ -41,6 +41,8 @@ const zh = {
     headline: "说一句话，画成一张能点开、能修改的图",
     username: "用户名",
     password: "密码",
+    showPassword: "显示密码",
+    hidePassword: "隐藏密码",
     atLeast6: "至少 6 位",
     invite: "邀请码",
     inviteHint: "DrawY 凭邀请注册。邀请码由站点管理员在“设置 → 邀请码”里生成，向邀请你来的人或管理员要一个；一个码只能注册一次。",
@@ -50,7 +52,7 @@ const zh = {
     toLogin: "已有账号？登录",
     welcome: "欢迎回来",
     join: "开始创作",
-    art: "纸上一团铅笔线条渐渐变成一幅画好的树与水循环",
+    art: "桌上三张画好的图：太阳系、大语言模型和红楼梦的人物关系，旁边是写下的一句请求",
   },
   // Rail
   rail: {
@@ -88,11 +90,11 @@ const zh = {
       "红楼梦中的人物关系",
     ],
     styleLine: (name: string) => `画风：${name}`,
-    create: "新建",
+    create: "从这里开始",
     recent: "最近的作品",
-    noWorks: "还没有作品",
-    firstSteps: "在下面写下想画的主题和看图的人，比如“给初中生讲光合作用”，DrawY 会画出一幅能点开探索的图。也可以先点上面的示例试试，或新建空白画布自己画。",
-    all: (n: number) => `全部 ${n} 个`,
+    noWorks: "这张纸还空着",
+    firstSteps: "在下面写下想画的主题和看图的人，比如“给初中生讲光合作用”，DrawY 会画出一幅能点开探索的图。也可以先点输入框上方的示例试试，或新建空白画布自己画。",
+    all: "查看全部",
   },
   // Composer
   composer: {
@@ -1190,7 +1192,7 @@ const en: Words = {
   cancel: "Cancel",
   retry: "Retry",
   titles: {
-    home: "Home",
+    home: "Works",
     library: "Library",
     settings: "Settings",
     traces: "Run records",
@@ -1213,6 +1215,8 @@ const en: Words = {
     headline: "Say it in a sentence, get a picture you can open up and change",
     username: "Username",
     password: "Password",
+    showPassword: "Show password",
+    hidePassword: "Hide password",
     atLeast6: "At least 6 characters",
     invite: "Invite code",
     inviteHint: "DrawY is open by invitation. The site's administrator makes invite codes under Settings → Invites; ask whoever invited you, or the administrator, for one. Each code signs up one account.",
@@ -1222,7 +1226,7 @@ const en: Words = {
     toLogin: "Have an account? Log in",
     welcome: "Welcome back",
     join: "Start creating",
-    art: "A tangle of pencil lines on paper slowly becoming a finished drawing of a tree and the water cycle",
+    art: "Three finished drawings on a desk: the solar system, a language model and the families of a novel, beside the request that was written for one",
   },
   rail: {
     nav: "Navigation",
@@ -1258,11 +1262,11 @@ const en: Words = {
       "The characters of Dream of the Red Chamber",
     ],
     styleLine: (name) => `Style: ${name}`,
-    create: "New",
+    create: "Start from",
     recent: "Recent work",
-    noWorks: "No works yet",
-    firstSteps: "Write below what to draw and who it is for, such as “photosynthesis for a 13-year-old”, and DrawY draws a picture you can open up and explore. Or try one of the examples above, or start a blank canvas and draw it yourself.",
-    all: (n) => `All ${n}`,
+    noWorks: "This sheet is still blank",
+    firstSteps: "Write below what to draw and who it is for, such as “photosynthesis for a 13-year-old”, and DrawY draws a picture you can open up and explore. Or try one of the examples over the box, or start a blank canvas and draw it yourself.",
+    all: "See all",
   },
   composer: {
     describe: "Describe what you want to draw",

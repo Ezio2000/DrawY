@@ -97,6 +97,29 @@ it("undoes and redoes by keyboard in place, and saves by keyboard", async () => 
   expect(await statuses()).toContain("Saved as version 2");
 });
 
+it("marks the version in hand with its seal in the title block, which opens the versions", async () => {
+  await open(await make());
+  const seal = (name: string) => page.getByRole("button", { name, exact: true });
+  expect(await seal("Version 1").innerText()).toBe("1");
+  // The seal opens the versions, and closes them again.
+  await seal("Version 1").click();
+  await settled();
+  const versions = page.getByRole("heading", { name: "Versions", exact: true });
+  expect(await versions.isVisible()).toBe(true);
+  expect(await seal("Version 1").getAttribute("aria-pressed")).toBe("true");
+  await seal("Version 1").click();
+  await settled();
+  expect(await versions.count()).toBe(0);
+  // Hand edits waiting to be saved are told beside it; saved, the seal is the new version's.
+  await editing();
+  await drag("Alpha");
+  await settled();
+  expect(await seal("Version 1 · unsaved changes").count()).toBe(1);
+  await page.keyboard.press("Control+s");
+  await settled();
+  expect(await seal("Version 2").innerText()).toBe("2");
+});
+
 it("looks at a version without drawing it again, and goes back to it, which can be undone", async () => {
   await open(await make());
   await editing();

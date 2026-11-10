@@ -35,6 +35,7 @@ import { useSelect } from "../session/store.ts";
 import type { Snapshot, WorkSession } from "../session/work.ts";
 import type { Asking } from "../shell.ts";
 import { Now, Studio } from "../Studio.tsx";
+import { Seal } from "../Title.tsx";
 import { cx as shared } from "../cx.ts";
 import { cx } from "./cx.ts";
 
@@ -85,6 +86,7 @@ export function TopBar({
     scene: s.scene?.parentId ? s.scene.title : undefined,
     undoable: s.undoable && !s.working,
     drawn: !!s.scene?.modules.length,
+    version: s.versions.at(-1)?.number ?? 0,
   }));
   return (
     <header className={cx("bar")}>
@@ -101,6 +103,11 @@ export function TopBar({
       </button>
       <button className={cx("round")} aria-label={t.phone.history} onClick={() => open("studio")}>
         <History size={18} />
+        {s.version > 0 && (
+          <span className={cx("stamp")}>
+            <Seal key={s.version} version={s.version} />
+          </span>
+        )}
       </button>
       <button
         className={cx("round")}
