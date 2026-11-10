@@ -109,6 +109,7 @@ export function editOps(ctx: Context) {
     if (!saved || !ids.length || !view || view !== ctx.view) return;
     if ((await view.drawn(ids, saved.revision)) !== "drawn") return;
     view.select(ids);
+    view.reveal?.(ids);
     return ids[0];
   };
   /** Adds something at a point, in the middle of the view, or filling a box drawn for it. */

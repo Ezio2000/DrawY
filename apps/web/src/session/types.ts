@@ -26,6 +26,9 @@ export interface View {
   /** Settles once these modules, made in `revision`, are drawn, or once it is clear they
    * will not be. It waits as long as drawing takes, however slow. */
   drawn(ids: string[], revision: number): Promise<Drawn>;
+  /** Brings these modules into view where they are not, moving the view no further than
+   * it takes: what a person has just made should not be left off the screen. */
+  reveal?(ids: string[]): void;
 }
 
 /** Why the session refused or could not do something. It names the reason; how to say

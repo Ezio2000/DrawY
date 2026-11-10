@@ -162,9 +162,11 @@ export function SelectionBar({
         h = el.offsetHeight;
       // Clear of the dot above a selected module and of the ruler along the top; under
       // the selection it is clear of its measure.
-      let top = r.top - area.top - h - 34;
+      // Fingers have a dot out on every side, further off, and the bar stands clear of it.
+      const clear = matchMedia("(any-pointer: coarse)").matches ? 62 : 36;
+      let top = r.top - area.top - h - clear;
       const under = top < 30;
-      if (under) top = r.bottom - area.top + 38;
+      if (under) top = r.bottom - area.top + clear + 2;
       const left = Math.min(
         area.width - w - 12,
         Math.max(76, r.left - area.left + r.width / 2 - w / 2),

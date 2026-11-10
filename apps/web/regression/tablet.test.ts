@@ -52,8 +52,18 @@ it("edits with fingers: a part moves with one, the paper moves the view, and a l
     return h?.getBoundingClientRect().width;
   });
   expect(handle).toBe(44);
-  // A finger on the paper (left of the parts: the editor's panel covers the canvas's
-  // right side on a screen this narrow) moves the view rather than drawing a box to select.
+  // On a screen this narrow the editor's panel starts put away, so the canvas and its
+  // tools are what is edited with; a press on its tab brings it back, and it goes again.
+  expect(await page.locator("[data-tucked]").count()).toBe(1);
+  await page.getByRole("button", { name: "Open the properties panel" }).tap();
+  expect(await page.locator("[data-tucked]").count()).toBe(0);
+  expect(await page.getByRole("tab", { name: "Properties" }).count()).toBe(1);
+  await page.getByRole("button", { name: "Put the panel away" }).tap();
+  expect(await page.locator("[data-tucked]").count()).toBe(1);
+  // The tools in the tray are as big as a fingertip too.
+  const tool = (await page.getByRole("button", { name: "Box", exact: true }).boundingBox())!;
+  expect(tool.width).toBe(44);
+  // A finger on the paper moves the view rather than drawing a box to select.
   const a2 = await rectOf("Alpha");
   await swipe({ x: a2.x - 60, y: a2.y - 40 }, { x: a2.x - 60, y: a2.y + 60 });
   await settled();

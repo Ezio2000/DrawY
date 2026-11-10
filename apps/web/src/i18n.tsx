@@ -221,6 +221,7 @@ const zh = {
       more: (name: string) => `${name}调大`,
     },
     shared: "外观",
+    panel: { hide: "收起面板，只留画布", show: "打开属性面板" },
     match: { width: "等宽", height: "等高", both: "等大" },
     shelf: {
       search: "搜索画法：流程、图表、时间线…",
@@ -1461,6 +1462,7 @@ const en: Words = {
       more: (name: string) => `Larger ${name.toLowerCase()}`,
     },
     shared: "Look",
+    panel: { hide: "Put the panel away", show: "Open the properties panel" },
     match: { width: "Same width", height: "Same height", both: "Same size" },
     shelf: {
       search: "Find a drawing: flow, chart, timeline…",
@@ -1784,7 +1786,7 @@ const en: Words = {
       active: "Selected",
       show: "Shown",
       shape: "Shape",
-      tone: "Colour",
+      tone: "Tone",
       fillStyle: "Fill",
       icon: "Icon",
       lift: "Lift shadow",

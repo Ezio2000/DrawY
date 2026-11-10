@@ -4377,6 +4377,68 @@ body:has(.resizer[data-dragging]) {
   width: min(600px, calc(100% - 380px));
 }
 
+/* The editor's panel put away: the canvas and its tools alone, and a tab at its corner to
+   bring the panel back. */
+.workspace[data-tucked] .side-panel[data-kind="edit"] {
+  width: 0;
+  margin-left: 0;
+  box-shadow: none;
+}
+
+.side-panel > header {
+  justify-content: space-between;
+}
+
+.tuck {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-right: -8px;
+  border-radius: 6px;
+  color: var(--text-3);
+}
+
+.tuck:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.untuck {
+  position: absolute;
+  z-index: 11;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 12px 0 10px;
+  border-radius: 9px;
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  animation: fade-in 0.3s var(--ease-out) both;
+}
+
+.untuck:hover {
+  color: var(--text);
+}
+
+.stage[data-ruled] .untuck {
+  top: 30px;
+}
+
+@media (any-pointer: coarse) {
+  .tuck,
+  .untuck {
+    min-width: 44px;
+    height: 44px;
+  }
+}
+
 /* Rulers along the top and the left, with a square where they meet. */
 .ruler,
 .ruler-corner {
@@ -4431,6 +4493,7 @@ body:has(.resizer[data-dragging]) {
   border-radius: 10px;
   background: var(--paper);
   box-shadow: var(--shadow-float);
+  user-select: none;
   animation: tray-in 0.36s var(--ease-out) both;
 }
 
@@ -8105,6 +8168,10 @@ body:has(.resizer[data-dragging]) {
   .dock {
     width: min(660px, calc(100% - 32px));
     bottom: 72px;
+  }
+
+  .stage[data-editing] .dock {
+    width: min(600px, calc(100% - 140px));
   }
 
   .traces {

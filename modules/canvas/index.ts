@@ -1536,6 +1536,46 @@ export class Canvas {
       pad = Math.max(b.width, b.height) * 0.25 + 40;
     this.focus({ x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 }, 2);
   }
+  /** Brings modules into view where they are not, clear of what is laid over the canvas:
+   * the view moves the least that shows them whole (or, larger than the view, from their
+   * top left), at the scale it has. */
+  reveal(ids: string[]) {
+    const boxes = ids.flatMap((id) => {
+      const m = this.renderer.instances.get(id);
+      return m ? [m.bounds] : [];
+    });
+    if (!boxes.length) return;
+    const b = union(boxes),
+      { top, bottom, left, right } = this.clear(),
+      { x, y, scale } = this.camera,
+      pad = 28;
+    const shift = (start: number, size: number, from: number, to: number) => {
+      const lo = from + pad,
+        hi = to - pad;
+      if (start >= lo && start + size <= hi) return 0;
+      return start < lo || size > hi - lo ? lo - start : hi - start - size;
+    };
+    const dx = shift(x + b.x * scale, b.width * scale, left, this.element.clientWidth - right),
+      dy = shift(y + b.y * scale, b.height * scale, top, this.element.clientHeight - bottom);
+    if (!dx && !dy) return;
+    const target = { scale, x: x + dx, y: y + dy };
+    cancelAnimationFrame(this.gliding);
+    this.automatic = false;
+    if (!this.options.motion) {
+      this.camera = target;
+      return this.changed();
+    }
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / 320),
+        e = 1 - (1 - t) ** 3;
+      this.camera = { scale, x: x + dx * e, y: y + dy * e };
+      this.paint();
+      if (t < 1) this.gliding = requestAnimationFrame(tick);
+      else this.options.cameraChanged?.({ ...this.camera });
+    };
+    this.gliding = requestAnimationFrame(tick);
+  }
   /** What a dragged box snaps to while editing: its neighbours (their edges, centres and
    * equal gaps), and the lines of a grid this many scene units apart (0 for none). */
   setSnap(snapping: { guides: boolean; grid: number }) {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { Dialog } from "@drawy/ui";
 import type { Material } from "@drawy/materials/schema";
 import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
@@ -74,6 +75,9 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
   // The sheet of shortcuts, and how the drawing board is set up.
   const [help, setHelp] = useState(false);
   const [board, setBoard] = useBoard();
+  // The editor's panel put away, leaving the canvas and its tools: where the panel would
+  // cover the canvas it starts that way, and it is a press from coming back.
+  const [tucked, setTucked] = useState(false);
   const stage = useRef<HTMLElement>(null);
   const conversation = useRef<HTMLElement>(null);
   const following = useRef(true);
@@ -108,6 +112,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     const next = panel === p ? "" : p;
     // The versions are looked at as wholes: what was selected in the one shown goes.
     if (next === "drafts") deselect();
+    if (next === "edit") setTucked(!roomy());
     setPanel(next);
     session.endPreview();
   };
@@ -218,7 +223,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
    * written up for the author to do. */
   function point(p: Pointed) {
     if (session.get().locked) return;
-    if (!editing) setPanel("edit");
+    if (!editing) edit();
     if (p.kind === "text") return setRetyping(p);
     pick("picture", (m) =>
       void attempt(async () => {
@@ -253,6 +258,11 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
         ask(t.edit.askText(nameOf(p.moduleId), p.text, text), t.edit.handedText);
     });
   }
+  /** Takes up editing by hand. */
+  function edit() {
+    setTucked(!roomy());
+    setPanel("edit");
+  }
   /** Stopping hands what was asked back to the composer, to change and send again. */
   const stop = () =>
     void attempt(async () => {
@@ -273,6 +283,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     <div
       className={cx("workspace")}
       data-panel={panel || undefined}
+      data-tucked={(editing && tucked) || undefined}
       style={
         {
           "--journal": widths.journal + "px",
@@ -388,16 +399,31 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             }
             unquote={deselect}
             selecting={!!selected.length || !!chosenLink}
-            edit={editing || locked ? undefined : () => setPanel("edit")}
+            edit={editing || locked ? undefined : edit}
             send={() => send()}
             stop={stop}
           />
         </div>
+        {editing && tucked && (
+          <button
+            className={cx("untuck")}
+            aria-label={t.edit.panel.show}
+            data-tip={t.edit.panel.show}
+            onClick={() => setTucked(false)}
+          >
+            <PanelRightOpen size={16} />
+            <span>{t.edit.tabs.properties}</span>
+          </button>
+        )}
         <DetailLayer session={session} detailId={detailId} close={() => setDetail(undefined)} />
       </section>
       <aside className={cx("side")} aria-label={t.work.panel}>
         <SideTools session={session} panel={panel} toggle={toggle} undo={undo} feedback={feedback} />
-        <div className={cx("side-panel")} data-kind={panel || undefined} inert={!panel}>
+        <div
+          className={cx("side-panel")}
+          data-kind={panel || undefined}
+          inert={!panel || (editing && tucked)}
+        >
           {panel && (
             <Resizer
               kind={editing ? "edit" : drafting ? "drafts" : "journal"}
@@ -410,6 +436,16 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             <h2>
               <Title name={editing ? "edit" : drafting ? "drafts" : "journal"} size="section" />
             </h2>
+            {editing && (
+              <button
+                className={cx("tuck")}
+                aria-label={t.edit.panel.hide}
+                data-tip={t.edit.panel.hide}
+                onClick={() => setTucked(true)}
+              >
+                <PanelRightClose size={16} />
+              </button>
+            )}
           </header>
           <section
             className={cx("side-body")}
