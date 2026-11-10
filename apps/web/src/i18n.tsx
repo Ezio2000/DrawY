@@ -173,10 +173,6 @@ const zh = {
   },
   // Editing by hand
   edit: {
-    add: "添加",
-    addText: "文字",
-    addPicture: "图片",
-    addDrawing: "画法",
     linkDrawing: "这是连线画法，请用连线工具，或拖元素旁的加号来连线",
     name: "名称",
     tabs: { properties: "属性", layers: "图层" },
@@ -1414,10 +1410,6 @@ const en: Words = {
     addIt: "Add to chat",
   },
   edit: {
-    add: "Add",
-    addText: "Words",
-    addPicture: "Picture",
-    addDrawing: "Drawing",
     linkDrawing: "This drawing is for links: use the link tool, or drag the plus beside a part",
     name: "Name",
     tabs: { properties: "Properties", layers: "Layers" },
