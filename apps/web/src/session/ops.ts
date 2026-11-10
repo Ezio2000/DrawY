@@ -124,6 +124,7 @@ export function editOps(ctx: Context) {
       const own = shadowed(w, what)
         ? ownCopy(await api<Material>("/materials/" + drawingFor(what)), ctx.host.locale())
         : undefined;
+      if (scene() !== sceneId || ctx.view !== view) return;
       return await made((work) => {
         const r = add(work, sceneId, centre, what, own, box);
         return { edit: r.edit, ids: [r.id] };
@@ -260,8 +261,8 @@ export function editOps(ctx: Context) {
       report(made((work) => paste(work, sceneId, clip, where)));
     },
     /** New words, sized to read in the view; resolves to their module once drawn. */
-    text(text: string, at?: Point) {
-      return place({ kind: "text", text, size: textSize(scale()) }, at);
+    text(text: string, at?: Point, box?: Bounds) {
+      return place({ kind: "text", text, size: textSize(scale()) }, at, box);
     },
     /** A library picture, a readable size in the view. */
     picture(p: PictureMaterial, at?: Point) {
@@ -288,9 +289,12 @@ export function editOps(ctx: Context) {
      * filling the box drawn for it. It is called by its words; resolves to its module once
      * drawn. */
     async shape(material: string, data: Record<string, unknown>, at?: Point, box?: Bounds) {
+      const sceneId = scene(), view = ctx.view;
+      const centre = at ?? view?.center();
       try {
         const d = await fromLibrary(material);
-        return await place({ kind: "drawing", material, size: d.size, data }, at, box);
+        if (scene() !== sceneId || ctx.view !== view) return;
+        return await place({ kind: "drawing", material, size: d.size, data }, centre, box);
       } catch (e) {
         fail(e);
       }

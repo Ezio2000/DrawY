@@ -131,6 +131,7 @@ export function restOf(work: Work, part: Instance | Link) {
  * colours, numbers and switches, with the drawing they belong to. Copied from one part and
  * given to others, as a format painter does. */
 export interface Look {
+  workId: string;
   drawingId: string;
   data: Record<string, unknown>;
 }
@@ -139,9 +140,9 @@ export function lookOf(work: Work, part: Instance | Link): Look {
   for (const f of fieldsOf(work, part))
     if (f.set && f.type !== "text" && f.type !== "picture")
       data[f.key] = structuredClone(part.data[f.key]);
-  return { drawingId: part.drawingId, data };
+  return { workId: work.id, drawingId: part.drawingId, data };
 }
-/** The values of a look that a part can take: all of them where it is drawn with the same
+/** The values of a look that a part can take: all of them within the same work and
  * drawing (those the look leaves to the drawing are given back to it too), and elsewhere
  * those its own drawing has under the same name and kind. */
 export function lookFor(work: Work, part: Instance | Link, look: Look): Record<string, unknown> {
@@ -149,7 +150,7 @@ export function lookFor(work: Work, part: Instance | Link, look: Look): Record<s
   const kind = (v: unknown) =>
     typeof v === "number" ? "number" : typeof v === "boolean" ? "boolean" : "string";
   const patch: Record<string, unknown> = {};
-  if (part.drawingId === look.drawingId) {
+  if (work.id === look.workId && part.drawingId === look.drawingId) {
     for (const f of fields) if (f.set && f.optional && !(f.key in look.data)) patch[f.key] = undefined;
     Object.assign(patch, structuredClone(look.data));
     return patch;

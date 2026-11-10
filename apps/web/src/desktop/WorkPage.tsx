@@ -308,7 +308,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           if (types.includes("Files") || types.includes(DRAWING_TYPE)) e.preventDefault();
         }}
         onDrop={(e) => {
-          if (!editing || locked || !canvas) return;
+          if (e.defaultPrevented || !editing || locked || !canvas) return;
           const drawing = e.dataTransfer.getData(DRAWING_TYPE);
           const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
           if (!drawing && !files.length) return;

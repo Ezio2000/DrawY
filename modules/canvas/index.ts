@@ -511,7 +511,7 @@ export class Canvas {
       "keydown",
       (e) => {
         if (this.interactive(e)) return;
-        if (e.key === "0") {
+        if (e.key === "0" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
           this.fit();
           e.preventDefault();
         }
@@ -2365,12 +2365,12 @@ export class Canvas {
         guides = s.guides;
       }
       // A free resize ends on the grid's lines where it lined up with nothing.
-      if (grid && !options.keep && !options.centred && !guides.length) {
+      if (grid && !options.keep && !options.centred) {
         const to = (v: number) => Math.round(v / grid) * grid;
-        if (g.handle.includes("e")) rx = to(g.frame.x + g.frame.width + rx) - g.frame.x - g.frame.width;
-        if (g.handle.includes("w")) rx = to(g.frame.x + rx) - g.frame.x;
-        if (g.handle.includes("s")) ry = to(g.frame.y + g.frame.height + ry) - g.frame.y - g.frame.height;
-        if (g.handle.includes("n")) ry = to(g.frame.y + ry) - g.frame.y;
+        if (!guides.some((l) => l.axis === "x") && g.handle.includes("e")) rx = to(g.frame.x + g.frame.width + rx) - g.frame.x - g.frame.width;
+        if (!guides.some((l) => l.axis === "x") && g.handle.includes("w")) rx = to(g.frame.x + rx) - g.frame.x;
+        if (!guides.some((l) => l.axis === "y") && g.handle.includes("s")) ry = to(g.frame.y + g.frame.height + ry) - g.frame.y - g.frame.height;
+        if (!guides.some((l) => l.axis === "y") && g.handle.includes("n")) ry = to(g.frame.y + ry) - g.frame.y;
         next = resized(g.frame, g.handle, rx, ry, options);
       }
       this.showGuides(guides);

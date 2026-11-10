@@ -863,7 +863,7 @@ describe("hand edits as a drawing app has them", () => {
   it("copies how a part looks, not what it says, onto others", () => {
     const work = row();
     const look = lookOf(work, module(work, "a"));
-    expect(look).toEqual({ drawingId: "label", data: { color: "#ff0000", size: 20 } });
+    expect(look).toEqual({ workId: work.id, drawingId: "label", data: { color: "#ff0000", size: 20 } });
     const painted = apply(work, pasteLook(work, "root", ["b", "c"], look));
     expect(module(painted, "b").data).toEqual({ text: "B", color: "#ff0000", size: 20 });
     // What the look leaves to the drawing is given back to it on the same drawing.
@@ -873,6 +873,17 @@ describe("hand edits as a drawing app has them", () => {
     const other = pasteLook(work, "root", ["heading"], look);
     for (const m of other?.modules ?? []) expect(Object.keys(m.data as object)).not.toContain("text");
     expect(pasteLook(work, "root", ["a"], look)).toBeNull();
+  });
+
+  it("keeps content safe when different works reuse a drawing id", () => {
+    const source = row();
+    const look = lookOf(source, module(source, "a"));
+    const target = row();
+    target.id = "another-work";
+    target.drawings.label = { id: "label", name: "Card", source: "", params: { size: { type: "text" }, color: { type: "color" } } };
+    module(target, "b").data = { size: "XL", color: "#000000" };
+    const painted = apply(target, pasteLook(target, "root", ["b"], look));
+    expect(module(painted, "b").data).toEqual({ size: "XL", color: "#ff0000" });
   });
 
   it("offers the values a selection can be given at once, the few most reached for first", () => {

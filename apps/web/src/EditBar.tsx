@@ -223,7 +223,7 @@ export function SelectionBar({
     }
     if (f.key === "weight" && f.type === "number") {
       const bold = !f.mixed && Number(f.value) >= 600;
-      return item(t.edit.bar.bold, <Bold size={16} />, () => set(bold ? (f.optional ? undefined : 400) : 700), {
+      return item(t.edit.bar.bold, <Bold size={16} />, () => set(bold ? 400 : 700), {
         pressed: bold,
       });
     }

@@ -166,8 +166,8 @@ export function useEditing({
     },
     /** Adds words, a picture or a library drawing at a point, or in the middle of the
      * view; words are ready to type once drawn. */
-    add(kind: "text" | "picture" | "drawing", at?: Point) {
-      if (kind === "text") retypeNew(base.text(t.edit.newText, at));
+    add(kind: "text" | "picture" | "drawing", at?: Point, box?: Bounds) {
+      if (kind === "text") retypeNew(base.text(t.edit.newText, at, box));
       else if (kind === "picture")
         pick("picture", (m) => void base.picture(m as PictureMaterial, at));
       else pick("drawing", (m) => void base.drawing(m as DrawingMaterial, at));
@@ -200,7 +200,7 @@ export function useEditing({
     const now = tool;
     setTool("select");
     if (isShape(now)) ops.shape(now, at, box);
-    else ops.add("text", box ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : at);
+    else ops.add("text", at, box);
   };
 
   // Copy, cut and paste go through the system clipboard: parts copied in one tab or work
