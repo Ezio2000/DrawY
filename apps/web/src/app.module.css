@@ -979,7 +979,7 @@ h2:has(> .title) {
   gap: 6px;
 }
 
-.auth-card label > span {
+.auth-card label > span:first-child {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1001,6 +1001,34 @@ h2:has(> .title) {
   border-color: var(--line-strong);
   border-radius: 8px;
   font-size: 15px;
+}
+
+/* The password, and the eye that shows what was typed. */
+.auth-secret {
+  position: relative;
+  display: block;
+}
+
+.auth-secret input {
+  padding-right: 46px;
+}
+
+.auth-secret button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  color: var(--text-3);
+}
+
+.auth-secret button:hover,
+.auth-secret button[aria-pressed="true"] {
+  background: var(--fill);
+  color: var(--ink);
 }
 
 .auth-card .primary {
@@ -2218,11 +2246,12 @@ span.model-bar {
   display: grid;
   gap: 8px;
   padding: 16px 18px 14px;
-  border-radius: 4px;
+  border-radius: 3px;
   background: #ffffff;
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.056),
-    0 14px 30px rgba(0, 0, 0, 0.07);
+    0 0 0 1px var(--line),
+    0 1px 2px rgba(22, 26, 34, 0.05),
+    0 16px 30px -12px rgba(22, 26, 34, 0.16);
   transform: rotate(-1.5deg);
   animation: note-in 0.8s var(--spring) both;
 }
@@ -2234,7 +2263,8 @@ span.model-bar {
   left: calc(50% - 36px);
   width: 72px;
   height: 18px;
-  background: rgba(233, 169, 58, 0.35);
+  /* Drafting tape, in the pencil's blue. */
+  background: rgba(51, 102, 214, 0.2);
   transform: rotate(2deg);
 }
 

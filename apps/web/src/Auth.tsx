@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, ArrowUp } from "lucide-react";
+import { ArrowRight, ArrowUp, Eye, EyeOff } from "lucide-react";
 import { Spinner } from "@drawy/ui";
 import { ModelSketch, KinshipSketch } from "@drawy/ui/sketches";
 import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
@@ -18,6 +18,7 @@ export function Auth({ done }: { done: (user: User) => void }) {
     [invite, I] = useState(""),
     // Whether signing up takes an invite: it does once the app has its first account.
     [needsInvite, setNeedsInvite] = useState(true),
+    [shown, setShown] = useState(false),
     [busy, B] = useState(false),
     [error, E] = useState("");
   useEffect(() => {
@@ -77,14 +78,27 @@ export function Auth({ done }: { done: (user: User) => void }) {
                 {t.auth.password}
                 {signup && <small>{t.auth.atLeast6}</small>}
               </span>
-              <input
-                type="password"
-                autoComplete={signup ? "new-password" : "current-password"}
-                value={password}
-                onChange={(e) => P(e.target.value)}
-                required
-                minLength={6}
-              />
+              <span className={cx("auth-secret")}>
+                <input
+                  type={shown ? "text" : "password"}
+                  autoComplete={signup ? "new-password" : "current-password"}
+                  value={password}
+                  onChange={(e) => P(e.target.value)}
+                  required
+                  minLength={6}
+                />
+                {/* What was typed can be read back before it is sent: a mistyped password
+                    is otherwise found out only by being refused. */}
+                <button
+                  type="button"
+                  aria-label={shown ? t.auth.hidePassword : t.auth.showPassword}
+                  aria-pressed={shown}
+                  data-tip={shown ? t.auth.hidePassword : t.auth.showPassword}
+                  onClick={() => setShown(!shown)}
+                >
+                  {shown ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </span>
             </label>
             {signup && needsInvite && (
               <label>
