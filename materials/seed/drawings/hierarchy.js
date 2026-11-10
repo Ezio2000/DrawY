@@ -109,11 +109,55 @@ const box = (n) => {
     cy = across ? n.c : at[n.depth];
   return { x: cx - n.w / 2, y: cy - n.h / 2, w: n.w, h: n.h, cx, cy };
 };
+// Relations across the branches: dashed curves between two named nodes, bowed clear of the
+// straight way so they read apart from the tree's own lines.
+const relations = (boxes) => {
+  let drawn = "";
+  for (const rel of d.relations || []) {
+    const A = boxes.get(String(rel?.from)),
+      B = boxes.get(String(rel?.to));
+    if (!A || !B || A === B) continue;
+    const ac = { x: A.x + A.w / 2, y: A.y + A.h / 2 },
+      bc = { x: B.x + B.w / 2, y: B.y + B.h / 2 };
+    const edge = (R, c, to) => {
+      const dx = to.x - c.x,
+        dy = to.y - c.y;
+      const k = Math.min(
+        (R.w / 2 + 4) / Math.abs(dx || 1e-6),
+        (R.h / 2 + 4) / Math.abs(dy || 1e-6),
+      );
+      return { x: c.x + dx * k, y: c.y + dy * k };
+    };
+    const p = edge(A, ac, bc),
+      q = edge(B, bc, ac);
+    const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    const bow = Math.min(len * 0.2, size * 3.5);
+    const c = {
+      x: (p.x + q.x) / 2 - ((q.y - p.y) / len) * bow,
+      y: (p.y + q.y) / 2 + ((q.x - p.x) / len) * bow,
+    };
+    const col = rel.color || t.accent || "#d97757";
+    const ul = Math.hypot(q.x - c.x, q.y - c.y) || 1;
+    const ux = (q.x - c.x) / ul,
+      uy = (q.y - c.y) / ul;
+    const hl = size * 0.6,
+      hw = hl * 0.45;
+    drawn += `<path class="plain" d="M${p.x} ${p.y}Q${c.x} ${c.y} ${q.x} ${q.y}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-dasharray="${rel.dashed === false ? "none" : `${sw * 3.5} ${sw * 3}`}" stroke-linecap="round"/>`;
+    drawn += `<path class="plain" d="M${q.x - ux * hl - uy * hw} ${q.y - uy * hl + ux * hw}L${q.x} ${q.y}L${q.x - ux * hl + uy * hw} ${q.y - uy * hl - ux * hw}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    if (rel.label) {
+      const m = { x: (p.x + 2 * c.x + q.x) / 4, y: (p.y + 2 * c.y + q.y) / 4 };
+      drawn += `<text x="${m.x}" y="${m.y}" text-anchor="middle" dominant-baseline="central" font-size="${size * 0.85}" fill="${col}" paint-order="stroke" stroke="${paper}" stroke-width="4" stroke-linejoin="round">${esc(rel.label)}</text>`;
+    }
+  }
+  return drawn;
+};
 const r = Math.min(10, size * 0.7);
 let lines = "",
   shapes = "";
+const boxes = new Map();
 for (const n of nodes) {
   const b = box(n);
+  boxes.set(n.label, b);
   for (const c of n.children) {
     const q = box(c);
     if (across) {
@@ -155,12 +199,12 @@ for (const n of nodes) {
     shapes += `<text x="${b.cx}" y="${b.cy + n.size * 0.75}" font-size="${n.size * 0.8}" fill="${solid ? paper : muted}"${solid ? ' fill-opacity=".85"' : ""}>${esc(n.note)}</text>`;
 }
 const svg = api.svg(
-  `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}"><g fill="none" stroke="${d.lineColor || muted}" stroke-width="${sw}" stroke-linecap="round">${lines}</g><g text-anchor="middle" dominant-baseline="central">${shapes}</g></svg>`,
+  `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}"><g fill="none" stroke="${d.lineColor || muted}" stroke-width="${sw}" stroke-linecap="round">${lines}</g><g text-anchor="middle" dominant-baseline="central">${shapes}</g>${relations(boxes)}</svg>`,
 );
 // The style's texture on the shapes, never on the words.
 if (d.effect) {
   const fx = api.effect(d.effect);
-  for (const el of svg.querySelectorAll("rect,circle,path"))
+  for (const el of svg.querySelectorAll("rect,circle,path:not(.plain)"))
     el.setAttribute("filter", fx);
 }
 return svg;

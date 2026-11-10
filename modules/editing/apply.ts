@@ -128,7 +128,7 @@ function moduleChange(work: Work, edit: ModuleEdit, current: string, problems: P
     if (missing.length)
       return void problems.push({
         at,
-        problem: `模块 ${id} 是新增的，要给全 ${missing.join("、")}（已有的模块里没有这个 ID）`,
+        problem: `模块 ${id} 是新增的，要给全 ${missing.join("、")}（已有的模块里没有这个 ID${bounds ? "" : "；不给 bounds 时要有一条 arrange 来摆放它"}）`,
       });
     const home = work.scenes[named ?? current];
     if (!home)
@@ -146,8 +146,36 @@ function moduleChange(work: Work, edit: ModuleEdit, current: string, problems: P
   else if (target !== undefined) m.target = target;
   if (data) m.data = mergeRecord(m.data, data, `${at}.data`, problems);
 }
+/** The module an end is on, as an edit writes it. */
+const endOf = (end: string | LinkEnd | undefined) => (typeof end === "string" ? end : end?.moduleId);
+/** What an edit calls a link it gives no id: its two ends. */
+export const linkKey = (l: Pick<LinkEdit, "from" | "to">) => `${endOf(l.from)}-${endOf(l.to)}`;
+/** Every id a part of the work answers to. */
+const partIds = (work: Work) =>
+  new Set(Object.values(work.scenes).flatMap((s) => [...s.modules, ...s.links].map((p) => p.id)));
+/** The id of a link written without one: that of the one link already between its two ends
+ * in its scene, so writing it again changes it, or else one made from the ends. */
+function linkId(work: Work, edit: LinkEdit, current: string) {
+  const a = endOf(edit.from),
+    b = endOf(edit.to);
+  if (!a || !b) return undefined;
+  const between = (work.scenes[edit.scene ?? current]?.links ?? []).filter(
+    (l) => l.from.moduleId === a && l.to.moduleId === b,
+  );
+  if (between.length === 1) return between[0].id;
+  const taken = partIds(work);
+  let id = `${a}-${b}`;
+  for (let n = 2; taken.has(id); n++) id = `${a}-${b}-${n}`;
+  return id;
+}
 function linkChange(work: Work, edit: LinkEdit, current: string, problems: Problem[]) {
-  const { id, scene: named, drawingId, from, to, data } = edit;
+  const { scene: named, drawingId, from, to, data } = edit;
+  const id = edit.id ?? linkId(work, edit, current);
+  if (!id)
+    return void problems.push({
+      at: "links",
+      problem: "连线没有 id 时要给全 from、to：它靠两端认出是哪一条",
+    });
   const at = `links.${id}`;
   const scene = holder(work, "links", id, named ?? current);
   if (scene && named && scene.id !== named)
@@ -175,7 +203,7 @@ function linkChange(work: Work, edit: LinkEdit, current: string, problems: Probl
   if (data) l.data = mergeRecord(l.data, data, `${at}.data`, problems);
 }
 function drawingChange(work: Work, edit: DrawingEdit, problems: Problem[]) {
-  const { id, from, name, params, defaults, source, edits } = edit;
+  const { id, from, name, params, defaults, size, fit, source, edits } = edit;
   const at = `drawings.${id}`;
   let drawing = work.drawings[id];
   if (!drawing) {
@@ -194,9 +222,14 @@ function drawingChange(work: Work, edit: DrawingEdit, problems: Problem[]) {
       name: name ?? origin?.name ?? id,
       ...(Object.keys(keptParams!).length ? { params: keptParams } : {}),
       ...(Object.keys(keptDefaults).length ? { defaults: keptDefaults } : {}),
+      ...(origin?.size ? { size: [origin.size.width, origin.size.height] } : {}),
+      ...(origin?.fit ? { fit: origin.fit } : {}),
       source: source ?? origin!.source,
     };
   }
+  if (size) drawing.size = size;
+  if (fit === null) delete drawing.fit;
+  else if (fit) drawing.fit = fit;
   if (name !== undefined) drawing.name = name;
   if (params) drawing.params = mergeRecord(drawing.params ?? {}, params, `${at}.params`, problems) as typeof drawing.params;
   if (defaults) drawing.defaults = mergeRecord(drawing.defaults ?? {}, defaults, `${at}.defaults`, problems);
@@ -267,7 +300,7 @@ export const showable = (work: Work, edit: WorkEdit) => {
     (edit.drawings ?? []).every((d) => !d.from || !!drawingOf(work, d.from)) &&
     (edit.modules ?? []).every((m) => !m.drawingId || drawn(m.drawingId)) &&
     (edit.links ?? []).every((l) =>
-      l.drawingId ? drawn(l.drawingId) : !!links[l.id] || drawn("arrow"),
+      l.drawingId ? drawn(l.drawingId) : (!!l.id && !!links[l.id]) || drawn("arrow"),
     )
   );
 };
@@ -324,14 +357,20 @@ export function composed(earlier: unknown, later: unknown): Record<string, unkno
       (r) => !gone.has(r?.id),
     );
     const add = Array.isArray(b[section]) ? b[section] : [];
+    // A link written without an id is known by its ends.
+    const name = (r: any) =>
+      typeof r?.id === "string" ? r.id : section === "links" && r ? "\n" + linkKey(r) : undefined;
     for (const record of add) {
-      const at = isObject(record) ? list.findIndex((r) => r?.id === record.id) : -1;
+      const called = name(record);
+      const at = called === undefined ? -1 : list.findIndex((r) => name(r) === called);
       if (at < 0) list.push(record);
       else list[at] = bothRecords(list[at], record as Record<string, unknown>);
     }
     if (list.length) out[section] = list;
     else delete out[section];
   }
+  // A correction's own changes to every part come after the ones it corrects.
+  if (Array.isArray(a.each) && Array.isArray(b.each)) out.each = [...a.each, ...b.each];
   if (isObject(a.style) && isObject(b.style)) out.style = { ...a.style, ...b.style };
   if (Array.isArray(a.materials) && Array.isArray(b.materials))
     out.materials = [...new Set([...a.materials, ...b.materials])];

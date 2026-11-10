@@ -10,7 +10,9 @@ import type {
   MaterialUse,
 } from "../contracts/index.ts";
 import { drawingOf, labelOf } from "../contracts/index.ts";
-import { linkEnds, union } from "../contracts/geometry.ts";
+import { union } from "../contracts/geometry.ts";
+import { groundOf, routeLinks, routing, type Routed } from "../contracts/routing.ts";
+export { backdropOf } from "../contracts/routing.ts";
 
 export interface SceneOptions {
   open: (target: Target) => void;
@@ -26,6 +28,10 @@ export interface DrawingAPI {
   /** The side of its module each end meets; null for a point inside it. */
   fromSide?: Side | null;
   toSide?: Side | null;
+  /** Where a link runs, worked out for the whole scene: `points` from its start to its end
+   * in local units (an elbow's turns between them, clear of the other modules), and where
+   * its words have room. */
+  route?: { kind: Routed["kind"]; points: Point[]; label?: Point };
   svg: (source: string) => SVGElement;
   html: (source: string) => HTMLElement;
   mermaid: (source: string) => Promise<Element>;
@@ -102,6 +108,10 @@ export class SceneRenderer {
   /** The scene's links as drawn now, which an edit may preview with other data. */
   readonly links: Map<string, Link>;
   private views = new Map<string, View>();
+  /** Where each link runs, as last worked out, and as last drawn. */
+  private routes = new Map<string, Routed>();
+  private routed = new Map<string, string>();
+  private ground = new Set<string>();
   private listeners = new Map<string, Set<Listener>>();
   private jobs = new Set<Promise<unknown>>();
   private interactionCleanup: (() => void)[] = [];
@@ -343,6 +353,7 @@ export class SceneRenderer {
       to: Point;
       fromSide: Side | null;
       toSide: Side | null;
+      route: NonNullable<DrawingAPI["route"]>;
     },
   ) {
     return this.track(
@@ -473,37 +484,78 @@ export class SceneRenderer {
   private drawModule(m: Instance) {
     return this.draw(m.id, m.drawingId, m.bounds, m.data, "module");
   }
+  /** Works out where every link runs with the modules where they are now. */
+  private route() {
+    const modules = this.currentModules();
+    const links = [...this.links.values()];
+    this.routes = routeLinks(
+      links.map((l) => ({
+        id: l.id,
+        from: l.from,
+        to: l.to,
+        options: routing(
+          { ...drawingOf(this.work, l.drawingId)?.defaults, ...l.data },
+          this.work.style,
+        ),
+      })),
+      modules,
+    );
+    this.ground = groundOf(modules, links);
+  }
+  /** Where a link runs now. */
+  routeOf(id: string) {
+    return this.routes.get(id);
+  }
   /** Where a link's ends meet their modules as they are now, in scene units, and the side
    * each is on. */
-  ends(l: Pick<Link, "from" | "to">) {
-    return linkEnds(l, (id) => this.instances.get(id)!.bounds);
+  ends(l: Pick<Link, "id">) {
+    if (!this.routes.has(l.id)) this.route();
+    const r = this.routes.get(l.id)!;
+    return {
+      from: { ...r.points[0], side: r.fromSide },
+      to: { ...r.points.at(-1)!, side: r.toSide },
+    };
   }
   private drawLink(l: Link) {
-    const { from, to } = this.ends(l);
-    const x = Math.min(from.x, to.x) - 48,
-      y = Math.min(from.y, to.y) - 48;
+    const r = this.routes.get(l.id);
+    if (!r) return Promise.resolve();
+    this.routed.set(l.id, JSON.stringify(r));
+    const xs = r.points.map((p) => p.x),
+      ys = r.points.map((p) => p.y);
+    const x = Math.min(...xs) - 48,
+      y = Math.min(...ys) - 48;
     const bounds = {
       x,
       y,
-      width: Math.abs(from.x - to.x) + 96,
-      height: Math.abs(from.y - to.y) + 96,
+      width: Math.max(...xs) - Math.min(...xs) + 96,
+      height: Math.max(...ys) - Math.min(...ys) + 96,
     };
+    const local = (p: Point) => ({ x: p.x - x, y: p.y - y });
     return this.draw(l.id, l.drawingId, bounds, l.data, "link", {
-      from: { x: from.x - x, y: from.y - y },
-      to: { x: to.x - x, y: to.y - y },
-      fromSide: from.side,
-      toSide: to.side,
+      from: local(r.points[0]),
+      to: local(r.points.at(-1)!),
+      fromSide: r.fromSide,
+      toSide: r.toSide,
+      route: {
+        kind: r.kind,
+        points: r.points.map(local),
+        ...(r.label ? { label: local(r.label) } : {}),
+      },
     });
   }
-  /** Draws the links, or only those meeting some modules. */
+  /** Draws the links, or only those meeting some modules and those whose way changed
+   * because of where those modules now are. */
   private drawLinks(meeting?: Set<string>) {
+    this.route();
+    this.relayer();
     return Promise.all(
       [...this.links.values()]
         .filter(
           (l) =>
             !meeting ||
             meeting.has(l.from.moduleId) ||
-            meeting.has(l.to.moduleId),
+            meeting.has(l.to.moduleId) ||
+            this.routed.get(l.id) !== JSON.stringify(this.routes.get(l.id)),
         )
         .map((l) => this.drawLink(l)),
     );
@@ -546,8 +598,8 @@ export class SceneRenderer {
           top: m.bounds.y + "px",
         });
     }
-    this.relayer();
-    // Only the links that meet a moved module follow it.
+    // The links that meet a moved module follow it, and so do those it now stands in the
+    // way of.
     await Promise.all([...jobs, this.drawLinks(moved)]);
   }
   set(id: string, data: Record<string, unknown>) {
@@ -566,6 +618,7 @@ export class SceneRenderer {
     const l = this.links.get(id);
     if (!l) return Promise.resolve();
     l.data = data;
+    this.route();
     return this.drawLink(l);
   }
   /** Whether another revision of the scene can be laid over this one in place: the same
@@ -582,11 +635,12 @@ export class SceneRenderer {
     }
     return true;
   }
-  /** Where a drawn thing sits in depth: links above a backdrop and below every other
-   * module, so a picture laid under the whole figure does not hide its arrows. */
+  /** Where a drawn thing sits in depth: links above the ground (a backdrop under the whole
+   * figure, a frame or lanes holding linked modules) and below every other module, so what
+   * lies under the figure's parts does not hide the arrows between them. */
   private layer(kind: "module" | "link", id: string) {
     if (kind === "link") return "1";
-    return id === backdropOf(this.currentModules()) ? "0" : "2";
+    return this.ground.has(id) ? "0" : "2";
   }
   /** The scene's modules in stacking order, where they are now. */
   private currentModules() {
@@ -649,7 +703,6 @@ export class SceneRenderer {
     );
     if (shown.some((el, i) => el !== hosts[i]))
       for (const host of hosts) this.element.append(host);
-    this.relayer();
     for (const l of scene.links) this.links.set(l.id, structuredClone(l));
     // Links are cheap and follow their modules wherever they went.
     jobs.push(this.drawLinks());
@@ -667,7 +720,11 @@ export class SceneRenderer {
       this.views.delete(kind + ":" + id);
     }
     if (kind === "module") this.instances.delete(id);
-    else this.links.delete(id);
+    else {
+      this.links.delete(id);
+      this.routes.delete(id);
+      this.routed.delete(id);
+    }
   }
   dispose() {
     this.disposed = true;
@@ -677,21 +734,4 @@ export class SceneRenderer {
     this.listeners.clear();
     this.element.remove();
   }
-}
-
-/** The scene's backdrop, if it has one: its bottom module, when that module lies under at
- * least nine tenths of the whole figure, as a painted world behind the parts does. Links
- * are drawn over a backdrop and under every other module. */
-export function backdropOf(modules: Pick<Instance, "id" | "bounds">[]): string | undefined {
-  const [bottom] = modules;
-  if (!bottom || modules.length < 2) return undefined;
-  const all = union(modules.map((m) => m.bounds)),
-    b = bottom.bounds;
-  const across =
-    Math.min(b.x + b.width, all.x + all.width) - Math.max(b.x, all.x);
-  const down =
-    Math.min(b.y + b.height, all.y + all.height) - Math.max(b.y, all.y);
-  return across > 0 && down > 0 && across * down >= 0.9 * all.width * all.height
-    ? bottom.id
-    : undefined;
 }

@@ -91,6 +91,8 @@ export function useOf(m: Material): MaterialUse | null {
               : [],
           ),
         ),
+        size: m.size,
+        ...(m.fit ? { fit: m.fit } : {}),
       };
     case "effect":
       return { id: m.id, kind: "effect", name: m.name.zh, defs: m.defs };

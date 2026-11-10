@@ -15,10 +15,19 @@
       "arrow",
       "connector",
       "curved arrow",
-      "flow"
+      "flow",
+      "正交连线",
+      "折线",
+      "乌鸦脚",
+      "继承",
+      "聚合",
+      "elbow",
+      "orthogonal",
+      "crow's foot",
+      "inheritance"
     ],
     "category": "drawing/connector",
-    "about": "An arrow whose head is sized to its line: straight or curved (bend), or routed at right angles for flowcharts and architecture (route elbow or corner, with rounded turns); dashed, open or filled head, double-ended, an optional label beside the middle, and flow (animated dashes moving along it) for movement of blood, water, data or energy. As a link it runs between the anchors; in a module between data.from and data.to.",
+    "about": "A line between two modules with a mark at either end: an arrow (filled or open head), UML's hollow triangle and diamonds, or the bars, rings and feet of ER notation. As a link it follows the route the scene works out for all its links: a curve (bend), a straight line, or elbow, which runs at right angles round whatever stands between its ends, gives every link its own port on a module's side and finds room for its label. Dashed, labelled, or with flow (dashes moving along it) for blood, water, data or energy. In a module it runs between data.from and data.to.",
     "tags": ["arrow", "link", "flow", "connector", "direction"],
     "style": null,
     "origin": {
@@ -44,49 +53,83 @@
       "label": "能量流动"
     },
     "params": {
+      "route": {
+        "type": "choice",
+        "options": ["curve", "straight", "elbow"],
+        "description": "curve bows by bend; elbow runs at right angles round the modules between its ends, for flowcharts, architecture and every structured diagram. Unset follows the work's style token route, else curve"
+      },
       "bend": {
         "type": "number",
         "min": -1,
         "max": 1,
         "step": 0.05,
         "default": 0,
-        "description": "curvature as a fraction of length, positive bending left of the direction of travel; for elbow, how far along the cross segment moves (-0.5 to 0.5)"
+        "description": "curve: how far it bows as a fraction of its length, positive to the left of travel; elbow: moves its cross segment along the way (-0.45 to 0.45)"
       },
       "head": {
         "type": "choice",
-        "options": ["filled", "open", "none"],
+        "options": [
+          "filled",
+          "open",
+          "none",
+          "triangle",
+          "diamond",
+          "diamond-filled",
+          "circle",
+          "dot",
+          "one",
+          "only-one",
+          "many",
+          "one-many",
+          "zero-one",
+          "zero-many"
+        ],
         "default": "filled",
-        "description": "the arrowhead"
+        "description": "the mark at its end: filled or open arrowhead; triangle for UML inheritance, diamond and diamond-filled for aggregation and composition; one, only-one, many, one-many, zero-one, zero-many for ER cardinality"
+      },
+      "tail": {
+        "type": "choice",
+        "options": [
+          "filled",
+          "open",
+          "none",
+          "triangle",
+          "diamond",
+          "diamond-filled",
+          "circle",
+          "dot",
+          "one",
+          "only-one",
+          "many",
+          "one-many",
+          "zero-one",
+          "zero-many"
+        ],
+        "default": "none",
+        "description": "the mark at its start, from the same set"
       },
       "both": {
         "type": "boolean",
         "default": false,
-        "description": "a head at both ends"
+        "description": "the head's mark at both ends"
       },
       "dashed": {
         "type": "boolean",
         "default": false,
         "description": "dashed line"
       },
-      "route": {
-        "type": "choice",
-        "options": ["curve", "elbow", "corner"],
-        "default": "curve",
-        "description": "curve follows bend; elbow runs at right angles, leaving and arriving along the sides of the modules its ends meet; corner turns exactly once"
-      },
-      "first": {
-        "type": "choice",
-        "options": ["auto", "horizontal", "vertical"],
-        "default": "auto",
-        "description": "for elbow and corner, the axis it leaves along; auto follows the side its end meets, else the longer axis"
+      "trunk": {
+        "type": "boolean",
+        "default": false,
+        "description": "elbow: share one port with the other links leaving the same side, as the branches of a tree do, instead of a port of its own"
       },
       "radius": {
         "type": "number",
         "min": 0,
         "max": 40,
         "step": 1,
-        "default": 10,
-        "description": "rounding of elbow and corner turns"
+        "default": 8,
+        "description": "rounding of elbow turns"
       },
       "flow": {
         "type": "boolean",
@@ -103,13 +146,19 @@
       },
       "label": {
         "type": "text",
-        "description": "a few words beside the middle"
+        "description": "a few words on the line; an elbow finds them room clear of modules and other labels"
+      },
+      "labelAt": {
+        "type": "choice",
+        "options": ["source", "middle", "target"],
+        "default": "middle",
+        "description": "elbow: which part of the line the label sits on"
       },
       "labelSide": {
         "type": "choice",
         "options": ["above", "below"],
         "default": "above",
-        "description": "which side of the line the label sits"
+        "description": "curve: which side of the line the label sits"
       },
       "size": {
         "type": "number",
@@ -221,7 +270,8 @@
         "default": true,
         "description": "paper-coloured outline behind the letters"
       }
-    }
+    },
+    "fit": "words"
   },
   {
     "id": "leader-label",
@@ -1215,7 +1265,7 @@
       "database"
     ],
     "category": "drawing/structure",
-    "about": "A block of a flowchart, architecture or concept map: a box, pill, circle, decision diamond, database cylinder or document holding a title, an optional note and an optional icon, coloured by the style. One per module, joined by arrow links (route elbow for flowcharts) so blocks move on their own and connections follow; the words wrap inside the shape.",
+    "about": "A block of a flowchart, architecture, state machine or concept map: a box, pill, circle, decision diamond, database cylinder, queue, document, input/output parallelogram, hexagon or note holding a title, an optional note and an optional icon, coloured by the style; initial and final are the filled and ringed dots a state machine starts from and ends in. One per module, joined by arrow links so blocks move on their own and connections follow; the words wrap inside the shape.",
     "tags": ["structure", "flowchart", "architecture", "box", "node"],
     "style": null,
     "origin": {
@@ -1244,9 +1294,22 @@
       },
       "shape": {
         "type": "choice",
-        "options": ["box", "pill", "circle", "diamond", "cylinder", "document"],
+        "options": [
+          "box",
+          "pill",
+          "circle",
+          "diamond",
+          "cylinder",
+          "document",
+          "parallelogram",
+          "hexagon",
+          "queue",
+          "note",
+          "initial",
+          "final"
+        ],
         "default": "box",
-        "description": "box for a step or component, pill for start/end, diamond for a decision, cylinder for a store"
+        "description": "box for a step or component, pill for a start/end or a state, diamond for a decision, cylinder for a store, queue for a message queue, parallelogram for input/output, note for a remark; initial and final are a state machine's start and end dots (about 28 square, no words)"
       },
       "tone": {
         "type": "choice",
@@ -1311,7 +1374,234 @@
         "type": "effect",
         "description": "an effect id applied to the shape, such as rough-edge"
       }
-    }
+    },
+    "fit": "words"
+  },
+  {
+    "id": "frame",
+    "kind": "drawing",
+    "name": {
+      "zh": "分组框",
+      "en": "Frame"
+    },
+    "aliases": [
+      "分组框",
+      "容器",
+      "分组",
+      "边界",
+      "子系统",
+      "层",
+      "包",
+      "frame",
+      "container",
+      "group",
+      "boundary",
+      "subsystem",
+      "tier",
+      "package",
+      "cluster"
+    ],
+    "category": "drawing/structure",
+    "about": "A frame round a group of modules with its name in a corner: a tier or subsystem of an architecture, a trust boundary, a package, a zone. It is ground for what stands on it: the modules inside stay their own modules, links run over it and round the frames they have no end in, and dragging it carries what it holds. write_work's arrange sizes it round its members.",
+    "tags": ["structure", "container", "group", "architecture", "boundary"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1794268800000
+    },
+    "use": "module",
+    "size": {
+      "width": 420,
+      "height": 260
+    },
+    "example": {
+      "title": "服务层",
+      "note": "无状态，可水平扩展",
+      "tone": "accent2"
+    },
+    "params": {
+      "title": {
+        "type": "text",
+        "description": "its name, in a corner"
+      },
+      "note": {
+        "type": "text",
+        "description": "a few muted words after the name"
+      },
+      "tone": {
+        "type": "choice",
+        "options": ["plain", "accent", "accent2", "muted", "ink"],
+        "default": "plain",
+        "description": "which style colour its outline and name take"
+      },
+      "fillStyle": {
+        "type": "choice",
+        "options": ["none", "soft"],
+        "description": "no fill, or a faint tint of its colour; plain defaults to none, other tones to soft"
+      },
+      "titleAt": {
+        "type": "choice",
+        "options": ["top-left", "top", "bottom-left"],
+        "default": "top-left",
+        "description": "where the name sits"
+      },
+      "tab": {
+        "type": "boolean",
+        "default": false,
+        "description": "the name on a filled corner tab, as UML frames and packages have"
+      },
+      "dashed": {
+        "type": "boolean",
+        "default": false,
+        "description": "a dashed outline, for a boundary or something optional"
+      },
+      "color": {
+        "type": "color",
+        "description": "overrides the tone's colour"
+      },
+      "size": {
+        "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
+        "default": 15,
+        "description": "font size"
+      },
+      "weight": {
+        "type": "number",
+        "min": 100,
+        "max": 900,
+        "step": 100,
+        "default": 700,
+        "description": "font weight of the name"
+      },
+      "radius": {
+        "type": "number",
+        "min": 0,
+        "max": 40,
+        "step": 1,
+        "default": 12,
+        "description": "rounding of the corners"
+      },
+      "effect": {
+        "type": "effect",
+        "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
+      }
+    },
+    "fit": "frame"
+  },
+  {
+    "id": "entity",
+    "kind": "drawing",
+    "name": {
+      "zh": "实体表",
+      "en": "Entity"
+    },
+    "aliases": [
+      "实体",
+      "数据表",
+      "字段表",
+      "类图",
+      "类",
+      "ER 图",
+      "表结构",
+      "entity",
+      "table",
+      "class",
+      "er diagram",
+      "schema",
+      "uml class"
+    ],
+    "category": "drawing/structure",
+    "about": "An entity or class as a table: its name in a header over rows of fields. For an ER diagram each row is a field with its type and a PK or FK mark; for a UML class the rows are attributes and methods with a rule between. One per module, joined by arrow links whose head and tail carry the cardinality (one, many, zero-many…) or UML's triangle and diamonds; write_work's arrange sizes it to its rows.",
+    "tags": ["structure", "entity", "table", "database", "class", "uml"],
+    "style": null,
+    "origin": {
+      "kind": "curated",
+      "createdAt": 1794268800000
+    },
+    "use": "module",
+    "size": {
+      "width": 240,
+      "height": 190
+    },
+    "example": {
+      "name": "文章",
+      "rows": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "key": "pk"
+        },
+        {
+          "name": "author_id",
+          "type": "bigint",
+          "key": "fk"
+        },
+        {
+          "name": "title",
+          "type": "varchar(200)"
+        },
+        {
+          "name": "body",
+          "type": "text"
+        },
+        {
+          "name": "published_at",
+          "type": "timestamp"
+        }
+      ]
+    },
+    "params": {
+      "name": {
+        "type": "text",
+        "description": "the entity's or class's name"
+      },
+      "stereotype": {
+        "type": "text",
+        "description": "a UML stereotype above the name, such as interface or abstract"
+      },
+      "rows": {
+        "type": "array",
+        "description": "[{name, type?, key?: \"pk\" | \"fk\" | \"uk\"}] or plain strings, top to bottom; \"---\" is a rule, as between a class's attributes and its methods"
+      },
+      "keys": {
+        "type": "boolean",
+        "default": true,
+        "description": "keep a column for the key marks; false for a class, whose rows have none"
+      },
+      "tone": {
+        "type": "choice",
+        "options": ["plain", "accent", "accent2", "muted", "ink"],
+        "default": "accent2",
+        "description": "which style colour its header and outline take"
+      },
+      "color": {
+        "type": "color",
+        "description": "overrides the tone's colour"
+      },
+      "size": {
+        "type": "number",
+        "min": 8,
+        "max": 72,
+        "step": 1,
+        "default": 14,
+        "description": "font size"
+      },
+      "radius": {
+        "type": "number",
+        "min": 0,
+        "max": 40,
+        "step": 1,
+        "default": 8,
+        "description": "rounding of the corners"
+      },
+      "effect": {
+        "type": "effect",
+        "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
+      }
+    },
+    "fit": "rows"
   },
   {
     "id": "hierarchy",
@@ -1335,7 +1625,7 @@
       "breakdown"
     ],
     "category": "drawing/structure",
-    "about": "A hierarchy as a tidy tree: an organisation, taxonomy, or a goal or system broken into parts. The root is filled, its children tinted, deeper levels outlined, joined by rounded right-angle lines; any node can carry a note or be accented. Grows down or right and spreads to fill the module.",
+    "about": "A hierarchy as a tidy tree: an organisation, taxonomy, or a goal or system broken into parts. The root is filled, its children tinted, deeper levels outlined, joined by rounded right-angle lines; any node can carry a note or be accented, and dashed relations can join any two nodes across the branches. Grows down or right and spreads to fill the module.",
     "tags": [
       "structure",
       "hierarchy",
@@ -1399,6 +1689,10 @@
       "root": {
         "type": "object",
         "description": "{label, note?, accent?, children?: [nodes like this]}"
+      },
+      "relations": {
+        "type": "array",
+        "description": "relations across branches, drawn as dashed curves: [{from, to: the labels of two nodes, label?, dashed?: false for a solid line, color?}]"
       },
       "direction": {
         "type": "choice",
@@ -1892,7 +2186,7 @@
       "topic map"
     ],
     "category": "drawing/structure",
-    "about": "A mind map: a central idea with branches to either side, each branch in its own colour, its points written on the ends of curved lines. For brainstorms, the facets of a topic and outlines.",
+    "about": "A mind map: a central idea with branches to either side, each branch in its own colour, its points written on the ends of curved lines, and dashed relations between any two of them across the branches. For brainstorms, the facets of a topic and outlines.",
     "tags": ["structure", "mind map", "brainstorm", "branches", "outline"],
     "style": null,
     "origin": {
@@ -1923,6 +2217,13 @@
           "label": "应用",
           "children": ["生活现象", "工程问题"]
         }
+      ],
+      "relations": [
+        {
+          "from": "控制变量",
+          "to": "测量误差",
+          "label": "相互印证"
+        }
       ]
     },
     "params": {
@@ -1933,6 +2234,10 @@
       "branches": {
         "type": "array",
         "description": "[{label, children?: [points], color?}]; the first half go right, the rest left"
+      },
+      "relations": {
+        "type": "array",
+        "description": "relations across branches, drawn as dashed curves: [{from, to: the labels of two nodes, label?, dashed?: false for a solid line, color?}]"
       },
       "color": {
         "type": "color",
@@ -2066,7 +2371,7 @@
       "lanes"
     ],
     "category": "drawing/structure",
-    "about": "Swimlanes: parallel bands, one per actor, team or system, each named in its header, as the background of a cross-functional process; place the steps over it as node modules joined by arrow links. Lanes run across (rows) or down (columns); one can be accented.",
+    "about": "Swimlanes: parallel bands, one per actor, team or system, each named in its header, as the ground of a cross-functional process; the steps are node modules over it joined by arrow links, which write_work's arrange places lane by lane. Lanes run across (rows) or down (columns); one can be accented.",
     "tags": ["structure", "process", "lanes", "roles", "flowchart"],
     "style": null,
     "origin": {
@@ -2123,7 +2428,8 @@
         "type": "effect",
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
-    }
+    },
+    "fit": "lanes"
   },
   {
     "id": "bars",
@@ -2592,10 +2898,15 @@
       "sequence diagram",
       "sequence",
       "message flow",
-      "interaction"
+      "interaction",
+      "UML 时序图",
+      "组合片段",
+      "激活条",
+      "alt",
+      "loop"
     ],
     "category": "drawing/structure",
-    "about": "A sequence diagram: participants across the top with dashed lifelines, messages as arrows between them in time order, replies dashed with open heads, a message to oneself as a loop; optionally numbered. Drawn in the style, unlike a generic renderer.",
+    "about": "A sequence diagram: participants across the top with dashed lifelines, messages as arrows between them in time order, replies dashed with open heads, a message to oneself as a loop; combined fragments (alt, loop, opt, par) framing the messages between their opening and end entries, activation bars, notes over lifelines, optional numbering. Drawn in the style, unlike a generic renderer.",
     "tags": ["structure", "sequence", "messages", "protocol", "interaction"],
     "style": null,
     "origin": {
@@ -2604,12 +2915,26 @@
     },
     "use": "module",
     "size": {
-      "width": 640,
-      "height": 320
+      "width": 720,
+      "height": 460
     },
     "example": {
-      "actors": ["浏览器", "服务器", "数据库"],
+      "actors": [
+        {
+          "label": "用户",
+          "kind": "actor"
+        },
+        "浏览器",
+        "服务器",
+        "数据库"
+      ],
+      "activations": true,
       "messages": [
+        {
+          "from": "用户",
+          "to": "浏览器",
+          "label": "提交登录"
+        },
         {
           "from": "浏览器",
           "to": "服务器",
@@ -2627,9 +2952,7 @@
           "reply": true
         },
         {
-          "from": "服务器",
-          "to": "服务器",
-          "label": "校验密码"
+          "alt": "密码正确"
         },
         {
           "from": "服务器",
@@ -2637,17 +2960,40 @@
           "label": "返回令牌",
           "reply": true,
           "accent": true
+        },
+        {
+          "else": "密码错误"
+        },
+        {
+          "from": "服务器",
+          "to": "浏览器",
+          "label": "401",
+          "reply": true
+        },
+        {
+          "end": true
+        },
+        {
+          "from": "浏览器",
+          "to": "用户",
+          "label": "显示结果",
+          "reply": true
         }
       ]
     },
     "params": {
       "actors": {
         "type": "array",
-        "description": "participant names, left to right, or [{label, accent?}]"
+        "description": "participant names, left to right, or [{label, accent?, kind?: \"actor\" for a stick figure}]"
       },
       "messages": {
         "type": "array",
-        "description": "[{from, to: participant names, label, reply?, accent?}] in time order"
+        "description": "entries in time order. A message: {from, to: participant names, label, reply?, async?, accent?}. A fragment opens with {alt: \"guard\"} (or loop, opt, par, critical, break, group), divides with {else: \"guard\"} and closes with {end: true}; fragments nest. A note: {note: \"words\", over: name or [names]}. Without activations: true, {activate: true} on a message starts its receiver's bar and {deactivate: true} ends its sender's"
+      },
+      "activations": {
+        "type": "boolean",
+        "default": false,
+        "description": "draw activation bars by themselves: each call activates its receiver until the reply goes back"
       },
       "numbered": {
         "type": "boolean",
@@ -2910,7 +3256,8 @@
         "type": "effect",
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
-    }
+    },
+    "fit": "words"
   },
   {
     "id": "checklist",

@@ -17,7 +17,7 @@ app.post("/render", async (c) => {
     "Content-Type": request.format === "pdf" ? "application/pdf" : "image/png",
   });
 });
-serve({ fetch: app.fetch, port: 8091, hostname: "0.0.0.0" });
+serve({ fetch: app.fetch, port: Number(process.env.PORT || 8091), hostname: "0.0.0.0" });
 process.on("SIGTERM", async () => {
   await browser.close();
   process.exit(0);
