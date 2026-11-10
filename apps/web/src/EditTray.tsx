@@ -168,6 +168,7 @@ export function EditTray({
               setOpen("");
               void ops.drawing(m);
             }}
+            dragged={() => setOpen("")}
             browse={() => {
               setOpen("");
               ops.add("drawing");
@@ -195,7 +196,16 @@ const kinds = ["structure", "text", "mark", "chart", "area", "control", "connect
 
 /** The library's drawings in a sheet beside the tray: found by name, added with a press in
  * the middle of the view, or dragged onto the canvas to where they belong. */
-function Shelf({ add, browse }: { add: (m: DrawingMaterial) => void; browse: () => void }) {
+function Shelf({
+  add,
+  browse,
+  dragged,
+}: {
+  add: (m: DrawingMaterial) => void;
+  browse: () => void;
+  /** A drawing was dragged out and let go: the shelf has done its part. */
+  dragged: () => void;
+}) {
   const t = useT(),
     locale = useLocale();
   const [all, setAll] = useState<DrawingMaterial[]>();
@@ -244,6 +254,7 @@ function Shelf({ add, browse }: { add: (m: DrawingMaterial) => void; browse: () 
                     e.dataTransfer.setData(DRAWING_TYPE, m.id);
                     e.dataTransfer.effectAllowed = "copy";
                   }}
+                  onDragEnd={dragged}
                   onClick={() => add(m)}
                 >
                   <Seen>

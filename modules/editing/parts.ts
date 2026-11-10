@@ -459,7 +459,10 @@ export function add(
   const module: Instance = {
     id: fresh(what.kind === "drawing" ? what.material : what.kind, taken),
     ...(what.kind === "text" || !what.name ? {} : { label: what.name }),
-    bounds: box ? tidy(box) : { x: at.x - width / 2, y: at.y - height / 2, width, height },
+    // Placed by hand, it stands on whole units: these are figures a person reads.
+    bounds: box
+      ? tidy(box)
+      : { x: Math.round(at.x - width / 2), y: Math.round(at.y - height / 2), width, height },
     drawingId: drawing?.id ?? library,
     data:
       what.kind === "text"
