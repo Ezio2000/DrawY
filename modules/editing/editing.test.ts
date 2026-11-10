@@ -13,14 +13,19 @@ import {
   copy,
   distribute,
   duplicate,
+  extend,
   fieldsOf,
   fork,
   group,
   labelOf,
   linkLook,
+  lookOf,
+  matchSize,
   moduleRecord,
   moveParts,
   paste,
+  pasteLook,
+  quickFields,
   reattach,
   removeDetail,
   removeParts,
@@ -31,6 +36,7 @@ import {
   resized,
   restack,
   restOf,
+  restyle,
   reverse,
   scaled,
   setData,
@@ -41,6 +47,7 @@ import {
   setStyles,
   setTarget,
   shadowed,
+  sharedFields,
   showable,
   snap,
   ungroup,
@@ -799,5 +806,131 @@ describe("hand edits reach what the author writes", () => {
     expect(showable(work, { modules: [{ id: "n", bounds: [0, 0, 9, 9], drawingId: "label" }] })).toBe(false);
     expect(showable(work, { links: [{ id: "n", from: "heading", to: "heading" }] })).toBe(!!work.materials.arrow);
     expect(showable(work, { modules: [{ id: "heading", drawingId: "mine" }], drawings: [{ id: "mine", source: "" }] })).toBe(true);
+  });
+});
+
+describe("hand edits as a drawing app has them", () => {
+  /** A row of labels to work on: a at 0, b at 200, c at 500, all 100 by 40. */
+  const row = () => {
+    const work = fixture();
+    work.materials.label = label;
+    const at = (id: string, x: number, data: Record<string, unknown> = {}) => ({
+      id,
+      bounds: { x, y: 1000, width: 100, height: 40 },
+      drawingId: "label",
+      data: { text: id.toUpperCase(), ...data },
+    });
+    work.scenes.root.modules.push(at("a", 0, { color: "#ff0000", size: 20, note: "first" }), at("b", 200), at("c", 500));
+    return work;
+  };
+
+  it("settles a moved box where its gaps to its neighbours are equal", () => {
+    const a = { x: 0, y: 0, width: 100, height: 40 },
+      b = { x: 200, y: 0, width: 100, height: 40 };
+    // Past the second of two, as far from it as they are from each other.
+    const on = snap({ x: 396, y: 5, width: 100, height: 40 }, [a, b], 6, [0, 0.5, 1], [0, 0.5, 1], true);
+    expect(on.dx).toBe(4);
+    expect(on.gaps.map((g) => [g.from, g.to])).toEqual([
+      [100, 200],
+      [300, 400],
+    ]);
+    expect(on.gaps.every((g) => g.axis === "x")).toBe(true);
+    // Midway between two.
+    const c = { x: 500, y: 0, width: 100, height: 40 };
+    const between = snap({ x: 352, y: 60, width: 100, height: 40 }, [b, c], 6, [0, 0.5, 1], [0, 0.5, 1], true);
+    expect(between.gaps).toEqual([]);
+    const mid = snap({ x: 352, y: 20, width: 100, height: 40 }, [b, c], 6, [0, 0.5, 1], [0, 0.5, 1], true);
+    expect(mid.dx).toBe(-2);
+    expect(mid.gaps.map((g) => g.to - g.from)).toEqual([50, 50]);
+    // Lining up wins where it is as near, and nothing is spaced unless asked.
+    expect(snap({ x: 396, y: 5, width: 100, height: 40 }, [a, b], 6).gaps).toEqual([]);
+    expect(snap({ x: 396, y: 5, width: 100, height: 40 }, [a, b], 6).dx).toBe(0);
+  });
+
+  it("gives a selection one size and one look", () => {
+    const work = row();
+    work.scenes.root.modules.find((m) => m.id === "b")!.bounds.width = 160;
+    const sized = apply(work, matchSize(work, "root", ["b", "a", "c"], "width"));
+    expect(["a", "b", "c"].map((id) => module(sized, id).bounds.width)).toEqual([160, 160, 160]);
+    expect(module(sized, "a").bounds.x).toBe(0);
+    expect(matchSize(work, "root", ["a"], "both")).toBeNull();
+    const styled = apply(work, restyle(work, "root", ["a", "b"], { color: "#00ff00", size: undefined }));
+    expect(module(styled, "a").data).toEqual({ text: "A", color: "#00ff00", note: "first" });
+    expect(module(styled, "b").data).toEqual({ text: "B", color: "#00ff00" });
+    expect(restyle(work, "root", ["a"], { color: "#ff0000" })).toBeNull();
+  });
+
+  it("copies how a part looks, not what it says, onto others", () => {
+    const work = row();
+    const look = lookOf(work, module(work, "a"));
+    expect(look).toEqual({ drawingId: "label", data: { color: "#ff0000", size: 20 } });
+    const painted = apply(work, pasteLook(work, "root", ["b", "c"], look));
+    expect(module(painted, "b").data).toEqual({ text: "B", color: "#ff0000", size: 20 });
+    // What the look leaves to the drawing is given back to it on the same drawing.
+    const plain = apply(painted, pasteLook(painted, "root", ["b"], lookOf(work, module(work, "c"))));
+    expect(module(plain, "b").data).toEqual({ text: "B" });
+    // Another drawing takes only what it has under the same name and kind.
+    const other = pasteLook(work, "root", ["heading"], look);
+    for (const m of other?.modules ?? []) expect(Object.keys(m.data as object)).not.toContain("text");
+    expect(pasteLook(work, "root", ["a"], look)).toBeNull();
+  });
+
+  it("offers the values a selection can be given at once, the few most reached for first", () => {
+    const work = row();
+    const shared = sharedFields(work, [module(work, "a"), module(work, "b")]);
+    expect(shared.map((f) => f.key)).toEqual(["align", "color", "size"]);
+    expect(shared.find((f) => f.key === "size")).toMatchObject({ value: 20, mixed: true, set: true });
+    expect(shared.find((f) => f.key === "align")).toMatchObject({ value: "center", mixed: false });
+    expect(quickFields(shared).map((f) => f.key)).toEqual(["color", "size", "align"]);
+    // What only some of the parts have is left out.
+    expect(sharedFields(work, [module(work, "a"), module(work, "heading")]).map((f) => f.key)).not.toContain("align");
+    expect(sharedFields(work, [])).toEqual([]);
+  });
+
+  it("grows a figure from a module: a new one like it, linked from the side it left by", () => {
+    const work = row();
+    const first = extend(work, "root", { moduleId: "a", side: "bottom" }, { gap: 60, words: "新" }, { drawingId: "connector", data: {} });
+    const grown = apply(work, first.edit);
+    expect(module(grown, first.id)).toMatchObject({
+      drawingId: "label",
+      bounds: { x: 0, y: 1100, width: 100, height: 40 },
+      data: { text: "新", color: "#ff0000", size: 20 },
+    });
+    expect(module(grown, first.id).data.note).toBeUndefined();
+    expect(scene(grown).links.at(-1)).toMatchObject({
+      id: first.link,
+      from: { moduleId: "a", at: "bottom" },
+      to: { moduleId: first.id, at: "top" },
+    });
+    // A second branch from the same side lands beside the first.
+    const second = extend(grown, "root", { moduleId: "a", side: "bottom" }, { gap: 60, words: "新" }, { drawingId: "connector", data: {} });
+    expect(module(apply(grown, second.edit), second.id).bounds).toMatchObject({ x: 130, y: 1100 });
+    // To the right there is b already: the new one goes below it.
+    const beside = extend(work, "root", { moduleId: "a", side: "right" }, { gap: 100, words: "新" }, { drawingId: "connector", data: {} });
+    expect(module(apply(work, beside.edit), beside.id).bounds).toMatchObject({ x: 200, y: 1090 });
+    // Dropped at a point, it is centred there and met on the side facing where it came from.
+    const dropped = extend(work, "root", { moduleId: "a", side: "right" }, { at: { x: 50, y: 1320 }, gap: 60, words: "新" }, { drawingId: "connector", data: {} });
+    const there = apply(work, dropped.edit);
+    expect(module(there, dropped.id).bounds).toMatchObject({ x: 0, y: 1300 });
+    expect(scene(there).links.at(-1)!.to.at).toBe("top");
+  });
+
+  it("links without naming sides, copies a step each way, and adds a drawing to a box drawn for it", () => {
+    const work = row();
+    const linked = apply(work, connect(work, "root", { moduleId: "a" }, { moduleId: "b" }, { drawingId: "connector", data: {} }).edit);
+    expect(scene(linked).links.at(-1)).toMatchObject({ from: { moduleId: "a" }, to: { moduleId: "b" } });
+    expect(scene(linked).links.at(-1)!.from.at).toBeUndefined();
+    const copied = duplicate(work, "root", ["a"], { x: 300, y: -40 });
+    expect(module(apply(work, copied.edit), copied.ids[0]).bounds).toMatchObject({ x: 300, y: 960 });
+    const drawn = add(
+      work,
+      "root",
+      { x: 0, y: 0 },
+      { kind: "drawing", material: "node", size: { width: 200, height: 84 }, data: { title: "新" } },
+      undefined,
+      { x: 10, y: 20, width: 300, height: 120 },
+    );
+    expect(drawn.edit.modules![0]).toMatchObject({ bounds: [10, 20, 300, 120], data: { title: "新" } });
+    expect(drawn.edit.modules![0].label).toBeUndefined();
   });
 });

@@ -21,14 +21,13 @@ import {
   Copy,
   CornerDownRight,
   Group,
-  ImagePlus,
   Lock,
   SendToBack,
-  Shapes,
   MessageSquareQuote,
   Spline,
+  StretchHorizontal,
+  StretchVertical,
   Trash2,
-  Type,
   Ungroup,
   Unlock,
 } from "lucide-react";
@@ -42,14 +41,17 @@ import {
   reattach,
   removeParts,
   rename,
+  restyle,
   reverse,
   scaled,
   setDetail,
   setTarget,
+  sharedFields,
   sides,
   sideOf,
   useDrawing,
   type Alignment,
+  type SharedField,
 } from "../../../modules/editing/index.ts";
 import { union } from "../../../modules/contracts/geometry.ts";
 import type {
@@ -65,11 +67,15 @@ import type {
   Material,
   PictureMaterial,
 } from "@drawy/materials/schema";
-import { useLocale } from "@drawy/ui";
+import { Dialog, Switch, useLocale } from "@drawy/ui";
 import { DrawingPanel, ModuleRecord } from "./EditCode.tsx";
 import {
+  Amount,
+  Colors,
   DataEditor,
   Fields,
+  nameOf,
+  optionOf,
   Section,
   type PickPicture,
 } from "./EditControls.tsx";
@@ -197,22 +203,6 @@ export function EditPanel({
         />
       ) : (
         <>
-          <section className={cx("edit-start")}>
-            <div className={cx("edit-adds")}>
-              <button onClick={() => ops.add("text")}>
-                <Type size={18} />
-                <span>{t.edit.addText}</span>
-              </button>
-              <button onClick={() => ops.add("picture")}>
-                <ImagePlus size={18} />
-                <span>{t.edit.addPicture}</span>
-              </button>
-              <button onClick={() => ops.add("drawing")}>
-                <Shapes size={18} />
-                <span>{t.edit.addDrawing}</span>
-              </button>
-            </div>
-          </section>
           <Section id="scene" title={sceneId === work.rootSceneId ? t.edit.scene.rootHeading : t.edit.scene.heading}>
             <SceneSettings work={work} sceneId={sceneId} change={change} openScene={openScene} />
           </Section>
@@ -224,9 +214,6 @@ export function EditPanel({
           </Section>
           <Section id="details" title={t.edit.details.heading} open={false}>
             <Details work={work} change={change} />
-          </Section>
-          <Section id="keys" title={t.edit.shortcuts.heading} open={false}>
-            <Shortcuts />
           </Section>
         </>
       )}
@@ -375,6 +362,9 @@ function Selected({
         <Place sceneId={sceneId} modules={modules} canvas={canvas} change={change} />
         <Arrange count={modules.length} ops={ops} />
       </Section>
+      {!one && (
+        <Shared work={work} sceneId={sceneId} modules={modules} canvas={canvas} change={change} />
+      )}
       {one && (
         <Section id="content" title={t.edit.content}>
           <Fields
@@ -569,6 +559,23 @@ function Arrange({ count, ops }: { count: number; ops: EditOps }) {
         onClick={() => ops.distribute("y")}
       >
         <AlignVerticalDistributeCenter size={15} />
+      </button>
+      <i />
+      <button
+        aria-label={t.edit.match.width}
+        data-tip={t.edit.match.width}
+        disabled={count < 2}
+        onClick={() => ops.matchSize("width")}
+      >
+        <StretchHorizontal size={15} />
+      </button>
+      <button
+        aria-label={t.edit.match.height}
+        data-tip={t.edit.match.height}
+        disabled={count < 2}
+        onClick={() => ops.matchSize("height")}
+      >
+        <StretchVertical size={15} />
       </button>
     </div>
   );
@@ -840,27 +847,149 @@ function LinkPanel({
   );
 }
 
-/** The gestures and the keyboard while editing. */
-function Shortcuts() {
+/** How several selected modules look, as the values they can all be given at once: a
+ * choice, a colour, a number or a switch every one of them has. Each change goes to them
+ * all; a value they differ in shows as none chosen until one is. */
+function Shared({
+  work,
+  sceneId,
+  modules,
+  canvas,
+  change,
+}: {
+  work: Work;
+  sceneId: string;
+  modules: Instance[];
+  canvas?: Canvas;
+  change: Change;
+}) {
   const t = useT();
+  const fields = sharedFields(work, modules);
+  if (!fields.length) return null;
+  const ids = modules.map((m) => m.id);
+  const keep = (f: SharedField, value: unknown) =>
+    void change((w) => restyle(w, sceneId, ids, { [f.key]: value }));
+  const show = (f: SharedField, value: unknown) => {
+    for (const m of modules) canvas?.preview(m.id, { ...m.data, [f.key]: value });
+  };
   return (
-    <div className={cx("fields")}>
-      <ul className={cx("gestures")}>
-        {t.edit.shortcuts.gestures.map((g) => (
-          <li key={g}>{g}</li>
-        ))}
-      </ul>
-      <dl className={cx("shortcuts")}>
-        {t.edit.shortcuts.list.map(([key, what]) => (
-          <div key={key}>
-            <dt>
-              <kbd>{keys(key)}</kbd>
-            </dt>
-            <dd>{what}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
+    <Section id="shared" title={t.edit.shared}>
+      <div className={cx("fields")} key={ids.join()}>
+        {fields.map((f) => {
+          const head = <span className={cx("field-name")}>{nameOf(t, f)}</span>;
+          const v = f.mixed ? undefined : f.value;
+          switch (f.type) {
+            case "choice":
+              return f.options!.length > 5 ? (
+                <label key={f.key} className={cx("field")} data-inline>
+                  {head}
+                  <select
+                    className={cx("edit-select")}
+                    data-short
+                    value={String(v ?? "")}
+                    onChange={(e) => keep(f, e.target.value)}
+                  >
+                    {!f.options!.includes(String(v)) && <option value="">{t.edit.target.mixed}</option>}
+                    {f.options!.map((o) => (
+                      <option key={o} value={o}>
+                        {optionOf(t, o)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div key={f.key} className={cx("field")}>
+                  {head}
+                  <span className={cx("field-choice")} role="group">
+                    {f.options!.map((o) => (
+                      <button key={o} aria-pressed={v === o} onClick={() => v !== o && keep(f, o)}>
+                        {optionOf(t, o)}
+                      </button>
+                    ))}
+                  </span>
+                </div>
+              );
+            case "color":
+              return (
+                <div key={f.key} className={cx("field")}>
+                  {head}
+                  <Colors
+                    work={work}
+                    value={typeof v === "string" ? v : undefined}
+                    auto={f.optional}
+                    onChange={(c) => show(f, c)}
+                    onDone={(c) => keep(f, c)}
+                  />
+                </div>
+              );
+            case "number":
+              return (
+                <label
+                  key={f.key}
+                  className={cx("field")}
+                  data-inline={f.min === undefined || f.max === undefined || undefined}
+                >
+                  {head}
+                  <Amount
+                    field={f}
+                    value={typeof v === "number" ? v : undefined}
+                    onChange={(n) => show(f, n)}
+                    onDone={(n) => keep(f, n)}
+                  />
+                </label>
+              );
+            case "boolean":
+              return (
+                <div key={f.key} className={cx("field")} data-inline>
+                  {head}
+                  <Switch checked={!!v} onChange={(on) => keep(f, on)} />
+                </div>
+              );
+            default:
+              return null;
+          }
+        })}
+      </div>
+    </Section>
+  );
+}
+
+/** The gestures and the keyboard while editing, on a sheet of their own. */
+export function ShortcutSheet({ close }: { close: () => void }) {
+  const t = useT(),
+    s = t.edit.shortcuts;
+  const groups = ["tools", "selection", "arrange", "view"] as const;
+  return (
+    <Dialog title={s.heading} wide onClose={close}>
+      <div className={cx("keys-sheet")}>
+        <div className={cx("keys-columns")}>
+          {groups.map((g) => (
+            <section key={g}>
+              <h4>{s.groups[g]}</h4>
+              <dl>
+                {s.list[g].map(([key, what]) => (
+                  <div key={key}>
+                    <dt>{what}</dt>
+                    <dd>
+                      {keys(key)
+                        .split(" / ")
+                        .map((k, i) => (
+                          <kbd key={i}>{k}</kbd>
+                        ))}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ))}
+        </div>
+        <ul className={cx("gestures")}>
+          {s.gestures.map((g) => (
+            <li key={g}>{g}</li>
+          ))}
+        </ul>
+      </div>
+    </Dialog>
   );
 }
 

@@ -1,7 +1,7 @@
 import { detailElement } from "../../../modules/runtime/detail.ts";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { ZoomOut, ZoomIn, Scan, Lightbulb } from "lucide-react";
+import { Lightbulb } from "lucide-react";
 import { reducedMotion, Spinner, useLocale } from "@drawy/ui";
 import {
   Canvas,
@@ -21,6 +21,7 @@ import type {
 } from "../../../modules/contracts/index.ts";
 import { cx } from "./cx.ts";
 import { styleList } from "./Composer.tsx";
+import { GRID, Rulers, ViewControls, type BoardSettings } from "./EditView.tsx";
 import { useT } from "./i18n.tsx";
 import { currentOf, thinkingOf } from "./Studio.tsx";
 import { live } from "./session/work.ts";
@@ -47,10 +48,15 @@ export function SceneView({
   commit,
   point,
   connect,
+  extend,
+  duplicate,
   selectLink,
   reconnect,
   menu,
   place: placeAt,
+  board,
+  setBoard,
+  help,
   disabled,
   editing,
   quiet,
@@ -77,15 +83,24 @@ export function SceneView({
   select: (value: Selection[]) => void;
   commit: (moves: { id: string; bounds: Bounds }[]) => void;
   point: (pointed: Pointed) => void;
-  /** A link drawn while editing, from one module's side to another's. */
+  /** A link drawn while editing, from one module to another. */
   connect?: CanvasOptions["connect"];
+  /** A new module wanted beyond a side of one, or where a link from it was let go. */
+  extend?: CanvasOptions["extend"];
+  /** Copies of modules dragged off them. */
+  duplicate?: CanvasOptions["duplicate"];
+  /** How the drawing board is set up while editing, and the ways to change it and to
+   * see the shortcuts. */
+  board?: BoardSettings;
+  setBoard?: (change: Partial<BoardSettings>) => void;
+  help?: () => void;
   /** A link selected while editing, or none. */
   selectLink?: CanvasOptions["selectLink"];
   /** An end of a link dragged onto a side of a module. */
   reconnect?: CanvasOptions["reconnect"];
   /** A right click while editing, for the menu. */
   menu?: CanvasOptions["menu"];
-  /** A press with the placing tool, at a point in the scene. */
+  /** A press with a drawing tool at a point in the scene, or the box dragged out with it. */
   place?: CanvasOptions["place"];
   /** Receives the canvas the scene is drawn on, for the editor to work with. */
   view: (canvas: Canvas | undefined) => void;
@@ -108,9 +123,12 @@ export function SceneView({
     // work goes from the spinner straight to the picture, without a blank page between.
     [shown, setShown] = useState(false),
     [error, setError] = useState("");
-  const callbacks = useRef({ open, select, commit, point, connect, selectLink, reconnect, menu, place: placeAt, view, quiet, hold });
+  const callbacks = useRef({ open, select, commit, point, connect, extend, duplicate, selectLink, reconnect, menu, place: placeAt, view, quiet, hold });
   const picked = useRef<{ key: string; ids: string[] } | null>(null);
-  callbacks.current = { open, select, commit, point, connect, selectLink, reconnect, menu, place: placeAt, view, quiet, hold };
+  callbacks.current = { open, select, commit, point, connect, extend, duplicate, selectLink, reconnect, menu, place: placeAt, view, quiet, hold };
+  // While editing, the automatic view also keeps clear of the tools and rulers at its edges.
+  const boarded = useRef(false);
+  boarded.current = editing && !disabled;
   useEffect(() => {
     setError("");
     setShown(false);
@@ -130,8 +148,10 @@ export function SceneView({
             .current!.parentElement?.querySelector("[data-dock]")
             ?.getBoundingClientRect();
         return {
-          top: 56,
+          top: boarded.current ? 76 : 56,
           bottom: Math.max(96, dock ? stage.bottom - dock.top + 12 : 0),
+          left: boarded.current ? 84 : 0,
+          right: boarded.current ? 44 : 0,
         };
       },
       open: (t) => callbacks.current.open(t),
@@ -142,11 +162,13 @@ export function SceneView({
       commit: (m) => callbacks.current.commit(m),
       point: (p) => callbacks.current.point(p),
       connect: (from, to) => callbacks.current.connect?.(from, to),
+      extend: (from, at) => callbacks.current.extend?.(from, at),
+      duplicate: (ids, by) => callbacks.current.duplicate?.(ids, by),
       selectLink: (id) => callbacks.current.selectLink?.(id),
       reconnect: (id, end, to) => callbacks.current.reconnect?.(id, end, to),
       menu: (at) => callbacks.current.menu?.(at),
       ...(hold ? { hold: (at: { x: number; y: number }) => callbacks.current.hold?.(at) } : {}),
-      place: (at) => callbacks.current.place?.(at),
+      place: (at, box) => callbacks.current.place?.(at, box),
       cameraChanged: (c) => cameras.current.set(key, c),
       error: setError,
     });
@@ -189,10 +211,18 @@ export function SceneView({
     );
   }, [canvas, work, version]);
   useEffect(() => canvas?.setMovable(!disabled), [canvas, disabled]);
+  useEffect(() => {
+    canvas?.setEditing(editing && !disabled);
+    canvas?.refit();
+  }, [canvas, editing, disabled]);
   useEffect(
-    () => canvas?.setEditing(editing && !disabled),
-    [canvas, editing, disabled],
+    () => canvas?.setSnap({ guides: board?.guides ?? true, grid: board?.grid ? GRID : 0 }),
+    [canvas, board?.guides, board?.grid],
   );
+  const fitAll = () => {
+    cameras.current.delete(work.id + ":" + sceneId);
+    canvas?.fit(true, 520, "whole");
+  };
   const steps = run?.steps || [];
   const write = steps.findLast(
     (s): s is Extract<ToolStep, { name: "write_work" }> =>
@@ -383,32 +413,16 @@ export function SceneView({
           )}
         </div>
       )}
-      {controls && <div className={cx("camera")}>
-        <button
-          aria-label={t.work.zoomOut}
-          data-tip={t.work.zoomOut}
-          onClick={() => canvas?.zoom(1 / 1.25)}
-        >
-          <ZoomOut size={15} />
-        </button>
-        <button
-          aria-label={t.work.zoomIn}
-          data-tip={t.work.zoomIn}
-          onClick={() => canvas?.zoom(1.25)}
-        >
-          <ZoomIn size={15} />
-        </button>
-        <button
-          aria-label={t.work.fit}
-          data-tip={t.work.fit}
-          onClick={() => {
-            cameras.current.delete(work.id + ":" + sceneId);
-            canvas?.fit();
-          }}
-        >
-          <Scan size={15} />
-        </button>
-      </div>}
+      {canvas && editing && !disabled && board?.rulers && <Rulers canvas={canvas} />}
+      {controls && (
+        <ViewControls
+          canvas={canvas}
+          fit={fitAll}
+          board={editing && !disabled ? board : undefined}
+          setBoard={setBoard}
+          help={help}
+        />
+      )}
       {error && !run && (
         <div role="alert" className={cx("render-error")}>
           {error}

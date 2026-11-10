@@ -160,6 +160,8 @@ export function Tooltips() {
     x: number;
     y: number;
     above: boolean;
+    /** Beside its control rather than under it: for a column of controls. */
+    beside: boolean;
   }>();
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined,
@@ -177,14 +179,20 @@ export function Tooltips() {
       const text = el.dataset.tip;
       if (!text || !el.isConnected) return;
       const r = el.getBoundingClientRect(),
-        above = r.bottom + 44 > innerHeight;
+        above = r.bottom + 44 > innerHeight,
+        beside = el.dataset.tipSide === "right" && r.right + 200 < innerWidth;
       shown = true;
-      setTip({
-        text,
-        x: Math.min(innerWidth - 72, Math.max(72, r.left + r.width / 2)),
-        y: above ? r.top - 8 : r.bottom + 8,
-        above,
-      });
+      setTip(
+        beside
+          ? { text, x: r.right + 9, y: r.top + r.height / 2, above: false, beside }
+          : {
+              text,
+              x: Math.min(innerWidth - 72, Math.max(72, r.left + r.width / 2)),
+              y: above ? r.top - 8 : r.bottom + 8,
+              above,
+              beside,
+            },
+      );
     };
     const over = (e: PointerEvent) => {
       // A tip is for a pointer that can rest on a control. A finger only presses, and on
@@ -223,6 +231,7 @@ export function Tooltips() {
           className={cx("tooltip")}
           role="tooltip"
           data-above={tip.above || undefined}
+          data-beside={tip.beside || undefined}
           style={{ left: tip.x, top: tip.y }}
         >
           {tip.text}

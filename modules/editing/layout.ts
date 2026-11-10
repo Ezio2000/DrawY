@@ -67,6 +67,32 @@ export function distribute(
   );
 }
 
+/** Gives modules the width, the height or both of the first one named, each keeping its
+ * top left corner where it is. */
+export function matchSize(
+  work: Work,
+  sceneId: string,
+  ids: string[],
+  what: "width" | "height" | "both",
+): WorkEdit | null {
+  const scene = sceneOf(work, sceneId);
+  const like = scene.modules.find((m) => m.id === ids[0]);
+  const rest = scene.modules.filter((m) => ids.includes(m.id) && m.id !== ids[0]);
+  if (!like || !rest.length) return null;
+  return moveParts(
+    work,
+    sceneId,
+    rest.map((m) => ({
+      id: m.id,
+      bounds: {
+        ...m.bounds,
+        ...(what !== "height" ? { width: like.bounds.width } : {}),
+        ...(what !== "width" ? { height: like.bounds.height } : {}),
+      },
+    })),
+  );
+}
+
 /** A handle on a box: a corner or the middle of an edge, by compass point. */
 export type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 export const handles: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
@@ -139,17 +165,29 @@ export interface Guide {
   from: number;
   to: number;
 }
+/** A gap a dragged box now keeps with its neighbours, equal to another beside it: it runs
+ * along `axis` from `from` to `to`, drawn at `at` on the other axis. */
+export interface Gap {
+  axis: "x" | "y";
+  from: number;
+  to: number;
+  at: number;
+}
 /** How far to shift a dragged box so its edges or centre line up with those of the boxes
  * around it, within `threshold`, and the guides that show what it lined up with. `xs` and
  * `ys` say which of its lines may snap, as fractions of its size: 0, 0.5 and 1 when it
- * moves, only the dragged edge when it is resized. */
+ * moves, only the dragged edge when it is resized. With `spaced`, a moved box also settles
+ * where its gaps to the neighbours in its row or column are equal: midway between two of
+ * them, or as far from the nearest as that one is from the next. The nearer of the two kinds
+ * of snap wins on each axis, lining up first when they are as near. */
 export function snap(
   box: Bounds,
   others: Bounds[],
   threshold: number,
   xs: number[] = [0, 0.5, 1],
   ys: number[] = [0, 0.5, 1],
-): { dx: number; dy: number; guides: Guide[] } {
+  spaced = false,
+): { dx: number; dy: number; guides: Guide[]; gaps: Gap[] } {
   const best = (axis: "x" | "y", fractions: number[]) => {
     const size = axis === "x" ? "width" : "height";
     let found: { d: number; at: number } | undefined;
@@ -165,13 +203,20 @@ export function snap(
     }
     return found;
   };
-  const x = best("x", xs),
+  let x = best("x", xs),
     y = best("y", ys);
-  const moved = {
-    ...box,
-    x: box.x + (x?.d ?? 0),
-    y: box.y + (y?.d ?? 0),
+  const even = (axis: "x" | "y", lined?: { d: number }) => {
+    if (!spaced) return undefined;
+    const e = evenly(box, others, axis, threshold);
+    return e && (!lined || Math.abs(e.d) < Math.abs(lined.d)) ? e : undefined;
   };
+  const ex = even("x", x),
+    ey = even("y", y);
+  if (ex) x = undefined;
+  if (ey) y = undefined;
+  const dx = ex?.d ?? x?.d ?? 0,
+    dy = ey?.d ?? y?.d ?? 0;
+  const moved = { ...box, x: box.x + dx, y: box.y + dy };
   const guides: Guide[] = [];
   // Each guide runs across every box that touches the line, the dragged one included.
   const lineOf = (axis: "x" | "y", at: number) => {
@@ -190,5 +235,81 @@ export function snap(
   };
   if (x) lineOf("x", x.at);
   if (y) lineOf("y", y.at);
-  return { dx: x?.d ?? 0, dy: y?.d ?? 0, guides };
+  // The gaps are drawn through the middle of what the moved box shares with its row.
+  const gaps = [ex, ey].flatMap((e, i) => {
+    if (!e) return [];
+    const axis = i ? "y" : "x",
+      cross = i ? "x" : "y",
+      size = i ? "height" : "width",
+      crossSize = i ? "width" : "height";
+    const lo = Math.max(moved[cross], ...e.beside.map((o) => o[cross])),
+      hi = Math.min(
+        moved[cross] + moved[crossSize],
+        ...e.beside.map((o) => o[cross] + o[crossSize]),
+      );
+    const at = lo <= hi ? (lo + hi) / 2 : moved[cross] + moved[crossSize] / 2;
+    return e
+      .spans(moved[axis], moved[axis] + moved[size])
+      .map(([from, to]): Gap => ({ axis, from, to, at }));
+  });
+  return { dx, dy, guides, gaps };
+}
+/** Where a moved box keeps equal gaps along an axis with the boxes it shares a row (or a
+ * column) with: how far to shift it, the gaps that are then equal, given where the box
+ * then starts and ends, and the neighbours they lie between. */
+function evenly(box: Bounds, others: Bounds[], axis: "x" | "y", threshold: number) {
+  const size = axis === "x" ? "width" : "height",
+    cross = axis === "x" ? "y" : "x",
+    crossSize = axis === "x" ? "height" : "width";
+  const start = (o: Bounds) => o[axis],
+    end = (o: Bounds) => o[axis] + o[size];
+  const row = others.filter(
+    (o) => o[cross] < box[cross] + box[crossSize] && box[cross] < o[cross] + o[crossSize],
+  );
+  const mid = start(box) + box[size] / 2;
+  // Nearest first on each side, and the next one clear of it.
+  const before = row
+    .filter((o) => start(o) + o[size] / 2 < mid)
+    .sort((a, b) => end(b) - end(a));
+  const after = row
+    .filter((o) => start(o) + o[size] / 2 >= mid)
+    .sort((a, b) => start(a) - start(b));
+  const l1 = before[0],
+    l2 = l1 && before.find((o) => end(o) <= start(l1)),
+    r1 = after[0],
+    r2 = r1 && after.find((o) => start(o) >= end(r1));
+  type Spans = (from: number, to: number) => [number, number][];
+  const found: { d: number; spans: Spans; beside: Bounds[] }[] = [];
+  const offer = (target: number, spans: Spans, beside: Bounds[]) => {
+    const d = target - start(box);
+    if (Math.abs(d) <= threshold) found.push({ d, spans, beside });
+  };
+  if (l1 && r1 && start(r1) - end(l1) >= box[size])
+    offer(
+      (end(l1) + start(r1) - box[size]) / 2,
+      (from, to) => [
+        [end(l1), from],
+        [to, start(r1)],
+      ],
+      [l1, r1],
+    );
+  if (l1 && l2 && start(l1) > end(l2))
+    offer(
+      end(l1) + (start(l1) - end(l2)),
+      (from) => [
+        [end(l2), start(l1)],
+        [end(l1), from],
+      ],
+      [l1, l2],
+    );
+  if (r1 && r2 && start(r2) > end(r1))
+    offer(
+      start(r1) - (start(r2) - end(r1)) - box[size],
+      (_, to) => [
+        [to, start(r1)],
+        [end(r1), start(r2)],
+      ],
+      [r1, r2],
+    );
+  return found.sort((a, b) => Math.abs(a.d) - Math.abs(b.d))[0];
 }

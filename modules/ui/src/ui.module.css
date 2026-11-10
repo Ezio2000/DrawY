@@ -227,6 +227,10 @@
   translate: -50% -100%;
 }
 
+.tooltip[data-beside] {
+  translate: 0 -50%;
+}
+
 /* ---------- Secondary action menu ---------- */
 
 .menu {
