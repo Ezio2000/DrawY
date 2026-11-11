@@ -71,7 +71,10 @@ export async function writeWork(
   if (written.each?.length || written.arrange?.length) {
     const held = placeheld(fetched, written);
     const draft = layOn(fetched, held.edit, home).work;
-    if (written.arrange?.length) await take(draft, written.materials || [], store.viewer, true);
+    // A drawing that `each` changes parts to is named by no record yet.
+    const changedTo = (written.each ?? []).flatMap((e) => (e.use && !draft.drawings[e.use] ? [e.use] : []));
+    if (written.arrange?.length)
+      await take(draft, [...(written.materials || []), ...changedTo], store.viewer, true);
     ({ edit, problems: arranging } = settled(draft, written, held.unplaced, home));
   }
   const { work, absent, problems: laid } = layOn(fetched, edit, home);

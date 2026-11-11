@@ -149,7 +149,9 @@ function moduleChange(work: Work, edit: ModuleEdit, current: string, problems: P
 /** The module an end is on, as an edit writes it. */
 const endOf = (end: string | LinkEnd | undefined) => (typeof end === "string" ? end : end?.moduleId);
 /** What an edit calls a link it gives no id: its two ends. */
-export const linkKey = (l: Pick<LinkEdit, "from" | "to">) => `${endOf(l.from)}-${endOf(l.to)}`;
+// Not the id it would be given: module ids hold hyphens, so "api-gateway" to "db" and "api"
+// to "gateway-db" would be taken for one link.
+export const linkKey = (l: Pick<LinkEdit, "from" | "to">) => JSON.stringify([endOf(l.from), endOf(l.to)]);
 /** Every id a part of the work answers to. */
 const partIds = (work: Work) =>
   new Set(Object.values(work.scenes).flatMap((s) => [...s.modules, ...s.links].map((p) => p.id)));

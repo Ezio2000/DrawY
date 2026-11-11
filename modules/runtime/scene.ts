@@ -11,7 +11,19 @@ import type {
 } from "../contracts/index.ts";
 import { drawingOf, labelOf } from "../contracts/index.ts";
 import { union } from "../contracts/geometry.ts";
-import { groundOf, routeLinks, routing, type Routed } from "../contracts/routing.ts";
+import {
+  connect,
+  groundOf,
+  inTheWay,
+  passes,
+  routeLinks,
+  routing,
+  sampled,
+  type Connection,
+  type Routed,
+  type RouteMemo,
+  type RouteOptions,
+} from "../contracts/routing.ts";
 export { backdropOf } from "../contracts/routing.ts";
 
 export interface SceneOptions {
@@ -32,6 +44,13 @@ export interface DrawingAPI {
    * in local units (an elbow's turns between them, clear of the other modules), and where
    * its words have room. */
   route?: { kind: Routed["kind"]; points: Point[]; label?: Point };
+  /** Lines between parts of the drawing itself, kept clear of its other parts: `boxes` are
+   * the parts by name, in the drawing's own units; each line comes back as path data with
+   * where it ends, the way it heads there and where its words go. */
+  connect: (
+    boxes: Record<string, Bounds>,
+    lines: { from: string; to: string; label?: string; size?: number }[],
+  ) => (Connection | undefined)[];
   svg: (source: string) => SVGElement;
   html: (source: string) => HTMLElement;
   mermaid: (source: string) => Promise<Element>;
@@ -74,15 +93,31 @@ export interface StructureReport {
   crossings?: { link: string; through: string[] }[];
   /** Blocks, tables and labels lying over one another, and by how much. */
   overlaps?: { a: string; b: string; by: [number, number] }[];
-  /** Words on a link that lie over a module or another link's words, or that another link
-   * strikes through. */
+  /** Words on a link that lie over a module (or under it, where the module covers them) or
+   * over another link's words, or that another link's line is drawn through. */
   labels?: { link: string; text: string; over?: string[]; crossedBy?: string[] }[];
+  /** Lines drawn through words on the ground they run over: a frame's name, a lane's header. */
+  struck?: { link: string; moduleId: string; text: string }[];
+  /** Lines a drawing runs between its own parts that pass through other parts of it. */
+  relations?: { moduleId: string; from: string; to: string; through: string[] }[];
+  /** Words within one module that lie over one another. */
+  words?: { moduleId: string; a: string; b: string }[];
   /** Words that run out of the block or table that holds them, and the size that would
    * hold them. */
   overflow?: { moduleId: string; text: string; needs: [number, number] }[];
 }
 type Listener = (value: unknown) => unknown;
-type View = { host: HTMLElement; cleanup: (() => void)[]; revision: number };
+type View = {
+  host: HTMLElement;
+  cleanup: (() => void)[];
+  revision: number;
+  /** How many times what it shows has been replaced. */
+  drawn: number;
+  /** What the lines it ran between its own parts pass through, as last drawn. */
+  crossed?: { from: string; to: string; through: string[] }[];
+  /** What it marks to be kept clear of lines, in its own units, as last measured. */
+  clear?: { revision: number; zones: (Bounds & { text: string })[] };
+};
 const execute = (source: string, api: object): Promise<unknown> =>
   new Function("api", `return (async()=>{${source}\n})()`)(api);
 function svg(source: string) {
@@ -125,6 +160,9 @@ export class SceneRenderer {
   /** Where each link runs, as last worked out, and as last drawn. */
   private routes = new Map<string, Routed>();
   private routed = new Map<string, string>();
+  private routing = new Map<string, RouteOptions>();
+  /** What routing worked out before, reused for the links nothing has changed near. */
+  private memo: RouteMemo = new Map();
   private ground = new Set<string>();
   private listeners = new Map<string, Set<Listener>>();
   private jobs = new Set<Promise<unknown>>();
@@ -149,7 +187,7 @@ export class SceneRenderer {
     const boxes = [...this.instances.values()].map((m) => m.bounds);
     if (!boxes.length) return union(boxes);
     const outside: Bounds[] = [];
-    for (const r of this.routes.values()) {
+    for (const [id, r] of this.routes) {
       if (r.kind !== "elbow") continue;
       const xs = r.points.map((p) => p.x),
         ys = r.points.map((p) => p.y);
@@ -159,6 +197,15 @@ export class SceneRenderer {
         width: Math.max(...xs) - Math.min(...xs) + 12,
         height: Math.max(...ys) - Math.min(...ys) + 12,
       });
+      // Its words too, where they were found room beside the line.
+      const words = this.routing.get(id)?.label;
+      if (r.label && words)
+        outside.push({
+          x: r.label.x - words.width / 2,
+          y: r.label.y - words.height / 2,
+          width: words.width,
+          height: words.height,
+        });
     }
     return union([...boxes, ...outside]);
   }
@@ -201,6 +248,8 @@ export class SceneRenderer {
         for (const fn of this.interactionCleanup.splice(0)) fn();
     }
     await this.settled();
+    // With the fonts in, what the modules keep clear is measured as it will stay.
+    await this.reroute();
   }
   private use<K extends MaterialUse["kind"]>(id: string, kind: K) {
     const m = this.work.materials[id];
@@ -397,7 +446,7 @@ export class SceneRenderer {
             "position:absolute;pointer-events:" +
             (kind === "module" ? "auto" : "none");
           host.attachShadow({ mode: "open" });
-          view = { host, cleanup: [], revision: 0 };
+          view = { host, cleanup: [], revision: 0, drawn: 0 };
           this.views.set(key, view);
           this.element.append(host);
         }
@@ -420,6 +469,7 @@ export class SceneRenderer {
           push: (fn: () => void) => (stale() ? fn() : cleanup.push(fn)),
         };
         const effects = new Set<string>();
+        const crossed: NonNullable<View["crossed"]> = [];
         const apiFor = (
           data: Record<string, unknown>,
           size: { width: number; height: number },
@@ -440,6 +490,18 @@ export class SceneRenderer {
               m.source,
               apiFor({ ...m.defaults, ...data }, at),
             ) as Promise<Element>;
+          },
+          connect: (boxes, lines) => {
+            const found = connect(
+              Object.entries(boxes).map(([id, bounds]) => ({ id, bounds })),
+              lines,
+              // The parts of a drawing stand closer than the modules of a scene.
+              { margin: 8, stub: 12, lane: 8 },
+            );
+            found.forEach((c, i) => {
+              if (c?.crosses.length) crossed.push({ from: lines[i].from, to: lines[i].to, through: c.crosses });
+            });
+            return found;
           },
           effect: (id) => {
             this.use(id, "effect");
@@ -494,6 +556,8 @@ export class SceneRenderer {
             ...(defs.length ? [shared] : []),
             result,
           );
+          view.drawn++;
+          view.crossed = crossed;
           host.removeAttribute("data-error");
           if (kind === "module") {
             const m = this.instances.get(id)!;
@@ -514,56 +578,95 @@ export class SceneRenderer {
   private drawModule(m: Instance) {
     return this.draw(m.id, m.drawingId, m.bounds, m.data, "module");
   }
-  /** Works out where every link runs with the modules where they are now. */
+  /** Works out where every link runs with the modules where they are now. Nothing but the
+   * scene as it stands goes into it (the modules and links in the scene's own order, and
+   * what the drawn modules keep clear), so a scene changed in place is routed exactly as
+   * the same scene drawn afresh. */
   private route() {
     const modules = this.currentModules();
-    const links = [...this.links.values()];
-    this.routes = routeLinks(
-      links.map((l) => ({
-        id: l.id,
-        from: l.from,
-        to: l.to,
-        options: routing(
-          { ...drawingOf(this.work, l.drawingId)?.defaults, ...l.data },
-          this.work.style,
-        ),
-      })),
-      modules.map((m) => ({
-        id: m.id,
-        bounds: m.bounds,
-        // A link meets a pointed shape at the middle of a side, where its outline is.
-        pointed: ["diamond", "circle", "initial", "final"].includes(
-          String({ ...drawingOf(this.work, m.drawingId)?.defaults, ...m.data }.shape),
-        ),
-      })),
-      this.clear(),
+    const links = this.currentLinks();
+    const zones = this.clear();
+    const pointed = this.pointed(modules);
+    this.routing = new Map(
+      links.map((l) => [
+        l.id,
+        routing({ ...drawingOf(this.work, l.drawingId)?.defaults, ...l.data }, this.work.style),
+      ]),
     );
+    this.routes = routeLinks(
+      links.map((l) => ({ id: l.id, from: l.from, to: l.to, options: this.routing.get(l.id)! })),
+      modules.map((m) => ({ id: m.id, bounds: m.bounds, pointed: pointed.has(m.id) })),
+      zones,
+      {},
+      this.memo,
+    );
+    this.routedRound = JSON.stringify([zones, [...pointed]]);
     this.ground = groundOf(modules, links);
   }
+  /** What the links were last routed round, besides the modules' places. */
+  private routedRound = "";
+  /** Routes the links again if what the drawn modules keep clear, or which of them come to
+   * a point, is no longer what the links were routed round: a module drawn again with other
+   * data or at another size may have changed either. */
+  private async reroute() {
+    if (this.disposed || !this.links.size) return;
+    const now = JSON.stringify([this.clear(), [...this.pointed(this.currentModules())]]);
+    if (now !== this.routedRound) await this.drawLinks(new Set());
+  }
+  /** The modules a link meets only at the middle of a side, where their outline is. */
+  private pointed(modules: Instance[]) {
+    return new Set(
+      modules
+        .filter((m) =>
+          ["diamond", "circle", "initial", "final"].includes(
+            String({ ...drawingOf(this.work, m.drawingId)?.defaults, ...m.data }.shape),
+          ),
+        )
+        .map((m) => m.id),
+    );
+  }
   /** What the drawn modules mark to be kept clear of lines (a frame's name, the headers of
-   * lanes), in scene units. Nothing while the scene is not laid out on a page. */
+   * lanes), in scene units, with the words there. Nothing while the scene is not laid out
+   * on a page. Each module is measured once for what it shows. */
   private clear() {
-    const zones: { id: string; bounds: Bounds }[] = [];
-    for (const [id, m] of this.instances) {
-      const host = this.views.get("module:" + id)?.host;
-      const marked = host?.shadowRoot?.querySelectorAll("[data-clear]");
-      if (!marked?.length) continue;
-      const hr = host!.getBoundingClientRect();
-      if (!hr.width) continue;
-      const k = hr.width / m.bounds.width;
-      for (const el of marked) {
-        const r = el.getBoundingClientRect();
-        if (r.width && r.height)
-          zones.push({
-            id,
-            bounds: {
-              x: m.bounds.x + (r.left - hr.left) / k,
-              y: m.bounds.y + (r.top - hr.top) / k,
-              width: r.width / k,
-              height: r.height / k,
-            },
-          });
+    const zones: { id: string; bounds: Bounds; text: string }[] = [];
+    for (const m of this.currentModules()) {
+      const view = this.views.get("module:" + m.id);
+      if (!view) continue;
+      if (view.clear?.revision !== view.drawn) {
+        const marked = view.host.shadowRoot?.querySelectorAll("[data-clear]");
+        const hr = marked?.length ? view.host.getBoundingClientRect() : undefined;
+        const width = parseFloat(view.host.style.width);
+        const local: NonNullable<View["clear"]>["zones"] = [];
+        if (hr && !hr.width) continue;
+        if (hr && width) {
+          const k = hr.width / width;
+          for (const el of marked!) {
+            const r = el.getBoundingClientRect();
+            if (r.width && r.height)
+              local.push({
+                x: Math.round(((r.left - hr.left) / k) * 100) / 100,
+                y: Math.round(((r.top - hr.top) / k) * 100) / 100,
+                width: Math.round((r.width / k) * 100) / 100,
+                height: Math.round((r.height / k) * 100) / 100,
+                text: (el.textContent ?? "").trim().slice(0, 24),
+              });
+          }
+        }
+        // Words are measured for good once the fonts they are set in have arrived.
+        if (document.fonts.status !== "loaded") {
+          for (const z of local)
+            zones.push({ id: m.id, bounds: { ...z, x: m.bounds.x + z.x, y: m.bounds.y + z.y }, text: z.text });
+          continue;
+        }
+        view.clear = { revision: view.drawn, zones: local };
       }
+      for (const z of view.clear.zones)
+        zones.push({
+          id: m.id,
+          bounds: { x: m.bounds.x + z.x, y: m.bounds.y + z.y, width: z.width, height: z.height },
+          text: z.text,
+        });
     }
     return zones;
   }
@@ -589,6 +692,33 @@ export class SceneRenderer {
   routeOf(id: string) {
     return this.routes.get(id);
   }
+  /** The lines a link is drawn with, in scene units, read from what its drawing drew. */
+  private traced(host: HTMLElement): Point[][] {
+    const hr = host.getBoundingClientRect(),
+      width = parseFloat(host.style.width);
+    if (!hr.width || !width || !host.shadowRoot) return [];
+    const k = hr.width / width,
+      left = parseFloat(host.style.left),
+      top = parseFloat(host.style.top);
+    const lines: Point[][] = [];
+    for (const el of host.shadowRoot.querySelectorAll("path,line,polyline,polygon,rect,circle,ellipse")) {
+      if (!(el instanceof SVGGeometryElement) || el.closest("defs,clipPath,mask,pattern,marker,symbol")) continue;
+      try {
+        const length = el.getTotalLength(),
+          ctm = el.getScreenCTM();
+        if (!ctm || !(length > 0)) continue;
+        const n = Math.min(96, Math.max(2, Math.ceil(length / 6)));
+        lines.push(
+          Array.from({ length: n + 1 }, (_, i) => {
+            const p = el.getPointAtLength((length * i) / n);
+            const q = new DOMPoint(p.x, p.y).matrixTransform(ctm);
+            return { x: left + (q.x - hr.left) / k, y: top + (q.y - hr.top) / k };
+          }),
+        );
+      } catch {}
+    }
+    return lines;
+  }
   /** What is wrong with the scene's structure as it is drawn now. */
   structure(): StructureReport {
     const report: StructureReport = {};
@@ -597,24 +727,7 @@ export class SceneRenderer {
       if (list.length < 8) list.push(entry);
     };
     const modules = this.currentModules();
-    for (const [id, r] of this.routes) if (r.crosses.length) add("crossings", { link: id, through: r.crosses });
-    // Blocks, tables and labels are the parts that should stand clear of one another;
-    // a picture with a label on it or a shadow under it is composed that way.
-    const solid = modules.filter((m) => {
-      const fit = drawingOf(this.work, m.drawingId)?.fit;
-      return (fit === "words" || fit === "rows") && !this.ground.has(m.id);
-    });
-    const within = (a: Bounds, b: Bounds) =>
-      a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
-    for (let i = 0; i < solid.length; i++)
-      for (let j = i + 1; j < solid.length; j++) {
-        const a = solid[i].bounds,
-          b = solid[j].bounds;
-        const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x),
-          h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
-        if (w > 2 && h > 2 && !within(a, b) && !within(b, a))
-          add("overlaps", { a: solid[i].id, b: solid[j].id, by: [Math.round(w), Math.round(h)] });
-      }
+    const links = this.currentLinks();
     /** A box on screen in scene units, by the host that holds it. */
     const sceneBox = (host: HTMLElement, r: DOMRect): Bounds | undefined => {
       const hr = host.getBoundingClientRect();
@@ -631,44 +744,98 @@ export class SceneRenderer {
     const meet = (a: Bounds, b: Bounds, by = 0) =>
       Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > by &&
       Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > by;
+    const within = (a: Bounds, b: Bounds) =>
+      a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
+    // Every link's line as it is drawn: a routed one runs where it was routed, any other
+    // wherever its drawing took it, which is read from what was drawn.
+    const drawn = new Map<string, { lines: Point[][]; box: Bounds }>();
     const words: { link: string; text: string; box: Bounds }[] = [];
-    for (const id of this.links.keys()) {
-      const host = this.views.get("link:" + id)?.host;
+    for (const l of links) {
+      const r = this.routes.get(l.id);
+      if (!r) continue;
+      const host = this.views.get("link:" + l.id)?.host;
+      const read = r.kind !== "elbow" && host ? this.traced(host) : [];
+      const lines = read.length ? read : [sampled(r, this.routing.get(l.id)?.bend)];
+      const xs = lines.flat().map((p) => p.x),
+        ys = lines.flat().map((p) => p.y);
+      drawn.set(l.id, {
+        lines,
+        box: {
+          x: Math.min(...xs),
+          y: Math.min(...ys),
+          width: Math.max(...xs) - Math.min(...xs),
+          height: Math.max(...ys) - Math.min(...ys),
+        },
+      });
       for (const text of host?.shadowRoot?.querySelectorAll("text") ?? []) {
         const box = text.textContent?.trim() && sceneBox(host!, text.getBoundingClientRect());
-        if (box) words.push({ link: id, text: text.textContent!.trim().slice(0, 24), box });
+        if (box) words.push({ link: l.id, text: text.textContent!.trim().slice(0, 24), box });
       }
     }
+    const strikes = (id: string, box: Bounds, inset: number) => {
+      const d = drawn.get(id);
+      return !!d && meet(d.box, box, inset - 0.01) && d.lines.some((line) => passes(line, box, inset));
+    };
+    const way = new Map(links.map((l) => [l.id, inTheWay(modules, l.from.moduleId, l.to.moduleId, this.ground)]));
+    for (const l of links) {
+      const r = this.routes.get(l.id);
+      if (!r || l.from.moduleId === l.to.moduleId) continue;
+      const through =
+        r.kind === "elbow"
+          ? r.crosses
+          : way.get(l.id)!.filter((m) => strikes(l.id, m.bounds, 2)).map((m) => m.id);
+      if (through.length) add("crossings", { link: l.id, through });
+    }
+    // Blocks, tables and labels are the parts that should stand clear of one another;
+    // a picture with a label on it or a shadow under it is composed that way.
+    const solid = modules.filter((m) => {
+      const fit = drawingOf(this.work, m.drawingId)?.fit;
+      return (fit === "words" || fit === "rows") && !this.ground.has(m.id);
+    });
+    for (let i = 0; i < solid.length; i++)
+      for (let j = i + 1; j < solid.length; j++) {
+        const a = solid[i].bounds,
+          b = solid[j].bounds;
+        const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x),
+          h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+        if (w > 2 && h > 2 && !within(a, b) && !within(b, a))
+          add("overlaps", { a: solid[i].id, b: solid[j].id, by: [Math.round(w), Math.round(h)] });
+      }
     for (const w of words) {
-      const over = modules
-        .filter((m) => !this.ground.has(m.id) && meet(w.box, m.bounds, 3) && !within(w.box, m.bounds))
+      const l = this.links.get(w.link)!;
+      // Its words belong clear of its own two ends and of everything that stands in its
+      // way. Links lie under the modules, so words within a module's box are covered by it:
+      // those count as much as words half over its edge.
+      const over = [
+        ...modules.filter((m) => m.id === l.from.moduleId || m.id === l.to.moduleId),
+        ...way.get(w.link)!,
+      ]
+        .filter((m) => meet(w.box, m.bounds, 3))
         .map((m) => m.id);
       const others = words.filter((o) => o !== w && o.link !== w.link && meet(w.box, o.box, 2)).map((o) => o.link);
-      const inner = { x: w.box.x + 3, y: w.box.y + 3, width: w.box.width - 6, height: w.box.height - 6 };
-      const crossedBy = [...this.routes]
-        .filter(([id, r]) => {
-          // A line without words lies under these and passes behind their halo.
-          if (id === w.link || r.kind === "curve" || r.kind === "smooth" || !this.worded(id)) return false;
-          return r.points.some((p, i) => {
-            if (!i) return false;
-            const q = r.points[i - 1];
-            return meet(inner, {
-              x: Math.min(p.x, q.x),
-              y: Math.min(p.y, q.y),
-              width: Math.abs(p.x - q.x) || 0.01,
-              height: Math.abs(p.y - q.y) || 0.01,
-            });
-          });
-        })
-        .map(([id]) => id);
+      // Any other line through them, straight, routed or curved: their halo keeps them
+      // legible over it, but they read as that line's words too.
+      const crossedBy = links.filter((o) => o.id !== w.link && strikes(o.id, w.box, 3)).map((o) => o.id);
       if (over.length || others.length || crossedBy.length)
         add("labels", {
           link: w.link,
           text: w.text,
-          ...(over.length || others.length ? { over: [...over, ...others] } : {}),
+          ...(over.length || others.length ? { over: [...new Set([...over, ...others])] } : {}),
           ...(crossedBy.length ? { crossedBy } : {}),
         });
     }
+    // Words on the ground lie under the lines: a line across them is drawn through them.
+    const bounds = new Map(modules.map((m) => [m.id, m.bounds]));
+    for (const zone of this.clear())
+      for (const l of links) {
+        const A = bounds.get(l.from.moduleId),
+          B = bounds.get(l.to.moduleId);
+        // An end standing on the words themselves leaves its line no other way.
+        if (!A || !B || meet(A, zone.bounds) || meet(B, zone.bounds)) continue;
+        if (strikes(l.id, zone.bounds, 1)) add("struck", { link: l.id, moduleId: zone.id, text: zone.text });
+      }
+    for (const m of modules)
+      for (const c of this.views.get("module:" + m.id)?.crossed ?? []) add("relations", { moduleId: m.id, ...c });
     // A structure or chart lays its words out within its module, so words outside it mean
     // the module is too small for them.
     const holding = modules.filter((m) => {
@@ -684,6 +851,7 @@ export class SceneRenderer {
       const walker = document.createTreeWalker(host.shadowRoot, NodeFilter.SHOW_TEXT);
       let out = { x: 0, y: 0 },
         said = "";
+      const runs: { text: string; box: Bounds }[] = [];
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
         const text = node.textContent?.trim();
         if (!text || node.parentElement?.closest("style,script,defs,title")) continue;
@@ -691,6 +859,8 @@ export class SceneRenderer {
         range.selectNodeContents(node);
         const box = sceneBox(host, range.getBoundingClientRect());
         if (!box || !box.width) continue;
+        // A line box reaches past its letters above and below.
+        runs.push({ text, box: { ...box, y: box.y + box.height * 0.18, height: box.height * 0.64 } });
         const x = Math.max(m.bounds.x - box.x, box.x + box.width - (m.bounds.x + m.bounds.width)),
           y = Math.max(m.bounds.y - box.y, box.y + box.height - (m.bounds.y + m.bounds.height));
         if (x > out.x || y > out.y) said = text.slice(0, 24);
@@ -705,6 +875,17 @@ export class SceneRenderer {
             Math.ceil(m.bounds.height + 2 * Math.max(0, out.y) + (out.y > 1.5 ? 8 : 0)),
           ],
         });
+      // Words of the module's own that lie over one another: a relation's label on a
+      // branch's name, two rows run together.
+      for (let i = 0; i < runs.length && runs.length <= 400; i++)
+        for (let j = i + 1; j < runs.length; j++) {
+          const a = runs[i].box,
+            b = runs[j].box;
+          const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x),
+            h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+          if (w > 2 && h > 2 && w * h > 0.25 * Math.min(a.width * a.height, b.width * b.height))
+            add("words", { moduleId: m.id, a: runs[i].text.slice(0, 24), b: runs[j].text.slice(0, 24) });
+        }
     }
     return report;
   }
@@ -721,7 +902,7 @@ export class SceneRenderer {
   private drawLink(l: Link) {
     const r = this.routes.get(l.id);
     if (!r) return Promise.resolve();
-    this.routed.set(l.id, JSON.stringify(r));
+    this.routed.set(l.id, this.lookOf(l));
     const xs = r.points.map((p) => p.x),
       ys = r.points.map((p) => p.y);
     const x = Math.min(...xs) - 48,
@@ -745,19 +926,29 @@ export class SceneRenderer {
       },
     });
   }
-  /** Draws the links, or only those meeting some modules and those whose way changed
-   * because of where those modules now are. */
+  /** All that a link's picture comes from besides the work's look and materials: where it
+   * runs, its drawing and its data. A link is drawn again only when this changes. */
+  private lookOf(l: Link) {
+    return JSON.stringify([
+      this.routes.get(l.id),
+      l.drawingId,
+      l.data,
+      this.work.drawings[l.drawingId] ?? null,
+    ]);
+  }
+  /** Routes the whole scene and draws the links: all of them, or only those meeting some
+   * modules and those that have come to run or look otherwise, wherever in the scene. */
   private drawLinks(meeting?: Set<string>) {
     this.route();
     this.relayer();
     return Promise.all(
-      [...this.links.values()]
+      this.currentLinks()
         .filter(
           (l) =>
             !meeting ||
             meeting.has(l.from.moduleId) ||
             meeting.has(l.to.moduleId) ||
-            this.routed.get(l.id) !== JSON.stringify(this.routes.get(l.id)),
+            this.routed.get(l.id) !== this.lookOf(l),
         )
         .map((l) => this.drawLink(l)),
     );
@@ -803,11 +994,17 @@ export class SceneRenderer {
     // The links that meet a moved module follow it, and so do those it now stands in the
     // way of.
     await Promise.all([...jobs, this.drawLinks(moved)]);
+    if (jobs.length) await this.reroute();
+  }
+  /** Draws a module again, and the links with it where they now have to run otherwise. */
+  private async redrawn(m: Instance) {
+    await this.drawModule(m);
+    await this.reroute();
   }
   set(id: string, data: Record<string, unknown>) {
     const m = this.instances.get(id)!;
     m.data = { ...m.data, ...data };
-    return this.drawModule(m);
+    return this.redrawn(m);
   }
   /** Draws a module or a link again with other data in place of its own, as an edit is
    * being made. */
@@ -815,13 +1012,13 @@ export class SceneRenderer {
     const m = this.instances.get(id);
     if (m) {
       m.data = data;
-      return this.drawModule(m);
+      return this.redrawn(m);
     }
     const l = this.links.get(id);
     if (!l) return Promise.resolve();
     l.data = data;
-    this.route();
-    return this.drawLink(l);
+    // Its words or the way it runs may move other links too.
+    return this.drawLinks(new Set());
   }
   /** Whether another revision of the scene can be laid over this one in place: the same
    * scene, look and script, with the materials both hold unchanged. Anything else is
@@ -854,6 +1051,10 @@ export class SceneRenderer {
   /** The scene's modules in stacking order, where they are now. */
   private currentModules() {
     return this.scene.modules.map((m) => this.instances.get(m.id) ?? m);
+  }
+  /** The scene's links in its own order, as they are now. */
+  private currentLinks() {
+    return this.scene.links.flatMap((l) => this.links.get(l.id) ?? []);
   }
   /** Sets every module's depth again, after the modules moved or changed order. */
   private relayer() {
@@ -913,9 +1114,12 @@ export class SceneRenderer {
     if (shown.some((el, i) => el !== hosts[i]))
       for (const host of hosts) this.element.append(host);
     for (const l of scene.links) this.links.set(l.id, structuredClone(l));
-    // Links are cheap and follow their modules wherever they went.
-    jobs.push(this.drawLinks());
+    // The links follow their modules at once, and those that now run or look otherwise are
+    // drawn again; once the modules are drawn, what they keep clear is known for good.
+    const links = this.drawLinks(new Set());
     await Promise.all(jobs);
+    await links;
+    await this.reroute();
     await this.settled();
   }
   /** Takes a drawn module or link out. */

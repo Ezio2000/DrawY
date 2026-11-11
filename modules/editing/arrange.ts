@@ -212,22 +212,8 @@ function flow(
   const known = new Set(nodes.map((n) => n.id));
   for (const [frame, members] of Object.entries(frames))
     for (const member of members) if (known.has(member) && known.has(frame)) g.setParent(member, frame);
-  // A link to a frame itself stands for one to what it holds.
-  const leaf = (id: string): string | undefined => {
-    for (let at = id, n = 0; n < 8; n++) {
-      if (!framed.has(at)) return at;
-      const first = (frames[at] ?? []).find((m) => known.has(m));
-      if (!first) return undefined;
-      at = first;
-    }
-    return undefined;
-  };
-  links.forEach((l, i) => {
-    const from = leaf(l.from),
-      to = leaf(l.to);
-    if (!from || !to || from === to) return;
-    g.setEdge(from, to, {}, String(i));
-  });
+  // Links between the same two modules are separate edges.
+  links.forEach((l, i) => g.setEdge(l.from, l.to, {}, String(i)));
   layered(g);
   for (const n of nodes) {
     const at = g.node(n.id);
@@ -634,7 +620,22 @@ export function arrangement(
   }
   const nodes: Node[] = ids.map((id) => ({ id, x: 0, y: 0, ...(sizes.get(id) ?? { width: 0, height: 0 }) }));
   const leaves = nodes.filter((n) => !framed.has(n.id));
-  const links = linksAmong(work, scene, new Set(ids));
+  // A link to a frame itself stands for one to what it holds: only the modules that are
+  // placed are laid out, and a frame is closed round its own afterwards.
+  const leafOf = (id: string): string | undefined => {
+    for (let at = id, n = 0; n < 8; n++) {
+      if (!framed.has(at)) return at;
+      const first = (frames[at] ?? []).find((m) => ids.includes(m));
+      if (!first) return undefined;
+      at = first;
+    }
+    return undefined;
+  };
+  const links = linksAmong(work, scene, new Set(ids)).flatMap((l) => {
+    const from = leafOf(l.from),
+      to = leafOf(l.to);
+    return from && to && from !== to ? [{ ...l, from, to }] : [];
+  });
   const labelled = links.some((l) => l.label);
   const level = direction === "right" || direction === "left";
   const widestLabel = Math.max(0, ...links.map((l) => (l.label ? (level ? l.label.width : l.label.height) : 0)));
@@ -803,7 +804,15 @@ function matching(work: Work, each: Each, current: string) {
  * that gives none, so it can be laid on the work to measure what it adds. */
 export function placeheld(work: Work, edit: WorkEdit) {
   const { each: _each, arrange: _arrange, ...plain } = edit;
-  const known = new Set(Object.values(work.scenes).flatMap((s) => s.modules.map((m) => m.id)));
+  // A scene the write clears or removes holds nothing by the time its modules are laid, so
+  // a module written into it again is as new as any other.
+  const emptied = new Set([
+    ...(edit.scenes ?? []).filter((s) => s.clear).map((s) => s.id),
+    ...(edit.remove?.scenes ?? []),
+  ]);
+  const known = new Set(
+    Object.values(work.scenes).flatMap((s) => (emptied.has(s.id) ? [] : s.modules.map((m) => m.id))),
+  );
   const removed = new Set(edit.remove?.modules ?? []);
   const unplaced = new Set<string>();
   const modules = plain.modules?.map((m) => {

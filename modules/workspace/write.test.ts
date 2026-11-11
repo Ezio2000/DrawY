@@ -271,6 +271,36 @@ describe("a figure of blocks and lines", () => {
     expect(now.ask.bounds.height).toBeGreaterThan(at.ask.height);
   });
 
+  it("sizes parts that each changes to another drawing by that drawing, taken before the arrangement", async () => {
+    const store = db.scoped(register(db, "tables", "abcdef").id);
+    const work = createWork(store, "数据模型");
+    const rows = Array.from({ length: 8 }, (_, i) => ({ name: "field_" + i, type: "varchar(64)" }));
+    await writeWork(
+      store,
+      work.id,
+      {
+        arrange: [{ layout: "flow" }],
+        modules: [
+          { id: "user", drawingId: "node", data: { title: "user", name: "user", rows } },
+          { id: "order", drawingId: "node", data: { title: "order", name: "order", rows } },
+        ],
+        links: [{ from: "user", to: "order" }],
+      },
+      { cause: { kind: "edit" } },
+    );
+    // The work has never held an entity: the write that turns its blocks into tables fits
+    // them to their rows all the same.
+    const { work: saved } = await writeWork(
+      store,
+      work.id,
+      { each: [{ drawingId: "node", use: "entity" }], arrange: [{ layout: "flow", modules: "all", fit: true }] },
+      { cause: { kind: "edit" } },
+    );
+    for (const m of saved.scenes.root.modules) {
+      expect(m.drawingId).toBe("entity");
+      expect(m.bounds.height).toBeGreaterThan(8 * 14 * 1.75);
+    }
+  });
   it("refuses a new module that is given no place, and says an arrangement would give it one", async () => {
     const store = db.scoped(register(db, "author", "abcdef").id);
     const work = createWork(store, "空");

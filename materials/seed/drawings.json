@@ -1692,7 +1692,7 @@
       },
       "relations": {
         "type": "array",
-        "description": "relations across branches, drawn as dashed curves: [{from, to: the labels of two nodes, label?, dashed?: false for a solid line, color?}]"
+        "description": "relations across branches, dashed lines that find their own way clear of the other nodes: [{from, to: the labels of two nodes, label?, dashed?: false for a solid line, color?}]"
       },
       "direction": {
         "type": "choice",
@@ -2237,7 +2237,7 @@
       },
       "relations": {
         "type": "array",
-        "description": "relations across branches, drawn as dashed curves: [{from, to: the labels of two nodes, label?, dashed?: false for a solid line, color?}]"
+        "description": "relations across branches, dashed lines that find their own way clear of the other nodes: [{from, to: the labels of two nodes, label?, dashed?: false for a solid line, color?}]"
       },
       "color": {
         "type": "color",

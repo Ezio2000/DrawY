@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { Bounds, Point } from "./index.ts";
-import { groundOf, routeLinks, routing, textWidth, type RouteLink } from "./routing.ts";
+import { connect, groundOf, routeLinks, routing, textWidth, type RouteLink, type RouteMemo } from "./routing.ts";
 
 const box = (id: string, x: number, y: number, width = 140, height = 56) => ({
   id,
@@ -128,6 +128,28 @@ it("treats a frame as ground: lines run over the one their ends stand in and rou
   expect(bc.crosses).toEqual([]);
 });
 
+it("runs over a band of another group between the modules it holds, where going round is far", () => {
+  // Three tiers, each a frame across the whole figure; a link from the first to the third
+  // has the second in its way wherever it goes.
+  const modules = [
+    box("top", -40, -40, 900, 140),
+    box("middle", -40, 200, 900, 140),
+    box("bottom", -40, 440, 900, 140),
+    box("a", 340, 0),
+    ...[0, 1, 2, 3].map((i) => box("m" + i, i * 220, 240)),
+    box("z", 340, 480),
+    box("y", 0, 480),
+  ];
+  const links = [link("az", "a", "z"), link("m0y", "m0", "y")];
+  const az = routeLinks(links, modules).get("az")!;
+  expect(square(az.points)).toBe(true);
+  // Through none of the middle tier's modules, and the tier itself is ground, not a crossing.
+  for (const m of modules.filter((m) => /^m\d/.test(m.id))) expect(through(az.points, m.bounds)).toBe(false);
+  expect(az.crosses).toEqual([]);
+  expect(Math.min(...az.points.map((p) => p.x))).toBeGreaterThan(-40);
+  expect(Math.max(...az.points.map((p) => p.x))).toBeLessThan(860);
+});
+
 it("loops a link from a module back to itself, and names a point where its end is given one", () => {
   const modules = [box("a", 0, 0), box("b", 300, 200)];
   const routes = routeLinks(
@@ -186,4 +208,63 @@ it("routes a dense graph of a hundred modules quickly", () => {
   expect(performance.now() - started).toBeLessThan(1500);
   expect(routes.size).toBe(links.length);
   for (const r of routes.values()) expect(square(r.points)).toBe(true);
+});
+
+it("says what a smooth sweep passes through, as it does for a curve", () => {
+  const modules = [box("a", 0, 0), box("mid", 300, 100, 140, 80), box("b", 700, 200)];
+  const swept = routeLinks([link("s", "a", "b", { route: "smooth" })], modules).get("s")!;
+  expect(swept.kind).toBe("smooth");
+  expect(swept.crosses).toEqual(["mid"]);
+  expect(routeLinks([link("s", "a", "b", { route: "smooth" })], [modules[0], box("mid", 300, 400), modules[2]]).get("s")!.crosses).toEqual([]);
+});
+
+it("routes the same with what it worked out before as without, and faster while one module is dragged", () => {
+  const modules = Array.from({ length: 200 }, (_, i) => box("n" + i, (i % 20) * 200 + (i % 3) * 8, Math.floor(i / 20) * 150));
+  const links: RouteLink[] = [];
+  for (let i = 0; i < 180; i++) {
+    links.push(link(`d${i}`, "n" + i, "n" + (i + 20), i % 5 ? {} : { label: "下一步" }));
+    if (i % 4 === 0) links.push(link(`s${i}`, "n" + i, "n" + (20 + ((i * 7) % 180))));
+  }
+  const memo: RouteMemo = new Map();
+  routeLinks(links, modules, [], {}, memo);
+  let kept = 0,
+    plain = 0;
+  for (let step = 1; step <= 12; step++) {
+    const moved = modules.map((m) => (m.id === "n87" ? { ...m, bounds: { ...m.bounds, x: m.bounds.x + step * 14, y: m.bounds.y + step * 5 } } : m));
+    let started = performance.now();
+    const again = routeLinks(links, moved, [], {}, memo);
+    kept += performance.now() - started;
+    started = performance.now();
+    const afresh = routeLinks(links, moved);
+    plain += performance.now() - started;
+    expect([...again]).toEqual([...afresh]);
+  }
+  // Most links stand nowhere near the dragged module, and keep the way they had.
+  expect(kept).toBeLessThan(plain * 0.75);
+  expect(kept / 12).toBeLessThan(120);
+});
+
+it("runs a drawing's own lines between its parts clear of the others: a bow where one is clear, else round", () => {
+  const parts = [box("a", 0, 0, 80, 30), box("b", 300, 0, 80, 30), box("c", 0, 200, 80, 30)];
+  // Nothing between: a gentle bow from edge to edge.
+  const [clear] = connect(parts, [{ from: "a", to: "b", label: "关系", size: 12 }]);
+  expect(clear!.path).toMatch(/^M[\d. -]+Q/);
+  expect(clear!.crosses).toEqual([]);
+  expect(clear!.heading.x).toBeGreaterThan(0.9);
+  expect(clear!.label!.x).toBeGreaterThan(80);
+  expect(clear!.label!.x).toBeLessThan(300);
+  // A column of parts between the two: no bow passes them, so the line goes round at right
+  // angles, and through none of them.
+  const column = [
+    box("top", 100, 0, 80, 24),
+    ...[1, 2, 3, 4, 5].map((i) => box("k" + i, 60, i * 34, 160, 24)),
+    box("bottom", 100, 6 * 34, 80, 24),
+  ];
+  const [round] = connect(column, [{ from: "top", to: "bottom" }], { margin: 8, stub: 12, lane: 8 });
+  expect(round!.crosses).toEqual([]);
+  expect(round!.path).not.toMatch(/^M[\d. -]+Q[\d. -]+$/);
+  const turns = [...round!.path.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+  for (const k of column.slice(1, 6)) expect(through(turns, k.bounds, 2)).toBe(false);
+  // Unknown ends and a line from a part to itself are left out, in place.
+  expect(connect(parts, [{ from: "a", to: "nowhere" }, { from: "a", to: "a" }, { from: "a", to: "c" }]).map((c) => !!c)).toEqual([false, false, true]);
 });

@@ -173,6 +173,44 @@ it("grows a tree under its root, and a mind map to both sides of it", () => {
   expect(both.get("b1")!.x).toBeLessThan(both.get("b")!.x);
 });
 
+it("lays a tree whose links name a frame, as one to what the frame holds", () => {
+  const laid = boxes(
+    written({
+      arrange: [{ layout: "tree", frames: { team: ["a", "b"] } }],
+      modules: [{ id: "team", drawingId: "frame", data: { title: "小组" } }, node("root", "根"), node("a", "甲"), node("b", "乙"), node("leaf", "叶")],
+      links: [
+        { from: "root", to: "team" },
+        { from: "team", to: "leaf" },
+        { from: "a", to: "b" },
+      ],
+    }),
+  );
+  expect(laid.get("a")!.y).toBeGreaterThan(laid.get("root")!.y);
+  expect(laid.get("leaf")!.y).toBeGreaterThan(laid.get("a")!.y);
+  const team = laid.get("team")!;
+  for (const id of ["a", "b"]) {
+    expect(laid.get(id)!.x).toBeGreaterThan(team.x);
+    expect(laid.get(id)!.x + laid.get(id)!.width).toBeLessThan(team.x + team.width);
+  }
+});
+
+it("arranges a scene built again under the ids it had, once the write clears it", () => {
+  const first = written({ arrange: [{ layout: "flow" }], modules: [node("a", "甲"), node("b", "乙")], links: [{ from: "a", to: "b" }] });
+  const again = written(
+    {
+      scenes: [{ id: "root", clear: true }],
+      arrange: [{ layout: "flow", direction: "right" }],
+      modules: [node("a", "甲"), node("b", "乙"), node("c", "丙")],
+      links: [{ from: "a", to: "b" }, { from: "b", to: "c" }],
+    },
+    first,
+  );
+  const at = boxes(again);
+  expect(at.size).toBe(3);
+  expect(at.get("a")!.x + at.get("a")!.width).toBeLessThan(at.get("b")!.x);
+  expect(at.get("b")!.x + at.get("b")!.width).toBeLessThan(at.get("c")!.x);
+});
+
 it("places a second arrangement beside the first, and arranges again what already stands", () => {
   const first: WorkEdit = {
     arrange: [

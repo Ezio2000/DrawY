@@ -349,6 +349,15 @@ describe("two edits as one", () => {
     const edit: WorkEdit = { title: "x" };
     expect(composed({}, edit)).toEqual(edit);
   });
+  it("knows a link without an id by its two ends, however their ids are hyphenated", () => {
+    // "api-gateway" to "db" and "api" to "gateway-db" spell the same when joined by a hyphen.
+    const held = { links: [{ from: "api-gateway", to: "db", data: { label: "读" } }] };
+    const fix = { links: [{ from: "api", to: "gateway-db" }, { from: "api-gateway", to: "db", data: { label: "写" } }] };
+    expect(composed(held, fix).links).toEqual([
+      { from: "api-gateway", to: "db", data: { label: "写" } },
+      { from: "api", to: "gateway-db" },
+    ]);
+  });
 });
 
 describe("what a module is called", () => {

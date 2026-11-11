@@ -266,7 +266,7 @@ function figure(work: Work, shot: Shot) {
       ? {
           structure: {
             ...shot.structure,
-            note: "Measured, so no close-up is needed. Links are routed round modules by the scene itself: clear a crossing or a covered label by giving the modules more room (move them, or arrange again with a larger gap), never by a link drawing of your own; give an overflowing part the size in needs, or fewer words.",
+            note: "Measured from what is drawn, so no close-up is needed. Links are routed round modules by the scene itself: clear a crossing, a covered or crossed label or a struck name by giving the modules more room (move them, or arrange again with a larger gap), by route \"elbow\" for a straight or curved line that passes through something, or by labelAt for words another line runs through; never by a link drawing of your own. Give an overflowing part the size in needs, or fewer words.",
           },
         }
       : {}),

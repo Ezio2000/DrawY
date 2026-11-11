@@ -834,10 +834,11 @@ it("routes links round what stands between them, over the frames that hold them,
       { id: "user", drawingId: "entity", bounds: { x: 600, y: 300, width: 220, height: 130 }, data: { name: "user", rows: [{ name: "id", type: "bigint", key: "pk" }] } },
     ],
     links: [
-      link("ab", "a", "b"),
+      link("ab", "a", "b", { both: true }),
       link("ac", "a", "c", { label: "写入" }),
       link("cu", "c", "user", { head: "zero-many", tail: "only-one" }),
       link("bent", "a", "c", { route: "curve" }),
+      link("again", "user", "user", { label: "retry" }),
     ],
     checks: [],
   };
@@ -852,6 +853,20 @@ it("routes links round what stands between them, over the frames that hold them,
         depths: { tier: depth("tier"), ab: depth("ab"), a: depth("a") },
         ac: r.routeOf("ac")!,
         cu: document.querySelector('[data-link-id="cu"]')!.shadowRoot!.querySelectorAll("circle").length,
+        heads: [...document.querySelector('[data-link-id="ab"]')!.shadowRoot!.querySelectorAll("path")].filter((p) =>
+          p.getAttribute("d")!.endsWith("Z"),
+        ).length,
+        // The words of the link that loops back, and the extent a picture is cropped to.
+        retry: (() => {
+          const host = r.host("link", "again")!,
+            text = host.shadowRoot!.querySelector("text")!.getBoundingClientRect(),
+            at = host.getBoundingClientRect(),
+            k = at.width / parseFloat(host.style.width);
+          const x = parseFloat(host.style.left) + (text.left - at.left) / k,
+            y = parseFloat(host.style.top) + (text.top - at.top) / k;
+          return { x, y, r: x + text.width / k, b: y + text.height / k };
+        })(),
+        bounds: r.bounds,
         carried: r.carried("tier"),
         structure: r.structure(),
       };
@@ -876,6 +891,14 @@ it("routes links round what stands between them, over the frames that hold them,
   expect(drawn.ac.label).toBeDefined();
   // The marks of notation are drawn at the ends: a ring for zero.
   expect(drawn.cu).toBe(1);
+  // `both` puts the head at the start as well, though the start's own mark defaults to none.
+  expect(drawn.heads).toBe(2);
+  // Words found room outside the modules are within the figure's extent, so a picture
+  // cropped to it keeps them.
+  expect(drawn.retry.x).toBeGreaterThanOrEqual(drawn.bounds.x);
+  expect(drawn.retry.y).toBeGreaterThanOrEqual(drawn.bounds.y);
+  expect(drawn.retry.r).toBeLessThanOrEqual(drawn.bounds.x + drawn.bounds.width);
+  expect(drawn.retry.b).toBeLessThanOrEqual(drawn.bounds.y + drawn.bounds.height);
   // What is wrong is measured: the curved line through the module, the block over another,
   // and the words that run out of their block, with the size that would hold them.
   expect(drawn.structure.crossings).toEqual([{ link: "bent", through: ["wall"] }]);
@@ -890,6 +913,299 @@ it("routes links round what stands between them, over the frames that hold them,
   const moved = await read();
   expect(moved.ac.points).toHaveLength(2);
   expect(moved.structure.crossings).toBeUndefined();
+});
+/** A work of library blocks and lines, for the figures made of them. */
+function structured(ids = ["node", "frame", "entity", "arrow", "mindmap", "hierarchy"]) {
+  const drawings = seed("drawings") as DrawingMaterial[];
+  work.materials = Object.fromEntries(
+    drawings
+      .filter((m) => ids.includes(m.id))
+      .map((m) => ({
+        ...m,
+        source: readFileSync(new URL(`../../materials/seed/drawings/${m.id}.js`, import.meta.url), "utf8"),
+      }))
+      .map((m) => [m.id, useOf(m as Material)!]),
+  );
+  const node = (id: string, x: number, y: number, title: string, data = {}, width = 160, height = 60) => ({
+    id,
+    drawingId: "node",
+    bounds: { x, y, width, height },
+    data: { title, ...data },
+  });
+  const link = (id: string, from: string, to: string, data = {}) => ({
+    id,
+    drawingId: "arrow",
+    from: { moduleId: from },
+    to: { moduleId: to },
+    data,
+  });
+  return { node, link };
+}
+it("measures words a module covers, lines through other lines' words and through a frame's name, and words run together", async () => {
+  const { node, link } = structured();
+  // A drawing that sets two lines of words on the same place.
+  work.drawings.stacked = {
+    id: "stacked",
+    name: "叠字",
+    fit: "words",
+    source: `return api.svg('<svg viewBox="0 0 '+api.width+' '+api.height+'"><text x="10" y="30" font-size="16">第一行文字</text><text x="14" y="33" font-size="16">第二行文字</text></svg>')`,
+  };
+  work.scenes.root = {
+    ...work.scenes.root,
+    interaction: undefined,
+    modules: [
+      { id: "group", drawingId: "frame", bounds: { x: 380, y: 300, width: 300, height: 300 }, data: { title: "一个很长的分组名称" } },
+      // A straight line with its words at its middle, where a wide module stands.
+      node("a", 0, 0, "订单"),
+      node("wide", 300, -20, "挡住了线和它的字", {}, 400, 100),
+      node("b", 900, 0, "支付"),
+      // A line straight down with words beside it, and a curve across them.
+      node("g", 300, 760, "起"),
+      node("h", 300, 1000, "止"),
+      node("k", 0, 880, "左"),
+      node("m", 700, 880, "右"),
+      // A line across the name of a frame neither of its ends stands in.
+      node("p", 100, 290, "前", {}, 160, 50),
+      node("q", 800, 290, "后", {}, 160, 50),
+      node("in1", 440, 380, "组内一"),
+      node("in2", 440, 500, "组内二"),
+      { id: "twice", drawingId: "stacked", bounds: { x: 900, y: 700, width: 200, height: 60 }, data: {} },
+    ],
+    links: [
+      link("covered", "a", "b", { route: "straight", label: "同步" }),
+      link("gh", "g", "h", { route: "straight", label: "直线上的字" }),
+      link("km", "k", "m", { route: "curve", bend: 0.02 }),
+      link("named", "p", "q", { route: "straight" }),
+      link("inner", "in1", "in2", { route: "straight" }),
+    ],
+    checks: [],
+  };
+  await open();
+  const { errors, structure } = await page.evaluate(() => ({
+    errors: window.drawyErrors,
+    structure: window.drawyView.renderer.structure(),
+  }));
+  expect(errors).toEqual([]);
+  // The line passes through the module, and its words lie wholly within it, where the
+  // module covers them: both are said.
+  expect(structure.crossings).toEqual([{ link: "covered", through: ["wide"] }]);
+  expect(structure.labels).toContainEqual({ link: "covered", text: "同步", over: ["wide"] });
+  // A curve drawn through another link's words, read from the curve as it is drawn.
+  expect(structure.labels).toContainEqual({ link: "gh", text: "直线上的字", crossedBy: ["km"] });
+  // A frame is ground the line may run over, but not through its name.
+  expect(structure.struck).toEqual([{ link: "named", moduleId: "group", text: "一个很长的分组名称" }]);
+  expect(structure.words).toEqual([{ moduleId: "twice", a: "第一行文字", b: "第二行文字" }]);
+  // With room given, nothing is left to say about them.
+  await page.evaluate(() =>
+    window.drawyView.renderer.move([
+      { id: "wide", bounds: { x: 300, y: 140, width: 400, height: 100 } },
+      { id: "k", bounds: { x: 0, y: 1100, width: 160, height: 60 } },
+      { id: "m", bounds: { x: 700, y: 1100, width: 160, height: 60 } },
+      { id: "p", bounds: { x: 100, y: 240, width: 160, height: 50 } },
+      { id: "q", bounds: { x: 800, y: 240, width: 160, height: 50 } },
+    ]),
+  );
+  const cleared = await page.evaluate(() => window.drawyView.renderer.structure());
+  expect(cleared.crossings).toBeUndefined();
+  expect(cleared.labels).toBeUndefined();
+  expect(cleared.struck).toBeUndefined();
+});
+it("runs a tree's relations clear of the nodes they do not join", async () => {
+  structured();
+  work.scenes.root = {
+    ...work.scenes.root,
+    interaction: undefined,
+    links: [],
+    checks: [],
+    modules: [
+      {
+        id: "mm",
+        drawingId: "mindmap",
+        bounds: { x: 0, y: 0, width: 1100, height: 560 },
+        data: {
+          center: "增长策略",
+          size: 15,
+          branches: [
+            { label: "获客", children: ["内容营销", "搜索投放", "裂变邀请", "渠道合作"] },
+            { label: "激活", children: ["新手引导", "首单优惠", "模板市场"] },
+            { label: "留存", children: ["消息提醒", "会员体系", "社区运营", "周报"] },
+            { label: "变现", children: ["订阅", "增值服务", "广告"] },
+            { label: "推荐", children: ["分享激励", "口碑"] },
+          ],
+          relations: [
+            // Straight down a column of names: no bow runs clear of them.
+            { from: "内容营销", to: "社区运营", label: "互相导流" },
+            { from: "裂变邀请", to: "分享激励", label: "同一机制" },
+            { from: "获客", to: "变现", label: "成本回收" },
+          ],
+        },
+      },
+      {
+        id: "org",
+        drawingId: "hierarchy",
+        bounds: { x: 0, y: 640, width: 1100, height: 420 },
+        data: {
+          size: 14,
+          root: {
+            label: "CEO",
+            children: [
+              { label: "产品", children: [{ label: "增长" }, { label: "平台" }, { label: "设计" }] },
+              { label: "研发", children: [{ label: "前端" }, { label: "后端" }, { label: "数据" }, { label: "质量" }] },
+              { label: "市场", children: [{ label: "品牌" }, { label: "销售" }] },
+            ],
+          },
+          relations: [
+            { from: "增长", to: "销售", label: "线索" },
+            { from: "产品", to: "市场" },
+          ],
+        },
+      },
+    ],
+  };
+  await open();
+  const found = await page.evaluate(() => {
+    const out: { module: string; relations: number; through: string[]; structure: unknown } = {
+      module: "",
+      relations: 0,
+      through: [],
+      structure: window.drawyView.renderer.structure().relations,
+    };
+    for (const id of ["mm", "org"]) {
+      const root = document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!;
+      // Every name in the drawing, as it is seen.
+      const names = [...root.querySelectorAll("text")].map((t) => ({ text: t.textContent!, box: t.getBoundingClientRect() }));
+      // The relations are the dashed lines.
+      for (const path of root.querySelectorAll<SVGPathElement>("path.plain[stroke-dasharray]:not([stroke-dasharray=none])")) {
+        out.relations++;
+        const length = path.getTotalLength(),
+          ctm = path.getScreenCTM()!;
+        for (let at = 0; at <= length; at += 2) {
+          const p = new DOMPoint(path.getPointAtLength(at).x, path.getPointAtLength(at).y).matrixTransform(ctm);
+          // Clear of both its ends, it touches no name at all.
+          if (at < 12 || at > length - 12) continue;
+          for (const n of names)
+            if (p.x > n.box.left + 1 && p.x < n.box.right - 1 && p.y > n.box.top + 3 && p.y < n.box.bottom - 3)
+              if (!["互相导流", "同一机制", "成本回收", "线索"].includes(n.text)) out.through.push(`${id}: ${n.text}`);
+        }
+      }
+    }
+    return out;
+  });
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+  expect(found.relations).toBe(5);
+  expect([...new Set(found.through)]).toEqual([]);
+  expect(found.structure).toBeUndefined();
+});
+it("routes a scene changed in place exactly as the same scene drawn afresh", async () => {
+  const { node, link } = structured();
+  work.style = { ...work.style, route: "elbow", flow: "down" };
+  work.scenes.root = {
+    ...work.scenes.root,
+    interaction: undefined,
+    modules: [
+      { id: "tier", drawingId: "frame", bounds: { x: -40, y: -70, width: 640, height: 170 }, data: { title: "服务层" } },
+      { id: "store", drawingId: "frame", bounds: { x: -40, y: 400, width: 640, height: 170 }, data: { title: "存储层" } },
+      node("a", 0, 0, "订单服务"),
+      node("b", 200, 0, "支付服务"),
+      node("c", 400, 0, "是否风控", { shape: "diamond" }, 160, 80),
+      node("wall", 120, 210, "挡在中间的模块", {}, 220, 60),
+      node("d", 0, 470, "订单库", { shape: "cylinder" }),
+      node("e", 200, 470, "账本", { shape: "cylinder" }),
+      node("f", 400, 470, "风控库", { shape: "cylinder" }),
+    ],
+    links: [
+      link("ad", "a", "d", { label: "写入" }),
+      link("be", "b", "e"),
+      link("cf", "c", "f", { label: "是" }),
+      link("ce", "c", "e", { label: "否" }),
+      link("ae", "a", "e"),
+      link("bd", "b", "d", { dashed: true }),
+      link("ab", "a", "b"),
+    ],
+    checks: [],
+  };
+  /** Every link as it is drawn: where it runs, where its host lies and what its drawing made. */
+  const links = () =>
+    page.evaluate(() => {
+      const r = window.drawyView.renderer;
+      return [...r.links.keys()].sort().map((id) => {
+        const host = r.host("link", id)!;
+        return {
+          id,
+          route: r.routeOf(id),
+          box: [host.style.left, host.style.top, host.style.width, host.style.height, host.style.zIndex],
+          drawn: host.shadowRoot!.lastElementChild!.outerHTML,
+        };
+      });
+    });
+  const modules = () =>
+    page.evaluate(() =>
+      window.drawyView.renderer.scene.modules.map((m) => {
+        const host = window.drawyView.renderer.host("module", m.id)!;
+        return [m.id, host.style.left, host.style.top, host.style.width, host.style.height, host.style.zIndex];
+      }),
+    );
+  await open();
+  // What a person does to a figure by hand, one change laid over the last: a module
+  // dragged through the others, another resized, a block turned into a decision, a link
+  // reversed, one deleted and one added before the rest, the stacking
+  // changed, a label written, a preview left behind by an edit that was then saved, and a
+  // frame renamed.
+  const next = await page.evaluate(async () => {
+    const view = window.drawyView,
+      r = view.renderer;
+    let work = structuredClone(window.drawyData.work);
+    const lay = async (change: (scene: (typeof work)["scenes"][string]) => void) => {
+      work = structuredClone(work);
+      change(work.scenes.root);
+      work.revision++;
+      const shown = new Promise<void>((resolve) => (view.options.shown = () => resolve()));
+      view.update(work, work.scenes.root, true);
+      await shown;
+    };
+    const part = (scene: (typeof work)["scenes"][string], id: string) => scene.modules.find((m) => m.id === id)!;
+    // A drag: many places in passing, then the one it is left at.
+    for (let i = 1; i <= 12; i++) await r.move([{ id: "wall", bounds: { x: 120 + i * 30, y: 210 + i * 6, width: 220, height: 60 } }]);
+    await lay((s) => (part(s, "wall").bounds = { x: 480, y: 282, width: 220, height: 60 }));
+    await lay((s) => (part(s, "b").bounds = { x: 190, y: -10, width: 190, height: 80 }));
+    await lay((s) => (part(s, "a").data = { ...part(s, "a").data, shape: "diamond" }));
+    await lay((s) => {
+      const l = s.links.find((x) => x.id === "ae")!;
+      [l.from, l.to] = [l.to, l.from];
+    });
+    await lay((s) => {
+      s.links = s.links.filter((l) => l.id !== "bd");
+      s.links.unshift({ id: "af", drawingId: "arrow", from: { moduleId: "a" }, to: { moduleId: "f" }, data: { label: "抽检" } });
+    });
+    await lay((s) => s.modules.push(...s.modules.splice(s.modules.findIndex((m) => m.id === "d"), 1)));
+    await r.redraw("be", { label: "预览里的字" });
+    await lay((s) => (s.links.find((l) => l.id === "be")!.data = { label: "记账" }));
+    // Last, a frame's name grows over where a line ran, which now has to go round it: what
+    // the frame keeps clear is only known once it is drawn again.
+    await lay((s) => (part(s, "store").data = { title: "一个名字长了许多许多许多许多许多的存储层" }));
+    await r.settled();
+    return work;
+  });
+  const live = { links: await links(), modules: await modules() };
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+  work = next;
+  await page.close();
+  page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await open();
+  const fresh = { links: await links(), modules: await modules() };
+  expect(live.modules).toEqual(fresh.modules);
+  expect(live.links.map((l) => l.id)).toEqual(fresh.links.map((l) => l.id));
+  for (const [i, l] of live.links.entries()) expect(l, l.id).toEqual(fresh.links[i]);
+  expect(fresh.links.find((l) => l.id === "ae")!.route!.points.length).toBeGreaterThan(4);
+  // And while one module is dragged, only the links that have to change are drawn again.
+  const redrawn = await page.evaluate(async () => {
+    const r = window.drawyView.renderer;
+    const before = new Map([...r.links.keys()].map((id) => [id, r.host("link", id)!.shadowRoot!.lastElementChild]));
+    await r.move([{ id: "f", bounds: { x: 420, y: 470, width: 160, height: 60 } }]);
+    return [...before].filter(([id, was]) => r.host("link", id)!.shadowRoot!.lastElementChild !== was).map(([id]) => id);
+  });
+  expect(redrawn).toContain("cf");
+  expect(redrawn).not.toContain("ab");
 });
 it("disposes drawing and scene resources when leaving the canvas", async () => {
   work.drawings.title.source =

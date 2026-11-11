@@ -14,7 +14,8 @@ const at = (p, fallback) => (p ? { x: p.x * W, y: p.y * H } : fallback);
 const route = api.route;
 const kind = route?.kind ?? (d.route === "elbow" || d.route === "corner" ? "elbow" : "curve");
 const head = d.head ?? "filled";
-const tail = d.tail ?? (d.both ? head : "none");
+// `both` repeats the head at the start unless the start is given a mark of its own.
+const tail = d.tail && d.tail !== "none" ? d.tail : d.both ? head : "none";
 const hl = Math.max(7, w * 4.2),
   hw = hl * 0.42;
 const away = (p, q) => {
