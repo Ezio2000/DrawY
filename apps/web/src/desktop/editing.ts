@@ -118,6 +118,7 @@ export function useEditing({
     align: (to: Alignment) => base.align(selected, to),
     distribute: (axis: "x" | "y") => base.distribute(selected, axis),
     matchSize: (what: "width" | "height" | "both") => base.matchSize(selected, what),
+    tidy: () => base.tidy(selected),
     /** Changes the same values on everything selected. */
     restyle: (patch: Record<string, unknown>) => base.restyle(parts(), patch),
     /** Keeps how the selected part looks, to give to others. */

@@ -22,7 +22,8 @@ const tones = {
   ink,
 };
 const tone = tones[d.tone] ? d.tone : "plain";
-const color = d.color || tones[tone];
+const mark = d.shape === "initial" || d.shape === "final";
+const color = d.color || (mark && tone === "plain" ? ink : tones[tone]);
 const fill = d.fillStyle || (tone === "plain" ? "none" : "soft");
 const sw = Math.max(1, Number(t.stroke ?? 1.6) * 0.85);
 const shape = d.shape || "box";
@@ -54,6 +55,30 @@ if (shape === "pill" || shape === "circle") {
     r = Math.min(10, ih * 0.15);
   path = `<path d="M${s + r} ${s}H${W - s - r}Q${W - s} ${s} ${W - s} ${s + r}V${H - s - wave}C${W * 0.75} ${H - s - wave * 3} ${W * 0.5} ${H - s + wave * 0.6} ${s} ${H - s - wave * 0.6}V${s + r}Q${s} ${s} ${s + r} ${s}Z" stroke-linejoin="round"/>`;
   inset = { ...inset, b: wave * 2 + size * 0.4 };
+} else if (shape === "parallelogram") {
+  const skew = Math.min(iw * 0.14, ih * 0.5);
+  path = `<path d="M${s + skew} ${s}H${W - s}L${W - s - skew} ${H - s}H${s}Z" stroke-linejoin="round"/>`;
+  inset = { ...inset, l: inset.l + skew * 0.8, r: inset.r + skew * 0.8 };
+} else if (shape === "hexagon") {
+  const cut = Math.min(iw * 0.14, ih / 2);
+  path = `<path d="M${s + cut} ${s}H${W - s - cut}L${W - s} ${H / 2}L${W - s - cut} ${H - s}H${s + cut}L${s} ${H / 2}Z" stroke-linejoin="round"/>`;
+  inset = { ...inset, l: inset.l + cut * 0.6, r: inset.r + cut * 0.6 };
+} else if (shape === "queue") {
+  const rx = Math.min(iw * 0.1, ih * 0.3, 14);
+  path = `<path d="M${s + rx} ${s}H${W - s - rx}A${rx} ${ih / 2} 0 0 1 ${W - s - rx} ${H - s}H${s + rx}A${rx} ${ih / 2} 0 0 1 ${s + rx} ${s}Z"/>`;
+  extra = `<path d="M${W - s - rx} ${s}A${rx} ${ih / 2} 0 0 0 ${W - s - rx} ${H - s}" fill="none"/>`;
+  inset = { ...inset, l: rx + size * 0.5, r: rx * 2 + size * 0.5 };
+} else if (shape === "note") {
+  const fold = Math.min(14, iw * 0.2, ih * 0.3);
+  path = `<path d="M${s} ${s}H${W - s - fold}L${W - s} ${s + fold}V${H - s}H${s}Z" stroke-linejoin="round"/>`;
+  extra = `<path d="M${W - s - fold} ${s}V${s + fold}H${W - s}" fill="none" stroke-linejoin="round"/>`;
+} else if (shape === "initial" || shape === "final") {
+  // The filled dot a state machine starts from, and the ringed dot it ends in.
+  const r = Math.min(iw, ih) / 2;
+  path =
+    shape === "initial"
+      ? `<circle cx="${W / 2}" cy="${H / 2}" r="${r}" fill="${color}" fill-opacity="1"/>`
+      : `<circle cx="${W / 2}" cy="${H / 2}" r="${r}" fill="${paper}" fill-opacity="1"/><circle cx="${W / 2}" cy="${H / 2}" r="${r * 0.58}" fill="${color}" fill-opacity="1" stroke="none"/>`;
 } else {
   const rx = Math.min(Number(d.radius ?? 10), ih / 2);
   path = `<rect x="${s}" y="${s}" width="${iw}" height="${ih}" rx="${rx}"/>`;
@@ -73,10 +98,10 @@ const root = api.html(`<style>
 svg{position:absolute;inset:0;overflow:visible}
 .words{position:absolute;left:${inset.l}px;right:${inset.r}px;top:${inset.t}px;bottom:${inset.b}px;display:flex;flex-direction:${d.icon && W < H * 1.6 ? "column" : "row"};align-items:center;justify-content:center;gap:${size * 0.55}px;font-family:${esc(t.font || "system-ui")};text-align:${d.align === "left" ? "left" : "center"};color:${solid ? paper : ink}}
 .text{display:flex;flex-direction:column;gap:${size * 0.18}px;min-width:0;${d.align === "left" ? "flex:1;" : ""}}
-.title{font-size:${size}px;font-weight:${d.weight ?? 600};line-height:1.25;overflow-wrap:anywhere;text-wrap:balance}
-.note{font-size:${size * 0.8}px;line-height:1.3;color:${solid ? paper : muted};opacity:${solid ? 0.85 : 1};overflow-wrap:anywhere;text-wrap:balance}
+.title{font-size:${size}px;font-weight:${d.weight ?? 600};line-height:1.25;overflow-wrap:anywhere;text-wrap:balance;white-space:pre-line}
+.note{font-size:${size * 0.8}px;line-height:1.3;color:${solid ? paper : muted};opacity:${solid ? 0.85 : 1};overflow-wrap:anywhere;text-wrap:balance;white-space:pre-line}
 .icon{flex:none;display:flex}
-</style><div class="node"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${shade}<g ${fills[fill] || fills.none} stroke-width="${sw}"${d.lift ? ' filter="url(#lift)"' : ""}${effect}>${path}${extra}</g></svg><div class="words"><div class="text">${d.title ? `<div class="title">${esc(d.title)}</div>` : ""}${d.note ? `<div class="note">${esc(d.note)}</div>` : ""}</div></div></div>`);
+</style><div class="node"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${shade}<g ${fills[fill] || fills.none} stroke-width="${sw}"${d.lift ? ' filter="url(#lift)"' : ""}${effect}>${path}${extra}</g></svg><div class="words"><div class="text">${mark ? "" : d.title ? `<div class="title">${esc(d.title)}</div>` : ""}${!mark && d.note ? `<div class="note">${esc(d.note)}</div>` : ""}</div></div></div>`);
 if (d.dashed)
   root
     .querySelector("g")

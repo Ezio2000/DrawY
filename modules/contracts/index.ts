@@ -37,11 +37,18 @@ export const paramSchema = z.object({
   step: z.number().positive().optional(),
 });
 const dataSchema = z.record(z.string(), z.unknown());
+/** How a module drawn with a drawing gets its size when it is given none: to hold its words
+ * (a block, a label), its rows (a table), or the modules it frames or carries in lanes. */
+export const fits = ["words", "rows", "frame", "lanes"] as const;
+export type Fit = (typeof fits)[number];
 export const drawingSchema = z.object({
   id: key,
   name: key,
   params: z.record(z.string(), paramSchema).optional(),
   defaults: dataSchema.optional(),
+  /** [width, height] a module drawn with it has unless it says otherwise. */
+  size: z.array(z.number().positive()).length(2).optional(),
+  fit: z.enum(fits).optional(),
   source: z.string().min(1),
 });
 /** One of the sides of a module, each at the middle of that side. */
@@ -156,6 +163,12 @@ export type MaterialUse =
       defaults: Record<string, unknown>;
       /** The parameters a person can change by hand; the app names them itself. */
       params: Record<string, Omit<Param, "label">>;
+      /** The size it looks right at, and how a module given no size is fitted. */
+      size?: { width: number; height: number };
+      fit?: Fit;
+      /** A structure or chart that lays its words out within its module: words found
+       * outside it mean the module is too small for them. */
+      contained?: boolean;
     }
   | { id: string; kind: "effect"; name: string; defs: string };
 export type Point = z.infer<typeof pointSchema>;
@@ -400,7 +413,9 @@ const moduleEditSchema = z
       .nullable()
       .optional()
       .describe("What a person editing the work calls it; only when the words in its data do not say it"),
-    bounds: boxSchema.optional().describe("[x, y, width, height] in scene units; a new module needs it"),
+    bounds: boxSchema
+      .optional()
+      .describe("[x, y, width, height] in scene units; a new module needs it unless arrange places it"),
     drawingId: key
       .optional()
       .describe("A drawing in the work or the library; a new module needs it. Others that use the same drawing change with it"),
@@ -415,7 +430,9 @@ const moduleEditSchema = z
   .strict();
 const linkEditSchema = z
   .object({
-    id: key,
+    id: key
+      .optional()
+      .describe("Leave out for the one link between two modules: it is then known by its ends, and writing it again changes it"),
     scene: partScene,
     drawingId: key.optional().describe("A link drawing; a new link defaults to the library's arrow"),
     from: linkEndEdit.optional().describe("Where it starts; a new link needs it. " + (linkEndEdit.description ?? "")),
@@ -459,6 +476,16 @@ const drawingEditSchema = z
       .optional()
       .describe("Names and bounds for the controls a person gets for data keys; null takes one out"),
     defaults: dataPatch("Values every module drawn with it has unless its own data says otherwise: the place for sizes, colours and words it reads"),
+    size: z
+      .array(z.number().positive())
+      .length(2)
+      .optional()
+      .describe("[width, height] a module drawn with it has when arrange places it and it gives no bounds"),
+    fit: z
+      .enum(fits)
+      .nullable()
+      .optional()
+      .describe("How arrange sizes such a module instead: words to hold its title, text and note, rows for its rows; a copy keeps its origin's"),
     source: z.string().min(1).optional().describe("Its code, whole; a new drawing needs it unless it has from"),
     edits: z.array(textEditSchema).optional().describe("Small changes to its code, applied in order"),
   })
@@ -471,15 +498,113 @@ const detailEditSchema = z
     edits: z.array(textEditSchema).optional().describe("Small changes to its page"),
   })
   .strict();
+/** One change made to many parts at once: every module (or link) of a scene that matches,
+ * so a size, a font or a colour shared by fifty blocks is one record and not fifty. */
+const eachSchema = z
+  .object({
+    links: z.boolean().optional().describe("Change links instead of modules"),
+    scene: key.optional().describe("Leave out for the current scene"),
+    drawingId: key.optional().describe("Only parts drawn with this drawing"),
+    group: z.string().optional().describe("Only modules of this group"),
+    where: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe("Only parts whose data has these values, such as {\"tone\": \"accent\"}"),
+    data: dataPatch("Merged into the data of each"),
+    use: key.optional().describe("The drawing each is drawn with from now on"),
+    size: z
+      .array(z.number().positive())
+      .length(2)
+      .optional()
+      .describe("[width, height] each module takes, about its centre"),
+  })
+  .strict();
+export const layouts = ["flow", "tree", "lanes", "grid"] as const;
+export const directions = ["down", "right", "up", "left"] as const;
+/** Places modules by their links instead of by coordinates. It is worked out once, when the
+ * write is saved, into each module's own bounds: nothing of it is kept, so every module is
+ * then moved by hand like any other. */
+export const arrangeSchema = z
+  .object({
+    scene: key.optional().describe("Leave out for the current scene"),
+    layout: z
+      .enum(layouts)
+      .optional()
+      .describe(
+        "flow (the default): ranks along the direction by the links, as a flowchart, state machine, dependency graph or architecture; tree: each module under the one that links to it, as an org chart, or to both sides of the root with direction both, as a mind map; lanes: swimlanes, each module in the lane it is listed in and in order of the links along it; grid: rows of equal cells in the order listed",
+      ),
+    direction: z
+      .enum([...directions, "both"])
+      .optional()
+      .describe("Which way it reads; defaults to the style token flow, else down. both is a tree's two sides"),
+    modules: z
+      .union([z.array(key), z.literal("all")])
+      .optional()
+      .describe(
+        "The modules to place; leave out for those this write adds without bounds, or \"all\" for every module of the scene. Others stay where they are",
+      ),
+    tiers: z
+      .array(z.array(key))
+      .optional()
+      .describe(
+        "flow: the rank each module stands in when the figure names its own, first rank first, as the layers of an architecture or a dependency graph; their order within a rank is still worked out from the links",
+      ),
+    lanes: z
+      .array(z.array(key))
+      .optional()
+      .describe("lanes: the modules of each lane, in the order of the lanes module's lanes"),
+    ground: key
+      .optional()
+      .describe("lanes: the swimlanes module to size under them; it is given its place and its header"),
+    frames: z
+      .record(z.string(), z.array(key))
+      .optional()
+      .describe(
+        "Frame modules and the modules each holds, as {frameId: [memberIds]}; a member may be another frame. Members are kept together and each frame is sized round its own",
+      ),
+    columns: z.number().int().positive().optional().describe("grid: cells in a row"),
+    wrap: z
+      .boolean()
+      .optional()
+      .describe(
+        "flow: fold a figure much longer than the landscape view into rows that run back and forth (columns, for one that reads down). On unless false, or when the arrangement has frames or tiers",
+      ),
+    gap: z
+      .array(z.number().nonnegative())
+      .length(2)
+      .optional()
+      .describe("[between ranks, between neighbours] in scene units; the default leaves room for the links and their labels"),
+    size: z
+      .array(z.number().positive())
+      .length(2)
+      .optional()
+      .describe("[width, height] for the modules without bounds, instead of fitting each kind to its words"),
+    fit: z.boolean().optional().describe("Size every module placed again to its words, not only those without bounds"),
+    at: z.array(z.number()).length(2).optional().describe("[x, y] of the arrangement's top left; defaults to where its modules already are, else [0, 0]"),
+    beside: z
+      .tuple([key, z.enum(["right", "below", "left", "above"])])
+      .optional()
+      .describe("Instead of at: a module already placed (by an earlier arrange of this write too) to set the arrangement beside, as [moduleId, side]"),
+  })
+  .strict();
+export type Arrange = z.infer<typeof arrangeSchema>;
+export type Each = z.infer<typeof eachSchema>;
 export const workEditSchema = z
   .object({
     title: z.string().optional(),
     scenes: z.array(sceneEditSchema).optional().describe("New scenes, and changes to a scene's own fields"),
+    arrange: z
+      .array(arrangeSchema)
+      .optional()
+      .describe(
+        "Arrangements to work out, in order, for modules that give no bounds or that should be placed again. Write it before modules, so the viewer watches the figure take shape",
+      ),
     modules: z
       .array(moduleEditSchema)
       .optional()
       .describe("In stacking and drawing order, first at the bottom; a new module goes on top"),
     links: z.array(linkEditSchema).optional(),
+    each: z.array(eachSchema).optional().describe("Changes made to every matching part, after the records above"),
     drawings: z.array(drawingEditSchema).optional(),
     details: z.array(detailEditSchema).optional(),
     materials: z

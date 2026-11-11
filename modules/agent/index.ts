@@ -26,11 +26,13 @@ import {
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { forAuthor, shortLink, shortModule, writeWork, setBrief } from "../workspace/index.ts";
-import { changesBetween, composed } from "../editing/index.ts";
+import { changesBetween, composed, linkKey } from "../editing/index.ts";
+import type { DrawingMaterial, Material } from "@drawy/materials/schema";
 import { MIN_TEXT } from "../contracts/geometry.ts";
 import {
   attached,
   candidate,
+  drawingCard,
   find,
   kit,
   library,
@@ -283,7 +285,7 @@ const boxed = (box: unknown) => {
   return parsed.success ? boundsOf(parsed.data) : undefined;
 };
 const records = (list: unknown): any[] =>
-  Array.isArray(list) ? list.filter((r) => r?.id) : [];
+  Array.isArray(list) ? list.filter((r) => r?.id || (r?.from && r?.to)) : [];
 /** What a tool call is doing, as far as its arguments have arrived. Parts a write does not
  * place in a scene belong to the current one. */
 function activity(name: string, args: any, sceneId: string): ToolActivity {
@@ -358,9 +360,22 @@ function activity(name: string, args: any, sceneId: string): ToolActivity {
         return scenes.get(id)!;
       };
       for (const s of named) touched(s.id).title = s.title ?? "";
+      // Modules an arrangement will place are pencilled in rows until it is worked out: by
+      // the ranks or lanes the write names, else in the order they arrive.
+      const rows: string[][] | undefined = (Array.isArray(args.arrange) ? args.arrange : [])
+        .map((a: any) => a?.tiers ?? a?.lanes)
+        .find((r: unknown) => Array.isArray(r));
+      const waiting = modules.filter((m) => !m.bounds && m.drawingId);
+      const pencilled = (m: any) => {
+        const at = waiting.indexOf(m);
+        if (at < 0) return undefined;
+        const row = rows?.findIndex((r) => Array.isArray(r) && r.includes(m.id)) ?? -1;
+        const [x, y] = row >= 0 ? [rows![row].indexOf(m.id), row] : [at % 6, (rows?.length ?? 0) + Math.floor(at / 6)];
+        return { x: x * 200, y: y * 120, width: 160, height: 56 };
+      };
       for (const m of modules) {
         const scene = touched(m.scene ?? sceneId),
-          bounds = boxed(m.bounds);
+          bounds = boxed(m.bounds) ?? pencilled(m);
         if (bounds)
           scene.modules.push({
             id: m.id,
@@ -372,7 +387,7 @@ function activity(name: string, args: any, sceneId: string): ToolActivity {
       }
       for (const l of links) touched(l.scene ?? sceneId);
       const changed =
-        modules.filter((m) => !m.bounds).length +
+        modules.filter((m) => !m.bounds && !waiting.includes(m)).length +
         links.filter((l) => !l.from && !l.to).length +
         named.filter((s) => s.order?.length).length;
       return {
@@ -409,35 +424,86 @@ function activity(name: string, args: any, sceneId: string): ToolActivity {
       throw Error("Unknown tool " + name);
   }
 }
-/** Library drawings the work uses whose cards the author has not read: parameters it
- * guessed draw something other than it meant, or nothing. */
-function cardsUnread(work: Work, input: Item[], batch: Item[] = []) {
+/** Parameter types whose form a name does not give away: a list or record has a shape of
+ * its own, which only the drawing's card shows. */
+const structured = (m: DrawingMaterial) =>
+  m.use === "module" && Object.values(m.params).some((p) => p.type === "array" || p.type === "object");
+/** The cards of library drawings this write is the first to use, when their parameters
+ * cannot be told from the index: they come with the write's result instead of costing a
+ * turn to ask for, and count as read from then on. */
+function cardsFor(work: Work, edit: any, kit: Material[], input: Item[], batch: Item[] = []) {
   const { drawings } = guidesRead(input, batch);
-  // Each drawing is pointed out once: an author that went on without its card had a reason.
-  const told = new Set(
-    input.flatMap((i) => {
-      if (i.type !== "function_call_output" || typeof i.output !== "string" || !i.output.includes('"cardsUnread"'))
-        return [];
-      try {
-        return (JSON.parse(i.output).cardsUnread ?? []) as string[];
-      } catch {
-        return [];
-      }
-    }),
+  const used = new Set(
+    [...records(edit?.modules), ...records(edit?.links)].flatMap((r) =>
+      typeof r.drawingId === "string" ? [r.drawingId] : [],
+    ),
   );
-  const unread = Object.values(work.materials)
-    .filter((m) => m.kind === "drawing" && !drawings.has(m.id) && !told.has(m.id))
-    .map((m) => m.id);
-  return unread.length
+  const cards = kit
+    .filter((m): m is DrawingMaterial => m.kind === "drawing")
+    .filter((m) => used.has(m.id) && work.materials[m.id] && !drawings.has(m.id) && structured(m))
+    .map(drawingCard);
+  return cards.length
     ? {
-        cardsUnread: unread,
-        note: "Read these drawings' cards with draw_guide before judging them: their parameters cannot be guessed.",
+        cards,
+        cardsNote:
+          "The cards of drawings this write uses whose parameters you had not read. Check what you wrote against them when you look.",
+      }
+    : {};
+}
+/** The ids given to links this write added without one, where the id is not simply its two
+ * ends: a second link between the same modules. The author needs it to change that link. */
+function linksNamed(work: Work, edit: any, before: Set<string>) {
+  if (!records(edit?.links).some((l) => !l.id)) return {};
+  const named = Object.values(work.scenes)
+    .flatMap((s) => s.links)
+    .filter((l) => !before.has(l.id) && l.id !== `${l.from.moduleId}-${l.to.moduleId}`)
+    .filter((l) => l.id.startsWith(`${l.from.moduleId}-${l.to.moduleId}-`))
+    .map((l) => ({ id: l.id, from: l.from.moduleId, to: l.to.moduleId }));
+  return named.length ? { linkIds: named } : {};
+}
+/** Values this write gave library drawings that they do not take: a parameter they do not
+ * have, or a choice outside its options. Such a value draws nothing or something else, and
+ * a look alone rarely shows why. */
+function misused(work: Work, edit: any, kit: Material[]) {
+  const library = new Map(
+    kit.filter((m): m is DrawingMaterial => m.kind === "drawing").map((m) => [m.id, m]),
+  );
+  const parts = new Map(
+    Object.values(work.scenes).flatMap((s) => [...s.modules, ...s.links].map((p) => [p.id, p] as const)),
+  );
+  const found: string[] = [];
+  const check = (kind: string, id: string, drawingId: string, data: unknown) => {
+    const drawing = work.drawings[drawingId] ? undefined : library.get(drawingId);
+    if (!drawing || !data || typeof data !== "object") return;
+    for (const [key, value] of Object.entries(data)) {
+      if (value === null) continue;
+      const param = drawing.params[key];
+      if (!param)
+        found.push(
+          `${kind}.${id}.data.${key}: ${drawingId} has no parameter ${key}; it takes ${Object.keys(drawing.params).join(", ")}`,
+        );
+      else if (param.type === "choice" && typeof value === "string" && !param.options?.includes(value))
+        found.push(`${kind}.${id}.data.${key}: ${JSON.stringify(value)} is not one of ${param.options?.join(", ")}`);
+    }
+  };
+  for (const kind of ["modules", "links"] as const)
+    for (const r of records(edit?.[kind])) {
+      const id = r.id ?? linkKey(r);
+      const part = parts.get(id);
+      check(kind, id, r.drawingId ?? part?.drawingId ?? (kind === "links" ? "arrow" : ""), r.data);
+    }
+  for (const e of Array.isArray(edit?.each) ? edit.each : [])
+    if (e?.drawingId || e?.use) check("each", e.drawingId ?? e.use, e.use ?? e.drawingId, e.data);
+  return found.length
+    ? {
+        parameters: found.slice(0, 10),
+        ...(found.length > 10 ? { moreParameters: found.length - 10 } : {}),
       }
     : {};
 }
 /** What this code reads a saved conversation as. A conversation from before the current
  * work format is not continued: its tool calls and guides describe another format. */
-const CONTEXT_FORMAT = 2;
+const CONTEXT_FORMAT = 3;
 interface Context {
   /** Resolved once for this run, including connections and prices, and persisted across answers. */
   settings: Settings;
@@ -876,6 +942,8 @@ export class Agent {
   active = new Map<string, AbortController>();
   /** Runs already held once for text too small to read. */
   private heldForText = new Set<string>();
+  /** The library's drawings and effects as each run's instructions list them. */
+  private kits = new Map<string, Material[]>();
   /** Pictures each run has asked for, developing in the background. */
   developments = new Map<string, (Development & { reported?: boolean })[]>();
   constructor(public publish: (user: string, event: object) => void) {}
@@ -1089,10 +1157,9 @@ export class Agent {
           },
           async (execution) => {
             try {
-              const instructions = [
-                AUTHOR,
-                catalogue(await styleList(), await kit()),
-              ].join("\n\n");
+              const library = await kit();
+              this.kits.set(run.id, library);
+              const instructions = [AUTHOR, catalogue(await styleList(), library)].join("\n\n");
               // Where this execution starts from; each turn records what it adds.
               execution.set({
                 instructions,
@@ -1138,6 +1205,7 @@ export class Agent {
               clearTimeout(timeout);
               clearTimeout(flush);
               this.active.delete(run.id);
+              this.kits.delete(run.id);
               run.elapsedMs = (run.elapsedMs || 0) + Date.now() - start;
               this.emit(store, run);
               execution.set({ status: run.status });
@@ -1528,6 +1596,74 @@ export class Agent {
     this.heldForText.add(run.id);
     return `最小的字小于 ${MIN_TEXT} 像素（${small.join("，")}），读者看不清：放大或删减这些字再看一次；如果这些字不由你决定（比如地图自带的地名），说明原因后结束`;
   }
+  /** Looks at the canvas for the author: waits for the pictures still developing, then has
+   * the saved scenes pictured and measured. */
+  private async look(
+    store: UserStore,
+    run: Run,
+    ctx: Context,
+    args: unknown,
+    abort: AbortController,
+    step: ToolStep,
+  ): Promise<{ output: unknown; images: Item[] }> {
+    const images: Item[] = [];
+    const pending = (this.developments.get(run.id) || []).filter((d) => !d.settled);
+    run.status = "viewing";
+    // The pictures still to come, shortened as each arrives, so the wait shows going.
+    const left = () => {
+      const names = pending.filter((d) => !d.settled).map((d) => d.name);
+      return names.length ? names : undefined;
+    };
+    if (pending.length) {
+      Object.assign(step, { waiting: left() });
+      for (const d of pending)
+        void d.done.then(() => {
+          if (!("waiting" in step) || !step.waiting) return;
+          Object.assign(step, { waiting: left() });
+          this.emit(store, run);
+        });
+    }
+    this.emit(store, run);
+    try {
+      await Promise.race([
+        Promise.all(pending.map((d) => d.done)),
+        new Promise((_, reject) =>
+          abort.signal.addEventListener("abort", () => reject(abort.signal.reason)),
+        ),
+      ]);
+      images.push(...(await this.developed(store, run)).flatMap((m) => m.content));
+      // The service may be restarting; after a few tries the run stops instead of
+      // spending the author's turns on a look it cannot get.
+      let result: Awaited<ReturnType<typeof observe>> | undefined;
+      for (const wait of [2000, 6000, 0]) {
+        try {
+          result = await observe(store, run.workId, args as Parameters<typeof observe>[2], abort.signal, {
+            observations: run.observations,
+            reported: (ctx.reported ??= {}),
+          });
+          break;
+        } catch (e) {
+          if (!(e instanceof Unavailable) || !wait) throw e;
+          await new Promise((r) => setTimeout(r, wait));
+        }
+      }
+      if (!result) throw new Unavailable("画布查看服务不可用");
+      run.observations.push(result.observation);
+      const searched = research(run);
+      images.push(...result.content);
+      Object.assign(step, {
+        waiting: undefined,
+        screenshots: pictures(result.observation.screenshots),
+        errors: result.observation.errors,
+      });
+      return {
+        output: searched ? { ...result.observation, research: searched } : result.observation,
+        images,
+      };
+    } finally {
+      run.status = "running";
+    }
+  }
   /** Runs one tool call. `done` ends this execution: the run finished or waits for the user. */
   private async call(
     store: UserStore,
@@ -1641,7 +1777,7 @@ export class Agent {
           break;
         }
         case "draw_guide": {
-          output = readGuides(guideSchema.parse(args), await kit(), guidesRead(ctx.input));
+          output = readGuides(guideSchema.parse(args), this.kits.get(run.id) ?? (await kit()), guidesRead(ctx.input));
           break;
         }
         case "read_work": {
@@ -1782,12 +1918,16 @@ export class Agent {
           break;
         }
         case "write_work": {
-          const { amend, ...written } = args;
+          const { amend, claims, ...written } = args;
           if (amend && !ctx.held)
             throw new DomainError("没有等待修正的写入：amend 只用在一次写入被拒绝之后；这次把要改的内容直接写出来");
           // A correction lays over the write it corrects, and the two save as one revision.
           const edit = amend ? composed(ctx.held, written) : written;
           ctx.held = edit;
+          const library = this.kits.get(run.id) ?? (await kit());
+          const linkedBefore = new Set(
+            Object.values(store.work(run.workId).scenes).flatMap((s) => s.links.map((l) => l.id)),
+          );
           const { work, added, keptTitle, absent } = await writeWork(store, run.workId, edit, {
             cause: causeOf(run),
             scene: run.sceneId,
@@ -1805,73 +1945,45 @@ export class Agent {
             ...(absent.length
               ? { notThere: `Asked to remove what the work does not have: ${absent.join(", ")}.` }
               : {}),
-            ...cardsUnread(work, ctx.input, batch),
+            ...linksNamed(work, edit, linkedBefore),
+            ...misused(work, edit, library),
+            ...cardsFor(work, edit, library, ctx.input, batch),
           };
           Object.assign(step!, { revision: work.revision, materials: added, writing: undefined });
+          // The last write of a message is looked at there and then, unless the message goes
+          // on to look for itself: a save and its look are one turn, never two.
+          if (
+            batch.findLast((c) => c.name === "write_work") === call &&
+            !batch.some((c) => c.name === "view_canvas") &&
+            !writeError
+          ) {
+            step!.status = "done";
+            const looking: ToolStep = {
+              kind: "tool",
+              id: call.call_id + ":look",
+              status: "running",
+              name: "view_canvas",
+              focus: "overview",
+            };
+            run.steps.push(looking);
+            try {
+              const seen = await this.look(store, run, ctx, claims?.length ? { claims } : {}, abort, looking);
+              output = { ...(output as object), look: seen.output };
+              images = seen.images;
+              looking.status = "done";
+            } catch (e) {
+              const error = e instanceof Error ? e.message : String(e);
+              Object.assign(looking, { status: "failed", error });
+              if (e instanceof Unavailable || abort.signal.aborted) throw e;
+              // The write is saved all the same; a work with nothing drawn yet has no look.
+              run.steps.splice(run.steps.indexOf(looking), 1);
+              output = { ...(output as object), look: { error } };
+            }
+          }
           break;
         }
         case "view_canvas": {
-          const pending = (this.developments.get(run.id) || []).filter(
-            (d) => !d.settled,
-          );
-          run.status = "viewing";
-          // The pictures still to come, shortened as each arrives, so the wait shows going.
-          const left = () => {
-            const names = pending.filter((d) => !d.settled).map((d) => d.name);
-            return names.length ? names : undefined;
-          };
-          if (pending.length) {
-            Object.assign(step!, { waiting: left() });
-            for (const d of pending)
-              void d.done.then(() => {
-                if (!("waiting" in step!) || !step.waiting) return;
-                Object.assign(step!, { waiting: left() });
-                this.emit(store, run);
-              });
-          }
-          this.emit(store, run);
-          try {
-            await Promise.race([
-              Promise.all(pending.map((d) => d.done)),
-              new Promise((_, reject) =>
-                abort.signal.addEventListener("abort", () =>
-                  reject(abort.signal.reason),
-                ),
-              ),
-            ]);
-            images.push(
-              ...(await this.developed(store, run)).flatMap((m) => m.content),
-            );
-            // The service may be restarting; after a few tries the run stops instead of
-            // spending the author's turns on a look it cannot get.
-            let result: Awaited<ReturnType<typeof observe>> | undefined;
-            for (const wait of [2000, 6000, 0]) {
-              try {
-                result = await observe(store, run.workId, args, abort.signal, {
-                  observations: run.observations,
-                  reported: (ctx.reported ??= {}),
-                });
-                break;
-              } catch (e) {
-                if (!(e instanceof Unavailable) || !wait) throw e;
-                await new Promise((r) => setTimeout(r, wait));
-              }
-            }
-            if (!result) throw new Unavailable("画布查看服务不可用");
-            run.observations.push(result.observation);
-            const searched = research(run);
-            output = searched
-              ? { ...result.observation, research: searched }
-              : result.observation;
-            images.push(...result.content);
-            Object.assign(step!, {
-              waiting: undefined,
-              screenshots: pictures(result.observation.screenshots),
-              errors: result.observation.errors,
-            });
-          } finally {
-            run.status = "running";
-          }
+          ({ output, images } = await this.look(store, run, ctx, args, abort, step!));
           break;
         }
         default:
@@ -1886,7 +1998,7 @@ export class Agent {
       if (e instanceof Unavailable) throw e;
       if (e instanceof BrokenWrite) {
         // Only the records that arrived whole carry over; whatever came after is the author's to send.
-        const { amend, ...kept } = e.kept;
+        const { amend, claims: _claims, ...kept } = e.kept;
         ctx.held = amend && ctx.held ? composed(ctx.held, kept) : kept;
         return {
           done: false,

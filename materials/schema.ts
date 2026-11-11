@@ -110,6 +110,9 @@ export interface DrawingMaterial extends Envelope {
   use: "module" | "link";
   /** A size it looks right at, in scene units. */
   size: { width: number; height: number };
+  /** How a module drawn with it is sized when it is placed without one: to its words, its
+   * rows, or what it frames or carries in lanes. */
+  fit?: "words" | "rows" | "frame" | "lanes";
   /** Data that shows what it draws at that size, as a module. */
   example: Record<string, unknown>;
 }

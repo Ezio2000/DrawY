@@ -1,6 +1,7 @@
 import type { Browser, Page } from "playwright";
 import type { Bounds, Scene } from "../contracts/index.ts";
 import { MIN_TEXT, OPENING_VIEW } from "../contracts/geometry.ts";
+import type { StructureReport } from "../runtime/scene.ts";
 
 export interface CaptureRequest {
   scenes: {
@@ -37,6 +38,8 @@ export interface Shot {
   }[];
   /** On the opening view. */
   text?: TextReport;
+  /** On the opening view: what the scene's geometry shows is wrong with its structure. */
+  structure?: StructureReport;
   sceneId: string;
   label: string;
   /** The opening view of the whole scene, as the canvas first shows it. */
@@ -225,7 +228,11 @@ export async function capture(
         shots.push({
           camera: geometry.camera,
           ...(overview
-            ? { modules: geometry.modules, text: await page.evaluate(readText, MIN_TEXT) }
+            ? {
+                modules: geometry.modules,
+                text: await page.evaluate(readText, MIN_TEXT),
+                structure: await page.evaluate(() => window.drawyView.renderer.structure?.() ?? {}),
+              }
             : {}),
           sceneId: await page.evaluate(() => window.drawyData.sceneId),
           label: `${size.width}px / ${label}`,
