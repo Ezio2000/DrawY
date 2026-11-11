@@ -150,6 +150,38 @@ it("runs over a band of another group between the modules it holds, where going 
   expect(Math.max(...az.points.map((p) => p.x))).toBeLessThan(860);
 });
 
+it("keeps off the drawn edges of frames, down the middle of a gap too narrow for a margin", () => {
+  // Tiers close together, as an architecture's layers are drawn; links have to pass between
+  // and round them, and a stretch lying on a frame's edge would read as part of the frame.
+  const modules = [
+    box("top", 0, 0, 900, 120),
+    box("middle", 0, 140, 900, 120),
+    box("bottom", 0, 280, 900, 120),
+    box("a", 20, 40),
+    ...[0, 1, 2, 3, 4].map((i) => box("m" + i, 20 + i * 176, 180)),
+    box("z", 740, 320),
+    box("y", 20, 320),
+    box("b", 740, 40),
+  ];
+  const links = [link("az", "a", "z"), link("m0y", "m0", "y"), link("m4b", "m4", "b"), link("yb", "y", "b")];
+  const routes = routeLinks(links, modules);
+  const frames = modules.slice(0, 3).map((m) => m.bounds);
+  for (const [id, r] of routes)
+    for (let i = 1; i < r.points.length; i++) {
+      const p = r.points[i - 1],
+        q = r.points[i];
+      for (const f of frames) {
+        const level = Math.abs(p.y - q.y) < 0.01,
+          run = level
+            ? Math.min(Math.max(p.x, q.x), f.x + f.width) - Math.max(Math.min(p.x, q.x), f.x)
+            : Math.min(Math.max(p.y, q.y), f.y + f.height) - Math.max(Math.min(p.y, q.y), f.y);
+        const edges = level ? [f.y, f.y + f.height] : [f.x, f.x + f.width];
+        const at = level ? p.y : p.x;
+        expect(run > 24 && edges.some((e) => Math.abs(at - e) < 6), `${id} along a frame edge at ${at}`).toBe(false);
+      }
+    }
+});
+
 it("loops a link from a module back to itself, and names a point where its end is given one", () => {
   const modules = [box("a", 0, 0), box("b", 300, 200)];
   const routes = routeLinks(

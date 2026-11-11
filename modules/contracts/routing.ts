@@ -52,6 +52,9 @@ type Box = {
   /** Ground neither end stands in, another group's frame: a line may run over it between
    * the modules it holds, and goes round it where that is not much further. */
   ground?: boolean;
+  /** A frame an end stands in: nothing to go round, but its edge is drawn, and a line run
+   * down it would read as part of the frame. */
+  rim?: boolean;
   /** So near a port that the line leaves beside it with no margin: a side to avoid. */
   tight?: boolean;
   /** How far it was grown past the thing itself. */
@@ -368,24 +371,49 @@ function shapes(pa: Point, sa: Side, pb: Point, sb: Side, s: number, k: number, 
 /** What a way costs: its length, its turns and, far above both, what it runs through. */
 function costOf(pts: Point[], obstacles: Box[]) {
   let hits = 0,
-    over = 0;
+    over = 0,
+    edge = 0;
   let cost = lengthOf(pts) + BEND * Math.max(0, pts.length - 2);
   for (const o of obstacles) {
     if (o.tight) cost += 140;
     for (let i = 1; i < pts.length; i++)
-      if (through(pts[i - 1], pts[i], o)) {
-        if (o.ground) over++;
+      if (o.rim ? alongEdge(pts[i - 1], pts[i], o) : through(pts[i - 1], pts[i], o) || (o.ground && alongEdge(pts[i - 1], pts[i], o))) {
+        if (o.rim || (o.ground && !through(pts[i - 1], pts[i], o))) edge++;
+        if (o.ground || o.rim) over++;
         else hits++;
-        cost += toll(o);
+        cost += o.rim ? HIT / 8 : toll(o);
         break;
       }
   }
-  return { hits, over, cost };
+  return { hits, over, edge, cost };
+}
+/** Whether a stretch runs down the drawn edge of a frame, where it cannot be told from it. */
+function alongEdge(p: Point, q: Point, o: Box) {
+  const NEAR = 6,
+    LONG = 24;
+  if (p.y === q.y) {
+    const run = Math.min(Math.max(p.x, q.x), o.r) - Math.max(Math.min(p.x, q.x), o.x);
+    return run > LONG && (Math.abs(p.y - o.y) < NEAR || Math.abs(p.y - o.b) < NEAR);
+  }
+  if (p.x === q.x) {
+    const run = Math.min(Math.max(p.y, q.y), o.b) - Math.max(Math.min(p.y, q.y), o.y);
+    return run > LONG && (Math.abs(p.x - o.x) < NEAR || Math.abs(p.x - o.r) < NEAR);
+  }
+  return false;
 }
 /** A way round what stands between two ports, searched on the lines along the edges of the
  * things in the way. It always finds one; where nothing clear exists it passes through as
  * little as it can. */
-function search(pa: Point, sa: Side, pb: Point, sb: Side, s: number, obstacles: Box[], prefer: Point) {
+function search(
+  pa: Point,
+  sa: Side,
+  pb: Point,
+  sb: Side,
+  s: number,
+  obstacles: Box[],
+  prefer: Point,
+  margin: number,
+) {
   const a1 = add(pa, DIR[sa], s),
     b1 = add(pb, DIR[sb], s);
   const R = 140;
@@ -397,8 +425,37 @@ function search(pa: Point, sa: Side, pb: Point, sb: Side, s: number, obstacles: 
   };
   const near = obstacles.filter((o) => o.r > region.x && o.x < region.r && o.b > region.y && o.y < region.b);
   const line = (values: number[]) => [...new Set(values.map((v) => Math.round(v * 100) / 100))].sort((m, n) => m - n);
-  const xs = line([a1.x, b1.x, prefer.x, region.x, region.r, ...near.flatMap((o) => [o.x, o.r])]),
-    ys = line([a1.y, b1.y, prefer.y, region.y, region.b, ...near.flatMap((o) => [o.y, o.b])]);
+  // A group's frame is drawn, so a line along its edge would melt into it: the lines a route
+  // may take by a frame keep a margin off its edge on either side, and run down the middle of
+  // a gap too narrow for that.
+  const frames = near.filter((o) => o.ground || o.rim);
+  const off = (edges: number[]) => {
+    const sorted = [...new Set(edges)].sort((m, n) => m - n);
+    const lines = sorted.flatMap((e) => [e - margin, e + margin]);
+    for (let n = 1; n < sorted.length; n++)
+      if (sorted[n] - sorted[n - 1] < margin * 2) lines.push((sorted[n] + sorted[n - 1]) / 2);
+    const keep = Math.min(margin / 2, 6);
+    return lines.filter((v) => !sorted.some((e) => Math.abs(v - e) < keep));
+  };
+  const solid = near.filter((o) => !o.ground && !o.rim);
+  const xs = line([
+      a1.x,
+      b1.x,
+      prefer.x,
+      region.x,
+      region.r,
+      ...solid.flatMap((o) => [o.x, o.r]),
+      ...off(frames.flatMap((o) => [o.x, o.r])),
+    ]),
+    ys = line([
+      a1.y,
+      b1.y,
+      prefer.y,
+      region.y,
+      region.b,
+      ...solid.flatMap((o) => [o.y, o.b]),
+      ...off(frames.flatMap((o) => [o.y, o.b])),
+    ]);
   const nx = xs.length,
     ny = ys.length;
   const ix = (v: number) => xs.indexOf(Math.round(v * 100) / 100),
@@ -483,14 +540,26 @@ function search(pa: Point, sa: Side, pb: Point, sb: Side, s: number, obstacles: 
     return lo;
   };
   for (const o of near) {
+    if (o.rim) continue;
     const hit = toll(o);
     // Lines strictly inside it, and steps that overlap it.
     const j0 = first(ys, o.y),
       i0 = first(xs, o.x);
+    // Another group's frame costs a line once for each edge it crosses, and its length again
+    // while inside, so the price of passing through does not hang on how many lines run there.
+    const ground = o.ground;
+    const cost = (m: number, n: number, lo: number, hi: number) =>
+      !ground
+        ? hit
+        : ((m < lo) !== (n < lo) || m === lo || n === lo ? hit / 2 : 0) +
+          ((m < hi) !== (n < hi) || m === hi || n === hi ? hit / 2 : 0) +
+          Math.max(0, Math.min(n, hi) - Math.max(m, lo));
     for (let j = j0; j < ny && ys[j] < o.b; j++)
-      for (let i = Math.max(0, i0 - 1); i < nx - 1 && xs[i] < o.r; i++) if (xs[i + 1] > o.x) level[j * nx + i] += hit;
+      for (let i = Math.max(0, i0 - 1); i < nx - 1 && xs[i] < o.r; i++)
+        if (xs[i + 1] > o.x) level[j * nx + i] += cost(xs[i], xs[i + 1], o.x, o.r);
     for (let i = i0; i < nx && xs[i] < o.r; i++)
-      for (let j = Math.max(0, j0 - 1); j < ny - 1 && ys[j] < o.b; j++) if (ys[j + 1] > o.y) upright[j * nx + i] += hit;
+      for (let j = Math.max(0, j0 - 1); j < ny - 1 && ys[j] < o.b; j++)
+        if (ys[j + 1] > o.y) upright[j * nx + i] += cost(ys[j], ys[j + 1], o.y, o.b);
   }
   const h = (i: number, j: number) => Math.abs(xs[i] - b1.x) + Math.abs(ys[j] - b1.y);
   best[key(start[0], start[1], startDir)] = 0;
@@ -641,6 +710,8 @@ export function routeLinks(
       if (is === "end") obstacles.push(boxOf(m.id, m.bounds));
       else if (is && ground.has(m.id)) obstacles.push({ ...boxOf(m.id, m.bounds), ground: true, grown: 0 });
       else if (is) obstacles.push(boxOf(m.id, m.bounds, MARGIN));
+      else if (ground.has(m.id) && (inside(m.bounds, A) || inside(m.bounds, B)))
+        obstacles.push({ ...boxOf(m.id, m.bounds), rim: true, grown: 0 });
     }
     // What a ground keeps clear stands in the way like a module, unless an end is on it.
     for (const c of keepClear)
@@ -651,7 +722,7 @@ export function routeLinks(
     for (const e of [a, b])
       sig.push(e.fixed?.point.x ?? 0, e.fixed?.point.y ?? 0, e.fixed ? 1 : 0, e.sides.length === 1 ? CODE[e.sides[0]] : 0);
     for (const o of obstacles)
-      sig.push(o.x, o.y, o.r, o.b, (o.id === a.id ? 1 : o.id === b.id ? 2 : 0) + (o.soft ? 4 : 0) + (o.ground ? 8 : 0));
+      sig.push(o.x, o.y, o.r, o.b, (o.id === a.id ? 1 : o.id === b.id ? 2 : 0) + (o.soft ? 4 : 0) + (o.ground ? 8 : 0) + (o.rim ? 16 : 0));
     plans.push({ sig, link, a, b, sa: a.sides[0], sb: b.sides[0], pa: mid(A), pb: mid(B), obstacles, points: [] });
   }
   if (memo) {
@@ -673,6 +744,7 @@ export function routeLinks(
     const a1 = add(pa, DIR[sa], s),
       b1 = add(pb, DIR[sb], s);
     const close = (o: Box) =>
+      !o.rim &&
       o.id !== p.a.id && o.id !== p.b.id && (holds(o, a1) || holds(o, b1) || holds(o, pa) || holds(o, pb));
     if (!p.obstacles.some(close)) return p.obstacles;
     return p.obstacles.flatMap((o) => {
@@ -864,7 +936,7 @@ export function routeLinks(
       const pa = pointOf(p.a, sa, t.a),
         pb = pointOf(p.b, sb, t.b);
       const obstacles = clear(p, pa, pb, s, sa, sb);
-      let best: { pts: Point[]; cost: number; hits: number; over: number } | undefined;
+      let best: ReturnType<typeof costOf> & { pts: Point[] } | undefined;
       for (const pts of shapes(pa, sa, pb, sb, s, k, p.a.box, p.b.box)) {
         const c = costOf(pts, obstacles);
         if (!best || c.cost < best.cost) best = { pts, ...c };
@@ -872,10 +944,16 @@ export function routeLinks(
       if (best && !best.hits && !best.over) return { ...best, pa, pb };
       const a1 = add(pa, DIR[sa], s),
         b1 = add(pb, DIR[sb], s);
-      const found = search(pa, sa, pb, sb, s, obstacles, {
-        x: a1.x + (b1.x - a1.x) * k,
-        y: a1.y + (b1.y - a1.y) * k,
-      });
+      const found = search(
+        pa,
+        sa,
+        pb,
+        sb,
+        s,
+        obstacles,
+        { x: a1.x + (b1.x - a1.x) * k, y: a1.y + (b1.y - a1.y) * k },
+        MARGIN,
+      );
       if (found) {
         const c = costOf(found, obstacles);
         if (!best || c.cost < best.cost) best = { pts: found, ...c };
@@ -883,11 +961,12 @@ export function routeLinks(
       return { ...best!, pa, pb };
     };
     let chosen = attempt(p.sa, p.sb);
-    if (chosen.hits) {
-      // Another pair of sides may get through where this one cannot.
+    if (chosen.hits || chosen.edge) {
+      // Another pair of sides may get through where this one cannot, or keep off a frame's
+      // edge where this one has to run down it to reach its port.
       for (const sa of p.a.sides)
         for (const sb of p.b.sides) {
-          if (!chosen.hits || (sa === p.sa && sb === p.sb)) continue;
+          if (!(chosen.hits || chosen.edge) || (sa === p.sa && sb === p.sb)) continue;
           const other = attempt(sa, sb);
           if (other.cost < chosen.cost) {
             chosen = other;
@@ -1128,7 +1207,7 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
           return (
             keeps &&
             !g.p.obstacles.some((o) => {
-              if (o.ground) return false;
+              if (o.ground || o.rim) return false;
               // Into a thing's margin is allowed where the lanes need it; into the thing
               // itself never, unless the stretch already ran there.
               const by = (o.grown ?? (o.id === g.p.a.id || o.id === g.p.b.id ? 0 : MARGIN)) - 3;
