@@ -647,7 +647,8 @@ export class SceneRenderer {
       const inner = { x: w.box.x + 3, y: w.box.y + 3, width: w.box.width - 6, height: w.box.height - 6 };
       const crossedBy = [...this.routes]
         .filter(([id, r]) => {
-          if (id === w.link || r.kind === "curve" || r.kind === "smooth") return false;
+          // A line without words lies under these and passes behind their halo.
+          if (id === w.link || r.kind === "curve" || r.kind === "smooth" || !this.worded(id)) return false;
           return r.points.some((p, i) => {
             if (!i) return false;
             const q = r.points[i - 1];
@@ -840,8 +841,15 @@ export class SceneRenderer {
    * figure, a frame or lanes holding linked modules) and below every other module, so what
    * lies under the figure's parts does not hide the arrows between them. */
   private layer(kind: "module" | "link", id: string) {
-    if (kind === "link") return "1";
-    return this.ground.has(id) ? "0" : "2";
+    // A link with words lies over the plain ones, so another line passes behind its words,
+    // where their halo keeps them whole, and never strikes them through.
+    if (kind === "link") return this.worded(id) ? "2" : "1";
+    return this.ground.has(id) ? "0" : "3";
+  }
+  /** Whether a link carries words. */
+  private worded(id: string) {
+    const l = this.links.get(id);
+    return !!l && !!{ ...drawingOf(this.work, l.drawingId)?.defaults, ...l.data }.label;
   }
   /** The scene's modules in stacking order, where they are now. */
   private currentModules() {
