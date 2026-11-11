@@ -35,6 +35,9 @@ export interface Shot {
     /** Where each picture's visible content actually is, in scene units. */
     pictures?: ({ material: string } & Bounds)[];
   }[];
+  /** On the opening view: the figure's extent, its modules and what its links draw beyond
+   * them, which the view is fitted to. */
+  extent?: Bounds;
   /** On the opening view. */
   text?: TextReport;
   sceneId: string;
@@ -165,6 +168,7 @@ export async function capture(
           const { materials } = window.drawyData.work;
           return {
             camera,
+            extent: window.drawyView.renderer.bounds,
             modules: [...window.drawyView.renderer.instances.values()].map(
               ({ id, bounds }) => {
                 const host = document.querySelector(
@@ -225,7 +229,7 @@ export async function capture(
         shots.push({
           camera: geometry.camera,
           ...(overview
-            ? { modules: geometry.modules, text: await page.evaluate(readText, MIN_TEXT) }
+            ? { extent: geometry.extent, modules: geometry.modules, text: await page.evaluate(readText, MIN_TEXT) }
             : {}),
           sceneId: await page.evaluate(() => window.drawyData.sceneId),
           label: `${size.width}px / ${label}`,

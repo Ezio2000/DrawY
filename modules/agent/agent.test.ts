@@ -62,7 +62,7 @@ const answer = (name: string, args: unknown, call_id: string) =>
         call_id,
       };
 
-it("feeds canvas images into the author conversation and requires another look after edits", async () => {
+it("feeds canvas images into the author conversation and looks at each save as it is made", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
   try {
@@ -85,9 +85,7 @@ it("feeds canvas images into the author conversation and requires another look a
     const calls = [
       ["finish", { message: "premature" }],
       ["view_canvas", {}],
-      ["write_work", { title: "edited" }],
-      ["finish", { message: "stale" }],
-      ["view_canvas", {}],
+      ["write_work", { title: "edited", look: { claims: ["the title changed"] } }],
       ["finish", { message: "done" }],
     ] as const;
     let turn = 0,
@@ -134,17 +132,21 @@ it("feeds canvas images into the author conversation and requires another look a
       ["message", "premature"],
       ["view_canvas", "done"],
       ["write_work", "done"],
-      ["message", "stale"],
+      // The save is looked at in the same turn, so the closing words after it stand.
       ["view_canvas", "done"],
       ["message", "done"],
     ]);
     expect(run.steps[3]).toMatchObject({ revision: 2, removed: 0 });
     expect(run.observations.map((o) => o.revision)).toEqual([1, 2]);
+    // The look comes back in the save's result, with the claims it was asked to check.
+    const saved = JSON.parse(ctx.input.find((x) => x.type === "function_call_output" && x.call_id === "c3").output);
+    expect(saved).toMatchObject({ revision: 2, look: { revision: 2 } });
+    expect(vi.mocked(observe).mock.calls.at(-1)![2]).toEqual({ claims: ["the title changed"] });
     // Closing words before the latest revision was seen are answered with what is missing.
     const held = ctx.input.filter(
       (x) => x.role === "user" && String(x.content).startsWith("The work is not done yet: "),
     );
-    expect(held).toHaveLength(2);
+    expect(held).toHaveLength(1);
     expect(
       store
         .context("run")
@@ -2009,6 +2011,56 @@ it("answers every call of a batch before showing its pictures", async () => {
     const order = items.slice(-3).map((i) => i.call_id ?? i.role);
     expect(order).toEqual(["a", "b", "user"]);
     expect(items.at(-1).content.some((c: any) => c.type === "input_image")).toBe(true);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("looks once at saves followed by view_canvas in one message, and only after the last of several saves", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    work.scenes.child.modules = [];
+    store.commit(work, 1, { kind: "edit" });
+    const run: Run = { id: "run", workId: work.id, sceneId: "root", status: "running", steps: [], observations: [], startedAt: Date.now() };
+    store.saveRun(run);
+    const ctx = { input: [] as any[], settings: store.settings(), generations: 0 };
+    const call = (name: string, args: unknown, call_id: string) => ({ type: "function_call", name, call_id, arguments: JSON.stringify(args) });
+    const turns = [
+      [call("write_work", { title: "一" }, "w1"), call("view_canvas", { regions: [[0, 0, 100, 100]], sceneId: "root" }, "v1")],
+      [call("write_work", { title: "二" }, "w2"), call("write_work", { title: "三" }, "w3")],
+    ];
+    let turn = 0;
+    vi.mocked(observe).mockClear();
+    vi.mocked(generate).mockImplementation(async () =>
+      turn < turns.length ? ({ items: turns[turn++], usage: {}, response: {} } as never) : (said("好了") as never),
+    );
+    await new Agent(() => {}).execute(store, run, ctx, "request");
+    expect(run.error).toBeUndefined();
+    expect(run.status).toBe("completed");
+    // The view that follows the first save looks in its place, with its own options.
+    expect(vi.mocked(observe).mock.calls.map((c) => c[2])).toEqual([
+      { regions: [[0, 0, 100, 100]], sceneId: "root" },
+      {},
+    ]);
+    const outputs = Object.fromEntries(
+      ctx.input.filter((i) => i.type === "function_call_output").map((i) => [i.call_id, JSON.parse(i.output)]),
+    );
+    expect(outputs.w1.look).toBeUndefined();
+    expect(outputs.w2.look).toBeUndefined();
+    expect(outputs.w3.look).toMatchObject({ revision: 5 });
+    expect(run.steps.flatMap((s) => (s.kind === "tool" ? [s.name] : []))).toEqual([
+      "write_work",
+      "view_canvas",
+      "write_work",
+      "write_work",
+      "view_canvas",
+    ]);
   } finally {
     db.close();
     rmSync(dir, { recursive: true });

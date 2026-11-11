@@ -1434,12 +1434,11 @@ export class Canvas {
   refit() {
     if (this.automatic) this.fit(true, 520);
   }
-  /** The drawing as a whole: its modules and the sketches of those on the way. */
+  /** The drawing as a whole: its modules, what its links draw beyond them, and the
+   * sketches of those on the way. */
   private extent() {
-    return union([
-      ...[...this.renderer.instances.values()].map((m) => m.bounds),
-      ...[...this.sketches.values()].map((s) => s.bounds),
-    ]);
+    const drawn = this.renderer.instances.size ? [this.renderer.bounds] : [];
+    return union([...drawn, ...[...this.sketches.values()].map((s) => s.bounds)]);
   }
   /** Takes the automatic view, which follows the drawing as it changes: filling the screen
    * as far as `fill` allows, or, framed `"whole"`, all of it. */

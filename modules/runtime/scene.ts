@@ -11,6 +11,7 @@ import type {
 } from "../contracts/index.ts";
 import { drawingOf, labelOf } from "../contracts/index.ts";
 import { linkEnds, union } from "../contracts/geometry.ts";
+import { routeLinks, type Route } from "./route.ts";
 
 export interface SceneOptions {
   open: (target: Target) => void;
@@ -26,6 +27,11 @@ export interface DrawingAPI {
   /** The side of its module each end meets; null for a point inside it. */
   fromSide?: Side | null;
   toSide?: Side | null;
+  /** For a link whose data asks for route "elbow": its right-angled way from `from` to `to`
+   * around the scene's other modules, in local coordinates, and for each segment whether it
+   * runs along another link's line (a trunk it shares), where a label does not belong. */
+  route?: Point[];
+  shared?: boolean[];
   svg: (source: string) => SVGElement;
   html: (source: string) => HTMLElement;
   mermaid: (source: string) => Promise<Element>;
@@ -102,6 +108,11 @@ export class SceneRenderer {
   /** The scene's links as drawn now, which an edit may preview with other data. */
   readonly links: Map<string, Link>;
   private views = new Map<string, View>();
+  /** The right-angled routes of the links that ask for one, laid among all the modules,
+   * what each link was last drawn along, and where each link's drawing reaches. */
+  private routes = new Map<string, Route>();
+  private drawnAlong = new Map<string, string>();
+  private reach = new Map<string, Bounds>();
   private listeners = new Map<string, Set<Listener>>();
   private jobs = new Set<Promise<unknown>>();
   private interactionCleanup: (() => void)[] = [];
@@ -119,8 +130,10 @@ export class SceneRenderer {
     this.element.style.cssText =
       "position:absolute;inset:0;pointer-events:none";
   }
+  /** The figure's extent: its modules, and what its links draw beyond them, such as a
+   * route taken round the outside or a label. */
   get bounds() {
-    return union([...this.instances.values()].map((m) => m.bounds));
+    return union([...[...this.instances.values()].map((m) => m.bounds), ...this.reach.values()]);
   }
   /** The element that holds a drawn module or link. */
   host(kind: "module" | "link", id: string) {
@@ -343,6 +356,8 @@ export class SceneRenderer {
       to: Point;
       fromSide: Side | null;
       toSide: Side | null;
+      route?: Point[];
+      shared?: boolean[];
     },
   ) {
     return this.track(
@@ -454,6 +469,7 @@ export class SceneRenderer {
             result,
           );
           host.removeAttribute("data-error");
+          if (kind === "link") this.measure(id, bounds, result);
           if (kind === "module") {
             const m = this.instances.get(id)!;
             host.title = labelOf(m);
@@ -474,39 +490,94 @@ export class SceneRenderer {
     return this.draw(m.id, m.drawingId, m.bounds, m.data, "module");
   }
   /** Where a link's ends meet their modules as they are now, in scene units, and the side
-   * each is on. */
-  ends(l: Pick<Link, "from" | "to">) {
+   * each is on: along its route when it has one. */
+  ends(l: Pick<Link, "from" | "to"> & { id?: string }) {
+    const r = l.id === undefined ? undefined : this.routes.get(l.id);
+    const known = l.id === undefined ? undefined : this.links.get(l.id);
+    if (r && known && known.from.moduleId === l.from.moduleId && known.to.moduleId === l.to.moduleId)
+      return {
+        from: { ...r.points[0], side: r.fromSide },
+        to: { ...r.points[r.points.length - 1], side: r.toSide },
+      };
     return linkEnds(l, (id) => this.instances.get(id)!.bounds);
   }
+  /** Whether a link asks to run at right angles around the modules: an elbow whose bend
+   * and first axis are not set by hand. A labelled one is a branch, given a side of its own. */
+  private asks(l: Link) {
+    const d = { ...(drawingOf(this.work, l.drawingId)?.defaults ?? {}), ...l.data };
+    const asks = d.route === "elbow" && !Number(d.bend ?? 0) && (d.first === undefined || d.first === "auto");
+    return asks ? { branch: typeof d.label === "string" && !!d.label.trim() } : undefined;
+  }
+  /** Lays the routes again among the modules where they are now. */
+  private reroute() {
+    const boxes = new Map([...this.instances].map(([id, m]) => [id, m.bounds]));
+    const backdrop = backdropOf(this.currentModules());
+    const asking = [...this.links.values()].flatMap((l) => {
+      const asks = this.asks(l);
+      return asks && this.instances.has(l.from.moduleId) && this.instances.has(l.to.moduleId)
+        ? [{ id: l.id, from: l.from, to: l.to, branch: asks.branch }]
+        : [];
+    });
+    this.routes = asking.length ? routeLinks(asking, boxes, new Set(backdrop ? [backdrop] : [])) : new Map();
+  }
   private drawLink(l: Link) {
+    const r = this.routes.get(l.id);
+    this.drawnAlong.set(l.id, r ? JSON.stringify(r) : "");
     const { from, to } = this.ends(l);
-    const x = Math.min(from.x, to.x) - 48,
-      y = Math.min(from.y, to.y) - 48;
+    const points = r?.points ?? [from, to];
+    const x = Math.min(...points.map((p) => p.x)) - 48,
+      y = Math.min(...points.map((p) => p.y)) - 48;
     const bounds = {
       x,
       y,
-      width: Math.abs(from.x - to.x) + 96,
-      height: Math.abs(from.y - to.y) + 96,
+      width: Math.max(...points.map((p) => p.x)) - x + 48,
+      height: Math.max(...points.map((p) => p.y)) - y + 48,
     };
+    const local = (p: Point) => ({ x: p.x - x, y: p.y - y });
     return this.draw(l.id, l.drawingId, bounds, l.data, "link", {
-      from: { x: from.x - x, y: from.y - y },
-      to: { x: to.x - x, y: to.y - y },
+      from: local(from),
+      to: local(to),
       fromSide: from.side,
       toSide: to.side,
+      ...(r ? { route: r.points.map(local), shared: r.shared } : {}),
     });
   }
-  /** Draws the links, or only those meeting some modules. */
+  /** Draws the links meeting some modules, or all of them, and every link whose route
+   * changed: a module moved into a route's way sends it round. */
   private drawLinks(meeting?: Set<string>) {
+    this.reroute();
     return Promise.all(
       [...this.links.values()]
-        .filter(
-          (l) =>
+        .filter((l) => {
+          const r = this.routes.get(l.id);
+          return (
             !meeting ||
             meeting.has(l.from.moduleId) ||
-            meeting.has(l.to.moduleId),
-        )
+            meeting.has(l.to.moduleId) ||
+            (this.drawnAlong.get(l.id) ?? "") !== (r ? JSON.stringify(r) : "")
+          );
+        })
         .map((l) => this.drawLink(l)),
     );
+  }
+  /** Where a link's drawing reaches in scene units, as far as its SVG says. */
+  private measure(id: string, bounds: Bounds, drawn: Element) {
+    this.reach.delete(id);
+    if (!(drawn instanceof SVGGraphicsElement)) return;
+    try {
+      const box = drawn.getBBox();
+      const view = drawn instanceof SVGSVGElement ? drawn.viewBox.baseVal : null;
+      const scale = view && view.width > 0 ? bounds.width / view.width : 1;
+      if (box.width > 0 || box.height > 0)
+        this.reach.set(id, {
+          x: bounds.x + (box.x - (view?.x ?? 0)) * scale - 4,
+          y: bounds.y + (box.y - (view?.y ?? 0)) * scale - 4,
+          width: box.width * scale + 8,
+          height: box.height * scale + 8,
+        });
+    } catch {
+      // A drawing not laid out yet has no extent to add.
+    }
   }
   /** Puts modules at other places and sizes at once, without drawing anything again: a
    * resized module is stretched to its new box until `move` draws it at that size. */
@@ -566,7 +637,8 @@ export class SceneRenderer {
     const l = this.links.get(id);
     if (!l) return Promise.resolve();
     l.data = data;
-    return this.drawLink(l);
+    // Its data may ask for a route, or label it a branch, which moves other routes too.
+    return this.drawLinks(new Set()).then(() => this.drawLink(l));
   }
   /** Whether another revision of the scene can be laid over this one in place: the same
    * scene, look and script, with the materials both hold unchanged. Anything else is
@@ -667,7 +739,11 @@ export class SceneRenderer {
       this.views.delete(kind + ":" + id);
     }
     if (kind === "module") this.instances.delete(id);
-    else this.links.delete(id);
+    else {
+      this.links.delete(id);
+      this.drawnAlong.delete(id);
+      this.reach.delete(id);
+    }
   }
   dispose() {
     this.disposed = true;

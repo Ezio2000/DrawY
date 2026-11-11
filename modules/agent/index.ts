@@ -45,6 +45,7 @@ import {
   requireObserved,
   Unavailable,
   type Reported,
+  type ViewOptions,
 } from "../observation/index.ts";
 import { AUTHOR, catalogue } from "./prompts.ts";
 import { guidesRead, readGuides } from "./guides.ts";
@@ -1528,6 +1529,74 @@ export class Agent {
     this.heldForText.add(run.id);
     return `最小的字小于 ${MIN_TEXT} 像素（${small.join("，")}），读者看不清：放大或删减这些字再看一次；如果这些字不由你决定（比如地图自带的地名），说明原因后结束`;
   }
+  /** A look at the saved work: waits for the pictures still developing, shows those that
+   * developed since the last look, and the screenshots with what they measure. */
+  private async look(
+    store: UserStore,
+    run: Run,
+    ctx: Context,
+    args: ViewOptions,
+    abort: AbortController,
+    step: ToolStep,
+  ): Promise<{ output: unknown; images: Item[] }> {
+    const images: Item[] = [];
+    const pending = (this.developments.get(run.id) || []).filter((d) => !d.settled);
+    run.status = "viewing";
+    // The pictures still to come, shortened as each arrives, so the wait shows going.
+    const left = () => {
+      const names = pending.filter((d) => !d.settled).map((d) => d.name);
+      return names.length ? names : undefined;
+    };
+    if (pending.length) {
+      Object.assign(step, { waiting: left() });
+      for (const d of pending)
+        void d.done.then(() => {
+          if (!("waiting" in step) || !step.waiting) return;
+          Object.assign(step, { waiting: left() });
+          this.emit(store, run);
+        });
+    }
+    this.emit(store, run);
+    try {
+      await Promise.race([
+        Promise.all(pending.map((d) => d.done)),
+        new Promise((_, reject) =>
+          abort.signal.addEventListener("abort", () => reject(abort.signal.reason)),
+        ),
+      ]);
+      images.push(...(await this.developed(store, run)).flatMap((m) => m.content));
+      // The service may be restarting; after a few tries the run stops instead of
+      // spending the author's turns on a look it cannot get.
+      let result: Awaited<ReturnType<typeof observe>> | undefined;
+      for (const wait of [2000, 6000, 0]) {
+        try {
+          result = await observe(store, run.workId, args, abort.signal, {
+            observations: run.observations,
+            reported: (ctx.reported ??= {}),
+          });
+          break;
+        } catch (e) {
+          if (!(e instanceof Unavailable) || !wait) throw e;
+          await new Promise((r) => setTimeout(r, wait));
+        }
+      }
+      if (!result) throw new Unavailable("画布查看服务不可用");
+      run.observations.push(result.observation);
+      const searched = research(run);
+      images.push(...result.content);
+      Object.assign(step, {
+        waiting: undefined,
+        screenshots: pictures(result.observation.screenshots),
+        errors: result.observation.errors,
+      });
+      return {
+        output: searched ? { ...result.observation, research: searched } : result.observation,
+        images,
+      };
+    } finally {
+      run.status = "running";
+    }
+  }
   /** Runs one tool call. `done` ends this execution: the run finished or waits for the user. */
   private async call(
     store: UserStore,
@@ -1782,7 +1851,7 @@ export class Agent {
           break;
         }
         case "write_work": {
-          const { amend, ...written } = args;
+          const { amend, look, ...written } = args;
           if (amend && !ctx.held)
             throw new DomainError("没有等待修正的写入：amend 只用在一次写入被拒绝之后；这次把要改的内容直接写出来");
           // A correction lays over the write it corrects, and the two save as one revision.
@@ -1808,70 +1877,41 @@ export class Agent {
             ...cardsUnread(work, ctx.input, batch),
           };
           Object.assign(step!, { revision: work.revision, materials: added, writing: undefined });
+          // The last save of a message is looked at at once, so a save and its look take
+          // one turn; a view_canvas the author added after it looks instead.
+          const last = batch.filter((c) => c.name === "write_work").at(-1) === call;
+          if (last && !batch.some((c) => c.name === "view_canvas")) {
+            step!.status = "done";
+            const view: ViewOptions = look ?? {};
+            const seeing: ToolStep = {
+              kind: "tool",
+              id: call.call_id + ":look",
+              status: "running",
+              ...activity("view_canvas", view, run.sceneId),
+            };
+            run.steps.push(seeing);
+            this.emit(store, run);
+            try {
+              const seen = await tracer.span("tool", "view_canvas", { args: JSON.stringify(view), after: "write_work" }, async (span) => {
+                const r = await this.look(store, run, ctx, view, abort, seeing);
+                span.set({ output: r.output, images: r.images.map((i) => i.image_url).filter(Boolean) });
+                return r;
+              });
+              seeing.status = "done";
+              output = { ...(output as object), look: seen.output };
+              images = seen.images;
+            } catch (e) {
+              abort.signal.throwIfAborted();
+              if (e instanceof Unavailable) throw e;
+              const error = e instanceof Error ? e.message : String(e);
+              Object.assign(seeing, { status: "failed", error });
+              output = { ...(output as object), look: { error } };
+            }
+          }
           break;
         }
         case "view_canvas": {
-          const pending = (this.developments.get(run.id) || []).filter(
-            (d) => !d.settled,
-          );
-          run.status = "viewing";
-          // The pictures still to come, shortened as each arrives, so the wait shows going.
-          const left = () => {
-            const names = pending.filter((d) => !d.settled).map((d) => d.name);
-            return names.length ? names : undefined;
-          };
-          if (pending.length) {
-            Object.assign(step!, { waiting: left() });
-            for (const d of pending)
-              void d.done.then(() => {
-                if (!("waiting" in step!) || !step.waiting) return;
-                Object.assign(step!, { waiting: left() });
-                this.emit(store, run);
-              });
-          }
-          this.emit(store, run);
-          try {
-            await Promise.race([
-              Promise.all(pending.map((d) => d.done)),
-              new Promise((_, reject) =>
-                abort.signal.addEventListener("abort", () =>
-                  reject(abort.signal.reason),
-                ),
-              ),
-            ]);
-            images.push(
-              ...(await this.developed(store, run)).flatMap((m) => m.content),
-            );
-            // The service may be restarting; after a few tries the run stops instead of
-            // spending the author's turns on a look it cannot get.
-            let result: Awaited<ReturnType<typeof observe>> | undefined;
-            for (const wait of [2000, 6000, 0]) {
-              try {
-                result = await observe(store, run.workId, args, abort.signal, {
-                  observations: run.observations,
-                  reported: (ctx.reported ??= {}),
-                });
-                break;
-              } catch (e) {
-                if (!(e instanceof Unavailable) || !wait) throw e;
-                await new Promise((r) => setTimeout(r, wait));
-              }
-            }
-            if (!result) throw new Unavailable("画布查看服务不可用");
-            run.observations.push(result.observation);
-            const searched = research(run);
-            output = searched
-              ? { ...result.observation, research: searched }
-              : result.observation;
-            images.push(...result.content);
-            Object.assign(step!, {
-              waiting: undefined,
-              screenshots: pictures(result.observation.screenshots),
-              errors: result.observation.errors,
-            });
-          } finally {
-            run.status = "running";
-          }
+          ({ output, images } = await this.look(store, run, ctx, args, abort, step!));
           break;
         }
         default:
@@ -1886,7 +1926,7 @@ export class Agent {
       if (e instanceof Unavailable) throw e;
       if (e instanceof BrokenWrite) {
         // Only the records that arrived whole carry over; whatever came after is the author's to send.
-        const { amend, ...kept } = e.kept;
+        const { amend, look: _, ...kept } = e.kept;
         ctx.held = amend && ctx.held ? composed(ctx.held, kept) : kept;
         return {
           done: false,

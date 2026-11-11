@@ -243,7 +243,7 @@ function openedPage(work: Work, opened: NonNullable<Shot["opened"]>) {
  * too small to read there with the size in scene units that would be readable. */
 function figure(work: Work, shot: Shot) {
   const scene = work.scenes[shot.sceneId];
-  const box = union(scene.modules.map((m) => m.bounds));
+  const box = shot.extent ?? union(scene.modules.map((m) => m.bounds));
   /** A part's size parameter, and the size at which its smallest text would read: what
    * changing it takes, whatever share of the size that text is drawn at. */
   const remedy = (id: string, px: number) => {

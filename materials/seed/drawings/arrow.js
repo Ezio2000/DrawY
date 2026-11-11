@@ -1,7 +1,9 @@
 // An arrow with a head sized to its line, between api.from and api.to (as a link) or
 // between data.from and data.to (normalized points of the module). It runs as a curve
 // (straight unless bent), or at right angles as flowcharts do: elbow leaves and arrives
-// along the sides its ends meet, corner turns once.
+// along the sides its ends meet, corner turns once. As a link, an elbow follows the route
+// the scene lays for it (api.route) around the other modules, unless bent or given its first
+// axis by hand, and its label sits beside its longest segment that it does not share.
 const d = api.data,
   t = api.theme;
 const W = api.width,
@@ -60,9 +62,16 @@ if (route === "elbow" || route === "corner") {
         ? leave
         : (axis(api.toSide) ?? leave);
   const k = 0.5 + Number(d.bend ?? 0);
+  const routed =
+    route === "elbow" &&
+    Array.isArray(api.route) &&
+    api.route.length >= 2 &&
+    !Number(d.bend ?? 0) &&
+    (d.first ?? "auto") === "auto";
   // Leaving and arriving along one axis takes a cross segment; along both, one turn.
-  let pts =
-    leave !== arrive
+  let pts = routed
+    ? api.route.map((p) => ({ x: p.x, y: p.y }))
+    : leave !== arrive
       ? [a, leave === "h" ? { x: b.x, y: a.y } : { x: a.x, y: b.y }, b]
       : leave === "h"
         ? [a, { x: a.x + dx * k, y: a.y }, { x: a.x + dx * k, y: b.y }, b]
@@ -109,12 +118,20 @@ if (route === "elbow" || route === "corner") {
     line += `L${p.x + inn.x * rr} ${p.y + inn.y * rr}Q${p.x} ${p.y} ${p.x + out.x * rr} ${p.y + out.y * rr}`;
   }
   line += `L${drawn[n - 1].x} ${drawn[n - 1].y}`;
-  // The label sits beside the longest segment.
+  // The label sits beside the longest segment, of those it does not share with another
+  // link when it has any.
+  const own = (i) =>
+    !routed ||
+    !Array.isArray(api.shared) ||
+    pts.length !== api.shared.length + 1 ||
+    !api.shared[i - 1];
+  const length = (i) =>
+    Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
   let best = 1;
   for (let i = 1; i < n; i++)
     if (
-      Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y) >
-      Math.hypot(pts[best].x - pts[best - 1].x, pts[best].y - pts[best - 1].y)
+      (own(i) && !own(best)) ||
+      (own(i) === own(best) && length(i) > length(best))
     )
       best = i;
   const p = pts[best - 1],

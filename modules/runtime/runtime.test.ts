@@ -1770,3 +1770,76 @@ it("draws links from ends they hold, following their modules, and every drawing 
   expect(after.auto).toEqual({ from: { x: 50, y: 60, side: "bottom" }, to: { x: 50, y: 500, side: "top" } });
   expect(after.point).toEqual({ from: { x: 25, y: 60, side: "bottom" }, to: { x: 50, y: 560, side: "bottom" } });
 });
+it("routes elbow links around the modules in their way, again when one moves into it, and frames the figure with them", async () => {
+  const drawings = seed("drawings") as DrawingMaterial[];
+  const arrow = drawings.find((m) => m.id === "arrow")!;
+  work.materials = {
+    arrow: useOf({
+      ...arrow,
+      source: readFileSync(new URL("../../materials/seed/drawings/arrow.js", import.meta.url), "utf8"),
+    } as Material)!,
+  };
+  work.drawings.box = {
+    id: "box",
+    name: "box",
+    source: `return api.svg('<svg viewBox="0 0 10 10" preserveAspectRatio="none"><rect width="10" height="10" fill="#ddd"/></svg>')`,
+  };
+  const module = (id: string, x: number, y: number) => ({
+    id,
+    label: id,
+    drawingId: "box",
+    data: {},
+    bounds: { x, y, width: 160, height: 80 },
+  });
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [module("a", 0, 0), module("middle", 260, 0), module("c", 520, 0), module("d", 520, 300), module("spare", 900, 300)],
+    links: [
+      { id: "over", drawingId: "arrow", from: { moduleId: "a" }, to: { moduleId: "c" }, data: { route: "elbow", label: "跳过" } },
+      { id: "down", drawingId: "arrow", from: { moduleId: "c" }, to: { moduleId: "d" }, data: { route: "elbow" } },
+    ],
+    checks: [],
+  };
+  delete work.scenes.root.interaction;
+  await open();
+  /** Points along a link's drawn line in scene units, and how far it runs inside a box. */
+  const read = (box: { x: number; y: number; width: number; height: number }) =>
+    page.evaluate((box) => {
+      const host = document.querySelector<HTMLElement>('[data-link-id="over"]')!;
+      const path = host.shadowRoot!.querySelector("path")!;
+      const left = parseFloat(host.style.left),
+        top0 = parseFloat(host.style.top);
+      const length = path.getTotalLength();
+      let inside = 0,
+        top = Infinity;
+      for (let l = 0; l <= length; l += 2) {
+        const p = path.getPointAtLength(l);
+        const x = left + p.x,
+          y = top0 + p.y;
+        top = Math.min(top, y);
+        if (x > box.x + 1 && x < box.x + box.width - 1 && y > box.y + 1 && y < box.y + box.height - 1) inside++;
+      }
+      const label = host.shadowRoot!.querySelector("text")!.getBoundingClientRect();
+      return {
+        errors: window.drawyErrors,
+        inside,
+        over: top < 0,
+        bounds: window.drawyView.renderer.bounds,
+        label: label.width > 0,
+      };
+    }, box);
+  const first = await read({ x: 260, y: 0, width: 160, height: 80 });
+  expect(first.errors).toEqual([]);
+  expect(first.inside).toBe(0);
+  expect(first.label).toBe(true);
+  // The way round is part of the figure.
+  const modulesOnly = { y: 0, height: 380 };
+  expect(first.over || first.bounds.y + first.bounds.height > 380 || first.bounds.y < 0).toBe(true);
+  expect(first.bounds.y < modulesOnly.y || first.bounds.y + first.bounds.height > modulesOnly.y + modulesOnly.height).toBe(true);
+  // A module moved into its way sends it round that one too.
+  const blocker = first.over ? { x: 200, y: -90, width: 300, height: 60 } : { x: 200, y: 100, width: 300, height: 60 };
+  await page.evaluate((b) => window.drawyView.renderer.move([{ id: "spare", bounds: b }]), blocker);
+  const second = await read(blocker);
+  expect(second.errors).toEqual([]);
+  expect(second.inside).toBe(0);
+});

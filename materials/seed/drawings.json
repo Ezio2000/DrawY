@@ -18,7 +18,7 @@
       "flow"
     ],
     "category": "drawing/connector",
-    "about": "An arrow whose head is sized to its line: straight or curved (bend), or routed at right angles for flowcharts and architecture (route elbow or corner, with rounded turns); dashed, open or filled head, double-ended, an optional label beside the middle, and flow (animated dashes moving along it) for movement of blood, water, data or energy. As a link it runs between the anchors; in a module between data.from and data.to.",
+    "about": "An arrow whose head is sized to its line: straight or curved (bend), or routed at right angles for flowcharts and architecture (route elbow, which finds its own way around the modules between its ends, or corner; rounded turns); dashed, open or filled head, double-ended, an optional label beside the middle, and flow (animated dashes moving along it) for movement of blood, water, data or energy. As a link it runs between the anchors; in a module between data.from and data.to.",
     "tags": ["arrow", "link", "flow", "connector", "direction"],
     "style": null,
     "origin": {
@@ -50,7 +50,7 @@
         "max": 1,
         "step": 0.05,
         "default": 0,
-        "description": "curvature as a fraction of length, positive bending left of the direction of travel; for elbow, how far along the cross segment moves (-0.5 to 0.5)"
+        "description": "curvature as a fraction of length, positive bending left of the direction of travel; for elbow, how far along the cross segment moves (-0.5 to 0.5), drawing it by that rule instead of finding its way"
       },
       "head": {
         "type": "choice",
@@ -72,13 +72,13 @@
         "type": "choice",
         "options": ["curve", "elbow", "corner"],
         "default": "curve",
-        "description": "curve follows bend; elbow runs at right angles, leaving and arriving along the sides of the modules its ends meet; corner turns exactly once"
+        "description": "curve follows bend; elbow runs at right angles around the modules in its way, choosing the sides it leaves and enters by, keeping off other links and joining those that leave or enter the same module into one trunk; corner turns exactly once"
       },
       "first": {
         "type": "choice",
         "options": ["auto", "horizontal", "vertical"],
         "default": "auto",
-        "description": "for elbow and corner, the axis it leaves along; auto follows the side its end meets, else the longer axis"
+        "description": "for elbow and corner, the axis it leaves along; auto lets an elbow find its way, otherwise it follows the side its end meets, else the longer axis"
       },
       "radius": {
         "type": "number",

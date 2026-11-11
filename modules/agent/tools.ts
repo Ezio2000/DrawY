@@ -113,7 +113,8 @@ export const guideSchema = z
       .describe("Library drawing ids whose cards to read, from the list under # Library"),
   })
   .refine((g) => g.topics?.length || g.drawings?.length, "至少要指定一个指南或画法");
-/** What write_work takes: an edit, and whether it finishes the write refused before it. */
+/** What write_work takes: an edit, whether it finishes the write refused before it, and
+ * what to check in the look at what it saves. */
 export const writeSchema = workEditSchema.extend({
   amend: z
     .boolean()
@@ -121,6 +122,10 @@ export const writeSchema = workEditSchema.extend({
     .describe(
       "Finish the write just refused: send only what corrects it, and both save as one revision",
     ),
+  look: viewSchema
+    .pick({ sceneId: true, claims: true, regions: true })
+    .optional()
+    .describe("For the look at this save that comes back with it: the claims to check against it, and close-ups or one scene if you need them"),
 });
 export const tools = [
   fn(
@@ -155,12 +160,12 @@ export const tools = [
   ),
   fn(
     "write_work",
-    "Change the work, saving one new revision that the viewer sees drawn. Send only what changes: a record with a known id keeps every field you leave out, and a new id adds the record. data, defaults and style merge key by key, null deleting a key; code and pages change whole or by edits. The revision saves whole or not at all: a refusal lists every problem and holds the write, so correct it with amend: true and only what was wrong. Write modules before drawings and each module's bounds before its data, because the layout is shown to the viewer while the rest streams.",
+    "Change the work, saving one new revision that the viewer sees drawn, and look at it: the result carries the same look view_canvas gives (every nonempty scene's opening view, unless look names one), with its screenshots after it, so a save and its look take one turn. Send only what changes: a record with a known id keeps every field you leave out, and a new id adds the record. data, defaults and style merge key by key, null deleting a key; code and pages change whole or by edits. The revision saves whole or not at all: a refusal lists every problem, holds the write and shows nothing, so correct it with amend: true and only what was wrong. Write modules before drawings and each module's bounds before its data, because the layout is shown to the viewer while the rest streams; look comes last. Of several writes in one message, only the last is looked at.",
     schema(writeSchema),
   ),
   fn(
     "view_canvas",
-    "See current saved scenes as images in this conversation, with geometry: the camera, modules changed since the last look with the materials they use and where a picture's visible content is, the parts whose text is too small and the size that would read, any words cut off, and any runtime errors. Shows each scene's opening view and declared interaction checks. Optionally add close-ups of up to three regions, annotate object ids and bounds, or perform a sequence of CSS-selector clicks in one scene; a close-up of a revision you have already seen whole returns just the close-up. Waits for developing pictures first. Call it alone or last after write_work calls: saves run in order before the screenshot, and a failed save skips it so you do not judge an older version.",
+    "See current saved scenes as images in this conversation, with geometry: the camera, modules changed since the last look with the materials they use and where a picture's visible content is, the parts whose text is too small and the size that would read, any words cut off, and any runtime errors. Shows each scene's opening view and declared interaction checks. Optionally add close-ups of up to three regions, annotate object ids and bounds, or perform a sequence of CSS-selector clicks in one scene; a close-up of a revision you have already seen whole returns just the close-up. Waits for developing pictures first. Every write_work already looks at what it saved, so call this only to look without saving: at a close-up, the result of clicks, or once pictures have developed. Called last after write_work calls, it looks in place of their own look.",
     schema(viewSchema),
   ),
 ];
