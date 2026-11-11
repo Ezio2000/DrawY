@@ -25,7 +25,9 @@ export const paramSchema = z.object({
     .string()
     .min(1)
     .optional()
-    .describe("What a person editing the work calls it, in the user's language"),
+    .describe(
+      "What a person editing the work calls it, in the user's language",
+    ),
   type: z.enum(paramTypes),
   options: z
     .array(z.string().min(1))
@@ -102,7 +104,10 @@ export const detailSchema = z.object({ id: key, title: key, html: z.string() });
  * is the author's own decision of how the picture carries the intent. */
 export const briefSchema = z.object({
   subject: z.string().min(1).describe("The subject as you understand it"),
-  intent: z.string().min(1).describe("What the picture must make clear or make felt"),
+  intent: z
+    .string()
+    .min(1)
+    .describe("What the picture must make clear or make felt"),
   audience: z.string().min(1),
   concept: z
     .string()
@@ -123,8 +128,16 @@ export const briefSchema = z.object({
     .max(12)
     .describe("Recognizable things that will appear, one per entry"),
   basis: z.object({
-    subject: z.string().min(1).describe("The user's words, verbatim, that say which thing"),
-    intent: z.string().min(1).describe("The user's words, verbatim, that say what to show or why; the topic itself when they leave the aspect to you"),
+    subject: z
+      .string()
+      .min(1)
+      .describe("The user's words, verbatim, that say which thing"),
+    intent: z
+      .string()
+      .min(1)
+      .describe(
+        "The user's words, verbatim, that say what to show or why; the topic itself when they leave the aspect to you",
+      ),
     register: z
       .string()
       .min(1)
@@ -223,7 +236,14 @@ export interface RevisionSummary {
 /** Where a work has got to, as the list of works shows it. */
 export interface WorkProgress {
   /** Its latest request's state; null before the first. */
-  run: "running" | "waiting" | "viewing" | "completed" | "failed" | "cancelled" | null;
+  run:
+    | "running"
+    | "waiting"
+    | "viewing"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | null;
   /** What that request asked, its first words. */
   prompt: string;
   /** The version it stands at. */
@@ -259,7 +279,9 @@ const sameRun = (a: Cause, b: Cause) =>
   a.kind === "run" && b.kind === "run" && a.runId === b.runId;
 /** The versions of a work as they stand now, oldest first, and the hand edits made on the
  * latest that are not saved as a version yet, from its revisions in any order. */
-export function historyOf(history: Pick<RevisionSummary, "revision" | "cause" | "updatedAt">[]): {
+export function historyOf(
+  history: Pick<RevisionSummary, "revision" | "cause" | "updatedAt">[],
+): {
   versions: Version[];
   unsaved: UnsavedEdit[];
 } {
@@ -272,7 +294,10 @@ export function historyOf(history: Pick<RevisionSummary, "revision" | "cause" | 
     sealed?: boolean;
   };
   // Where each revision is: in a version, or among the unsaved edits laid on one.
-  const where = new Map<number, { version?: Entry; edits?: UnsavedEdit[]; at?: number }>();
+  const where = new Map<
+    number,
+    { version?: Entry; edits?: UnsavedEdit[]; at?: number }
+  >();
   const sorted = [...history].sort((a, b) => a.revision - b.revision);
   let stack: Entry[] = [],
     unsaved: UnsavedEdit[] = [];
@@ -295,7 +320,11 @@ export function historyOf(history: Pick<RevisionSummary, "revision" | "cause" | 
       cause = r.cause;
     if (cause.kind === "edit" && top) {
       unsaved = [...unsaved, { revision: r.revision, revisions: [r.revision] }];
-      where.set(r.revision, { version: top, edits: unsaved, at: unsaved.length - 1 });
+      where.set(r.revision, {
+        version: top,
+        edits: unsaved,
+        at: unsaved.length - 1,
+      });
       continue;
     }
     if (cause.kind === "restore") {
@@ -305,7 +334,11 @@ export function historyOf(history: Pick<RevisionSummary, "revision" | "cause" | 
         stack = [...to.version.chain, to.version];
         unsaved = to.edits.slice(0, to.at! + 1);
         unsaved.at(-1)!.revisions.push(r.revision);
-        where.set(r.revision, { version: to.version, edits: unsaved, at: unsaved.length - 1 });
+        where.set(r.revision, {
+          version: to.version,
+          edits: unsaved,
+          at: unsaved.length - 1,
+        });
         continue;
       }
       if (to?.version && to.version.ends.has(cause.revision)) {
@@ -330,7 +363,12 @@ export function historyOf(history: Pick<RevisionSummary, "revision" | "cause" | 
       top.updatedAt = r.updatedAt;
       top.ends = new Set([r.revision]);
       where.set(r.revision, { version: top });
-    } else push(r, cause, unsaved.flatMap((e) => e.revisions));
+    } else
+      push(
+        r,
+        cause,
+        unsaved.flatMap((e) => e.revisions),
+      );
   }
   // Without the blank start (it can only be missing from a partial history) numbering
   // still begins at 1.
@@ -343,7 +381,10 @@ export function historyOf(history: Pick<RevisionSummary, "revision" | "cause" | 
       cause: v.cause,
       updatedAt: v.updatedAt,
     })),
-    unsaved: unsaved.map((e) => ({ revision: e.revision, revisions: [...e.revisions] })),
+    unsaved: unsaved.map((e) => ({
+      revision: e.revision,
+      revisions: [...e.revisions],
+    })),
   };
 }
 /** The versions of a work as they stand now, oldest first, from its revisions in any order. */
@@ -355,10 +396,14 @@ export const versionOf = (versions: Version[], revision: number) =>
   versions.find((v) => v.revisions.includes(revision));
 /** The revision undoing goes back to from `revision`, the latest: the hand edit before it
  * while edits are not saved yet, else the version before the one it is in. */
-export function stepBefore(history: RevisionSummary[], revision: number): number | undefined {
+export function stepBefore(
+  history: RevisionSummary[],
+  revision: number,
+): number | undefined {
   const { versions, unsaved } = historyOf(history);
   const i = unsaved.findIndex((e) => e.revisions.includes(revision));
-  if (i >= 0) return i > 0 ? unsaved[i - 1].revision : versions.at(-1)?.revision;
+  if (i >= 0)
+    return i > 0 ? unsaved[i - 1].revision : versions.at(-1)?.revision;
   const v = versionOf(versions, revision);
   if (!v) return undefined;
   return versions[versions.indexOf(v) - 1]?.revision;
@@ -386,22 +431,35 @@ export const boxSchema = z
   .refine(([, , width, height]) => width > 0 && height > 0, "宽和高必须大于 0")
   .describe("[x, y, width, height] in scene units");
 export const boxOf = ({ x, y, width, height }: Bounds) => [x, y, width, height];
-export const boundsOf = ([x, y, width, height]: number[]): Bounds => ({ x, y, width, height });
+export const boundsOf = ([x, y, width, height]: number[]): Bounds => ({
+  x,
+  y,
+  width,
+  height,
+});
 /** A change to long text, so a small one does not rewrite the rest. */
 export const textEditSchema = z
   .object({
-    find: z.string().min(1).describe("Text as it stands now, long enough to occur only once"),
+    find: z
+      .string()
+      .min(1)
+      .describe("Text as it stands now, long enough to occur only once"),
     replace: z.string(),
-    all: z.boolean().optional().describe("Change every occurrence instead of requiring one"),
+    all: z
+      .boolean()
+      .optional()
+      .describe("Change every occurrence instead of requiring one"),
   })
   .strict();
 const partScene = key
   .optional()
-  .describe("The scene a new part goes in; leave out for the current scene. A known id is found wherever it is");
+  .describe(
+    "The scene a new part goes in; leave out for the current scene. A known id is found wherever it is",
+  );
 const linkEndEdit = z
   .union([key, linkEndSchema.strict()])
   .describe(
-    'A module id, which meets it on the side facing the other end and follows as they move; or {moduleId, at} with a side (left, right, top, bottom) or a point [x, y] on it, each 0..1',
+    "A module id, which meets it on the side facing the other end and follows as they move; or {moduleId, at} with a side (left, right, top, bottom) or a point [x, y] on it, each 0..1",
   );
 // Fields stay in the order of a whole record: layout streams before content.
 const moduleEditSchema = z
@@ -412,19 +470,28 @@ const moduleEditSchema = z
       .string()
       .nullable()
       .optional()
-      .describe("What a person editing the work calls it; only when the words in its data do not say it"),
+      .describe(
+        "What a person editing the work calls it; only when the words in its data do not say it",
+      ),
     bounds: boxSchema
       .optional()
-      .describe("[x, y, width, height] in scene units; a new module needs it unless arrange places it"),
+      .describe(
+        "[x, y, width, height] in scene units; a new module needs it unless arrange places it",
+      ),
     drawingId: key
       .optional()
-      .describe("A drawing in the work or the library; a new module needs it. Others that use the same drawing change with it"),
+      .describe(
+        "A drawing in the work or the library; a new module needs it. Others that use the same drawing change with it",
+      ),
     group: z
       .string()
       .nullable()
       .optional()
       .describe("Modules with the same group move together; it draws nothing"),
-    target: targetSchema.nullable().optional().describe("Where clicking this module leads"),
+    target: targetSchema
+      .nullable()
+      .optional()
+      .describe("Where clicking this module leads"),
     data: dataPatch("The drawing's parameters for this module"),
   })
   .strict();
@@ -432,10 +499,23 @@ const linkEditSchema = z
   .object({
     id: key
       .optional()
-      .describe("Leave out for the one link between two modules: it is then known by its ends, and writing it again changes it"),
-    scene: partScene,
-    drawingId: key.optional().describe("A link drawing; a new link defaults to the library's arrow"),
-    from: linkEndEdit.optional().describe("Where it starts; a new link needs it. " + (linkEndEdit.description ?? "")),
+      .describe(
+        "Leave out for the one link between two modules: it is then known by its ends, and writing it again changes it",
+      ),
+    scene: key
+      .optional()
+      .describe(
+        "The scene a new link goes in; leave out to put it where its two modules are (the current scene if they are in different ones)",
+      ),
+    drawingId: key
+      .optional()
+      .describe("A link drawing; a new link defaults to the library's arrow"),
+    from: linkEndEdit
+      .optional()
+      .describe(
+        "Where it starts; a new link needs it. " +
+          (linkEndEdit.description ?? ""),
+      ),
     to: linkEndEdit.optional().describe("Where it ends; a new link needs it"),
     data: dataPatch("The drawing's parameters for this link"),
   })
@@ -447,21 +527,36 @@ const sceneEditSchema = z
     parentId: z
       .string()
       .optional()
-      .describe("The scene this one opens from; a new scene defaults to the current scene"),
-    interaction: z.string().nullable().optional().describe("The script that runs in this scene, whole; null takes it out"),
-    interactionEdits: z.array(textEditSchema).optional().describe("Small changes to that script"),
+      .describe(
+        "The scene this one opens from; a new scene defaults to the current scene",
+      ),
+    interaction: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("The script that runs in this scene, whole; null takes it out"),
+    interactionEdits: z
+      .array(textEditSchema)
+      .optional()
+      .describe("Small changes to that script"),
     checks: z
       .array(checkSchema)
       .optional()
-      .describe("Important buttons of the scene's script or a drawing that view_canvas should try, by module and CSS selector; not modules that only open their target; replaces the list"),
+      .describe(
+        "Important buttons of the scene's script or a drawing that view_canvas should try, by module and CSS selector; not modules that only open their target; replaces the list",
+      ),
     clear: z
       .boolean()
       .optional()
-      .describe("Delete everything in it first, to recompose it from the modules and links in this write"),
+      .describe(
+        "Delete everything in it first, to recompose it from the modules and links in this write",
+      ),
     order: z
       .array(key)
       .optional()
-      .describe("Modules to restack: they take the stacking places they already hold among them, in this order from the bottom, and no other module moves"),
+      .describe(
+        "Modules to restack: they take the stacking places they already hold among them, in this order from the bottom, and no other module moves",
+      ),
   })
   .strict();
 const drawingEditSchema = z
@@ -469,33 +564,56 @@ const drawingEditSchema = z
     id: key,
     from: key
       .optional()
-      .describe("A new drawing starts as a copy of this one, in the work or the library: name, params, defaults and source"),
+      .describe(
+        "A new drawing starts as a copy of this one, in the work or the library: name, params, defaults and source",
+      ),
     name: key.optional(),
     params: z
       .record(z.string(), paramSchema.nullable())
       .optional()
-      .describe("Names and bounds for the controls a person gets for data keys; null takes one out"),
-    defaults: dataPatch("Values every module drawn with it has unless its own data says otherwise: the place for sizes, colours and words it reads"),
+      .describe(
+        "Names and bounds for the controls a person gets for data keys; null takes one out",
+      ),
+    defaults: dataPatch(
+      "Values every module drawn with it has unless its own data says otherwise: the place for sizes, colours and words it reads",
+    ),
     size: z
       .array(z.number().positive())
       .length(2)
       .optional()
-      .describe("[width, height] a module drawn with it has when arrange places it and it gives no bounds"),
+      .describe(
+        "[width, height] a module drawn with it has when arrange places it and it gives no bounds",
+      ),
     fit: z
       .enum(fits)
       .nullable()
       .optional()
-      .describe("How arrange sizes such a module instead: words to hold its title, text and note, rows for its rows; a copy keeps its origin's"),
-    source: z.string().min(1).optional().describe("Its code, whole; a new drawing needs it unless it has from"),
-    edits: z.array(textEditSchema).optional().describe("Small changes to its code, applied in order"),
+      .describe(
+        "How arrange sizes such a module instead: words to hold its title, text and note, rows for its rows; a copy keeps its origin's",
+      ),
+    source: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Its code, whole; a new drawing needs it unless it has from"),
+    edits: z
+      .array(textEditSchema)
+      .optional()
+      .describe("Small changes to its code, applied in order"),
   })
   .strict();
 const detailEditSchema = z
   .object({
     id: key,
     title: key.optional().describe("A new detail needs it"),
-    html: z.string().optional().describe("Its page, whole; a new detail needs it"),
-    edits: z.array(textEditSchema).optional().describe("Small changes to its page"),
+    html: z
+      .string()
+      .optional()
+      .describe("Its page, whole; a new detail needs it"),
+    edits: z
+      .array(textEditSchema)
+      .optional()
+      .describe("Small changes to its page"),
   })
   .strict();
 /** One change made to many parts at once: every module (or link) of a scene that matches,
@@ -509,7 +627,9 @@ const eachSchema = z
     where: z
       .record(z.string(), z.unknown())
       .optional()
-      .describe("Only parts whose data has these values, such as {\"tone\": \"accent\"}"),
+      .describe(
+        'Only parts whose data has these values, such as {"tone": "accent"}',
+      ),
     data: dataPatch("Merged into the data of each"),
     use: key.optional().describe("The drawing each is drawn with from now on"),
     size: z
@@ -536,12 +656,14 @@ export const arrangeSchema = z
     direction: z
       .enum([...directions, "both"])
       .optional()
-      .describe("Which way it reads; defaults to the style token flow, else down. both is a tree's two sides"),
+      .describe(
+        "Which way it reads; defaults to the style token flow, else down. both is a tree's two sides",
+      ),
     modules: z
       .union([z.array(key), z.literal("all")])
       .optional()
       .describe(
-        "The modules to place; leave out for those this write adds without bounds, or \"all\" for every module of the scene. Others stay where they are",
+        'The modules to place; leave out for those this write adds without bounds, or "all" for every module of the scene. Others stay where they are',
       ),
     tiers: z
       .array(z.array(key))
@@ -552,17 +674,26 @@ export const arrangeSchema = z
     lanes: z
       .array(z.array(key))
       .optional()
-      .describe("lanes: the modules of each lane, in the order of the lanes module's lanes"),
+      .describe(
+        "lanes: the modules of each lane, in the order of the lanes module's lanes",
+      ),
     ground: key
       .optional()
-      .describe("lanes: the swimlanes module to size under them; it is given its place and its header"),
+      .describe(
+        "lanes: the swimlanes module to size under them; it is given its place and its header",
+      ),
     frames: z
       .record(z.string(), z.array(key))
       .optional()
       .describe(
         "Frame modules and the modules each holds, as {frameId: [memberIds]}; a member may be another frame. Members are kept together and each frame is sized round its own",
       ),
-    columns: z.number().int().positive().optional().describe("grid: cells in a row"),
+    columns: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("grid: cells in a row"),
     wrap: z
       .boolean()
       .optional()
@@ -573,18 +704,35 @@ export const arrangeSchema = z
       .array(z.number().nonnegative())
       .length(2)
       .optional()
-      .describe("[between ranks, between neighbours] in scene units; the default leaves room for the links and their labels"),
+      .describe(
+        "[between ranks, between neighbours] in scene units; the default leaves room for the links and their labels",
+      ),
     size: z
       .array(z.number().positive())
       .length(2)
       .optional()
-      .describe("[width, height] for the modules without bounds, instead of fitting each kind to its words"),
-    fit: z.boolean().optional().describe("Size every module placed again to its words, not only those without bounds"),
-    at: z.array(z.number()).length(2).optional().describe("[x, y] of the arrangement's top left; defaults to where its modules already are, else [0, 0]"),
+      .describe(
+        "[width, height] for the modules without bounds, instead of fitting each kind to its words",
+      ),
+    fit: z
+      .boolean()
+      .optional()
+      .describe(
+        "Size every module placed again to its words, not only those without bounds",
+      ),
+    at: z
+      .array(z.number())
+      .length(2)
+      .optional()
+      .describe(
+        "[x, y] of the arrangement's top left; defaults to where its modules already are, else [0, 0]",
+      ),
     beside: z
       .tuple([key, z.enum(["right", "below", "left", "above"])])
       .optional()
-      .describe("Instead of at: a module already placed (by an earlier arrange of this write too) to set the arrangement beside, as [moduleId, side]"),
+      .describe(
+        "Instead of at: a module already placed (by an earlier arrange of this write too) to set the arrangement beside, as [moduleId, side]",
+      ),
   })
   .strict();
 export type Arrange = z.infer<typeof arrangeSchema>;
@@ -592,7 +740,10 @@ export type Each = z.infer<typeof eachSchema>;
 export const workEditSchema = z
   .object({
     title: z.string().optional(),
-    scenes: z.array(sceneEditSchema).optional().describe("New scenes, and changes to a scene's own fields"),
+    scenes: z
+      .array(sceneEditSchema)
+      .optional()
+      .describe("New scenes, and changes to a scene's own fields"),
     arrange: z
       .array(arrangeSchema)
       .optional()
@@ -602,26 +753,44 @@ export const workEditSchema = z
     modules: z
       .array(moduleEditSchema)
       .optional()
-      .describe("In stacking and drawing order, first at the bottom; a new module goes on top"),
+      .describe(
+        "In stacking and drawing order, first at the bottom; a new module goes on top",
+      ),
     links: z.array(linkEditSchema).optional(),
-    each: z.array(eachSchema).optional().describe("Changes made to every matching part, after the records above"),
+    each: z
+      .array(eachSchema)
+      .optional()
+      .describe("Changes made to every matching part, after the records above"),
     drawings: z.array(drawingEditSchema).optional(),
     details: z.array(detailEditSchema).optional(),
     materials: z
       .array(key)
       .optional()
-      .describe("Material ids to take into the work besides those its drawings and data name literally"),
+      .describe(
+        "Material ids to take into the work besides those its drawings and data name literally",
+      ),
     style: z
       .record(z.string(), z.string().nullable())
       .optional()
       .describe("Style tokens to change; null deletes one"),
     remove: z
       .object({
-        modules: z.array(key).optional().describe("Also deletes their links and checks"),
+        modules: z
+          .array(key)
+          .optional()
+          .describe("Also deletes their links and checks"),
         links: z.array(key).optional(),
         drawings: z.array(key).optional(),
-        scenes: z.array(key).optional().describe("Also deletes the scenes under them; modules that led there lead nowhere"),
-        details: z.array(key).optional().describe("Modules that opened them open nothing"),
+        scenes: z
+          .array(key)
+          .optional()
+          .describe(
+            "Also deletes the scenes under them; modules that led there lead nowhere",
+          ),
+        details: z
+          .array(key)
+          .optional()
+          .describe("Modules that opened them open nothing"),
         materials: z.array(key).optional(),
       })
       .strict()

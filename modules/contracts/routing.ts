@@ -453,7 +453,13 @@ function costOf(pts: Point[], obstacles: Box[]) {
   const inner: Box = { id: "", x: 0, y: 0, r: 0, b: 0 };
   for (const o of obstacles) {
     if (o.tight) cost += 140;
-    if (o.r < x0 - NEAR || o.x > x1 + NEAR || o.b < y0 - NEAR || o.y > y1 + NEAR) continue;
+    if (
+      o.r < x0 - NEAR ||
+      o.x > x1 + NEAR ||
+      o.b < y0 - NEAR ||
+      o.y > y1 + NEAR
+    )
+      continue;
     // Into a grown thing's margin, short of the thing itself.
     if (!drawnEdge(o)) {
       const g = o.grown ?? 0;
@@ -552,17 +558,32 @@ function search(
   const frames = near.filter(drawnEdge),
     solid = near.filter((o) => !drawnEdge(o));
   const keep = Math.min(margin / 2, 6);
-  const lines = (fixed: number[], drawn: number[], grown: number[], truly: number[]) => {
+  const lines = (
+    fixed: number[],
+    drawn: number[],
+    grown: number[],
+    truly: number[],
+  ) => {
     // Where every thing's outline is drawn: its own edge, inside the margin it was grown by.
     const edges = [...new Set([...drawn, ...truly])].sort((m, n) => m - n);
     const mids: number[] = [];
     for (let n = 1; n < edges.length; n++)
-      if (edges[n] - edges[n - 1] > keep * 2 && edges[n] - edges[n - 1] < margin * 2)
+      if (
+        edges[n] - edges[n - 1] > keep * 2 &&
+        edges[n] - edges[n - 1] < margin * 2
+      )
         mids.push((edges[n] + edges[n - 1]) / 2);
     const clear = (v: number) => !edges.some((e) => Math.abs(v - e) < keep);
-    return line([...fixed, ...[...grown, ...drawn.flatMap((e) => [e - margin, e + margin]), ...mids].filter(clear)]);
+    return line([
+      ...fixed,
+      ...[
+        ...grown,
+        ...drawn.flatMap((e) => [e - margin, e + margin]),
+        ...mids,
+      ].filter(clear),
+    ]);
   };
-  const by = (o: Box) => (o.grown ?? margin);
+  const by = (o: Box) => o.grown ?? margin;
   const xs = lines(
       [a1.x, b1.x, prefer.x, region.x, region.r],
       frames.flatMap((o) => [o.x, o.r]),
@@ -667,7 +688,13 @@ function search(
     if (drawnEdge(o)) paints.push({ o, hit: toll(o) });
     else {
       const g = o.grown ?? margin;
-      paints.push({ o, hit: SQUEEZE }, { o: { ...o, x: o.x + g, y: o.y + g, r: o.r - g, b: o.b - g }, hit: toll(o) - SQUEEZE });
+      paints.push(
+        { o, hit: SQUEEZE },
+        {
+          o: { ...o, x: o.x + g, y: o.y + g, r: o.r - g, b: o.b - g },
+          hit: toll(o) - SQUEEZE,
+        },
+      );
     }
   }
   for (const { o, hit } of paints) {
@@ -868,7 +895,8 @@ export function routeLinks(
       if (is === "end") obstacles.push({ ...boxOf(m.id, m.bounds), end: true });
       else if (is && ground.has(m.id))
         obstacles.push({ ...boxOf(m.id, m.bounds), ground: true, grown: 0 });
-      else if (is) obstacles.push({ ...boxOf(m.id, m.bounds, MARGIN), grown: MARGIN });
+      else if (is)
+        obstacles.push({ ...boxOf(m.id, m.bounds, MARGIN), grown: MARGIN });
       else if (ground.has(m.id) && (inside(m.bounds, A) || inside(m.bounds, B)))
         obstacles.push({ ...boxOf(m.id, m.bounds), rim: true, grown: 0 });
     }
@@ -1503,13 +1531,17 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
     for (const o of g.p.obstacles) {
       if (o.ground || o.rim || o.soft) continue;
       const t = itself(o);
-      const [from, to, near, far] = g.upright ? [t.y, t.b, t.x, t.r] : [t.x, t.r, t.y, t.b];
+      const [from, to, near, far] = g.upright
+        ? [t.y, t.b, t.x, t.r]
+        : [t.x, t.r, t.y, t.b];
       if (to <= g.lo + 1 || from >= g.hi - 1) continue;
       if (far <= g.at + 0.5) lo = Math.max(lo, far);
       else if (near >= g.at - 0.5) hi = Math.min(hi, near);
       else return undefined; // It runs through one already: leave it to what said so.
     }
-    return Number.isFinite(lo) && Number.isFinite(hi) && hi - lo >= 4 ? [lo, hi] : undefined;
+    return Number.isFinite(lo) && Number.isFinite(hi) && hi - lo >= 4
+      ? [lo, hi]
+      : undefined;
   };
   const centre = (g: Stretch) => {
     const pts = g.p.points,
@@ -1518,18 +1550,29 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
     const gap = gapOf(g);
     if (!gap) return;
     const [lo, hi] = gap;
-    const target = hi - lo >= MARGIN * 2 ? Math.min(Math.max(g.at, lo + MARGIN), hi - MARGIN) : (lo + hi) / 2;
+    const target =
+      hi - lo >= MARGIN * 2
+        ? Math.min(Math.max(g.at, lo + MARGIN), hi - MARGIN)
+        : (lo + hi) / 2;
     const shift = target - g.at;
     if (Math.abs(shift) < 0.5) return;
     const before = pts[g.i - 1],
       after = pts[g.i + 2];
     const moved = g.upright
-      ? [{ x: a.x + shift, y: a.y }, { x: b.x + shift, y: b.y }]
-      : [{ x: a.x, y: a.y + shift }, { x: b.x, y: b.y + shift }];
+      ? [
+          { x: a.x + shift, y: a.y },
+          { x: b.x + shift, y: b.y },
+        ]
+      : [
+          { x: a.x, y: a.y + shift },
+          { x: b.x, y: b.y + shift },
+        ];
     // It must not pass its neighbours' far ends.
     const keeps = g.upright
-      ? Math.sign(a.x - before.x) === Math.sign(moved[0].x - before.x) && Math.sign(after.x - b.x) === Math.sign(after.x - moved[1].x)
-      : Math.sign(a.y - before.y) === Math.sign(moved[0].y - before.y) && Math.sign(after.y - b.y) === Math.sign(after.y - moved[1].y);
+      ? Math.sign(a.x - before.x) === Math.sign(moved[0].x - before.x) &&
+        Math.sign(after.x - b.x) === Math.sign(after.x - moved[1].x)
+      : Math.sign(a.y - before.y) === Math.sign(moved[0].y - before.y) &&
+        Math.sign(after.y - b.y) === Math.sign(after.y - moved[1].y);
     if (!keeps) return;
     pts[g.i] = moved[0];
     pts[g.i + 1] = moved[1];
@@ -1538,7 +1581,8 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
   // Stretches by which way they run and where, in bins as wide as two may be apart and still
   // lie together, so each looks only at its own bin and the two beside it.
   const bins = new Map<string, Stretch[]>();
-  const binOf = (upright: boolean, at: number) => (upright ? "|" : "-") + Math.floor(at / 5);
+  const binOf = (upright: boolean, at: number) =>
+    (upright ? "|" : "-") + Math.floor(at / 5);
   for (const s of stretches) {
     const k = binOf(s.upright, s.at);
     const bin = bins.get(k);
@@ -1546,7 +1590,10 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
     else bins.set(k, [s]);
   }
   const besides = (g: Stretch) =>
-    [-1, 0, 1].flatMap((d) => bins.get((g.upright ? "|" : "-") + (Math.floor(g.at / 5) + d)) ?? []);
+    [-1, 0, 1].flatMap(
+      (d) =>
+        bins.get((g.upright ? "|" : "-") + (Math.floor(g.at / 5) + d)) ?? [],
+    );
   for (const s of stretches) {
     if (used.has(s)) continue;
     // Everything lying along the same line as this stretch, gathered through overlaps.
@@ -1629,8 +1676,15 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
               // itself never, unless the stretch already ran through it (along its edge
               // is not through it).
               const g0 =
-                o.grown ?? (o.id === g.p.a.id || o.id === g.p.b.id ? 0 : MARGIN);
-              const box = (by: number) => ({ ...o, x: o.x + by, y: o.y + by, r: o.r - by, b: o.b - by });
+                o.grown ??
+                (o.id === g.p.a.id || o.id === g.p.b.id ? 0 : MARGIN);
+              const box = (by: number) => ({
+                ...o,
+                x: o.x + by,
+                y: o.y + by,
+                r: o.r - by,
+                b: o.b - by,
+              });
               // Touching the thing counts for where it would go; only running inside it
               // counts for where it already ran.
               const itself = box(g0 - 1),
@@ -1643,27 +1697,40 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
         }),
       );
     const fits = () => places.some((f) => ((place = f), room(step)));
-    while (step >= 2.5 && !fits()) step *= 0.75;
-    if (step < 2.5) {
-      // Too narrow for lanes a full step apart: spread them evenly across the free way,
-      // as far from the things either side as from one another.
-      if (held >= 0) continue;
-      let lo = -Infinity,
-        hi = Infinity;
-      for (const g of group) {
-        const gap = gapOf(g);
-        if (!gap) {
-          lo = Infinity;
-          break;
-        }
-        lo = Math.max(lo, gap[0]);
-        hi = Math.min(hi, gap[1]);
+    // Where the free way either side is known, the lanes keep to its middle: a step apart
+    // and clear of the things either side by the margin where it is wide enough, else spread
+    // evenly across it, as far from those things as from one another.
+    let lo = -Infinity,
+      hi = Infinity;
+    for (const g of group) {
+      const gap = gapOf(g);
+      if (!gap) {
+        lo = Infinity;
+        break;
       }
-      if (!(hi - lo >= 4)) continue;
+      lo = Math.max(lo, gap[0]);
+      hi = Math.min(hi, gap[1]);
+    }
+    const free = held < 0 && hi - lo >= 4;
+    const across = (lanes.length - 1) * LANE;
+    const inGap = (): ((n: number) => number) => {
+      if (hi - lo >= across + MARGIN * 2) {
+        const mean = lanes.reduce((n, l) => n + l[0].at, 0) / lanes.length;
+        const centre = Math.min(
+          Math.max(mean, lo + MARGIN + across / 2),
+          hi - MARGIN - across / 2,
+        );
+        return (n) =>
+          centre + (n - (lanes.length - 1) / 2) * LANE - lanes[n][0].at;
+      }
       const each = (hi - lo) / (lanes.length + 1);
-      step = 1;
-      place = (n) => lo + each * (n + 1) - lanes[n][0].at;
-      if (!room(1)) continue;
+      return (n) => lo + each * (n + 1) - lanes[n][0].at;
+    };
+    if (free && ((place = inGap()), room(1))) step = 1;
+    else {
+      place = places[0];
+      while (step >= 2.5 && !fits()) step *= 0.75;
+      if (step < 2.5) continue;
     }
     lanes.forEach((lane, n) => {
       const shift = place(n) * step;
