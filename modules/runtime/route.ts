@@ -25,12 +25,15 @@ export interface RouteLink {
   to: LinkEnd;
   /** One of several labelled ways out of a module, which leaves by a side of its own. */
   branch?: boolean;
+  /** How it looks: only links that look alike join into a trunk, as a red dashed line
+   * merged into a black one would read as one line changing. */
+  bundle?: string;
 }
 
 /** Room kept between a route and the modules it passes. */
 const CLEAR = 20;
 /** What a turn costs, as a length of line. */
-const BEND = 26;
+const BEND = 40;
 /** What crossing another link costs. */
 const CROSS = 44;
 /** What running along another link costs, per unit of length. */
@@ -44,17 +47,21 @@ const THROUGH = 24;
 const NEAR = 1.2;
 /** What leaving a module from a side other than the one facing the other end costs: a side
  * turned across, and the side turned away. */
-const ACROSS = 120;
-const AWAY = 220;
+const ACROSS = 90;
+const AWAY = 200;
 /** What a side costs where links already go the other way: entering where others leave
  * reads as one line running through. Sharing one with a labelled branch reads as a fork of
  * that branch, which is worse. */
-const CONTRARY = 130;
+const CONTRARY = 240;
 const FORK = 300;
 /** What running off the middle of a channel costs per unit of length, beyond its length:
  * among ways as short and as straight, a line takes the middle of the gap it crosses, as
  * an elbow turns halfway between its ends. A port's own line is a middle too. */
 const OFFLINE = 0.15;
+/** What leaving or entering a flat side away from its middle costs, and more beside a line
+ * going the other way on that side. */
+const SPREAD = 40;
+const ONCOMING = 160;
 /** How far apart lines are set where they would run along each other. */
 const APART = 9;
 
@@ -72,6 +79,8 @@ interface Port {
   stub: Point;
   dir: Dir;
   cost: number;
+  /** Which point of its side: the middle (1), or a third of the way to either end. */
+  slot: number;
 }
 interface Segment {
   a: Point;
@@ -223,24 +232,45 @@ function towards(a: Bounds, b: Bounds, flow: "down" | "across"): Side {
   return facing(a, cb);
 }
 /** Where a route may leave or enter a module: the side and point the link names, or any
- * side, the best one costing nothing. */
-function portsOf(end: LinkEnd, box: Bounds, best: Side, obstacles: { id: string; box: Bounds }[]): Port[] | undefined {
-  const candidates: { side: Side; share: Point; cost: number }[] = [];
+ * side, the best one costing nothing. A flat side also offers two points a third of the way
+ * from its middle, so links that cannot share the middle leave or enter side by side, as an
+ * architecture draws them; a round outline (a diamond, a circle) meets its box only at the
+ * middles. */
+function portsOf(
+  end: LinkEnd,
+  box: Bounds,
+  best: Side,
+  obstacles: { id: string; box: Bounds }[],
+  flat: boolean,
+): Port[] | undefined {
+  const candidates: { side: Side; share: Point; cost: number; slot: number }[] = [];
   if (end.at !== undefined) {
     const share = shareOf(end.at);
     const side = sideOf(share);
     if (!side) return undefined;
-    candidates.push({ side, share, cost: 0 });
+    candidates.push({ side, share, cost: 0, slot: 1 });
   } else
-    for (const side of sides)
-      candidates.push({
-        side,
-        share: sidePoint[side],
-        cost: side === best ? 0 : outward[side] === back[outward[best]] ? AWAY : ACROSS,
-      });
-  return candidates.map(({ side, share, cost }) => port(box, side, { x: box.x + share.x * box.width, y: box.y + share.y * box.height }, cost, obstacles));
+    for (const side of sides) {
+      const cost = side === best ? 0 : outward[side] === back[outward[best]] ? AWAY : ACROSS;
+      candidates.push({ side, share: sidePoint[side], cost, slot: 1 });
+      const along = side === "top" || side === "bottom" ? box.width : box.height;
+      if (flat && along >= 72)
+        for (const [slot, t] of [
+          [0, 0.3],
+          [2, 0.7],
+        ] as const)
+          candidates.push({
+            side,
+            share: side === "top" || side === "bottom" ? { x: t, y: sidePoint[side].y } : { x: sidePoint[side].x, y: t },
+            cost: cost + SPREAD,
+            slot,
+          });
+    }
+  return candidates.map(({ side, share, cost, slot }) =>
+    port(box, side, { x: box.x + share.x * box.width, y: box.y + share.y * box.height }, cost, obstacles, slot),
+  );
 }
-function port(box: Bounds, side: Side, at: Point, cost: number, obstacles: { box: Bounds }[]): Port {
+function port(box: Bounds, side: Side, at: Point, cost: number, obstacles: { box: Bounds }[], slot = 1): Port {
   const dir = outward[side];
   // The line stands clear of its module before it turns, by less where another module is
   // close in front of it, so it never turns inside that one.
@@ -254,23 +284,35 @@ function port(box: Bounds, side: Side, at: Point, cost: number, obstacles: { box
     if (across && ahead > 0) reach = Math.min(reach, ahead / 2);
   }
   reach = Math.max(4, reach);
-  return { side, at, stub: { x: at.x + DX[dir] * reach, y: at.y + DY[dir] * reach }, dir, cost };
+  return { side, at, stub: { x: at.x + DX[dir] * reach, y: at.y + DY[dir] * reach }, dir, cost, slot };
 }
-/** Facing ports that nearly line up are moved to one line, so the route runs straight
- * rather than with a small step: within the middle half of both sides. */
-function aligned(starts: Port[], goals: Port[], a: Bounds, b: Bounds, obstacles: { box: Bounds }[]) {
-  const s = starts.find((p) => p.cost === 0),
-    g = goals.find((q) => q.cost === 0);
-  if (!s || !g || g.dir !== back[s.dir] || starts.length < 4 || goals.length < 4) return;
+/** Facing middles that nearly line up are moved onto one line, so the route runs straight
+ * rather than with a small step: within the middle half of a flat side, and only on flat
+ * sides, as a line off a diamond's corner would stop short of it. */
+function aligned(
+  starts: Port[],
+  goals: Port[],
+  a: Bounds,
+  b: Bounds,
+  obstacles: { box: Bounds }[],
+  flat: [boolean, boolean],
+) {
+  const s = starts.find((p) => p.cost === 0 && p.slot === 1),
+    g = goals.find((q) => q.cost === 0 && q.slot === 1);
+  if (!s || !g || g.dir !== back[s.dir] || !(flat[0] || flat[1])) return;
   const upright = s.dir >= 2;
-  const span = (box: Bounds) =>
-    upright ? [box.x + box.width * 0.25, box.x + box.width * 0.75] : [box.y + box.height * 0.25, box.y + box.height * 0.75];
-  const [a0, a1] = span(a),
-    [b0, b1] = span(b);
-  const lo = Math.max(a0, b0),
-    hi = Math.min(a1, b1);
+  const span = (box: Bounds, isFlat: boolean, at: number) =>
+    !isFlat
+      ? [at, at]
+      : upright
+        ? [box.x + box.width * 0.25, box.x + box.width * 0.75]
+        : [box.y + box.height * 0.25, box.y + box.height * 0.75];
   const pa = upright ? s.at.x : s.at.y,
     pb = upright ? g.at.x : g.at.y;
+  const [a0, a1] = span(a, flat[0], pa),
+    [b0, b1] = span(b, flat[1], pb);
+  const lo = Math.max(a0, b0),
+    hi = Math.min(a1, b1);
   if (Math.abs(pa - pb) < 0.5 || lo > hi || Math.abs(pa - pb) > 40) return;
   const line = Math.min(hi, Math.max(lo, (pa + pb) / 2));
   const moved = (p: Port, box: Bounds) =>
@@ -304,7 +346,6 @@ function search(
   laid: Segment[],
   ends: string[],
   window: Bounds,
-  own: Bounds[],
 ) {
   const wx0 = window.x,
     wx1 = window.x + window.width,
@@ -379,15 +420,13 @@ function search(
     const across = y1 === y2;
     let cost = length * (1 + ((across ? middles.y.has(Math.round(y1)) : middles.x.has(Math.round(x1))) ? 0 : OFFLINE));
     for (const { box } of near) {
-      // A line keeps its distance from the modules it passes, not from its own two.
-      const mine = own.includes(box);
       if (across) {
         if (y1 > box.y && y1 < box.y + box.height) cost += THROUGH * within(x1, x2, box.x, box.x + box.width);
-        if (!mine && y1 >= box.y - CLEAR && y1 <= box.y + box.height + CLEAR)
+        if (y1 > box.y - CLEAR && y1 < box.y + box.height + CLEAR)
           cost += NEAR * within(x1, x2, box.x - CLEAR, box.x + box.width + CLEAR);
       } else {
         if (x1 > box.x && x1 < box.x + box.width) cost += THROUGH * within(y1, y2, box.y, box.y + box.height);
-        if (!mine && x1 >= box.x - CLEAR && x1 <= box.x + box.width + CLEAR)
+        if (x1 > box.x - CLEAR && x1 < box.x + box.width + CLEAR)
           cost += NEAR * within(y1, y2, box.y - CLEAR, box.y + box.height + CLEAR);
       }
     }
@@ -606,11 +645,13 @@ function sharedOf(id: string, routes: Map<string, { points: Point[] }>) {
  * unrouted (its drawing takes its own way) where an end is a point inside its module, an end
  * is missing, or one module holds the other. `open` names modules routes may cross, such as
  * a backdrop. A link that is a `branch` (one of several labelled ways out of a decision)
- * leaves by a side of its own instead of sharing a trunk. */
+ * leaves by a side of its own instead of sharing a trunk. `round` names modules whose
+ * outline meets their box only at the middles of its sides, such as a decision's diamond. */
 export function routeLinks(
   links: RouteLink[],
   boxes: Map<string, Bounds>,
   open: Set<string> = new Set(),
+  round: Set<string> = new Set(),
 ): Map<string, Route> {
   const obstacles = obstaclesOf(boxes, links, open);
   const flow = flowOf(links, boxes);
@@ -627,7 +668,8 @@ export function routeLinks(
       )
     : { x: 0, y: 0, width: 0, height: 0 };
   type Found = { points: Point[]; ends: string[]; fromSide: Side; toSide: Side; uses: [string, Use][] };
-  type Use = "in" | "out" | "branch";
+  /** `in:` or `out:` and how the link looks, or a branch. */
+  type Use = string;
   const found = new Map<string, Found>();
   // How links already leave (out, or as a branch) and enter (in) each side of each module.
   const used = new Map<string, Use[]>();
@@ -639,20 +681,27 @@ export function routeLinks(
   const route = (link: RouteLink & { branch?: boolean }) => {
     const a = boxes.get(link.from.moduleId)!,
       b = boxes.get(link.to.moduleId)!;
-    const starts = portsOf(link.from, a, towards(a, b, flow), obstacles),
-      goals = portsOf(link.to, b, towards(b, a, flow), obstacles);
+    const flat: [boolean, boolean] = [!round.has(link.from.moduleId), !round.has(link.to.moduleId)];
+    const starts = portsOf(link.from, a, towards(a, b, flow), obstacles, flat[0]),
+      goals = portsOf(link.to, b, towards(b, a, flow), obstacles, flat[1]);
     if (!starts || !goals) return;
-    aligned(starts, goals, a, b, obstacles);
-    const role: Use = link.branch ? "branch" : "out";
-    // A side where links go the other way, or where a branch leaves, is not shared.
-    const clash = (module: string, side: Side, mine: Use) => {
-      const there = used.get(`${module}:${side}`) ?? [];
-      if (mine !== "in" && there.some((u) => u === "branch" || (u !== "in" && mine === "branch"))) return FORK;
-      return there.some((u) => (u === "in") !== (mine === "in")) ? CONTRARY : 0;
+    aligned(starts, goals, a, b, obstacles, flat);
+    const look = link.bundle ?? "";
+    const role: Use = link.branch ? "branch" : `out:${look}`,
+      entry: Use = `in:${look}`;
+    // A side where links go the other way, or look different, or where a branch leaves, is
+    // not shared.
+    const clash = (module: string, p: Port, mine: Use) => {
+      const there = used.get(`${module}:${p.side}:${p.slot}`) ?? [];
+      if (!mine.startsWith("in") && there.some((u) => u === "branch" || (!u.startsWith("in") && mine === "branch"))) return FORK;
+      if (there.some((u) => u !== mine)) return CONTRARY;
+      // Beside a line going the other way, a side's other points read as a lane of two.
+      const side = [0, 1, 2].flatMap((slot) => used.get(`${module}:${p.side}:${slot}`) ?? []);
+      return p.slot !== 1 && side.some((u) => u.startsWith("in") !== mine.startsWith("in")) ? ONCOMING : 0;
     };
-    for (const p of starts) p.cost += clash(link.from.moduleId, p.side, role);
-    for (const q of goals) q.cost += clash(link.to.moduleId, q.side, "in");
-    const ends = [link.branch ? `branch:${link.id}` : `out:${link.from.moduleId}`, `in:${link.to.moduleId}`];
+    for (const p of starts) p.cost += clash(link.from.moduleId, p, role);
+    for (const q of goals) q.cost += clash(link.to.moduleId, q, entry);
+    const ends = [link.branch ? `branch:${link.id}` : `out:${link.from.moduleId}:${look}`, `in:${link.to.moduleId}:${look}`];
     const laid: Segment[] = [];
     for (const [id, r] of found)
       if (id !== link.id)
@@ -668,7 +717,7 @@ export function routeLinks(
       },
       CLEAR * 8,
     );
-    let result = search(starts, goals, obstacles, laid, ends, near, [a, b]);
+    let result = search(starts, goals, obstacles, laid, ends, near);
     if (!result || result.blocked) {
       const x = Math.min(extent.x, near.x),
         y = Math.min(extent.y, near.y);
@@ -678,12 +727,12 @@ export function routeLinks(
         width: Math.max(extent.x + extent.width, near.x + near.width) - x,
         height: Math.max(extent.y + extent.height, near.y + near.height) - y,
       };
-      result = search(starts, goals, obstacles, laid, ends, wide, [a, b]) ?? result;
+      result = search(starts, goals, obstacles, laid, ends, wide) ?? result;
     }
     if (!result) return;
     const uses: [string, Use][] = [
-      [`${link.from.moduleId}:${result.from.side}`, role],
-      [`${link.to.moduleId}:${result.to.side}`, "in"],
+      [`${link.from.moduleId}:${result.from.side}:${result.from.slot}`, role],
+      [`${link.to.moduleId}:${result.to.side}:${result.to.slot}`, entry],
     ];
     for (const [key, use] of uses) used.set(key, [...(used.get(key) ?? []), use]);
     found.set(link.id, { points: result.points, ends, fromSide: result.from.side, toSide: result.to.side, uses });

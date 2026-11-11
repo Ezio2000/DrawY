@@ -96,18 +96,42 @@ describe("routeLinks", () => {
     expect(along(back, routes.get("ab")!) + along(back, routes.get("bc")!)).toBe(0);
   });
 
-  it("gives labelled branches out of a decision sides of their own", () => {
+  it("gives labelled branches out of a decision corners of their own, and out of a box points of their own", () => {
     const boxes = new Map([
       ["decide", box(0, 120)],
       ["yes", box(300, 0)],
       ["no", box(300, 240)],
     ]);
+    const branches = [link("y", "decide", "yes", { branch: true }), link("n", "decide", "no", { branch: true })];
+    // A diamond meets its box only at the middles of its sides.
+    const diamond = routeLinks(branches, boxes, new Set(), new Set(["decide"]));
+    expect(diamond.get("y")!.fromSide).not.toBe(diamond.get("n")!.fromSide);
+    expect(along(diamond.get("y")!, diamond.get("n")!)).toBe(0);
+    // A box's side has room for both, side by side.
+    const flat = routeLinks(branches, boxes);
+    expect(flat.get("y")!.points[0]).not.toEqual(flat.get("n")!.points[0]);
+    expect(along(flat.get("y")!, flat.get("n")!)).toBe(0);
+  });
+
+  it("joins into a trunk only links that look alike", () => {
+    const boxes = new Map([
+      ["notify", box(320, 0)],
+      ["a", box(0, 200)],
+      ["b", box(320, 200)],
+      ["c", box(640, 200)],
+    ]);
     const routes = routeLinks(
-      [link("y", "decide", "yes", { branch: true }), link("n", "decide", "no", { branch: true })],
+      [
+        link("a", "a", "notify", { bundle: "red dashed" }),
+        link("c", "c", "notify", { bundle: "red dashed" }),
+        link("b", "b", "notify", { bundle: "black" }),
+      ],
       boxes,
     );
-    expect(routes.get("y")!.fromSide).not.toBe(routes.get("n")!.fromSide);
-    expect(along(routes.get("y")!, routes.get("n")!)).toBe(0);
+    // The two red lines merge; the black one keeps a line and a point of its own.
+    expect(along(routes.get("a")!, routes.get("c")!)).toBeGreaterThan(20);
+    expect(along(routes.get("b")!, routes.get("a")!) + along(routes.get("b")!, routes.get("c")!)).toBe(0);
+    expect(routes.get("b")!.points.at(-1)).not.toEqual(routes.get("a")!.points.at(-1));
   });
 
   it("keeps the side and point a link names", () => {

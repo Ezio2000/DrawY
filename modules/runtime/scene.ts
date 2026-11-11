@@ -506,7 +506,13 @@ export class SceneRenderer {
   private asks(l: Link) {
     const d = { ...(drawingOf(this.work, l.drawingId)?.defaults ?? {}), ...l.data };
     const asks = d.route === "elbow" && !Number(d.bend ?? 0) && (d.first === undefined || d.first === "auto");
-    return asks ? { branch: typeof d.label === "string" && !!d.label.trim() } : undefined;
+    if (!asks) return undefined;
+    // Links that look alike, whatever their words, may run together as one trunk.
+    const { label, labelSide: _, labelColor: __, size: ___, ...look } = d;
+    return {
+      branch: typeof label === "string" && !!label.trim(),
+      bundle: JSON.stringify([l.drawingId, Object.entries(look).sort(([a], [b]) => a.localeCompare(b))]),
+    };
   }
   /** Lays the routes again among the modules where they are now. */
   private reroute() {
@@ -515,10 +521,19 @@ export class SceneRenderer {
     const asking = [...this.links.values()].flatMap((l) => {
       const asks = this.asks(l);
       return asks && this.instances.has(l.from.moduleId) && this.instances.has(l.to.moduleId)
-        ? [{ id: l.id, from: l.from, to: l.to, branch: asks.branch }]
+        ? [{ id: l.id, from: l.from, to: l.to, ...asks }]
         : [];
     });
-    this.routes = asking.length ? routeLinks(asking, boxes, new Set(backdrop ? [backdrop] : [])) : new Map();
+    // A diamond, a circle or a pill meets its box only at the middles of its sides.
+    const round = new Set(
+      [...this.instances.values()]
+        .filter((m) => {
+          const shape = m.data.shape ?? drawingOf(this.work, m.drawingId)?.defaults.shape;
+          return shape === "diamond" || shape === "circle" || shape === "pill";
+        })
+        .map((m) => m.id),
+    );
+    this.routes = asking.length ? routeLinks(asking, boxes, new Set(backdrop ? [backdrop] : []), round) : new Map();
   }
   private drawLink(l: Link) {
     const r = this.routes.get(l.id);
