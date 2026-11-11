@@ -226,12 +226,7 @@ function flow(
     const from = leaf(l.from),
       to = leaf(l.to);
     if (!from || !to || from === to) return;
-    g.setEdge(
-      from,
-      to,
-      l.label ? { width: l.label.width, height: l.label.height, labelpos: "c" } : {},
-      String(i),
-    );
+    g.setEdge(from, to, {}, String(i));
   });
   layered(g);
   for (const n of nodes) {
@@ -258,22 +253,72 @@ function tiered(
   const level = direction === "right" || direction === "left";
   const along = (n: Node) => (level ? n.width : n.height),
     across = (n: Node) => (level ? n.height : n.width);
-  const extent = rows.map((row) => row.reduce((s, id) => s + across(byId.get(id)!), 0) + gap[1] * Math.max(0, row.length - 1));
-  const widest = Math.max(0, ...extent);
-  let run = 0;
-  const places = rows.map((row, r) => {
+  // Along the direction, each row is as deep as its largest module, and the gap after it
+  // widens with the links that pass through it, each of which needs a lane of its own.
+  const rank = new Map<string, number>();
+  rows.forEach((row, r) => row.forEach((id) => rank.set(id, r)));
+  const passing = rows.map((_, r) =>
+    links.filter((l) => {
+      const a = rank.get(l.from),
+        b = rank.get(l.to);
+      return a !== undefined && b !== undefined && Math.min(a, b) <= r && Math.max(a, b) > r;
+    }).length,
+  );
+  let run = 0,
+    last = gap[0];
+  const starts = rows.map((row, r) => {
     const depth = Math.max(0, ...row.map((id) => along(byId.get(id)!)));
     const start = run;
-    run += depth + gap[0];
-    return { row, start, depth, lead: (widest - extent[r]) / 2 };
+    last = gap[0] + Math.min(160, Math.max(0, passing[r] - 4) * 7);
+    run += depth + last;
+    return { start, depth };
   });
-  const total = run - gap[0];
-  for (const { row, start, depth, lead } of places) {
-    let at = lead;
+  const total = run - last;
+  // Across it, each module wants to stand level with the ones it is linked to in the other
+  // rows, so a link between two rows runs straight where it can; its neighbours in its own
+  // row hold it to its place in their order.
+  const near = new Map<string, string[]>();
+  const rowOf = new Map<string, number>();
+  rows.forEach((row, r) => row.forEach((id) => rowOf.set(id, r)));
+  for (const l of links) {
+    if (!rowOf.has(l.from) || !rowOf.has(l.to) || rowOf.get(l.from) === rowOf.get(l.to)) continue;
+    near.set(l.from, [...(near.get(l.from) ?? []), l.to]);
+    near.set(l.to, [...(near.get(l.to) ?? []), l.from]);
+  }
+  const centre = new Map<string, number>();
+  const extent = rows.map(
+    (row) => row.reduce((s, id) => s + across(byId.get(id)!), 0) + gap[1] * Math.max(0, row.length - 1),
+  );
+  const widest = Math.max(0, ...extent);
+  rows.forEach((row, r) => {
+    let at = (widest - extent[r]) / 2;
+    for (const id of row) {
+      centre.set(id, at + across(byId.get(id)!) / 2);
+      at += across(byId.get(id)!) + gap[1];
+    }
+  });
+  for (let pass = 0; pass < 8; pass++)
+    for (const row of pass % 2 ? [...rows].reverse() : rows) {
+      if (!row.length) continue;
+      const want = row.map((id) => {
+        const others = near.get(id) ?? [];
+        return others.length ? others.reduce((s, n) => s + centre.get(n)!, 0) / others.length : centre.get(id)!;
+      });
+      const apart = (i: number) => (across(byId.get(row[i - 1])!) + across(byId.get(row[i])!)) / 2 + gap[1];
+      // Packed from the left and from the right; halfway between the two keeps every module
+      // clear of its neighbours and as near as both allow to where it wants to be.
+      const left = [...want],
+        right = [...want];
+      for (let i = 1; i < row.length; i++) left[i] = Math.max(left[i], left[i - 1] + apart(i));
+      for (let i = row.length - 2; i >= 0; i--) right[i] = Math.min(right[i], right[i + 1] - apart(i + 1));
+      row.forEach((id, i) => centre.set(id, (left[i] + right[i]) / 2));
+    }
+  rows.forEach((row, r) => {
+    const { start, depth } = starts[r];
     for (const id of row) {
       const n = byId.get(id)!;
       const a = start + (depth - along(n)) / 2,
-        b = at;
+        b = centre.get(id)! - across(n) / 2;
       const flipped = direction === "up" || direction === "left" ? total - a - along(n) : a;
       if (level) {
         n.x = flipped;
@@ -282,9 +327,8 @@ function tiered(
         n.x = b;
         n.y = flipped;
       }
-      at += across(n) + gap[1];
     }
-  }
+  });
 }
 /** Each module under the one that links to it, a parent centred over its children; with
  * `both`, the root's children go to either side of it, as a mind map's branches do. */
@@ -452,6 +496,8 @@ export function arrangement(
   sceneId: string,
   op: Arrange,
   unsized: Set<string> = new Set(),
+  /** Modules another arrangement of the same write names, which this one leaves to it. */
+  claimed: Set<string> = new Set(),
 ): Placed {
   const placed: Placed = { bounds: new Map(), data: new Map(), problems: [] };
   const scene = work.scenes[sceneId];
@@ -468,7 +514,7 @@ export function arrangement(
       ? scene.modules.map((m) => m.id)
       : (op.modules ?? [
           ...new Set([
-            ...scene.modules.filter((m) => unsized.has(m.id)).map((m) => m.id),
+            ...scene.modules.filter((m) => unsized.has(m.id) && !claimed.has(m.id)).map((m) => m.id),
             ...(op.tiers ?? []).flat(),
             ...(op.lanes ?? []).flat(),
             ...Object.keys(frames),
@@ -510,7 +556,8 @@ export function arrangement(
     const drawing = drawingOf(work, m.drawingId);
     sizes.set(id, fitted(work, m));
     if (drawing?.fit === "words" && (m.data.title !== undefined || drawing.defaults.title !== undefined)) {
-      const key = m.drawingId + "\n" + String({ ...drawing.defaults, ...m.data }.shape ?? "");
+      const look = { ...drawing.defaults, ...m.data };
+      const key = [m.drawingId, look.shape ?? "", look.size ?? ""].join("\n");
       kinds.set(key, [...(kinds.get(key) ?? []), id]);
     }
   }
@@ -529,7 +576,7 @@ export function arrangement(
   let ground: { band: number; length: number; count: number } | undefined;
   if (kind === "grid") {
     const columns = op.columns ?? Math.ceil(Math.sqrt(leaves.length));
-    const gap = (op.gap as [number, number] | undefined) ?? [32, 32];
+    const gap = (op.gap as [number, number] | undefined) ?? [48, 48];
     const cellW = Math.max(...leaves.map((n) => n.width)),
       cellH = Math.max(...leaves.map((n) => n.height));
     leaves.forEach((n, i) => {
@@ -570,7 +617,7 @@ export function arrangement(
   } else {
     const way = direction === "both" ? "down" : (direction as "down" | "right" | "up" | "left");
     const gap = (op.gap as [number, number] | undefined) ?? [
-      (hasFrames ? 96 : 64) + (op.tiers ? Math.min(160, widestLabel) : 0),
+      (hasFrames ? (op.tiers ? 140 : 100) : 64) + (level ? Math.min(160, widestLabel) : labelled ? 20 : 0),
       hasFrames ? 44 : labelled ? 44 : 36,
     ];
     if (op.tiers?.length) {
@@ -582,7 +629,18 @@ export function arrangement(
           problem: `tiers 没有列出 ${unlisted.join("、")}：给了 tiers 就要把这条 arrange 摆放的每个模块都列进某一层`,
         });
       tiered(leaves, links, op.tiers, way, gap);
-    } else flow(nodes, links, way, gap, frames);
+    } else {
+      // A dense graph needs wider gaps between its ranks, a lane for each link in them.
+      if (!op.gap) {
+        const rank = ranksOf(
+          leaves.map((n) => n.id),
+          links,
+        );
+        const ranks = Math.max(1, ...rank.values());
+        gap[0] += Math.min(140, Math.max(0, Math.round(links.length / ranks) - 4) * 6);
+      }
+      flow(nodes, links, way, gap, frames);
+    }
   }
   // Frames close round what they hold, innermost first.
   const box = new Map<string, Bounds>(leaves.map((n) => [n.id, { x: n.x, y: n.y, width: n.width, height: n.height }]));
@@ -649,6 +707,15 @@ export function arrangement(
   return placed;
 }
 
+/** The modules an arrangement names itself. */
+const namedBy = (op: Arrange) => [
+  ...(Array.isArray(op.modules) ? op.modules : []),
+  ...(op.tiers ?? []).flat(),
+  ...(op.lanes ?? []).flat(),
+  ...Object.keys(op.frames ?? {}),
+  ...Object.values(op.frames ?? {}).flat(),
+  ...(op.ground ? [op.ground] : []),
+];
 /** The parts of a scene a change to each of them means. */
 function matching(work: Work, each: Each, current: string) {
   const scene = work.scenes[each.scene ?? current];
@@ -729,34 +796,33 @@ export function settled(
     // Their sizes and words count in the arrangements that follow.
     work = layOn(work, more, current).work;
   }
-  const placedNow = new Set<string>();
+  // Where each arrangement puts its modules. A new module takes its place in its own
+  // record, as it has to be laid with one; a module that stood somewhere moves afterwards.
+  const fresh = new Set(unplaced);
+  const places = new Map<string, ModuleEdit>();
   (arrange ?? []).forEach((op, i) => {
     const sceneId = op.scene ?? current;
-    const result = arrangement(work, sceneId, op, unplaced);
+    const others = new Set((arrange ?? []).flatMap((o) => (o === op ? [] : namedBy(o))));
+    const result = arrangement(work, sceneId, op, unplaced, others);
     problems.push(...result.problems.map((p) => ({ ...p, at: p.at.replace(/^arrange/, `arrange.${i}`) })));
     const moves: ModuleEdit[] = [...result.bounds].map(([id, b]) => ({
       id,
       bounds: boxOf(b),
       ...(result.data.has(id) ? { data: result.data.get(id) } : {}),
     }));
-    for (const m of moves) placedNow.add(m.id);
-    modules.push(...moves);
+    for (const m of moves) places.set(m.id, { ...places.get(m.id), ...m });
     // A later arrangement may stand beside this one.
     work = layOn(work, { modules: moves }, current).work;
     for (const m of moves) unplaced.delete(m.id);
   });
-  // The stand-in box of a module that was placed gives way to its real one; a new module
-  // nothing placed has no box, and the write says so when it is laid.
+  const seen = new Set<string>();
   const cleaned: ModuleEdit[] = modules.map((m) => {
-    if (m.bounds !== PLACEHOLDER) return m;
-    const { bounds: _stand, ...rest } = m;
-    const at = placedNow.has(m.id)
-      ? Object.values(work.scenes)
-          .flatMap((s) => s.modules)
-          .find((x) => x.id === m.id)?.bounds
-      : undefined;
-    return at ? { ...rest, bounds: boxOf(at) } : rest;
+    const place = places.get(m.id);
+    if (m.bounds || !fresh.has(m.id) || seen.has(m.id) || !place) return m;
+    seen.add(m.id);
+    return { ...m, bounds: place.bounds, ...(place.data ? { data: { ...m.data, ...place.data } } : {}) };
   });
+  for (const [id, place] of places) if (!seen.has(id)) cleaned.push(place);
   return {
     edit: {
       ...plain,

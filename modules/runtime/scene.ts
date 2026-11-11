@@ -67,6 +67,20 @@ export interface PictureInfo {
   height: number;
   anchors: Picture["anchors"];
 }
+/** What the geometry of a drawn scene shows is wrong with its structure, measured rather
+ * than judged from a picture: each entry names its parts and how far they are out. */
+export interface StructureReport {
+  /** Links that pass through a module neither of their ends is on. */
+  crossings?: { link: string; through: string[] }[];
+  /** Blocks, tables and labels lying over one another, and by how much. */
+  overlaps?: { a: string; b: string; by: [number, number] }[];
+  /** Words on a link that lie over a module or another link's words, or that another link
+   * strikes through. */
+  labels?: { link: string; text: string; over?: string[]; crossedBy?: string[] }[];
+  /** Words that run out of the block or table that holds them, and the size that would
+   * hold them. */
+  overflow?: { moduleId: string; text: string; needs: [number, number] }[];
+}
 type Listener = (value: unknown) => unknown;
 type View = { host: HTMLElement; cleanup: (() => void)[]; revision: number };
 const execute = (source: string, api: object): Promise<unknown> =>
@@ -505,6 +519,115 @@ export class SceneRenderer {
   /** Where a link runs now. */
   routeOf(id: string) {
     return this.routes.get(id);
+  }
+  /** What is wrong with the scene's structure as it is drawn now. */
+  structure(): StructureReport {
+    const report: StructureReport = {};
+    const add = <K extends keyof StructureReport>(key: K, entry: NonNullable<StructureReport[K]>[number]) => {
+      const list = ((report[key] as unknown[] | undefined) ??= []);
+      if (list.length < 8) list.push(entry);
+    };
+    const modules = this.currentModules();
+    for (const [id, r] of this.routes) if (r.crosses.length) add("crossings", { link: id, through: r.crosses });
+    // Blocks, tables and labels are the parts that should stand clear of one another;
+    // a picture with a label on it or a shadow under it is composed that way.
+    const solid = modules.filter((m) => {
+      const fit = drawingOf(this.work, m.drawingId)?.fit;
+      return (fit === "words" || fit === "rows") && !this.ground.has(m.id);
+    });
+    const within = (a: Bounds, b: Bounds) =>
+      a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
+    for (let i = 0; i < solid.length; i++)
+      for (let j = i + 1; j < solid.length; j++) {
+        const a = solid[i].bounds,
+          b = solid[j].bounds;
+        const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x),
+          h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+        if (w > 2 && h > 2 && !within(a, b) && !within(b, a))
+          add("overlaps", { a: solid[i].id, b: solid[j].id, by: [Math.round(w), Math.round(h)] });
+      }
+    /** A box on screen in scene units, by the host that holds it. */
+    const sceneBox = (host: HTMLElement, r: DOMRect): Bounds | undefined => {
+      const hr = host.getBoundingClientRect();
+      const width = parseFloat(host.style.width);
+      if (!hr.width || !width) return undefined;
+      const k = hr.width / width;
+      return {
+        x: parseFloat(host.style.left) + (r.left - hr.left) / k,
+        y: parseFloat(host.style.top) + (r.top - hr.top) / k,
+        width: r.width / k,
+        height: r.height / k,
+      };
+    };
+    const meet = (a: Bounds, b: Bounds, by = 0) =>
+      Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > by &&
+      Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > by;
+    const words: { link: string; text: string; box: Bounds }[] = [];
+    for (const id of this.links.keys()) {
+      const host = this.views.get("link:" + id)?.host;
+      for (const text of host?.shadowRoot?.querySelectorAll("text") ?? []) {
+        const box = text.textContent?.trim() && sceneBox(host!, text.getBoundingClientRect());
+        if (box) words.push({ link: id, text: text.textContent!.trim().slice(0, 24), box });
+      }
+    }
+    for (const w of words) {
+      const over = modules
+        .filter((m) => !this.ground.has(m.id) && meet(w.box, m.bounds, 3) && !within(w.box, m.bounds))
+        .map((m) => m.id);
+      const others = words.filter((o) => o !== w && o.link !== w.link && meet(w.box, o.box, 2)).map((o) => o.link);
+      const inner = { x: w.box.x + 3, y: w.box.y + 3, width: w.box.width - 6, height: w.box.height - 6 };
+      const crossedBy = [...this.routes]
+        .filter(([id, r]) => {
+          if (id === w.link || r.kind === "curve" || r.kind === "smooth") return false;
+          return r.points.some((p, i) => {
+            if (!i) return false;
+            const q = r.points[i - 1];
+            return meet(inner, {
+              x: Math.min(p.x, q.x),
+              y: Math.min(p.y, q.y),
+              width: Math.abs(p.x - q.x) || 0.01,
+              height: Math.abs(p.y - q.y) || 0.01,
+            });
+          });
+        })
+        .map(([id]) => id);
+      if (over.length || others.length || crossedBy.length)
+        add("labels", {
+          link: w.link,
+          text: w.text,
+          ...(over.length || others.length ? { over: [...over, ...others] } : {}),
+          ...(crossedBy.length ? { crossedBy } : {}),
+        });
+    }
+    for (const m of solid) {
+      const host = this.views.get("module:" + m.id)?.host;
+      if (!host?.shadowRoot) continue;
+      const walker = document.createTreeWalker(host.shadowRoot, NodeFilter.SHOW_TEXT);
+      let out = { x: 0, y: 0 },
+        said = "";
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node.textContent?.trim();
+        if (!text || node.parentElement?.closest("style,script,defs,title")) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const box = sceneBox(host, range.getBoundingClientRect());
+        if (!box || !box.width) continue;
+        const x = Math.max(m.bounds.x - box.x, box.x + box.width - (m.bounds.x + m.bounds.width)),
+          y = Math.max(m.bounds.y - box.y, box.y + box.height - (m.bounds.y + m.bounds.height));
+        if (x > out.x || y > out.y) said = text.slice(0, 24);
+        out = { x: Math.max(out.x, x), y: Math.max(out.y, y) };
+      }
+      if (out.x > 1.5 || out.y > 1.5)
+        add("overflow", {
+          moduleId: m.id,
+          text: said,
+          needs: [
+            Math.ceil(m.bounds.width + 2 * Math.max(0, out.x) + (out.x > 1.5 ? 8 : 0)),
+            Math.ceil(m.bounds.height + 2 * Math.max(0, out.y) + (out.y > 1.5 ? 8 : 0)),
+          ],
+        });
+    }
+    return report;
   }
   /** Where a link's ends meet their modules as they are now, in scene units, and the side
    * each is on. */

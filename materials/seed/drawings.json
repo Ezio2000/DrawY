@@ -55,8 +55,8 @@
     "params": {
       "route": {
         "type": "choice",
-        "options": ["curve", "straight", "elbow"],
-        "description": "curve bows by bend; elbow runs at right angles round the modules between its ends, for flowcharts, architecture and every structured diagram. Unset follows the work's style token route, else curve"
+        "options": ["curve", "straight", "smooth", "elbow"],
+        "description": "curve bows by bend; smooth sweeps from one side to the opposite one, for the branches of a tree or mind map; elbow runs at right angles round the modules between its ends, for flowcharts, architecture and every other structured diagram. Unset follows the work's style token route, else curve"
       },
       "bend": {
         "type": "number",

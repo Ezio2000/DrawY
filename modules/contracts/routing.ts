@@ -7,7 +7,7 @@ import { linkEnds, sideOf, union } from "./geometry.ts";
  * runtime routes the links each time modules move and hands every link drawing its route, so
  * a connection never carries offsets of its own that a dragged module would leave behind. */
 
-export type RouteKind = "curve" | "straight" | "elbow";
+export type RouteKind = "curve" | "straight" | "smooth" | "elbow";
 export interface RouteOptions {
   kind: RouteKind;
   /** For a curve, how far it bows, as its drawing reads it; for an elbow, how far along the
@@ -61,7 +61,11 @@ export function routing(
 ): RouteOptions {
   const asked = data.route ?? style.route;
   const kind: RouteKind =
-    asked === "elbow" || asked === "corner" ? "elbow" : asked === "straight" ? "straight" : "curve";
+    asked === "elbow" || asked === "corner"
+      ? "elbow"
+      : asked === "straight" || asked === "smooth"
+        ? asked
+        : "curve";
   const text = typeof data.label === "string" ? data.label : "";
   const size = Number(data.size ?? 14) || 14;
   const lines = text.split("\n");
@@ -409,6 +413,10 @@ export function routeLinks(
     const A = boxes.get(link.from.moduleId),
       B = boxes.get(link.to.moduleId);
     if (!A || !B) continue;
+    if (link.options.kind === "smooth" && link.from.moduleId !== link.to.moduleId) {
+      out.set(link.id, smooth(link, A, B));
+      continue;
+    }
     if (link.options.kind !== "elbow") {
       const { from, to } = linkEnds(link, (id) => boxes.get(id)!);
       out.set(link.id, {
@@ -497,7 +505,7 @@ export function routeLinks(
           : f === "right"
             ? B.x - (A.x + A.width)
             : A.x - (B.x + B.width);
-    return ahead >= 12 ? (sa === f ? 60 : 0) + (sb === OPPOSITE[f] ? 60 : 0) : 0;
+    return ahead >= 12 ? (sa === f ? 150 : 0) + (sb === OPPOSITE[f] ? 150 : 0) : 0;
   };
   // First, which side each end leaves by, judged with every port at the middle of its side.
   for (const p of plans) {
@@ -716,6 +724,30 @@ export function routeLinks(
   words(links, out, modules, back);
   return out;
 }
+/** A link that leaves one side and arrives at the opposite one in a single sweep, as the
+ * branches of a tree or a mind map do: along the figure's flow where its end lies ahead,
+ * else across whichever gap parts the two modules. */
+function smooth(link: RouteLink, A: Bounds, B: Bounds): Routed {
+  const OPP: Record<Side, Side> = { left: "right", right: "left", top: "bottom", bottom: "top" };
+  const gapX = Math.max(B.x - (A.x + A.width), A.x - (B.x + B.width)),
+    gapY = Math.max(B.y - (A.y + A.height), A.y - (B.y + B.height));
+  const flow = link.options.flow;
+  // Without a flow to follow it runs across the page wherever the two stand side by side,
+  // the way words read and a mind map branches.
+  const level = flow ? flow === "left" || flow === "right" : gapX > 0;
+  const lone = level && gapX <= 0 ? false : !level && gapY <= 0 ? true : level;
+  let sa: Side = lone ? (mid(B).x >= mid(A).x ? "right" : "left") : mid(B).y >= mid(A).y ? "bottom" : "top";
+  let sb: Side = OPP[sa];
+  const place = (end: LinkEnd, box: Bounds, side: Side) => {
+    if (Array.isArray(end.at))
+      return { p: { x: box.x + end.at[0] * box.width, y: box.y + end.at[1] * box.height }, side: sideOf({ x: end.at[0], y: end.at[1] }) };
+    const on = end.at ?? side;
+    return { p: portOn(box, on), side: on as Side | null };
+  };
+  const a = place(link.from, A, sa),
+    b = place(link.to, B, sb);
+  return { kind: "smooth", points: [a.p, b.p], fromSide: a.side, toSide: b.side, crosses: [] };
+}
 /** A link from a module back to itself: out of its right side and round into its top. */
 function loop(box: Bounds, nth: number): Routed {
   const reach = 26 + nth * 14;
@@ -853,6 +885,8 @@ function words(
 ) {
   const placed: Box[] = [];
   const solid = modules.filter((m) => m.id !== back);
+  // Words stay within the figure: beyond its edge they are cut from a picture of it.
+  const figure = boxOf("", union(modules.map((m) => m.bounds)));
   const overlap = (m: Box, n: Box) =>
     Math.max(0, Math.min(m.r, n.r) - Math.max(m.x, n.x)) * Math.max(0, Math.min(m.b, n.b) - Math.max(m.y, n.y));
   for (const link of links) {
@@ -896,6 +930,7 @@ function words(
           let score = Math.abs(along - link.options.labelAt) * 220 + (n ? 14 : 0);
           // Words want to lie along a level stretch long enough to hold them.
           if (level && len < size.width + 8 && !n) score += 30;
+          if (box.x < figure.x || box.y < figure.y || box.r > figure.r || box.b > figure.b) score += 400;
           for (const m of solid)
             if (!ground.has(m.id)) score += Math.min(4000, overlap(box, boxOf(m.id, m.bounds, 3)) * 4);
           for (const o of placed) score += Math.min(4000, overlap(box, o) * 6);

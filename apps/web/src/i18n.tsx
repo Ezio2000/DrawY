@@ -588,6 +588,7 @@ const zh = {
     options: {
       start: "靠左",
       straight: "直线",
+      smooth: "平滑曲线",
       triangle: "空心三角",
       "diamond-filled": "实心菱形",
       dot: "圆点",
@@ -1847,6 +1848,7 @@ const en: Words = {
     options: {
       start: "Left",
       straight: "Straight",
+      smooth: "Smooth curve",
       triangle: "Hollow triangle",
       "diamond-filled": "Filled diamond",
       dot: "Dot",

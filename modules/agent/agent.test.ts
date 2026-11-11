@@ -62,7 +62,7 @@ const answer = (name: string, args: unknown, call_id: string) =>
         call_id,
       };
 
-it("feeds canvas images into the author conversation and requires another look after edits", async () => {
+it("feeds canvas images into the author conversation and looks at each write as it saves", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
   try {
@@ -86,8 +86,6 @@ it("feeds canvas images into the author conversation and requires another look a
       ["finish", { message: "premature" }],
       ["view_canvas", {}],
       ["write_work", { title: "edited" }],
-      ["finish", { message: "stale" }],
-      ["view_canvas", {}],
       ["finish", { message: "done" }],
     ] as const;
     let turn = 0,
@@ -133,18 +131,23 @@ it("feeds canvas images into the author conversation and requires another look a
       ["thinking", "**Checking the canvas**"],
       ["message", "premature"],
       ["view_canvas", "done"],
+      // The write is looked at there and then: its answer carries the look.
       ["write_work", "done"],
-      ["message", "stale"],
       ["view_canvas", "done"],
       ["message", "done"],
     ]);
+    const written = ctx.input.find(
+      (i) => i.type === "function_call_output" && String(i.output).includes('"look"'),
+    );
+    expect(JSON.parse(written.output).look.revision).toBe(JSON.parse(written.output).revision);
     expect(run.steps[3]).toMatchObject({ revision: 2, removed: 0 });
     expect(run.observations.map((o) => o.revision)).toEqual([1, 2]);
-    // Closing words before the latest revision was seen are answered with what is missing.
+    // Closing words before the work was seen are answered with what is missing; after the
+    // write nothing is, as it was seen when it was saved.
     const held = ctx.input.filter(
       (x) => x.role === "user" && String(x.content).startsWith("The work is not done yet: "),
     );
-    expect(held).toHaveLength(2);
+    expect(held).toHaveLength(1);
     expect(
       store
         .context("run")
@@ -1790,7 +1793,7 @@ it("sends a guide again once a summary has dropped it", async () => {
   }
 });
 
-it("reminds the author of the guides after the brief and of unread cards after a write", async () => {
+it("reminds the author of the guides after the brief and hands a write the cards it went without", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
   try {
@@ -1834,15 +1837,17 @@ it("reminds the author of the guides after the brief and of unread cards after a
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
     const [settled, unread, , read] = outputs(seen.at(-1)!).map(parsed);
     expect(settled.guides).toContain("draw_guide");
-    expect(unread.cardsUnread).toEqual(["plot"]);
-    expect(read.cardsUnread).toBeUndefined();
+    // plot takes lists, whose form only its card gives: the card comes with the write.
+    expect(unread.cards.map((c: { id: string }) => c.id)).toEqual(["plot"]);
+    expect(unread.cards[0].params.series).toContain("array");
+    expect(read.cards).toBeUndefined();
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
   }
 });
 
-it("points out an unread card once, not after every write", async () => {
+it("hands a card over once, not after every write, and none for a drawing its index line describes", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
   try {
@@ -1884,9 +1889,9 @@ it("points out an unread card once, not after every write", async () => {
     const run = await new Agent(() => {}).start(store, work.id, "root", "画苹果");
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
     const [, first, second] = outputs(seen.at(-1)!).map(parsed);
-    expect(first.cardsUnread).toEqual(["plot"]);
+    expect(first.cards.map((c: { id: string }) => c.id)).toEqual(["plot"]);
     expect(second.revision).toBe(4);
-    expect(second.cardsUnread).toBeUndefined();
+    expect(second.cards).toBeUndefined();
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
@@ -1943,7 +1948,7 @@ it("does not remind the author of guides and cards it asks for in the same messa
     expect(settled.revision).toBe(2);
     expect(settled.guides).toBeUndefined();
     expect(written.revision).toBe(3);
-    expect(written.cardsUnread).toBeUndefined();
+    expect(written.cards).toBeUndefined();
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
@@ -1970,9 +1975,13 @@ it("keeps the instructions to what every work needs, with the rest listed and re
     expect(index).toContain(`- ${d.id}`);
     expect(gist(d.about).length).toBeLessThan(170);
   }
-  // The index names each drawing's parameters, so the common ones need no card, and the
-  // rules on composing pictures, which nearly every work reads, live here and not in a guide.
-  expect(AUTHOR.length + index.length).toBeLessThan(32000);
+  // The index names each drawing's parameters, a choice with its options, so drawings with
+  // plain parameters need no card, and the rules on composing pictures, which nearly every
+  // work reads, live here and not in a guide.
+  expect(index).toContain("shape(box|pill|circle|diamond|");
+  expect(index).toContain("tail(as head)");
+  expect(index).toMatch(/- sequence: .*\[actors\*, messages\*/);
+  expect(AUTHOR.length + index.length).toBeLessThan(35000);
 });
 
 it("answers every call of a batch before showing its pictures", async () => {
@@ -2619,7 +2628,7 @@ it("starts over from what was asked when the saved conversation is in an older f
     expect(words).toContain("Earlier requests on this work");
     expect(words).toContain("画需求层次");
     expect(words).toContain("Current work:");
-    expect((store.context(run.id) as any).format).toBe(2);
+    expect((store.context(run.id) as any).format).toBe(3);
   } finally {
     db.close();
     rmSync(dir, { recursive: true });

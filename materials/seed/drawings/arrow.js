@@ -150,6 +150,25 @@ if (kind === "elbow") {
     labelAt = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
     normal = { x: -(q.y - p.y) / l, y: (q.x - p.x) / l };
   }
+} else if (kind === "smooth" && route) {
+  // One sweep that leaves and arrives square to the sides it meets.
+  const out = { left: [-1, 0], right: [1, 0], top: [0, -1], bottom: [0, 1] };
+  let p = route.points[0],
+    q = route.points[route.points.length - 1];
+  const far = Math.abs(q.x - p.x) >= Math.abs(q.y - p.y);
+  const da = out[api.fromSide] ?? (far ? [Math.sign(q.x - p.x) || 1, 0] : [0, Math.sign(q.y - p.y) || 1]),
+    db = out[api.toSide] ?? [-da[0], -da[1]];
+  start = { x: -da[0], y: -da[1] };
+  end = { x: -db[0], y: -db[1] };
+  a = back(p, start, -Math.min(gapOf(tail), 3));
+  b = back(q, end, Math.min(gapOf(head), 3));
+  const a2 = back(a, start, -pullOf(tail)),
+    b2 = back(b, end, pullOf(head));
+  const reach = Math.max(18, (Math.abs(da[0] ? q.x - p.x : q.y - p.y) || Math.hypot(q.x - p.x, q.y - p.y)) * 0.5);
+  const c1 = { x: a2.x + da[0] * reach, y: a2.y + da[1] * reach },
+    c2 = { x: b2.x + db[0] * reach, y: b2.y + db[1] * reach };
+  line = `M${a2.x} ${a2.y}C${c1.x} ${c1.y} ${c2.x} ${c2.y} ${b2.x} ${b2.y}`;
+  labelAt = { x: (a2.x + 3 * c1.x + 3 * c2.x + b2.x) / 8, y: (a2.y + 3 * c1.y + 3 * c2.y + b2.y) / 8 };
 } else {
   a = api.from ?? at(d.from, { x: 0, y: H / 2 });
   b = api.to ?? at(d.to, { x: W, y: H / 2 });
