@@ -34,7 +34,7 @@ const pad = size * 0.9;
 const effect = d.effect ? ` filter="${api.effect(d.effect)}"` : "";
 // A tab holds a UML fragment's or package's name in the corner, cut on the slant.
 const tab = d.tab
-  ? `<div class="tab">${esc(d.title)}</div>`
+  ? `<div class="tab" data-clear>${esc(d.title)}</div>`
   : "";
 return api.html(`<style>
 :host,.frame{position:relative;width:${W}px;height:${H}px}
@@ -46,5 +46,5 @@ svg{position:absolute;inset:0;overflow:visible}
 </style><div class="frame"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><rect x="${sw / 2}" y="${sw / 2}" width="${W - sw}" height="${H - sw}" rx="${r}" fill="${fill === "soft" ? color : paper}" fill-opacity="${fill === "soft" ? 0.07 : fill === "paper" ? 1 : 0}" stroke="${color}" stroke-opacity="${tone === "plain" ? 0.7 : 0.9}" stroke-width="${sw}"${dash}${effect}/></svg>${
   d.tab
     ? tab + (d.note ? `<div class="name" style="left:auto;right:${pad}px"><span class="note">${esc(d.note)}</span></div>` : "")
-    : `<div class="name">${d.title ? `<span class="title">${esc(d.title)}</span>` : ""}${d.note ? `<span class="note">${esc(d.note)}</span>` : ""}</div>`
+    : `<div class="name">${d.title ? `<span class="title" data-clear>${esc(d.title)}</span>` : ""}${d.note ? `<span class="note" data-clear>${esc(d.note)}</span>` : ""}</div>`
 }</div>`);

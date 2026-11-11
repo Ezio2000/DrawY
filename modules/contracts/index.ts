@@ -166,6 +166,9 @@ export type MaterialUse =
       /** The size it looks right at, and how a module given no size is fitted. */
       size?: { width: number; height: number };
       fit?: Fit;
+      /** A structure or chart that lays its words out within its module: words found
+       * outside it mean the module is too small for them. */
+      contained?: boolean;
     }
   | { id: string; kind: "effect"; name: string; defs: string };
 export type Point = z.infer<typeof pointSchema>;
@@ -560,6 +563,12 @@ export const arrangeSchema = z
         "Frame modules and the modules each holds, as {frameId: [memberIds]}; a member may be another frame. Members are kept together and each frame is sized round its own",
       ),
     columns: z.number().int().positive().optional().describe("grid: cells in a row"),
+    wrap: z
+      .boolean()
+      .optional()
+      .describe(
+        "flow: fold a figure much longer than the landscape view into rows that run back and forth (columns, for one that reads down). On unless false, or when the arrangement has frames or tiers",
+      ),
     gap: z
       .array(z.number().nonnegative())
       .length(2)

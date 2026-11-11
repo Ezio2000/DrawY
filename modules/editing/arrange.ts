@@ -236,6 +236,67 @@ function flow(
     n.y = at.y - n.height / 2;
   }
 }
+/** Folds a figure much longer than the landscape view it opens in into bands of ranks: rows
+ * that run back and forth for one that reads across, so a link from the end of one row
+ * drops straight to the start of the next; columns side by side for one that reads down. */
+function folded(nodes: Node[], direction: "down" | "right" | "up" | "left", gap: number) {
+  if (nodes.length < 6) return;
+  const level = direction === "right" || direction === "left";
+  const start = (n: Node) => (level ? n.x : n.y),
+    length = (n: Node) => (level ? n.width : n.height),
+    side = (n: Node) => (level ? n.y : n.x),
+    breadth = (n: Node) => (level ? n.height : n.width);
+  const lo = Math.min(...nodes.map(start)),
+    hi = Math.max(...nodes.map((n) => start(n) + length(n)));
+  const long = hi - lo,
+    wide = Math.max(...nodes.map((n) => side(n) + breadth(n))) - Math.min(...nodes.map(side));
+  // The view is about 1.6 wide for 1 high; bands are worth it once the figure is half as
+  // long again as that allows.
+  const bands = Math.min(4, Math.round(Math.sqrt(level ? long / (1.6 * wide) : (1.6 * long) / wide)));
+  const tooLong = level ? long / wide > 2.6 : long / wide > 1.3;
+  if (bands < 2 || !tooLong) return;
+  // Ranks are the groups of modules that share a middle along the direction.
+  const ranks = new Map<number, Node[]>();
+  for (const n of nodes) {
+    const key = Math.round(start(n) + length(n) / 2);
+    ranks.set(key, [...(ranks.get(key) ?? []), n]);
+  }
+  const order = [...ranks.keys()].sort((a, b) => a - b);
+  if (order.length < bands * 2) return;
+  const per = Math.ceil(order.length / bands);
+  let across = 0;
+  for (let b = 0; b < bands; b++) {
+    const members = order.slice(b * per, (b + 1) * per).flatMap((k) => ranks.get(k)!);
+    if (!members.length) continue;
+    const from = Math.min(...members.map(start)),
+      to = Math.max(...members.map((n) => start(n) + length(n)));
+    const sideFrom = Math.min(...members.map(side)),
+      sideTo = Math.max(...members.map((n) => side(n) + breadth(n)));
+    // Every other row runs backwards; columns all read the same way.
+    const back = level && b % 2 === 1;
+    for (const n of members) {
+      const along = back ? to - (start(n) + length(n)) : start(n) - from,
+        beside = across + side(n) - sideFrom;
+      if (level) {
+        n.x = along;
+        n.y = beside;
+      } else {
+        n.x = beside;
+        n.y = along;
+      }
+    }
+    across += sideTo - sideFrom + gap + 36;
+  }
+  // Rows that ran shorter start where the first did, or end where it did when they run back.
+  if (level) {
+    const full = Math.max(...nodes.map((n) => n.x + n.width));
+    for (let b = 1; b < bands; b += 2) {
+      const members = order.slice(b * per, (b + 1) * per).flatMap((k) => ranks.get(k)!);
+      const shift = full - Math.max(0, ...members.map((n) => n.x + n.width));
+      for (const n of members) n.x += shift;
+    }
+  }
+}
 /** Ranks the figure names itself, each a row (or a column) with its modules ordered by
  * their links and centred on the widest. */
 function tiered(
@@ -374,10 +435,20 @@ function tree(
     deepen(root, 0, kids);
     const starts: number[] = [];
     depths.reduce((at, d, i) => ((starts[i] = at), at + d + gap[0]), 0);
-    const put = (id: string, d: number, from: number, own = children.get(id)!) => {
+    /** Places a subtree across `from`..`from + span` and returns where its root's middle is. */
+    const put = (id: string, d: number, from: number, own = children.get(id)!): number => {
       const n = byId.get(id)!;
+      const kidsSpan = own.reduce((s, c) => s + span.get(c)!, 0) + gap[1] * Math.max(0, own.length - 1);
+      let at = from + (span.get(id)! - kidsSpan) / 2;
+      const middles: number[] = [];
+      for (const c of own) {
+        middles.push(put(c, d + 1, at));
+        at += span.get(c)! + gap[1];
+      }
+      // A parent stands over the middle of its first and last child.
+      const middle = middles.length ? (middles[0] + middles.at(-1)!) / 2 : from + span.get(id)! / 2;
       const a = depthAt + (way === "up" || way === "left" ? -starts[d] - along(n) : starts[d]),
-        b = breadthAt + from + (span.get(id)! - across(n)) / 2;
+        b = breadthAt + middle - across(n) / 2;
       if (level) {
         n.x = a;
         n.y = b;
@@ -385,12 +456,7 @@ function tree(
         n.x = b;
         n.y = a;
       }
-      const kidsSpan = own.reduce((s, c) => s + span.get(c)!, 0) + gap[1] * Math.max(0, own.length - 1);
-      let at = from + (span.get(id)! - kidsSpan) / 2;
-      for (const c of own) {
-        put(c, d + 1, at);
-        at += span.get(c)! + gap[1];
-      }
+      return middle;
     };
     put(root, 0, 0, kids);
     return span.get(root)!;
@@ -640,6 +706,7 @@ export function arrangement(
         gap[0] += Math.min(140, Math.max(0, Math.round(links.length / ranks) - 4) * 6);
       }
       flow(nodes, links, way, gap, frames);
+      if (op.wrap !== false && !hasFrames) folded(leaves, way, gap[0]);
     }
   }
   // Frames close round what they hold, innermost first.

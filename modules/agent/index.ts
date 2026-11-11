@@ -1907,7 +1907,7 @@ export class Agent {
           break;
         }
         case "write_work": {
-          const { amend, ...written } = args;
+          const { amend, claims, ...written } = args;
           if (amend && !ctx.held)
             throw new DomainError("没有等待修正的写入：amend 只用在一次写入被拒绝之后；这次把要改的内容直接写出来");
           // A correction lays over the write it corrects, and the two save as one revision.
@@ -1952,7 +1952,7 @@ export class Agent {
             };
             run.steps.push(looking);
             try {
-              const seen = await this.look(store, run, ctx, {}, abort, looking);
+              const seen = await this.look(store, run, ctx, claims?.length ? { claims } : {}, abort, looking);
               output = { ...(output as object), look: seen.output };
               images = seen.images;
               looking.status = "done";
@@ -1983,7 +1983,7 @@ export class Agent {
       if (e instanceof Unavailable) throw e;
       if (e instanceof BrokenWrite) {
         // Only the records that arrived whole carry over; whatever came after is the author's to send.
-        const { amend, ...kept } = e.kept;
+        const { amend, claims: _claims, ...kept } = e.kept;
         ctx.held = amend && ctx.held ? composed(ctx.held, kept) : kept;
         return {
           done: false,

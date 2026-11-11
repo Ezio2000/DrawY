@@ -93,6 +93,7 @@ export function useOf(m: Material): MaterialUse | null {
         ),
         size: m.size,
         ...(m.fit ? { fit: m.fit } : {}),
+        ...(/^drawing\/(structure|chart)$/.test(m.category) ? { contained: true } : {}),
       };
     case "effect":
       return { id: m.id, kind: "effect", name: m.name.zh, defs: m.defs };

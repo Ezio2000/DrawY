@@ -41,7 +41,7 @@ export interface RouteLink {
   to: LinkEnd;
   options: RouteOptions;
 }
-type Box = { id: string; x: number; y: number; r: number; b: number };
+type Box = { id: string; x: number; y: number; r: number; b: number; soft?: boolean };
 
 /** Characters that take a full em: CJK, kana, hangul and full-width forms. */
 const WIDE = /[ᄀ-ᇿ⺀-鿿ꥠ-꥿가-퟿豈-﫿︰-﹏＀-｠￠-￦]/;
@@ -403,6 +403,9 @@ function search(pa: Point, sa: Side, pb: Point, sb: Side, s: number, obstacles: 
 export function routeLinks(
   links: RouteLink[],
   modules: { id: string; bounds: Bounds }[],
+  /** Places on the ground that lines and their words go round: a frame's name, the headers
+   * of lanes. Each is named by the module it is on. */
+  keepClear: { id: string; bounds: Bounds }[] = [],
 ): Map<string, Routed> {
   const out = new Map<string, Routed>();
   const boxes = new Map(modules.map((m) => [m.id, m.bounds]));
@@ -466,6 +469,10 @@ export function routeLinks(
       if (inside(A, m.bounds) || inside(B, m.bounds)) continue;
       obstacles.push(boxOf(m.id, m.bounds, MARGIN));
     }
+    // What a ground keeps clear stands in the way like a module, unless an end is on it.
+    for (const c of keepClear)
+      if (!holds(boxOf("", c.bounds), mid(A)) && !holds(boxOf("", c.bounds), mid(B)))
+        obstacles.push({ ...boxOf(c.id, c.bounds, MARGIN), soft: true });
     plans.push({ link, a, b, sa: a.sides[0], sb: b.sides[0], pa: mid(A), pb: mid(B), obstacles, points: [] });
   }
   const stubOf = (p: Plan) => {
@@ -672,7 +679,7 @@ export function routeLinks(
   }
   apart(plans);
   for (const p of plans) {
-    const others = p.obstacles.filter((o) => o.id !== p.a.id && o.id !== p.b.id);
+    const others = p.obstacles.filter((o) => o.id !== p.a.id && o.id !== p.b.id && !o.soft);
     const crosses = others
       .filter((o) => {
         const tight = { ...o, x: o.x + MARGIN, y: o.y + MARGIN, r: o.r - MARGIN, b: o.b - MARGIN };
@@ -721,7 +728,7 @@ export function routeLinks(
       })
       .map((m) => m.id);
   }
-  words(links, out, modules, back);
+  words(links, out, [...modules, ...keepClear.map((c) => ({ id: c.id + " ", bounds: c.bounds }))], back);
   return out;
 }
 /** A link that leaves one side and arrives at the opposite one in a single sweep, as the

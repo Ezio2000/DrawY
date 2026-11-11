@@ -98,8 +98,8 @@ const root = api.html(`<style>
 svg{position:absolute;inset:0;overflow:visible}
 .words{position:absolute;left:${inset.l}px;right:${inset.r}px;top:${inset.t}px;bottom:${inset.b}px;display:flex;flex-direction:${d.icon && W < H * 1.6 ? "column" : "row"};align-items:center;justify-content:center;gap:${size * 0.55}px;font-family:${esc(t.font || "system-ui")};text-align:${d.align === "left" ? "left" : "center"};color:${solid ? paper : ink}}
 .text{display:flex;flex-direction:column;gap:${size * 0.18}px;min-width:0;${d.align === "left" ? "flex:1;" : ""}}
-.title{font-size:${size}px;font-weight:${d.weight ?? 600};line-height:1.25;overflow-wrap:anywhere;text-wrap:balance}
-.note{font-size:${size * 0.8}px;line-height:1.3;color:${solid ? paper : muted};opacity:${solid ? 0.85 : 1};overflow-wrap:anywhere;text-wrap:balance}
+.title{font-size:${size}px;font-weight:${d.weight ?? 600};line-height:1.25;overflow-wrap:anywhere;text-wrap:balance;white-space:pre-line}
+.note{font-size:${size * 0.8}px;line-height:1.3;color:${solid ? paper : muted};opacity:${solid ? 0.85 : 1};overflow-wrap:anywhere;text-wrap:balance;white-space:pre-line}
 .icon{flex:none;display:flex}
 </style><div class="node"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${shade}<g ${fills[fill] || fills.none} stroke-width="${sw}"${d.lift ? ' filter="url(#lift)"' : ""}${effect}>${path}${extra}</g></svg><div class="words"><div class="text">${mark ? "" : d.title ? `<div class="title">${esc(d.title)}</div>` : ""}${!mark && d.note ? `<div class="note">${esc(d.note)}</div>` : ""}</div></div></div>`);
 if (d.dashed)

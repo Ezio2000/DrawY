@@ -513,8 +513,36 @@ export class SceneRenderer {
         ),
       })),
       modules,
+      this.clear(),
     );
     this.ground = groundOf(modules, links);
+  }
+  /** What the drawn modules mark to be kept clear of lines (a frame's name, the headers of
+   * lanes), in scene units. Nothing while the scene is not laid out on a page. */
+  private clear() {
+    const zones: { id: string; bounds: Bounds }[] = [];
+    for (const [id, m] of this.instances) {
+      const host = this.views.get("module:" + id)?.host;
+      const marked = host?.shadowRoot?.querySelectorAll("[data-clear]");
+      if (!marked?.length) continue;
+      const hr = host!.getBoundingClientRect();
+      if (!hr.width) continue;
+      const k = hr.width / m.bounds.width;
+      for (const el of marked) {
+        const r = el.getBoundingClientRect();
+        if (r.width && r.height)
+          zones.push({
+            id,
+            bounds: {
+              x: m.bounds.x + (r.left - hr.left) / k,
+              y: m.bounds.y + (r.top - hr.top) / k,
+              width: r.width / k,
+              height: r.height / k,
+            },
+          });
+      }
+    }
+    return zones;
   }
   /** Where a link runs now. */
   routeOf(id: string) {
@@ -599,7 +627,16 @@ export class SceneRenderer {
           ...(crossedBy.length ? { crossedBy } : {}),
         });
     }
-    for (const m of solid) {
+    // A structure or chart lays its words out within its module, so words outside it mean
+    // the module is too small for them.
+    const holding = modules.filter((m) => {
+      const use = this.work.materials[m.drawingId];
+      return (
+        solid.includes(m) ||
+        (!this.work.drawings[m.drawingId] && use?.kind === "drawing" && use.contained && !this.ground.has(m.id))
+      );
+    });
+    for (const m of holding) {
       const host = this.views.get("module:" + m.id)?.host;
       if (!host?.shadowRoot) continue;
       const walker = document.createTreeWalker(host.shadowRoot, NodeFilter.SHOW_TEXT);

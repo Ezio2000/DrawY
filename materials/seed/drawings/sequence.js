@@ -35,8 +35,8 @@ const FRAGMENTS = ["alt", "loop", "opt", "par", "critical", "break", "group"];
 // or lay a note over lifelines.
 const entries = (d.messages || []).map((m) => {
   const kind = FRAGMENTS.find((k) => m && m[k] !== undefined);
-  if (kind) return { type: "open", kind, label: m[kind] === true ? "" : String(m[kind] ?? ""), units: 0.8 };
-  if (m && m.else !== undefined) return { type: "else", label: m.else === true ? "" : String(m.else ?? ""), units: 0.7 };
+  if (kind) return { type: "open", kind, label: m[kind] === true ? "" : String(m[kind] ?? ""), units: 0.85 };
+  if (m && m.else !== undefined) return { type: "else", label: m.else === true ? "" : String(m.else ?? ""), units: m.else === true || !m.else ? 0.4 : 0.9 };
   if (m && m.end) return { type: "end", units: 0.4 };
   if (m && m.note !== undefined) return { type: "note", m, units: 1.15 };
   return { type: "message", m: m || {}, units: 1 };
@@ -55,7 +55,9 @@ const index = (name) => {
 const person = (a) => a.kind === "actor";
 const top = bh + (actors.some(person) ? size * 1.4 : 0);
 const units = entries.reduce((s, e) => s + e.units, 0);
-const row = (H - top - size * 1.2) / (units + 0.6);
+// Rows share the module's height, but never so little that a guard or a label would lie on
+// the message under it: a module too short for its messages runs out of its foot instead.
+const row = Math.max(size * 2.25, (H - top - size * 1.2) / (units + 0.6));
 // Where each entry sits down the page.
 let run = top + row * 0.4;
 for (const e of entries) {
@@ -94,7 +96,7 @@ for (const e of entries) {
     stack.push(f);
     frames.push(f);
   } else if (e.type === "else") {
-    stack.at(-1)?.parts.push({ y: e.top + e.units * row * 0.15, label: e.label });
+    stack.at(-1)?.parts.push({ y: e.top + size * 0.25, label: e.label });
   } else if (e.type === "end") {
     const f = stack.pop();
     if (f) f.bottom = e.top + e.units * row * 0.5;
