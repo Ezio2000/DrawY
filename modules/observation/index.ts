@@ -262,6 +262,14 @@ function figure(work: Work, shot: Shot) {
           readableFrom: `text reads at ${MIN_TEXT}px here from size ${opening(box).smallestSize} in scene units`,
         }
       : {}),
+    ...(shot.structure && Object.keys(shot.structure).length
+      ? {
+          structure: {
+            ...shot.structure,
+            note: "Measured from what is drawn, so no close-up is needed. Links are routed round modules by the scene itself: clear a crossing, a covered or crossed label or a struck name by giving the modules more room (move them, or arrange again with a larger gap), by route \"elbow\" for a straight or curved line that passes through something, by labelAt for words another line runs through, or, for two lines laid on one another (shared), by moving a module so their ways part or giving one end another side (at); never by a link drawing of your own. Give an overflowing part the size in needs, or fewer words.",
+          },
+        }
+      : {}),
     viewFilled:
       Math.round(
         ((box.width * scale * box.height * scale) /

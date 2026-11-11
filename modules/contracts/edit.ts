@@ -169,6 +169,8 @@ export function drawingOf(work: Work, id: string) {
       source: own.source,
       defaults: own.defaults ?? {},
       params: own.params ?? {},
+      size: own.size ? { width: own.size[0], height: own.size[1] } : undefined,
+      fit: own.fit,
       own,
     };
   const use = work.materials[id];
@@ -178,6 +180,8 @@ export function drawingOf(work: Work, id: string) {
       source: use.source,
       defaults: use.defaults,
       params: use.params,
+      size: use.size,
+      fit: use.fit,
     };
   return undefined;
 }

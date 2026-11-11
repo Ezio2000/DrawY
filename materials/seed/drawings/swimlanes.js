@@ -52,8 +52,8 @@ lanes.forEach((l, i) => {
       ? `<path d="M0 ${y}H${W}" stroke="${muted}" stroke-opacity=".6" stroke-width="${sw}"/>`
       : `<path d="M${x} 0V${H}" stroke="${muted}" stroke-opacity=".6" stroke-width="${sw}"/>`;
   out += across
-    ? `<rect x="${sw}" y="${y + sw}" width="${head - sw}" height="${h - 2 * sw}" fill="${c}" fill-opacity=".14"/><text x="${head / 2}" y="${y + h / 2 - (l.note ? size * 0.5 : 0)}" text-anchor="middle" font-size="${size}" font-weight="700" fill="${l.accent ? accent : ink}">${esc(l.label)}</text>`
-    : `<rect x="${x + sw}" y="${sw}" width="${w - 2 * sw}" height="${head - sw}" fill="${c}" fill-opacity=".14"/><text x="${x + w / 2}" y="${head / 2 - (l.note ? size * 0.5 : 0)}" text-anchor="middle" font-size="${size}" font-weight="700" fill="${l.accent ? accent : ink}">${esc(l.label)}</text>`;
+    ? `<rect data-clear x="${sw}" y="${y + sw}" width="${head - sw}" height="${h - 2 * sw}" fill="${c}" fill-opacity=".14"/><text x="${head / 2}" y="${y + h / 2 - (l.note ? size * 0.5 : 0)}" text-anchor="middle" font-size="${size}" font-weight="700" fill="${l.accent ? accent : ink}">${esc(l.label)}</text>`
+    : `<rect data-clear x="${x + sw}" y="${sw}" width="${w - 2 * sw}" height="${head - sw}" fill="${c}" fill-opacity=".14"/><text x="${x + w / 2}" y="${head / 2 - (l.note ? size * 0.5 : 0)}" text-anchor="middle" font-size="${size}" font-weight="700" fill="${l.accent ? accent : ink}">${esc(l.label)}</text>`;
   if (l.note)
     out += across
       ? `<text x="${head / 2}" y="${y + h / 2 + size * 0.8}" text-anchor="middle" font-size="${size * 0.8}" fill="${muted}">${esc(l.note)}</text>`

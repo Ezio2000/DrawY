@@ -109,11 +109,45 @@ const box = (n) => {
     cy = across ? n.c : at[n.depth];
   return { x: cx - n.w / 2, y: cy - n.h / 2, w: n.w, h: n.h, cx, cy };
 };
+// Relations across the branches: dashed lines between two named nodes. The scene finds each
+// a way clear of the other nodes (a gentle bow where one runs clear, else round them at
+// right angles), so they read apart from the tree's own lines and never through a name.
+const relations = (boxes) => {
+  const named = (d.relations || []).filter(
+    (rel) => boxes.has(String(rel?.from)) && boxes.has(String(rel?.to)) && String(rel.from) !== String(rel.to),
+  );
+  const ways = api.connect(
+    Object.fromEntries([...boxes].map(([name, b]) => [name, { x: b.x, y: b.y, width: b.w, height: b.h }])),
+    named.map((rel) => ({
+      from: String(rel.from),
+      to: String(rel.to),
+      ...(rel.label ? { label: String(rel.label), size: size * 0.85 } : {}),
+    })),
+  );
+  let drawn = "";
+  named.forEach((rel, i) => {
+    const way = ways[i];
+    if (!way) return;
+    const col = rel.color || t.accent || "#d97757";
+    const q = way.tip,
+      ux = way.heading.x,
+      uy = way.heading.y;
+    const hl = size * 0.6,
+      hw = hl * 0.45;
+    drawn += `<path class="plain" d="${way.path}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-dasharray="${rel.dashed === false ? "none" : `${sw * 3.5} ${sw * 3}`}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    drawn += `<path class="plain" d="M${q.x - ux * hl - uy * hw} ${q.y - uy * hl + ux * hw}L${q.x} ${q.y}L${q.x - ux * hl + uy * hw} ${q.y - uy * hl - ux * hw}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    if (rel.label && way.label)
+      drawn += `<text x="${way.label.x}" y="${way.label.y}" text-anchor="middle" dominant-baseline="central" font-size="${size * 0.85}" fill="${col}" paint-order="stroke" stroke="${paper}" stroke-width="4" stroke-linejoin="round">${esc(rel.label)}</text>`;
+  });
+  return drawn;
+};
 const r = Math.min(10, size * 0.7);
 let lines = "",
   shapes = "";
+const boxes = new Map();
 for (const n of nodes) {
   const b = box(n);
+  boxes.set(n.label, b);
   for (const c of n.children) {
     const q = box(c);
     if (across) {
@@ -155,12 +189,12 @@ for (const n of nodes) {
     shapes += `<text x="${b.cx}" y="${b.cy + n.size * 0.75}" font-size="${n.size * 0.8}" fill="${solid ? paper : muted}"${solid ? ' fill-opacity=".85"' : ""}>${esc(n.note)}</text>`;
 }
 const svg = api.svg(
-  `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}"><g fill="none" stroke="${d.lineColor || muted}" stroke-width="${sw}" stroke-linecap="round">${lines}</g><g text-anchor="middle" dominant-baseline="central">${shapes}</g></svg>`,
+  `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}"><g fill="none" stroke="${d.lineColor || muted}" stroke-width="${sw}" stroke-linecap="round">${lines}</g><g text-anchor="middle" dominant-baseline="central">${shapes}</g>${relations(boxes)}</svg>`,
 );
 // The style's texture on the shapes, never on the words.
 if (d.effect) {
   const fx = api.effect(d.effect);
-  for (const el of svg.querySelectorAll("rect,circle,path"))
+  for (const el of svg.querySelectorAll("rect,circle,path:not(.plain)"))
     el.setAttribute("filter", fx);
 }
 return svg;

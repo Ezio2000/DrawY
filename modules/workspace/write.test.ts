@@ -213,3 +213,106 @@ describe("a blank canvas", () => {
     await expect(writeWork(store, blank.id, { modules: [text] }, { cause })).rejects.toThrow("set_brief");
   });
 });
+
+describe("a figure of blocks and lines", () => {
+  it("is written without coordinates: an arrangement places it and plain bounds are saved", async () => {
+    const store = db.scoped(register(db, "author", "abcdef").id);
+    const work = createWork(store, "退款流程");
+    const { work: saved, added } = await writeWork(
+      store,
+      work.id,
+      {
+        style: { route: "elbow", flow: "down" },
+        arrange: [{ layout: "flow", frames: { backend: ["refund", "ledger"] } }],
+        modules: [
+          { id: "backend", drawingId: "frame", data: { title: "财务" } },
+          { id: "ask", drawingId: "node", data: { title: "用户申请退款", shape: "pill" } },
+          { id: "review", drawingId: "node", data: { title: "客服审核", shape: "diamond" } },
+          { id: "refund", drawingId: "node", data: { title: "财务退款" } },
+          { id: "ledger", drawingId: "entity", data: { name: "refund", rows: [{ name: "id", type: "bigint", key: "pk" }, { name: "amount", type: "decimal" }] } },
+        ],
+        links: [
+          { from: "ask", to: "review" },
+          { from: "review", to: "refund", data: { label: "通过" } },
+          { from: "refund", to: "ledger", data: { head: "zero-many", tail: "only-one" } },
+        ],
+      },
+      { cause: { kind: "edit" } },
+    );
+    // The library drawings it names are taken first, so each block is sized by its kind.
+    expect(added).toEqual(expect.arrayContaining(["arrow", "entity", "frame", "node"]));
+    const at = Object.fromEntries(saved.scenes.root.modules.map((m) => [m.id, m.bounds]));
+    expect(at.ask.y + at.ask.height).toBeLessThan(at.review.y);
+    expect(at.review.y + at.review.height).toBeLessThan(at.refund.y);
+    expect(at.ledger.height).toBeGreaterThan(70);
+    expect(at.review.width).not.toBe(at.ask.width);
+    for (const id of ["refund", "ledger"]) {
+      expect(at.backend.x).toBeLessThan(at[id].x);
+      expect(at.backend.y).toBeLessThan(at[id].y);
+      expect(at.backend.x + at.backend.width).toBeGreaterThan(at[id].x + at[id].width);
+      expect(at.backend.y + at.backend.height).toBeGreaterThan(at[id].y + at[id].height);
+    }
+    // Links are known by their ends; nothing of the arrangement is kept in the work.
+    expect(saved.scenes.root.links.map((l) => l.id)).toEqual(["ask-review", "review-refund", "refund-ledger"]);
+    expect(JSON.stringify(saved)).not.toContain("arrange");
+    // Changed for every block at once, and placed again where they stood.
+    const { work: again } = await writeWork(
+      store,
+      work.id,
+      {
+        each: [{ drawingId: "node", data: { size: 24 } }],
+        arrange: [{ modules: "all", fit: true, frames: { backend: ["refund", "ledger"] } }],
+      },
+      { cause: { kind: "edit" } },
+    );
+    const now = Object.fromEntries(again.scenes.root.modules.map((m) => [m.id, m]));
+    expect(now.ask.data.size).toBe(24);
+    expect(now.ledger.data.size).toBeUndefined();
+    expect(now.ask.bounds.height).toBeGreaterThan(at.ask.height);
+  });
+
+  it("sizes parts that each changes to another drawing by that drawing, taken before the arrangement", async () => {
+    const store = db.scoped(register(db, "tables", "abcdef").id);
+    const work = createWork(store, "数据模型");
+    const rows = Array.from({ length: 8 }, (_, i) => ({ name: "field_" + i, type: "varchar(64)" }));
+    await writeWork(
+      store,
+      work.id,
+      {
+        arrange: [{ layout: "flow" }],
+        modules: [
+          { id: "user", drawingId: "node", data: { title: "user", name: "user", rows } },
+          { id: "order", drawingId: "node", data: { title: "order", name: "order", rows } },
+        ],
+        links: [{ from: "user", to: "order" }],
+      },
+      { cause: { kind: "edit" } },
+    );
+    // The work has never held an entity: the write that turns its blocks into tables fits
+    // them to their rows all the same.
+    const { work: saved } = await writeWork(
+      store,
+      work.id,
+      { each: [{ drawingId: "node", use: "entity" }], arrange: [{ layout: "flow", modules: "all", fit: true }] },
+      { cause: { kind: "edit" } },
+    );
+    for (const m of saved.scenes.root.modules) {
+      expect(m.drawingId).toBe("entity");
+      expect(m.bounds.height).toBeGreaterThan(8 * 14 * 1.75);
+    }
+  });
+  it("refuses a new module that is given no place, and says an arrangement would give it one", async () => {
+    const store = db.scoped(register(db, "author", "abcdef").id);
+    const work = createWork(store, "空");
+    const found = await refusal(() =>
+      writeWork(
+        store,
+        work.id,
+        { arrange: [{ modules: ["a"] }], modules: [{ id: "a", drawingId: "node", data: { title: "甲" } }, { id: "b", drawingId: "node", data: { title: "乙" } }] },
+        { cause: { kind: "edit" } },
+      ),
+    );
+    expect(found.map((p) => p.at)).toEqual(["modules.b"]);
+    expect(found[0].problem).toContain("arrange");
+  });
+});

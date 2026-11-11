@@ -16,6 +16,7 @@ import {
 import type { UserStore } from "../storage/index.ts";
 import { take, used, styleOf } from "../materials/index.ts";
 import { layOn, readEdit } from "../editing/apply.ts";
+import { placeheld, settled } from "../editing/arrange.ts";
 import { syntaxError } from "../editing/shared.ts";
 export { forAuthor, shortModule, shortLink } from "./author.ts";
 export function createWork(store: UserStore, title: string) {
@@ -56,12 +57,28 @@ export async function writeWork(
   input: unknown,
   { base, cause, scene }: { base?: number; cause: Cause; scene?: string },
 ) {
-  const edit = readEdit(input),
+  const written = readEdit(input),
     current = store.work(workId);
   if (base !== undefined && current.revision !== base)
     throw new DomainError("作品版本已更新，请重新读取", 409);
-  const fetched = await takeSources(current, edit.drawings ?? [], store);
-  const { work, absent, problems: laying } = layOn(fetched, edit, scene ?? current.rootSceneId);
+  const fetched = await takeSources(current, written.drawings ?? [], store);
+  const home = scene ?? current.rootSceneId;
+  // Changes to every part and arrangements become plain records first. An arrangement
+  // sizes what it places by the drawings in hand, so the ones this write first names are
+  // taken before it is worked out.
+  let edit = written,
+    arranging: Problem[] = [];
+  if (written.each?.length || written.arrange?.length) {
+    const held = placeheld(fetched, written);
+    const draft = layOn(fetched, held.edit, home).work;
+    // A drawing that `each` changes parts to is named by no record yet.
+    const changedTo = (written.each ?? []).flatMap((e) => (e.use && !draft.drawings[e.use] ? [e.use] : []));
+    if (written.arrange?.length)
+      await take(draft, [...(written.materials || []), ...changedTo], store.viewer, true);
+    ({ edit, problems: arranging } = settled(draft, written, held.unplaced, home));
+  }
+  const { work, absent, problems: laid } = layOn(fetched, edit, home);
+  const laying = [...arranging, ...laid];
   // A title the user gave stays: the author retitled works the user had renamed.
   const keptTitle = edit.title !== undefined && !!current.named && cause.kind === "run";
   if (keptTitle) work.title = current.title;
