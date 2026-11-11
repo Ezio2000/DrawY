@@ -27,6 +27,7 @@ import {
   Spline,
   StretchHorizontal,
   StretchVertical,
+  Workflow,
   Trash2,
   Ungroup,
   Unlock,
@@ -576,6 +577,14 @@ function Arrange({ count, ops }: { count: number; ops: EditOps }) {
         onClick={() => ops.matchSize("height")}
       >
         <StretchVertical size={15} />
+      </button>
+      <button
+        aria-label={t.edit.tidy}
+        data-tip={t.edit.tidy}
+        disabled={count < 2}
+        onClick={() => ops.tidy()}
+      >
+        <Workflow size={15} />
       </button>
     </div>
   );

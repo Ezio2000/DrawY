@@ -2118,9 +2118,10 @@ export class Canvas {
     }
     const held = !!m && this.selection.includes(m.id) && (was || this.editing);
     if (this.movable && held) {
-      // A grouped module takes its group along. With Alt held while editing, copies are
-      // dragged off and the modules stay, so they are among what the copies line up with.
-      const moving = [
+      // A grouped module takes its group along, and a frame or lanes what stands on them.
+      // With Alt held while editing, copies are dragged off and the modules stay, so they
+      // are among what the copies line up with.
+      const grouped = [
         ...new Set(
           chosen().flatMap((d) =>
             d.group
@@ -2130,6 +2131,14 @@ export class Canvas {
               : [d],
           ),
         ),
+      ];
+      const moving = [
+        ...new Set([
+          ...grouped,
+          ...grouped.flatMap((d) =>
+            this.renderer.carried(d.id).flatMap((id) => this.renderer.instances.get(id) ?? []),
+          ),
+        ]),
       ];
       const copy = this.editing && e.altKey && !!this.options.duplicate;
       this.gesture = {

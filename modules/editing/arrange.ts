@@ -906,3 +906,55 @@ export function plainEdit(work: Work, edit: WorkEdit, current: string) {
   const held = placeheld(work, edit);
   return settled(layOn(work, held.edit, current).work, edit, held.unplaced, current);
 }
+/** Tidies a figure a person has been working on: places the modules given again by the
+ * links among them, each keeping its size, where they stood. A frame among them brings the
+ * modules standing on it and is closed round them; the direction is the work's flow, or
+ * else the way its links mostly run. Returns null when there is nothing to tidy. */
+export function tidy(work: Work, sceneId: string, ids: string[]): WorkEdit | null {
+  const scene = work.scenes[sceneId];
+  if (!scene) return null;
+  const fitOf = (m: Instance) => drawingOf(work, m.drawingId)?.fit;
+  const chosen = scene.modules.filter((m) => ids.includes(m.id) && fitOf(m) !== "lanes");
+  const inside = (outer: Bounds, inner: Bounds) =>
+    outer.x <= inner.x &&
+    outer.y <= inner.y &&
+    outer.x + outer.width >= inner.x + inner.width &&
+    outer.y + outer.height >= inner.y + inner.height;
+  const frames: Record<string, string[]> = {};
+  const all = new Set(chosen.map((m) => m.id));
+  for (const frame of chosen.filter((m) => fitOf(m) === "frame")) {
+    const at = scene.modules.indexOf(frame);
+    const held = scene.modules.filter((m, i) => i > at && m.id !== frame.id && inside(frame.bounds, m.bounds));
+    // What stands directly on it: not what a frame inside it already holds.
+    frames[frame.id] = held
+      .filter((m) => !held.some((f) => f !== m && fitOf(f) === "frame" && inside(f.bounds, m.bounds)))
+      .map((m) => m.id);
+    for (const m of held) all.add(m.id);
+  }
+  const members = scene.modules.filter((m) => all.has(m.id));
+  if (members.filter((m) => fitOf(m) !== "frame").length < 2) return null;
+  const centre = new Map(members.map((m) => [m.id, { x: m.bounds.x + m.bounds.width / 2, y: m.bounds.y + m.bounds.height / 2 }]));
+  let across = 0,
+    down = 0;
+  for (const l of scene.links) {
+    const a = centre.get(l.from.moduleId),
+      b = centre.get(l.to.moduleId);
+    if (!a || !b) continue;
+    across += Math.abs(b.x - a.x);
+    down += Math.abs(b.y - a.y);
+  }
+  const flows = ["down", "right", "up", "left"] as const;
+  const direction = flows.find((f) => f === work.style.flow) ?? (across > down ? "right" : "down");
+  const placed = arrangement(work, sceneId, {
+    layout: "flow",
+    direction,
+    modules: members.map((m) => m.id),
+    ...(Object.keys(frames).length ? { frames } : {}),
+    wrap: false,
+  });
+  if (placed.problems.length) return null;
+  const moves = [...placed.bounds]
+    .filter(([id, b]) => JSON.stringify(b) !== JSON.stringify(scene.modules.find((m) => m.id === id)!.bounds))
+    .map(([id, b]) => ({ id, scene: sceneId, bounds: boxOf(b) }));
+  return moves.length ? { modules: moves } : null;
+}

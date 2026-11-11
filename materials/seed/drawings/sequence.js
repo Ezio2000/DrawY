@@ -37,9 +37,10 @@ const entries = (d.messages || []).map((m) => {
   const kind = FRAGMENTS.find((k) => m && m[k] !== undefined);
   if (kind) return { type: "open", kind, label: m[kind] === true ? "" : String(m[kind] ?? ""), units: 0.85 };
   if (m && m.else !== undefined) return { type: "else", label: m.else === true ? "" : String(m.else ?? ""), units: m.else === true || !m.else ? 0.4 : 0.9 };
-  if (m && m.end) return { type: "end", units: 0.4 };
+  if (m && m.end) return { type: "end", units: 0.7 };
   if (m && m.note !== undefined) return { type: "note", m, units: 1.15 };
-  return { type: "message", m: m || {}, units: 1 };
+  // A message to oneself loops out and back, which takes more room than a line.
+  return { type: "message", m: m || {}, units: m && m.from !== undefined && m.from === m.to ? 1.35 : 1 };
 });
 const bw = Math.min(
     W / n - size,
@@ -99,7 +100,7 @@ for (const e of entries) {
     stack.at(-1)?.parts.push({ y: e.top + size * 0.25, label: e.label });
   } else if (e.type === "end") {
     const f = stack.pop();
-    if (f) f.bottom = e.top + e.units * row * 0.5;
+    if (f) f.bottom = e.top + row * 0.25;
   } else {
     const touched =
       e.type === "message"
@@ -183,8 +184,8 @@ for (const e of entries) {
   if (a === b) {
     const x = X(a) + (active(a, y) ? aw / 2 : 0),
       w = Math.min(W / n / 2.5, size * 3);
-    out += `<path d="M${x} ${y - row * 0.2}H${x + w}V${y + row * 0.2}H${x + hl}" fill="none" stroke="${c}" stroke-width="${sw}"${dash}/>`;
-    out += `<path d="M${x} ${y + row * 0.2}l${hl} ${-hw}v${hw * 2}z" fill="${c}"/>`;
+    out += `<path d="M${x} ${y - row * 0.25}H${x + w}V${y + row * 0.25}H${x + hl}" fill="none" stroke="${c}" stroke-width="${sw}"${dash}/>`;
+    out += `<path d="M${x} ${y + row * 0.25}l${hl} ${-hw}v${hw * 2}z" fill="${c}"/>`;
     out += `<text x="${x + w + size * 0.4}" y="${y}" font-size="${size * 0.88}" fill="${c}" paint-order="stroke" stroke="${paper}" stroke-width="4" stroke-linejoin="round">${esc(words)}</text>`;
     continue;
   }

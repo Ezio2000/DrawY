@@ -795,6 +795,102 @@ it("draws links over a backdrop laid under the whole figure and under every othe
   expect(parted.note).toBe(parted.a);
   expect(parted.ab).toBeLessThan(parted.note);
 });
+it("routes links round what stands between them, over the frames that hold them, and measures what is wrong", async () => {
+  const drawings = seed("drawings") as DrawingMaterial[];
+  work.materials = Object.fromEntries(
+    drawings
+      .filter((m) => ["node", "frame", "entity", "arrow", "sequence"].includes(m.id))
+      .map((m) => ({
+        ...m,
+        source: readFileSync(new URL(`../../materials/seed/drawings/${m.id}.js`, import.meta.url), "utf8"),
+      }))
+      .map((m) => [m.id, useOf(m as Material)!]),
+  );
+  work.style = { ...work.style, route: "elbow" };
+  const node = (id: string, x: number, y: number, title: string, data = {}, width = 160, height = 60) => ({
+    id,
+    drawingId: "node",
+    bounds: { x, y, width, height },
+    data: { title, ...data },
+  });
+  const link = (id: string, from: string, to: string, data = {}) => ({
+    id,
+    drawingId: "arrow",
+    from: { moduleId: from },
+    to: { moduleId: to },
+    data,
+  });
+  work.scenes.root = {
+    ...work.scenes.root,
+    interaction: undefined,
+    modules: [
+      { id: "tier", drawingId: "frame", bounds: { x: -30, y: -60, width: 420, height: 150 }, data: { title: "服务层" } },
+      node("a", 0, 0, "订单服务"),
+      node("b", 200, 0, "支付服务"),
+      node("wall", 0, 200, "挡在中间的模块", {}, 200, 60),
+      node("c", 0, 400, "订单库", { shape: "cylinder" }),
+      node("tiny", 600, 0, "这段话太长，这么小的方框放不下，会从下面溢出来", {}, 90, 30),
+      node("on", 640, 20, "压在上面"),
+      { id: "user", drawingId: "entity", bounds: { x: 600, y: 300, width: 220, height: 130 }, data: { name: "user", rows: [{ name: "id", type: "bigint", key: "pk" }] } },
+    ],
+    links: [
+      link("ab", "a", "b"),
+      link("ac", "a", "c", { label: "写入" }),
+      link("cu", "c", "user", { head: "zero-many", tail: "only-one" }),
+      link("bent", "a", "c", { route: "curve" }),
+    ],
+    checks: [],
+  };
+  await open();
+  const read = () =>
+    page.evaluate(() => {
+      const r = window.drawyView.renderer;
+      const depth = (id: string) =>
+        Number(document.querySelector<HTMLElement>(`[data-module-id="${id}"],[data-link-id="${id}"]`)!.style.zIndex);
+      return {
+        errors: window.drawyErrors,
+        depths: { tier: depth("tier"), ab: depth("ab"), a: depth("a") },
+        ac: r.routeOf("ac")!,
+        cu: document.querySelector('[data-link-id="cu"]')!.shadowRoot!.querySelectorAll("circle").length,
+        carried: r.carried("tier"),
+        structure: r.structure(),
+      };
+    });
+  const drawn = await read();
+  expect(drawn.errors).toEqual([]);
+  // A frame is ground: links run over it and under the modules standing on it.
+  expect(drawn.depths.tier).toBeLessThan(drawn.depths.ab);
+  expect(drawn.depths.ab).toBeLessThan(drawn.depths.a);
+  expect(drawn.carried).toEqual(["a", "b"]);
+  // The link goes round the module in its way, at right angles, and its words have a place.
+  const wall = { x: 0, y: 200, r: 200, b: 260 };
+  const { points } = drawn.ac;
+  expect(points.length).toBeGreaterThan(3);
+  for (let i = 1; i < points.length; i++) {
+    const [p, q] = [points[i - 1], points[i]];
+    expect(p.x === q.x || p.y === q.y).toBe(true);
+    expect(
+      Math.max(p.x, q.x) > wall.x && Math.min(p.x, q.x) < wall.r && Math.max(p.y, q.y) > wall.y && Math.min(p.y, q.y) < wall.b,
+    ).toBe(false);
+  }
+  expect(drawn.ac.label).toBeDefined();
+  // The marks of notation are drawn at the ends: a ring for zero.
+  expect(drawn.cu).toBe(1);
+  // What is wrong is measured: the curved line through the module, the block over another,
+  // and the words that run out of their block, with the size that would hold them.
+  expect(drawn.structure.crossings).toEqual([{ link: "bent", through: ["wall"] }]);
+  expect(drawn.structure.overlaps).toEqual([{ a: "tiny", b: "on", by: [50, 10] }]);
+  const [spilt] = drawn.structure.overflow!;
+  expect(spilt.moduleId).toBe("tiny");
+  expect(spilt.needs[1]).toBeGreaterThan(60);
+  // Moved out of the way, the module no longer bends the link: nothing was kept of its detour.
+  await page.evaluate(() =>
+    window.drawyView.renderer.move([{ id: "wall", bounds: { x: 300, y: 200, width: 200, height: 60 } }]),
+  );
+  const moved = await read();
+  expect(moved.ac.points).toHaveLength(2);
+  expect(moved.structure.crossings).toBeUndefined();
+});
 it("disposes drawing and scene resources when leaving the canvas", async () => {
   work.drawings.title.source =
     `const timer=setInterval(()=>document.body.dataset.ticks=String(Number(document.body.dataset.ticks||0)+1),10);api.cleanup(()=>clearInterval(timer));` +

@@ -450,6 +450,17 @@ function cardsFor(work: Work, edit: any, kit: Material[], input: Item[], batch: 
       }
     : {};
 }
+/** The ids given to links this write added without one, where the id is not simply its two
+ * ends: a second link between the same modules. The author needs it to change that link. */
+function linksNamed(work: Work, edit: any, before: Set<string>) {
+  if (!records(edit?.links).some((l) => !l.id)) return {};
+  const named = Object.values(work.scenes)
+    .flatMap((s) => s.links)
+    .filter((l) => !before.has(l.id) && l.id !== `${l.from.moduleId}-${l.to.moduleId}`)
+    .filter((l) => l.id.startsWith(`${l.from.moduleId}-${l.to.moduleId}-`))
+    .map((l) => ({ id: l.id, from: l.from.moduleId, to: l.to.moduleId }));
+  return named.length ? { linkIds: named } : {};
+}
 /** Values this write gave library drawings that they do not take: a parameter they do not
  * have, or a choice outside its options. Such a value draws nothing or something else, and
  * a look alone rarely shows why. */
@@ -1914,6 +1925,9 @@ export class Agent {
           const edit = amend ? composed(ctx.held, written) : written;
           ctx.held = edit;
           const library = this.kits.get(run.id) ?? (await kit());
+          const linkedBefore = new Set(
+            Object.values(store.work(run.workId).scenes).flatMap((s) => s.links.map((l) => l.id)),
+          );
           const { work, added, keptTitle, absent } = await writeWork(store, run.workId, edit, {
             cause: causeOf(run),
             scene: run.sceneId,
@@ -1931,6 +1945,7 @@ export class Agent {
             ...(absent.length
               ? { notThere: `Asked to remove what the work does not have: ${absent.join(", ")}.` }
               : {}),
+            ...linksNamed(work, edit, linkedBefore),
             ...misused(work, edit, library),
             ...cardsFor(work, edit, library, ctx.input, batch),
           };

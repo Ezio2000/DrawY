@@ -143,8 +143,24 @@ export class SceneRenderer {
     this.element.style.cssText =
       "position:absolute;inset:0;pointer-events:none";
   }
+  /** The extent of everything drawn: the modules, and the links where they run round the
+   * outside of them, so a view fitted to the figure or a picture cropped to it holds both. */
   get bounds() {
-    return union([...this.instances.values()].map((m) => m.bounds));
+    const boxes = [...this.instances.values()].map((m) => m.bounds);
+    if (!boxes.length) return union(boxes);
+    const outside: Bounds[] = [];
+    for (const r of this.routes.values()) {
+      if (r.kind !== "elbow") continue;
+      const xs = r.points.map((p) => p.x),
+        ys = r.points.map((p) => p.y);
+      outside.push({
+        x: Math.min(...xs) - 6,
+        y: Math.min(...ys) - 6,
+        width: Math.max(...xs) - Math.min(...xs) + 12,
+        height: Math.max(...ys) - Math.min(...ys) + 12,
+      });
+    }
+    return union([...boxes, ...outside]);
   }
   /** The element that holds a drawn module or link. */
   host(kind: "module" | "link", id: string) {
@@ -512,7 +528,14 @@ export class SceneRenderer {
           this.work.style,
         ),
       })),
-      modules,
+      modules.map((m) => ({
+        id: m.id,
+        bounds: m.bounds,
+        // A link meets a pointed shape at the middle of a side, where its outline is.
+        pointed: ["diamond", "circle", "initial", "final"].includes(
+          String({ ...drawingOf(this.work, m.drawingId)?.defaults, ...m.data }.shape),
+        ),
+      })),
       this.clear(),
     );
     this.ground = groundOf(modules, links);
@@ -543,6 +566,24 @@ export class SceneRenderer {
       }
     }
     return zones;
+  }
+  /** The modules a frame or lanes carry when dragged: those standing on it, above it. */
+  carried(id: string): string[] {
+    const m = this.instances.get(id);
+    const fit = m && drawingOf(this.work, m.drawingId)?.fit;
+    if (!m || (fit !== "frame" && fit !== "lanes")) return [];
+    const order = this.currentModules();
+    const at = order.findIndex((x) => x.id === id);
+    return order
+      .filter(
+        (x, i) =>
+          i > at &&
+          x.bounds.x >= m.bounds.x &&
+          x.bounds.y >= m.bounds.y &&
+          x.bounds.x + x.bounds.width <= m.bounds.x + m.bounds.width &&
+          x.bounds.y + x.bounds.height <= m.bounds.y + m.bounds.height,
+      )
+      .map((x) => x.id);
   }
   /** Where a link runs now. */
   routeOf(id: string) {

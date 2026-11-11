@@ -580,3 +580,59 @@ it("gives a dropped image only to the canvas or composer that received it", asyn
   expect((await rootOf(id)).modules).toHaveLength(3);
   await dataTransfer.dispose();
 });
+it("drags a frame with what stands on it, and tidies a figure by its links", async () => {
+  const w = await api("/works", "POST", { title: "Check" });
+  await api(`/works/${w.id}/edits`, "POST", {
+    baseRevision: w.revision,
+    edit: {
+      style: { route: "elbow" },
+      modules: [
+        { id: "tier", drawingId: "frame", bounds: [60, 60, 560, 200], data: { title: "Tier" } },
+        { id: "a", drawingId: "node", bounds: [100, 130, 160, 70], data: { title: "Alpha" } },
+        { id: "b", drawingId: "node", bounds: [400, 130, 160, 70], data: { title: "Beta" } },
+        { id: "c", drawingId: "node", bounds: [760, 420, 160, 70], data: { title: "Gamma" } },
+      ],
+      links: [
+        { from: "a", to: "b" },
+        { from: "b", to: "c" },
+      ],
+    },
+  });
+  await api(`/works/${w.id}/save`, "POST");
+  await open(w.id);
+  await editing();
+  // Where a module stands on the paper, whatever the view does.
+  const place = (text: string) =>
+    page.evaluate((text) => {
+      const host = [...document.querySelectorAll<HTMLElement>("*")].find((e) => e.shadowRoot?.textContent?.includes(text))!;
+      return { x: Math.round(parseFloat(host.style.left)), y: Math.round(parseFloat(host.style.top)) };
+    }, text);
+  const before = { tier: await place("Tier"), a: await place("Alpha"), b: await place("Beta"), c: await place("Gamma") };
+  // The frame is taken by the paper inside it, below the link that crosses its middle.
+  const [alpha, beta] = [(await module("Alpha"))!, (await module("Beta"))!];
+  const scale = (beta.x - alpha.x) / 300;
+  const name = { x: alpha.x + 160 * scale, y: alpha.y + 72 * scale };
+  await page.mouse.move(name.x, name.y);
+  await page.mouse.down();
+  await page.mouse.move(name.x + 30, name.y + 40, { steps: 5 });
+  await page.mouse.move(name.x + 60, name.y + 80, { steps: 5 });
+  await page.mouse.up();
+  await settled();
+  const carried = { a: await place("Alpha"), b: await place("Beta"), c: await place("Gamma") };
+  // What stands on the frame goes with it; what stands elsewhere stays.
+  expect(carried.a.x - before.a.x).toBeGreaterThan(40);
+  expect(carried.a.x - before.a.x).toBe(carried.b.x - before.b.x);
+  expect(carried.a.y - before.a.y).toBe(carried.b.y - before.b.y);
+  expect(carried.c).toEqual(before.c);
+  // Tidied, the three stand in a row in the order their links run.
+  const gamma = (await module("Gamma"))!;
+  await page.mouse.click(gamma.x, gamma.y);
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.getByRole("button", { name: "Tidy by the links" }).click();
+  await settled();
+  const tidy = { a: await place("Alpha"), b: await place("Beta"), c: await place("Gamma") };
+  expect(Math.abs(tidy.a.y - tidy.b.y)).toBeLessThan(3);
+  expect(Math.abs(tidy.b.y - tidy.c.y)).toBeLessThan(3);
+  expect(tidy.a.x).toBeLessThan(tidy.b.x);
+  expect(tidy.b.x).toBeLessThan(tidy.c.x);
+});

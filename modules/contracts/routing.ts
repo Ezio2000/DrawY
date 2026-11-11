@@ -41,7 +41,19 @@ export interface RouteLink {
   to: LinkEnd;
   options: RouteOptions;
 }
-type Box = { id: string; x: number; y: number; r: number; b: number; soft?: boolean };
+type Box = {
+  id: string;
+  x: number;
+  y: number;
+  r: number;
+  b: number;
+  /** Words on the ground: better crossed than a module, where something has to be. */
+  soft?: boolean;
+  /** So near a port that the line leaves beside it with no margin: a side to avoid. */
+  tight?: boolean;
+  /** How far it was grown past the thing itself. */
+  grown?: number;
+};
 
 /** Characters that take a full em: CJK, kana, hangul and full-width forms. */
 const WIDE = /[ᄀ-ᇿ⺀-鿿ꥠ-꥿가-퟿豈-﫿︰-﹏＀-｠￠-￦]/;
@@ -285,13 +297,17 @@ function shapes(pa: Point, sa: Side, pb: Point, sb: Side, s: number, k: number, 
 /** What a way costs: its length, its turns and, far above both, what it runs through. */
 function costOf(pts: Point[], obstacles: Box[]) {
   let hits = 0;
-  for (const o of obstacles)
+  let cost = lengthOf(pts) + BEND * Math.max(0, pts.length - 2);
+  for (const o of obstacles) {
+    if (o.tight) cost += 140;
     for (let i = 1; i < pts.length; i++)
       if (through(pts[i - 1], pts[i], o)) {
         hits++;
+        cost += o.soft ? HIT / 4 : HIT;
         break;
       }
-  return { hits, cost: lengthOf(pts) + BEND * Math.max(0, pts.length - 2) + HIT * hits };
+  }
+  return { hits, cost };
 }
 /** A way round what stands between two ports, searched on the lines along the edges of the
  * things in the way. It always finds one; where nothing clear exists it passes through as
@@ -378,7 +394,7 @@ function search(pa: Point, sa: Side, pb: Point, sb: Side, s: number, obstacles: 
       const p = { x: xs[i], y: ys[j] },
         q = { x: xs[ni], y: ys[nj] };
       let c = Math.abs(q.x - p.x) + Math.abs(q.y - p.y);
-      for (const o of near) if (through(p, q, o)) c += HIT;
+      for (const o of near) if (through(p, q, o)) c += o.soft ? HIT / 4 : HIT;
       if (nd !== d) c += BEND + 0.02 * (Math.abs(p.x - prefer.x) + Math.abs(p.y - prefer.y));
       // Arriving at the goal sideways costs the turn into the port.
       if (ni === goal[0] && nj === goal[1] && nd !== endDir) c += nd === (endDir + 2) % 4 ? HIT : BEND;
@@ -402,7 +418,9 @@ function search(pa: Point, sa: Side, pb: Point, sb: Side, s: number, obstacles: 
 /** Where every link of a scene runs. `modules` are in stacking order, bottom first. */
 export function routeLinks(
   links: RouteLink[],
-  modules: { id: string; bounds: Bounds }[],
+  /** In stacking order, bottom first. A module whose shape comes to a point at the middle
+   * of each side (a diamond, a circle) is met only there. */
+  modules: { id: string; bounds: Bounds; pointed?: boolean }[],
   /** Places on the ground that lines and their words go round: a frame's name, the headers
    * of lanes. Each is named by the module it is on. */
   keepClear: { id: string; bounds: Bounds }[] = [],
@@ -472,7 +490,7 @@ export function routeLinks(
     // What a ground keeps clear stands in the way like a module, unless an end is on it.
     for (const c of keepClear)
       if (!holds(boxOf("", c.bounds), mid(A)) && !holds(boxOf("", c.bounds), mid(B)))
-        obstacles.push({ ...boxOf(c.id, c.bounds, MARGIN), soft: true });
+        obstacles.push({ ...boxOf(c.id, c.bounds, 4), soft: true, grown: 4 });
     plans.push({ link, a, b, sa: a.sides[0], sb: b.sides[0], pa: mid(A), pb: mid(B), obstacles, points: [] });
   }
   const stubOf = (p: Plan) => {
@@ -492,7 +510,8 @@ export function routeLinks(
     return p.obstacles.flatMap((o) => {
       if (o.id === p.a.id || o.id === p.b.id) return [o];
       if (!holds(o, a1) && !holds(o, b1) && !holds(o, pa) && !holds(o, pb)) return [o];
-      const tight = { ...o, x: o.x + MARGIN, y: o.y + MARGIN, r: o.r - MARGIN, b: o.b - MARGIN };
+      const by = o.grown ?? MARGIN;
+      const tight = { ...o, x: o.x + by, y: o.y + by, r: o.r - by, b: o.b - by, tight: true };
       return holds(tight, pa) || holds(tight, pb) ? [] : [tight];
     });
   };
@@ -515,6 +534,11 @@ export function routeLinks(
     return ahead >= 12 ? (sa === f ? 150 : 0) + (sb === OPPOSITE[f] ? 150 : 0) : 0;
   };
   // First, which side each end leaves by, judged with every port at the middle of its side.
+  // A pointed shape has one place a side, so each further link there costs more than the
+  // last, and its branches leave by different points while they can.
+  const pointed = new Set(modules.filter((m) => m.pointed).map((m) => m.id));
+  const taken = new Map<string, number>();
+  const crowd = (id: string, side: Side) => (pointed.has(id) ? 90 * (taken.get(id + "\n" + side) ?? 0) : 0);
   for (const p of plans) {
     const s = stubOf(p),
       k = 0.5 + Math.max(-0.45, Math.min(0.45, p.link.options.bend));
@@ -529,7 +553,8 @@ export function routeLinks(
           const away =
             (DIR[sa].x * (pb.x - pa.x) + DIR[sa].y * (pb.y - pa.y) < 0 ? 12 : 0) +
             (DIR[sb].x * (pa.x - pb.x) + DIR[sb].y * (pa.y - pb.y) < 0 ? 12 : 0);
-          const cost = costOf(pts, obstacles).cost + away - along(p, sa, sb);
+          const cost =
+            costOf(pts, obstacles).cost + away - along(p, sa, sb) + crowd(p.a.id, sa) + crowd(p.b.id, sb);
           if (cost < bestCost - 0.01) {
             bestCost = cost;
             p.sa = sa;
@@ -537,6 +562,11 @@ export function routeLinks(
           }
         }
       }
+    for (const [id, side] of [
+      [p.a.id, p.sa],
+      [p.b.id, p.sb],
+    ])
+      taken.set(id + "\n" + side, (taken.get(id + "\n" + side) ?? 0) + 1);
   }
   // Then the ports. Each link has its own on the side it meets, so every line can be followed
   // from end to end; they stand along the side in the order of where their other ends lie,
@@ -575,7 +605,10 @@ export function routeLinks(
     const box = list[0].plans[0].p[list[0].plans[0].end].box;
     const length = upright(side) ? box.height : box.width,
       start = upright(side) ? box.y : box.x;
-    const gap = list.length > 1 ? Math.min(24, (length * (list.length > 4 ? 0.86 : 0.7)) / (list.length - 1)) : 0;
+    const gap =
+      list.length > 1 && !pointed.has(where.split("\n")[0])
+        ? Math.min(24, (length * (list.length > 4 ? 0.86 : 0.7)) / (list.length - 1))
+        : 0;
     rows.push({
       side,
       box,
@@ -593,6 +626,7 @@ export function routeLinks(
     });
   for (let pass = 0; pass < 3; pass++)
     for (const row of rows) {
+      if (pointed.has(row.ports[0].plans[0].p[row.ports[0].plans[0].end].id)) continue;
       const length = upright(row.side) ? row.box.height : row.box.width,
         start = upright(row.side) ? row.box.y : row.box.x;
       const pad = Math.min(10, length * 0.14),
@@ -683,7 +717,7 @@ export function routeLinks(
     const crosses = others
       .filter((o) => {
         const tight = { ...o, x: o.x + MARGIN, y: o.y + MARGIN, r: o.r - MARGIN, b: o.b - MARGIN };
-        return p.points.some((q, i) => i && through(p.points[i - 1], q, tight));
+        return p.points.some((q, i) => i > 0 && through(p.points[i - 1], q, tight));
       })
       .map((o) => o.id);
     out.set(p.link.id, {
@@ -859,8 +893,11 @@ function apart(plans: Plan[]) {
           return (
             keeps &&
             !g.p.obstacles.some((o) => {
-              const tight = { ...o, x: o.x + 4, y: o.y + 4, r: o.r - 4, b: o.b - 4 };
-              return through(moved[0], moved[1], tight) && !through(a, b, tight);
+              // Into a thing's margin is allowed where the lanes need it; into the thing
+              // itself never, unless the stretch already ran there.
+              const by = (o.grown ?? (o.id === g.p.a.id || o.id === g.p.b.id ? 0 : MARGIN)) - 3;
+              const itself = { ...o, x: o.x + by, y: o.y + by, r: o.r - by, b: o.b - by };
+              return through(moved[0], moved[1], itself) && !through(a, b, itself);
             })
           );
         }),

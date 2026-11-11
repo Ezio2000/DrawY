@@ -219,6 +219,7 @@ const zh = {
     shared: "外观",
     panel: { hide: "收起面板，只留画布", show: "打开属性面板" },
     match: { width: "等宽", height: "等高", both: "等大" },
+    tidy: "按连线整理排布",
     shelf: {
       search: "搜索画法：流程、图表、时间线…",
       none: "没有找到这样的画法",
@@ -1482,6 +1483,7 @@ const en: Words = {
     shared: "Look",
     panel: { hide: "Put the panel away", show: "Open the properties panel" },
     match: { width: "Same width", height: "Same height", both: "Same size" },
+    tidy: "Tidy by the links",
     shelf: {
       search: "Find a drawing: flow, chart, timeline…",
       none: "No drawing like that",

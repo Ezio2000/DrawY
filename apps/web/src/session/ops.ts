@@ -26,6 +26,7 @@ import {
   linkLook,
   lookOf,
   matchSize,
+  tidy,
   moveParts,
   paste,
   pasteLook,
@@ -192,6 +193,10 @@ export function editOps(ctx: Context) {
       if (!ids.length) return;
       if (ctx.runs.working) return fail(new SessionError("busy"));
       report(made((w) => duplicate(w, sceneId, ids, by ?? 24 / scale())));
+    },
+    /** Places modules again by the links among them, as the author's arrange does. */
+    tidy(ids: string[]) {
+      if (ids.length > 1) run((w, s) => tidy(w, s, ids));
     },
     /** Gives modules the size of the first of them, one way or both. */
     matchSize(ids: string[], what: "width" | "height" | "both") {
