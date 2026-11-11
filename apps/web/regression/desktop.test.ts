@@ -620,7 +620,8 @@ it("drags a frame with what stands on it, and tidies a figure by its links", asy
   await settled();
   const carried = { a: await place("Alpha"), b: await place("Beta"), c: await place("Gamma") };
   // What stands on the frame goes with it; what stands elsewhere stays.
-  expect(carried.a.x - before.a.x).toBeGreaterThan(40);
+  // The pointer went 60 pixels right, which is this many units at the view's scale.
+  expect(carried.a.x - before.a.x).toBeGreaterThan(60 / scale - 5);
   expect(carried.a.x - before.a.x).toBe(carried.b.x - before.b.x);
   expect(carried.a.y - before.a.y).toBe(carried.b.y - before.b.y);
   expect(carried.c).toEqual(before.c);

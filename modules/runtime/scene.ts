@@ -95,11 +95,23 @@ export interface StructureReport {
   overlaps?: { a: string; b: string; by: [number, number] }[];
   /** Words on a link that lie over a module (or under it, where the module covers them) or
    * over another link's words, or that another link's line is drawn through. */
-  labels?: { link: string; text: string; over?: string[]; crossedBy?: string[] }[];
+  labels?: {
+    link: string;
+    text: string;
+    over?: string[];
+    crossedBy?: string[];
+  }[];
   /** Lines drawn through words on the ground they run over: a frame's name, a lane's header. */
   struck?: { link: string; moduleId: string; text: string }[];
   /** Lines a drawing runs between its own parts that pass through other parts of it. */
-  relations?: { moduleId: string; from: string; to: string; through: string[] }[];
+  relations?: {
+    moduleId: string;
+    from: string;
+    to: string;
+    through: string[];
+  }[];
+  /** Links whose lines lie one on the other for a stretch, so neither can be followed. */
+  shared?: { a: string; b: string }[];
   /** Words within one module that lie over one another. */
   words?: { moduleId: string; a: string; b: string }[];
   /** Words that run out of the block or table that holds them, and the size that would
@@ -485,7 +497,10 @@ export class SceneRenderer {
           materials: this.pictures,
           draw: (id, data = {}, at = size) => {
             const m = drawingOf(this.work, id);
-            if (!m) throw Error(`画法 ${id} 不在作品中：在 drawings 里定义它，或用库里画法素材的 id`);
+            if (!m)
+              throw Error(
+                `画法 ${id} 不在作品中：在 drawings 里定义它，或用库里画法素材的 id`,
+              );
             return execute(
               m.source,
               apiFor({ ...m.defaults, ...data }, at),
@@ -499,7 +514,12 @@ export class SceneRenderer {
               { margin: 8, stub: 12, lane: 8 },
             );
             found.forEach((c, i) => {
-              if (c?.crosses.length) crossed.push({ from: lines[i].from, to: lines[i].to, through: c.crosses });
+              if (c?.crosses.length)
+                crossed.push({
+                  from: lines[i].from,
+                  to: lines[i].to,
+                  through: c.crosses,
+                });
             });
             return found;
           },
@@ -515,13 +535,19 @@ export class SceneRenderer {
         try {
           // The work's own definition, or a library drawing used as it is.
           const drawing = drawingOf(this.work, drawingId);
-          if (!drawing) throw Error(`画法 ${drawingId} 不在作品中：在 drawings 里定义它，或用库里画法素材的 id`);
+          if (!drawing)
+            throw Error(
+              `画法 ${drawingId} 不在作品中：在 drawings 里定义它，或用库里画法素材的 id`,
+            );
           const result = await execute(
             drawing.source,
-            apiFor({ ...drawing.defaults, ...data }, {
-              width: bounds.width,
-              height: bounds.height,
-            }),
+            apiFor(
+              { ...drawing.defaults, ...data },
+              {
+                width: bounds.width,
+                height: bounds.height,
+              },
+            ),
           );
           if (stale()) {
             for (const fn of cleanup.splice(0)) fn();
@@ -590,12 +616,24 @@ export class SceneRenderer {
     this.routing = new Map(
       links.map((l) => [
         l.id,
-        routing({ ...drawingOf(this.work, l.drawingId)?.defaults, ...l.data }, this.work.style),
+        routing(
+          { ...drawingOf(this.work, l.drawingId)?.defaults, ...l.data },
+          this.work.style,
+        ),
       ]),
     );
     this.routes = routeLinks(
-      links.map((l) => ({ id: l.id, from: l.from, to: l.to, options: this.routing.get(l.id)! })),
-      modules.map((m) => ({ id: m.id, bounds: m.bounds, pointed: pointed.has(m.id) })),
+      links.map((l) => ({
+        id: l.id,
+        from: l.from,
+        to: l.to,
+        options: this.routing.get(l.id)!,
+      })),
+      modules.map((m) => ({
+        id: m.id,
+        bounds: m.bounds,
+        pointed: pointed.has(m.id),
+      })),
       zones,
       {},
       this.memo,
@@ -610,7 +648,10 @@ export class SceneRenderer {
    * data or at another size may have changed either. */
   private async reroute() {
     if (this.disposed || !this.links.size) return;
-    const now = JSON.stringify([this.clear(), [...this.pointed(this.currentModules())]]);
+    const now = JSON.stringify([
+      this.clear(),
+      [...this.pointed(this.currentModules())],
+    ]);
     if (now !== this.routedRound) await this.drawLinks(new Set());
   }
   /** The modules a link meets only at the middle of a side, where their outline is. */
@@ -619,7 +660,10 @@ export class SceneRenderer {
       modules
         .filter((m) =>
           ["diamond", "circle", "initial", "final"].includes(
-            String({ ...drawingOf(this.work, m.drawingId)?.defaults, ...m.data }.shape),
+            String(
+              { ...drawingOf(this.work, m.drawingId)?.defaults, ...m.data }
+                .shape,
+            ),
           ),
         )
         .map((m) => m.id),
@@ -635,7 +679,9 @@ export class SceneRenderer {
       if (!view) continue;
       if (view.clear?.revision !== view.drawn) {
         const marked = view.host.shadowRoot?.querySelectorAll("[data-clear]");
-        const hr = marked?.length ? view.host.getBoundingClientRect() : undefined;
+        const hr = marked?.length
+          ? view.host.getBoundingClientRect()
+          : undefined;
         const width = parseFloat(view.host.style.width);
         const local: NonNullable<View["clear"]>["zones"] = [];
         if (hr && !hr.width) continue;
@@ -656,7 +702,11 @@ export class SceneRenderer {
         // Words are measured for good once the fonts they are set in have arrived.
         if (document.fonts.status !== "loaded") {
           for (const z of local)
-            zones.push({ id: m.id, bounds: { ...z, x: m.bounds.x + z.x, y: m.bounds.y + z.y }, text: z.text });
+            zones.push({
+              id: m.id,
+              bounds: { ...z, x: m.bounds.x + z.x, y: m.bounds.y + z.y },
+              text: z.text,
+            });
           continue;
         }
         view.clear = { revision: view.drawn, zones: local };
@@ -664,7 +714,12 @@ export class SceneRenderer {
       for (const z of view.clear.zones)
         zones.push({
           id: m.id,
-          bounds: { x: m.bounds.x + z.x, y: m.bounds.y + z.y, width: z.width, height: z.height },
+          bounds: {
+            x: m.bounds.x + z.x,
+            y: m.bounds.y + z.y,
+            width: z.width,
+            height: z.height,
+          },
           text: z.text,
         });
     }
@@ -701,8 +756,14 @@ export class SceneRenderer {
       left = parseFloat(host.style.left),
       top = parseFloat(host.style.top);
     const lines: Point[][] = [];
-    for (const el of host.shadowRoot.querySelectorAll("path,line,polyline,polygon,rect,circle,ellipse")) {
-      if (!(el instanceof SVGGeometryElement) || el.closest("defs,clipPath,mask,pattern,marker,symbol")) continue;
+    for (const el of host.shadowRoot.querySelectorAll(
+      "path,line,polyline,polygon,rect,circle,ellipse",
+    )) {
+      if (
+        !(el instanceof SVGGeometryElement) ||
+        el.closest("defs,clipPath,mask,pattern,marker,symbol")
+      )
+        continue;
       try {
         const length = el.getTotalLength(),
           ctm = el.getScreenCTM();
@@ -712,7 +773,10 @@ export class SceneRenderer {
           Array.from({ length: n + 1 }, (_, i) => {
             const p = el.getPointAtLength((length * i) / n);
             const q = new DOMPoint(p.x, p.y).matrixTransform(ctm);
-            return { x: left + (q.x - hr.left) / k, y: top + (q.y - hr.top) / k };
+            return {
+              x: left + (q.x - hr.left) / k,
+              y: top + (q.y - hr.top) / k,
+            };
           }),
         );
       } catch {}
@@ -722,7 +786,10 @@ export class SceneRenderer {
   /** What is wrong with the scene's structure as it is drawn now. */
   structure(): StructureReport {
     const report: StructureReport = {};
-    const add = <K extends keyof StructureReport>(key: K, entry: NonNullable<StructureReport[K]>[number]) => {
+    const add = <K extends keyof StructureReport>(
+      key: K,
+      entry: NonNullable<StructureReport[K]>[number],
+    ) => {
       const list = ((report[key] as unknown[] | undefined) ??= []);
       if (list.length < 8) list.push(entry);
     };
@@ -745,7 +812,10 @@ export class SceneRenderer {
       Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > by &&
       Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > by;
     const within = (a: Bounds, b: Bounds) =>
-      a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
+      a.x >= b.x &&
+      a.y >= b.y &&
+      a.x + a.width <= b.x + b.width &&
+      a.y + a.height <= b.y + b.height;
     // Every link's line as it is drawn: a routed one runs where it was routed, any other
     // wherever its drawing took it, which is read from what was drawn.
     const drawn = new Map<string, { lines: Point[][]; box: Bounds }>();
@@ -755,7 +825,9 @@ export class SceneRenderer {
       if (!r) continue;
       const host = this.views.get("link:" + l.id)?.host;
       const read = r.kind !== "elbow" && host ? this.traced(host) : [];
-      const lines = read.length ? read : [sampled(r, this.routing.get(l.id)?.bend)];
+      const lines = read.length
+        ? read
+        : [sampled(r, this.routing.get(l.id)?.bend)];
       const xs = lines.flat().map((p) => p.x),
         ys = lines.flat().map((p) => p.y);
       drawn.set(l.id, {
@@ -768,22 +840,41 @@ export class SceneRenderer {
         },
       });
       for (const text of host?.shadowRoot?.querySelectorAll("text") ?? []) {
-        const box = text.textContent?.trim() && sceneBox(host!, text.getBoundingClientRect());
-        if (box) words.push({ link: l.id, text: text.textContent!.trim().slice(0, 24), box });
+        const box =
+          text.textContent?.trim() &&
+          sceneBox(host!, text.getBoundingClientRect());
+        if (box)
+          words.push({
+            link: l.id,
+            text: text.textContent!.trim().slice(0, 24),
+            box,
+          });
       }
     }
     const strikes = (id: string, box: Bounds, inset: number) => {
       const d = drawn.get(id);
-      return !!d && meet(d.box, box, inset - 0.01) && d.lines.some((line) => passes(line, box, inset));
+      return (
+        !!d &&
+        meet(d.box, box, inset - 0.01) &&
+        d.lines.some((line) => passes(line, box, inset))
+      );
     };
-    const way = new Map(links.map((l) => [l.id, inTheWay(modules, l.from.moduleId, l.to.moduleId, this.ground)]));
+    const way = new Map(
+      links.map((l) => [
+        l.id,
+        inTheWay(modules, l.from.moduleId, l.to.moduleId, this.ground),
+      ]),
+    );
     for (const l of links) {
       const r = this.routes.get(l.id);
       if (!r || l.from.moduleId === l.to.moduleId) continue;
       const through =
         r.kind === "elbow"
           ? r.crosses
-          : way.get(l.id)!.filter((m) => strikes(l.id, m.bounds, 2)).map((m) => m.id);
+          : way
+              .get(l.id)!
+              .filter((m) => strikes(l.id, m.bounds, 2))
+              .map((m) => m.id);
       if (through.length) add("crossings", { link: l.id, through });
     }
     // Blocks, tables and labels are the parts that should stand clear of one another;
@@ -799,7 +890,11 @@ export class SceneRenderer {
         const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x),
           h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
         if (w > 2 && h > 2 && !within(a, b) && !within(b, a))
-          add("overlaps", { a: solid[i].id, b: solid[j].id, by: [Math.round(w), Math.round(h)] });
+          add("overlaps", {
+            a: solid[i].id,
+            b: solid[j].id,
+            by: [Math.round(w), Math.round(h)],
+          });
       }
     for (const w of words) {
       const l = this.links.get(w.link)!;
@@ -807,20 +902,28 @@ export class SceneRenderer {
       // way. Links lie under the modules, so words within a module's box are covered by it:
       // those count as much as words half over its edge.
       const over = [
-        ...modules.filter((m) => m.id === l.from.moduleId || m.id === l.to.moduleId),
+        ...modules.filter(
+          (m) => m.id === l.from.moduleId || m.id === l.to.moduleId,
+        ),
         ...way.get(w.link)!,
       ]
         .filter((m) => meet(w.box, m.bounds, 3))
         .map((m) => m.id);
-      const others = words.filter((o) => o !== w && o.link !== w.link && meet(w.box, o.box, 2)).map((o) => o.link);
+      const others = words
+        .filter((o) => o !== w && o.link !== w.link && meet(w.box, o.box, 2))
+        .map((o) => o.link);
       // Any other line through them, straight, routed or curved: their halo keeps them
       // legible over it, but they read as that line's words too.
-      const crossedBy = links.filter((o) => o.id !== w.link && strikes(o.id, w.box, 3)).map((o) => o.id);
+      const crossedBy = links
+        .filter((o) => o.id !== w.link && strikes(o.id, w.box, 3))
+        .map((o) => o.id);
       if (over.length || others.length || crossedBy.length)
         add("labels", {
           link: w.link,
           text: w.text,
-          ...(over.length || others.length ? { over: [...new Set([...over, ...others])] } : {}),
+          ...(over.length || others.length
+            ? { over: [...new Set([...over, ...others])] }
+            : {}),
           ...(crossedBy.length ? { crossedBy } : {}),
         });
     }
@@ -832,37 +935,59 @@ export class SceneRenderer {
           B = bounds.get(l.to.moduleId);
         // An end standing on the words themselves leaves its line no other way.
         if (!A || !B || meet(A, zone.bounds) || meet(B, zone.bounds)) continue;
-        if (strikes(l.id, zone.bounds, 1)) add("struck", { link: l.id, moduleId: zone.id, text: zone.text });
+        if (strikes(l.id, zone.bounds, 1))
+          add("struck", { link: l.id, moduleId: zone.id, text: zone.text });
       }
     for (const m of modules)
-      for (const c of this.views.get("module:" + m.id)?.crossed ?? []) add("relations", { moduleId: m.id, ...c });
+      for (const c of this.views.get("module:" + m.id)?.crossed ?? [])
+        add("relations", { moduleId: m.id, ...c });
     // A structure or chart lays its words out within its module, so words outside it mean
     // the module is too small for them.
     const holding = modules.filter((m) => {
       const use = this.work.materials[m.drawingId];
       return (
         solid.includes(m) ||
-        (!this.work.drawings[m.drawingId] && use?.kind === "drawing" && use.contained && !this.ground.has(m.id))
+        (!this.work.drawings[m.drawingId] &&
+          use?.kind === "drawing" &&
+          use.contained &&
+          !this.ground.has(m.id))
       );
     });
     for (const m of holding) {
       const host = this.views.get("module:" + m.id)?.host;
       if (!host?.shadowRoot) continue;
-      const walker = document.createTreeWalker(host.shadowRoot, NodeFilter.SHOW_TEXT);
+      const walker = document.createTreeWalker(
+        host.shadowRoot,
+        NodeFilter.SHOW_TEXT,
+      );
       let out = { x: 0, y: 0 },
         said = "";
       const runs: { text: string; box: Bounds }[] = [];
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
         const text = node.textContent?.trim();
-        if (!text || node.parentElement?.closest("style,script,defs,title")) continue;
+        if (!text || node.parentElement?.closest("style,script,defs,title"))
+          continue;
         const range = document.createRange();
         range.selectNodeContents(node);
         const box = sceneBox(host, range.getBoundingClientRect());
         if (!box || !box.width) continue;
         // A line box reaches past its letters above and below.
-        runs.push({ text, box: { ...box, y: box.y + box.height * 0.18, height: box.height * 0.64 } });
-        const x = Math.max(m.bounds.x - box.x, box.x + box.width - (m.bounds.x + m.bounds.width)),
-          y = Math.max(m.bounds.y - box.y, box.y + box.height - (m.bounds.y + m.bounds.height));
+        runs.push({
+          text,
+          box: {
+            ...box,
+            y: box.y + box.height * 0.18,
+            height: box.height * 0.64,
+          },
+        });
+        const x = Math.max(
+            m.bounds.x - box.x,
+            box.x + box.width - (m.bounds.x + m.bounds.width),
+          ),
+          y = Math.max(
+            m.bounds.y - box.y,
+            box.y + box.height - (m.bounds.y + m.bounds.height),
+          );
         if (x > out.x || y > out.y) said = text.slice(0, 24);
         out = { x: Math.max(out.x, x), y: Math.max(out.y, y) };
       }
@@ -871,8 +996,12 @@ export class SceneRenderer {
           moduleId: m.id,
           text: said,
           needs: [
-            Math.ceil(m.bounds.width + 2 * Math.max(0, out.x) + (out.x > 1.5 ? 8 : 0)),
-            Math.ceil(m.bounds.height + 2 * Math.max(0, out.y) + (out.y > 1.5 ? 8 : 0)),
+            Math.ceil(
+              m.bounds.width + 2 * Math.max(0, out.x) + (out.x > 1.5 ? 8 : 0),
+            ),
+            Math.ceil(
+              m.bounds.height + 2 * Math.max(0, out.y) + (out.y > 1.5 ? 8 : 0),
+            ),
           ],
         });
       // Words of the module's own that lie over one another: a relation's label on a
@@ -883,10 +1012,70 @@ export class SceneRenderer {
             b = runs[j].box;
           const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x),
             h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
-          if (w > 2 && h > 2 && w * h > 0.25 * Math.min(a.width * a.height, b.width * b.height))
-            add("words", { moduleId: m.id, a: runs[i].text.slice(0, 24), b: runs[j].text.slice(0, 24) });
+          if (
+            w > 2 &&
+            h > 2 &&
+            w * h > 0.25 * Math.min(a.width * a.height, b.width * b.height)
+          )
+            add("words", {
+              moduleId: m.id,
+              a: runs[i].text.slice(0, 24),
+              b: runs[j].text.slice(0, 24),
+            });
         }
     }
+    // Two lines laid one on the other read as one: which goes where is lost. Lines leaving
+    // or reaching one point together are a trunk and branches, drawn so on purpose.
+    const pieces = new Map<
+      string,
+      { upright: boolean; at: number; lo: number; hi: number }[]
+    >();
+    const runsOf = (id: string) =>
+      pieces.get(id) ??
+      pieces
+        .set(
+          id,
+          drawn.get(id)!.lines.flatMap((line) =>
+            line.slice(1).flatMap((q, i) => {
+              const p = line[i];
+              const upright = Math.abs(p.x - q.x) < 0.5,
+                level = Math.abs(p.y - q.y) < 0.5;
+              if (upright === level) return [];
+              return [
+                {
+                  upright,
+                  at: upright ? p.x : p.y,
+                  lo: Math.min(upright ? p.y : p.x, upright ? q.y : q.x),
+                  hi: Math.max(upright ? p.y : p.x, upright ? q.y : q.x),
+                },
+              ];
+            }),
+          ),
+        )
+        .get(id)!;
+    const endsOf = (id: string) => {
+      const lines = drawn.get(id)!.lines;
+      return [lines[0][0], lines.at(-1)!.at(-1)!];
+    };
+    const ids = [...drawn.keys()];
+    for (let i = 0; i < ids.length; i++)
+      for (let j = i + 1; j < ids.length; j++) {
+        if (!meet(drawn.get(ids[i])!.box, drawn.get(ids[j])!.box, -3)) continue;
+        const [a0, a1] = endsOf(ids[i]),
+          [b0, b1] = endsOf(ids[j]);
+        const near = (p: Point, q: Point) =>
+          Math.abs(p.x - q.x) < 2 && Math.abs(p.y - q.y) < 2;
+        if (near(a0, b0) || near(a1, b1) || near(a0, b1) || near(a1, b0))
+          continue;
+        const bs = runsOf(ids[j]);
+        // A drawn line is read back in short pieces, so what lies together is summed.
+        let along = 0;
+        for (const m of runsOf(ids[i]))
+          for (const n of bs)
+            if (n.upright === m.upright && Math.abs(n.at - m.at) < 3)
+              along += Math.max(0, Math.min(m.hi, n.hi) - Math.max(m.lo, n.lo));
+        if (along > 24) add("shared", { a: ids[i], b: ids[j] });
+      }
     return report;
   }
   /** Where a link's ends meet their modules as they are now, in scene units, and the side
@@ -1027,7 +1216,8 @@ export class SceneRenderer {
     if (this.disposed || scene.id !== this.scene.id) return false;
     if (JSON.stringify(work.style) !== JSON.stringify(this.work.style))
       return false;
-    if ((scene.interaction ?? "") !== (this.scene.interaction ?? "")) return false;
+    if ((scene.interaction ?? "") !== (this.scene.interaction ?? ""))
+      return false;
     for (const [id, m] of Object.entries(work.materials)) {
       const was = this.work.materials[id];
       if (was && JSON.stringify(was) !== JSON.stringify(m)) return false;
@@ -1046,7 +1236,10 @@ export class SceneRenderer {
   /** Whether a link carries words. */
   private worded(id: string) {
     const l = this.links.get(id);
-    return !!l && !!{ ...drawingOf(this.work, l.drawingId)?.defaults, ...l.data }.label;
+    return (
+      !!l &&
+      !!{ ...drawingOf(this.work, l.drawingId)?.defaults, ...l.data }.label
+    );
   }
   /** The scene's modules in stacking order, where they are now. */
   private currentModules() {

@@ -67,7 +67,14 @@ const WIDE = /[ᄀ-ᇿ⺀-鿿ꥠ-꥿가-퟿豈-﫿︰-﹏＀-｠￠-￦]/;
  * are drawn: a full em for each wide character, a little over half for the rest. */
 export function textWidth(text: string, size: number, weight = 400) {
   let em = 0;
-  for (const ch of text) em += WIDE.test(ch) ? 1 : ch === " " ? 0.3 : /[A-Z0-9MWmw@%]/.test(ch) ? 0.66 : 0.52;
+  for (const ch of text)
+    em += WIDE.test(ch)
+      ? 1
+      : ch === " "
+        ? 0.3
+        : /[A-Z0-9MWmw@%]/.test(ch)
+          ? 0.66
+          : 0.52;
   return em * size * (weight >= 600 ? 1.04 : 1);
 }
 /** How a link runs, read from its data and the work's style: the keys every link drawing
@@ -88,9 +95,9 @@ export function routing(
   const size = Number(data.size ?? 14) || 14;
   const lines = text.split("\n");
   const at = data.labelAt;
-  const flow = { down: "bottom", right: "right", up: "top", left: "left" }[String(style.flow)] as
-    | Side
-    | undefined;
+  const flow = { down: "bottom", right: "right", up: "top", left: "left" }[
+    String(style.flow)
+  ] as Side | undefined;
   return {
     kind,
     bend: Number(data.bend ?? 0) || 0,
@@ -99,12 +106,20 @@ export function routing(
     ...(text
       ? {
           label: {
-            width: Math.max(...lines.map((l) => textWidth(l, size))) + size * 0.7,
+            width:
+              Math.max(...lines.map((l) => textWidth(l, size))) + size * 0.7,
             height: lines.length * size * 1.3 + 2,
           },
         }
       : {}),
-    labelAt: at === "source" ? 0.16 : at === "target" ? 0.84 : typeof at === "number" ? at : 0.5,
+    labelAt:
+      at === "source"
+        ? 0.16
+        : at === "target"
+          ? 0.84
+          : typeof at === "number"
+            ? at
+            : 0.5,
   };
 }
 
@@ -122,7 +137,8 @@ const boxOf = (id: string, b: Bounds, grow = 0): Box => ({
   r: b.x + b.width + grow,
   b: b.y + b.height + grow,
 });
-const holds = (o: Box, p: Point) => p.x > o.x && p.x < o.r && p.y > o.y && p.y < o.b;
+const holds = (o: Box, p: Point) =>
+  p.x > o.x && p.x < o.r && p.y > o.y && p.y < o.b;
 const inside = (outer: Bounds, inner: Bounds) =>
   outer.x <= inner.x &&
   outer.y <= inner.y &&
@@ -158,31 +174,45 @@ function through(p: Point, q: Point, o: Box) {
   }
   return t1 - t0 > 1e-6;
 }
-const add = (p: Point, d: Point, by: number): Point => ({ x: p.x + d.x * by, y: p.y + d.y * by });
+const add = (p: Point, d: Point, by: number): Point => ({
+  x: p.x + d.x * by,
+  y: p.y + d.y * by,
+});
 const lengthOf = (pts: Point[]) =>
-  pts.reduce((n, p, i) => (i ? n + Math.abs(p.x - pts[i - 1].x) + Math.abs(p.y - pts[i - 1].y) : 0), 0);
+  pts.reduce(
+    (n, p, i) =>
+      i ? n + Math.abs(p.x - pts[i - 1].x) + Math.abs(p.y - pts[i - 1].y) : 0,
+    0,
+  );
 /** A line without the points it repeats or runs straight through. */
 export function simplified(pts: Point[]) {
   const kept: Point[] = [];
   for (const p of pts) {
     const last = kept.at(-1);
-    if (!last || Math.abs(p.x - last.x) > 0.01 || Math.abs(p.y - last.y) > 0.01) kept.push(p);
+    if (!last || Math.abs(p.x - last.x) > 0.01 || Math.abs(p.y - last.y) > 0.01)
+      kept.push(p);
   }
   return kept.filter((p, i) => {
     if (i === 0 || i === kept.length - 1) return true;
     const a = kept[i - 1],
       b = kept[i + 1];
-    return Math.abs((p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x)) > 0.01;
+    return (
+      Math.abs((p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x)) > 0.01
+    );
   });
 }
 /** The module that lies under the whole figure, if one does: see the runtime's layers. */
-export function backdropOf(modules: { id: string; bounds: Bounds }[]): string | undefined {
+export function backdropOf(
+  modules: { id: string; bounds: Bounds }[],
+): string | undefined {
   const [bottom] = modules;
   if (!bottom || modules.length < 2) return undefined;
   const all = union(modules.map((m) => m.bounds)),
     b = bottom.bounds;
-  const across = Math.min(b.x + b.width, all.x + all.width) - Math.max(b.x, all.x);
-  const down = Math.min(b.y + b.height, all.y + all.height) - Math.max(b.y, all.y);
+  const across =
+    Math.min(b.x + b.width, all.x + all.width) - Math.max(b.x, all.x);
+  const down =
+    Math.min(b.y + b.height, all.y + all.height) - Math.max(b.y, all.y);
   return across > 0 && down > 0 && across * down >= 0.9 * all.width * all.height
     ? bottom.id
     : undefined;
@@ -197,7 +227,9 @@ export function groundOf(
   const ground = new Set<string>();
   const back = backdropOf(modules);
   if (back) ground.add(back);
-  const linked = new Set(links.flatMap((l) => [l.from.moduleId, l.to.moduleId]));
+  const linked = new Set(
+    links.flatMap((l) => [l.from.moduleId, l.to.moduleId]),
+  );
   modules.forEach((m, i) => {
     for (let j = i + 1; j < modules.length; j++)
       if (linked.has(modules[j].id) && inside(m.bounds, modules[j].bounds)) {
@@ -225,7 +257,9 @@ const SPACING: Spacing = { margin: 14, stub: 20, lane: 12 };
 /** Finds the boxes near a place without looking at every one: a scene of a few hundred
  * modules is routed many times a second while one of them is dragged. What it returns is in
  * the order the boxes were given. */
-function indexed<T extends { x: number; y: number; r: number; b: number }>(items: T[]) {
+function indexed<T extends { x: number; y: number; r: number; b: number }>(
+  items: T[],
+) {
   const CELL = 256;
   const cells = new Map<number, number[]>();
   const everywhere: number[] = [];
@@ -236,7 +270,8 @@ function indexed<T extends { x: number; y: number; r: number; b: number }>(items
       i1 = cell(o.r),
       j0 = cell(o.y),
       j1 = cell(o.b);
-    if (!(i1 - i0 < 64 && j1 - j0 < 64) || !Number.isFinite(i0 + i1 + j0 + j1)) return void everywhere.push(n);
+    if (!(i1 - i0 < 64 && j1 - j0 < 64) || !Number.isFinite(i0 + i1 + j0 + j1))
+      return void everywhere.push(n);
     for (let i = i0; i <= i1; i++)
       for (let j = j0; j <= j1; j++) {
         const k = key(i, j);
@@ -254,7 +289,8 @@ function indexed<T extends { x: number; y: number; r: number; b: number }>(items
       i1 = cell(r),
       j0 = cell(y),
       j1 = cell(b);
-    if (!(i1 - i0 < 256 && j1 - j0 < 256)) return items.filter((o) => o.r >= x && o.x <= r && o.b >= y && o.y <= b);
+    if (!(i1 - i0 < 256 && j1 - j0 < 256))
+      return items.filter((o) => o.r >= x && o.x <= r && o.b >= y && o.y <= b);
     for (let i = i0; i <= i1; i++)
       for (let j = j0; j <= j1; j++)
         for (const n of cells.get(key(i, j)) ?? [])
@@ -282,10 +318,18 @@ export type RouteMemo = Map<
   string,
   {
     sides?: { key: number[]; sa: Side; sb: Side };
-    way?: { key: number[]; sa: Side; sb: Side; pa: Point; pb: Point; pts: Point[] };
+    way?: {
+      key: number[];
+      sa: Side;
+      sb: Side;
+      pa: Point;
+      pb: Point;
+      pts: Point[];
+    };
   }
 >;
-const alike = (m: number[], n: number[]) => m.length === n.length && m.every((v, i) => v === n[i]);
+const alike = (m: number[], n: number[]) =>
+  m.length === n.length && m.every((v, i) => v === n[i]);
 const CODE: Record<Side, number> = { left: 1, right: 2, top: 3, bottom: 4 };
 interface Plan {
   /** Everything its sides and its way depend on but the ports it is given. */
@@ -308,11 +352,23 @@ const portOn = (b: Bounds, side: Side, t = 0.5): Point =>
       : side === "top"
         ? { x: b.x + b.width * t, y: b.y }
         : { x: b.x + b.width * t, y: b.y + b.height };
-const mid = (b: Bounds): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+const mid = (b: Bounds): Point => ({
+  x: b.x + b.width / 2,
+  y: b.y + b.height / 2,
+});
 
 /** The simple ways between two ports: straight, one turn, or two around a shared channel.
  * `k` is how far along the way a cross segment sits. */
-function shapes(pa: Point, sa: Side, pb: Point, sb: Side, s: number, k: number, A: Bounds, B: Bounds) {
+function shapes(
+  pa: Point,
+  sa: Side,
+  pb: Point,
+  sb: Side,
+  s: number,
+  k: number,
+  A: Bounds,
+  B: Bounds,
+) {
   const da = DIR[sa],
     db = DIR[sb];
   const a1 = add(pa, da, s),
@@ -330,7 +386,8 @@ function shapes(pa: Point, sa: Side, pb: Point, sb: Side, s: number, k: number, 
     Q1 = t(b1),
     dA = t(da),
     dB = t(db);
-  const boxT = (r: Bounds) => (level ? r : { x: r.y, y: r.x, width: r.height, height: r.width });
+  const boxT = (r: Bounds) =>
+    level ? r : { x: r.y, y: r.x, width: r.height, height: r.width };
   const RA = boxT(A),
     RB = boxT(B);
   const push = (...pts: Point[]) => out.push(pts.map(t));
@@ -362,7 +419,10 @@ function shapes(pa: Point, sa: Side, pb: Point, sb: Side, s: number, k: number, 
     }
   } else {
     const corner = { x: Q.x, y: P.y };
-    if ((corner.x - P.x) * dA.x >= s - 0.01 && (corner.y - Q.y) * dB.y >= s - 0.01)
+    if (
+      (corner.x - P.x) * dA.x >= s - 0.01 &&
+      (corner.y - Q.y) * dB.y >= s - 0.01
+    )
       push(P, corner, Q);
     else push(P, P1, { x: P1.x, y: Q1.y }, Q1, Q);
   }
@@ -377,7 +437,12 @@ function costOf(pts: Point[], obstacles: Box[]) {
   for (const o of obstacles) {
     if (o.tight) cost += 140;
     for (let i = 1; i < pts.length; i++)
-      if (o.rim ? alongEdge(pts[i - 1], pts[i], o) : through(pts[i - 1], pts[i], o) || (o.ground && alongEdge(pts[i - 1], pts[i], o))) {
+      if (
+        o.rim
+          ? alongEdge(pts[i - 1], pts[i], o)
+          : through(pts[i - 1], pts[i], o) ||
+            (o.ground && alongEdge(pts[i - 1], pts[i], o))
+      ) {
         if (o.rim || (o.ground && !through(pts[i - 1], pts[i], o))) edge++;
         if (o.ground || o.rim) over++;
         else hits++;
@@ -392,12 +457,18 @@ function alongEdge(p: Point, q: Point, o: Box) {
   const NEAR = 6,
     LONG = 24;
   if (p.y === q.y) {
-    const run = Math.min(Math.max(p.x, q.x), o.r) - Math.max(Math.min(p.x, q.x), o.x);
-    return run > LONG && (Math.abs(p.y - o.y) < NEAR || Math.abs(p.y - o.b) < NEAR);
+    const run =
+      Math.min(Math.max(p.x, q.x), o.r) - Math.max(Math.min(p.x, q.x), o.x);
+    return (
+      run > LONG && (Math.abs(p.y - o.y) < NEAR || Math.abs(p.y - o.b) < NEAR)
+    );
   }
   if (p.x === q.x) {
-    const run = Math.min(Math.max(p.y, q.y), o.b) - Math.max(Math.min(p.y, q.y), o.y);
-    return run > LONG && (Math.abs(p.x - o.x) < NEAR || Math.abs(p.x - o.r) < NEAR);
+    const run =
+      Math.min(Math.max(p.y, q.y), o.b) - Math.max(Math.min(p.y, q.y), o.y);
+    return (
+      run > LONG && (Math.abs(p.x - o.x) < NEAR || Math.abs(p.x - o.r) < NEAR)
+    );
   }
   return false;
 }
@@ -423,8 +494,13 @@ function search(
     r: Math.max(a1.x, b1.x) + R,
     b: Math.max(a1.y, b1.y) + R,
   };
-  const near = obstacles.filter((o) => o.r > region.x && o.x < region.r && o.b > region.y && o.y < region.b);
-  const line = (values: number[]) => [...new Set(values.map((v) => Math.round(v * 100) / 100))].sort((m, n) => m - n);
+  const near = obstacles.filter(
+    (o) => o.r > region.x && o.x < region.r && o.b > region.y && o.y < region.b,
+  );
+  const line = (values: number[]) =>
+    [...new Set(values.map((v) => Math.round(v * 100) / 100))].sort(
+      (m, n) => m - n,
+    );
   // A group's frame is drawn, so a line along its edge would melt into it: the lines a route
   // may take by a frame keep a margin off its edge on either side, and run down the middle of
   // a gap too narrow for that.
@@ -433,7 +509,8 @@ function search(
     const sorted = [...new Set(edges)].sort((m, n) => m - n);
     const lines = sorted.flatMap((e) => [e - margin, e + margin]);
     for (let n = 1; n < sorted.length; n++)
-      if (sorted[n] - sorted[n - 1] < margin * 2) lines.push((sorted[n] + sorted[n - 1]) / 2);
+      if (sorted[n] - sorted[n - 1] < margin * 2)
+        lines.push((sorted[n] + sorted[n - 1]) / 2);
     const keep = Math.min(margin / 2, 6);
     return lines.filter((v) => !sorted.some((e) => Math.abs(v - e) < keep));
   };
@@ -469,7 +546,8 @@ function search(
     [-1, 0],
     [0, -1],
   ];
-  const dirOf = (d: Point) => steps.findIndex(([x, y]) => x === d.x && y === d.y);
+  const dirOf = (d: Point) =>
+    steps.findIndex(([x, y]) => x === d.x && y === d.y);
   const startDir = dirOf(DIR[sa]),
     // The last stretch runs into the port, against the way the port faces.
     endDir = (dirOf(DIR[sb]) + 2) % 4;
@@ -496,7 +574,7 @@ function search(
     hf.push(f);
     hg.push(g);
     hk.push(k);
-    for (let n = hf.length - 1; n > 0; ) {
+    for (let n = hf.length - 1; n > 0;) {
       const up = (n - 1) >> 1;
       if (hf[up] <= hf[n]) break;
       swap(up, n);
@@ -514,7 +592,7 @@ function search(
     hf.pop();
     hg.pop();
     hk.pop();
-    for (let n = 0; ; ) {
+    for (let n = 0; ;) {
       const l = n * 2 + 1,
         r = l + 1;
       let m = n;
@@ -551,17 +629,20 @@ function search(
     const cost = (m: number, n: number, lo: number, hi: number) =>
       !ground
         ? hit
-        : ((m < lo) !== (n < lo) || m === lo || n === lo ? hit / 2 : 0) +
-          ((m < hi) !== (n < hi) || m === hi || n === hi ? hit / 2 : 0) +
+        : (m < lo !== n < lo || m === lo || n === lo ? hit / 2 : 0) +
+          (m < hi !== n < hi || m === hi || n === hi ? hit / 2 : 0) +
           Math.max(0, Math.min(n, hi) - Math.max(m, lo));
     for (let j = j0; j < ny && ys[j] < o.b; j++)
       for (let i = Math.max(0, i0 - 1); i < nx - 1 && xs[i] < o.r; i++)
-        if (xs[i + 1] > o.x) level[j * nx + i] += cost(xs[i], xs[i + 1], o.x, o.r);
+        if (xs[i + 1] > o.x)
+          level[j * nx + i] += cost(xs[i], xs[i + 1], o.x, o.r);
     for (let i = i0; i < nx && xs[i] < o.r; i++)
       for (let j = Math.max(0, j0 - 1); j < ny - 1 && ys[j] < o.b; j++)
-        if (ys[j + 1] > o.y) upright[j * nx + i] += cost(ys[j], ys[j + 1], o.y, o.b);
+        if (ys[j + 1] > o.y)
+          upright[j * nx + i] += cost(ys[j], ys[j + 1], o.y, o.b);
   }
-  const h = (i: number, j: number) => Math.abs(xs[i] - b1.x) + Math.abs(ys[j] - b1.y);
+  const h = (i: number, j: number) =>
+    Math.abs(xs[i] - b1.x) + Math.abs(ys[j] - b1.y);
   best[key(start[0], start[1], startDir)] = 0;
   pushHeap(h(start[0], start[1]), 0, key(start[0], start[1], startDir));
   let found = -1;
@@ -593,9 +674,13 @@ function search(
             : nd === 1
               ? upright[j * nx + i]
               : upright[nj * nx + i]);
-      if (nd !== d) c += BEND + 0.02 * (Math.abs(xs[i] - prefer.x) + Math.abs(ys[j] - prefer.y));
+      if (nd !== d)
+        c +=
+          BEND +
+          0.02 * (Math.abs(xs[i] - prefer.x) + Math.abs(ys[j] - prefer.y));
       // Arriving at the goal sideways costs the turn into the port.
-      if (ni === goal[0] && nj === goal[1] && nd !== endDir) c += nd === (endDir + 2) % 4 ? HIT : BEND;
+      if (ni === goal[0] && nj === goal[1] && nd !== endDir)
+        c += nd === (endDir + 2) % 4 ? HIT : BEND;
       const to = key(ni, nj, nd);
       if (from + c < best[to]) {
         best[to] = from + c;
@@ -630,14 +715,25 @@ export function routeLinks(
   const boxes = new Map(modules.map((m) => [m.id, m.bounds]));
   const back = backdropOf(modules);
   const ground = groundOf(modules, links);
-  const solid = modules.filter((m) => m.id !== back).map((m) => ({ ...boxOf(m.id, m.bounds), bounds: m.bounds }));
+  const solid = modules
+    .filter((m) => m.id !== back)
+    .map((m) => ({ ...boxOf(m.id, m.bounds), bounds: m.bounds }));
   const near = indexed(solid);
   /** What a module is to a link between two others: an end of it, something in its way, or
    * neither (ground under an end, or a thing lying on one, like a badge on a block's corner). */
-  const standing = (m: { id: string; bounds: Bounds }, a: string, b: string, A: Bounds, B: Bounds) =>
+  const standing = (
+    m: { id: string; bounds: Bounds },
+    a: string,
+    b: string,
+    A: Bounds,
+    B: Bounds,
+  ) =>
     m.id === a || m.id === b
       ? "end"
-      : inside(m.bounds, A) || inside(m.bounds, B) || inside(A, m.bounds) || inside(B, m.bounds)
+      : inside(m.bounds, A) ||
+          inside(m.bounds, B) ||
+          inside(A, m.bounds) ||
+          inside(B, m.bounds)
         ? undefined
         : "way";
   // A way is looked for within this of a link's two ends, and along the edges of whatever
@@ -650,7 +746,9 @@ export function routeLinks(
       r = u.x + u.width + REACH,
       b = u.y + u.height + REACH;
     const close = near(x, y, r, b);
-    const reach = close.filter((m) => !inside(m.bounds, A) && !inside(m.bounds, B));
+    const reach = close.filter(
+      (m) => !inside(m.bounds, A) && !inside(m.bounds, B),
+    );
     const ex = Math.min(x, ...reach.map((m) => m.x)) - MARGIN,
       ey = Math.min(y, ...reach.map((m) => m.y)) - MARGIN,
       er = Math.max(r, ...reach.map((m) => m.r)) + MARGIN,
@@ -663,7 +761,10 @@ export function routeLinks(
     const A = boxes.get(link.from.moduleId),
       B = boxes.get(link.to.moduleId);
     if (!A || !B) continue;
-    if (link.options.kind === "smooth" && link.from.moduleId !== link.to.moduleId) {
+    if (
+      link.options.kind === "smooth" &&
+      link.from.moduleId !== link.to.moduleId
+    ) {
       out.set(link.id, smooth(link, A, B));
       continue;
     }
@@ -694,7 +795,13 @@ export function routeLinks(
         return {
           id: end.moduleId,
           box,
-          fixed: { point: { x: box.x + share.x * box.width, y: box.y + share.y * box.height }, side },
+          fixed: {
+            point: {
+              x: box.x + share.x * box.width,
+              y: box.y + share.y * box.height,
+            },
+            side,
+          },
           sides: side ? [side] : SIDES,
         };
       }
@@ -708,22 +815,63 @@ export function routeLinks(
     for (const m of around(A, B)) {
       const is = standing(m, a.id, b.id, A, B);
       if (is === "end") obstacles.push(boxOf(m.id, m.bounds));
-      else if (is && ground.has(m.id)) obstacles.push({ ...boxOf(m.id, m.bounds), ground: true, grown: 0 });
+      else if (is && ground.has(m.id))
+        obstacles.push({ ...boxOf(m.id, m.bounds), ground: true, grown: 0 });
       else if (is) obstacles.push(boxOf(m.id, m.bounds, MARGIN));
       else if (ground.has(m.id) && (inside(m.bounds, A) || inside(m.bounds, B)))
         obstacles.push({ ...boxOf(m.id, m.bounds), rim: true, grown: 0 });
     }
     // What a ground keeps clear stands in the way like a module, unless an end is on it.
     for (const c of keepClear)
-      if (!holds(boxOf("", c.bounds), mid(A)) && !holds(boxOf("", c.bounds), mid(B)))
+      if (
+        !holds(boxOf("", c.bounds), mid(A)) &&
+        !holds(boxOf("", c.bounds), mid(B))
+      )
         obstacles.push({ ...boxOf(c.id, c.bounds, 4), soft: true, grown: 4 });
-    const sig = [A.x, A.y, A.width, A.height, B.x, B.y, B.width, B.height, link.options.bend, MARGIN, STUB];
+    const sig = [
+      A.x,
+      A.y,
+      A.width,
+      A.height,
+      B.x,
+      B.y,
+      B.width,
+      B.height,
+      link.options.bend,
+      MARGIN,
+      STUB,
+    ];
     sig.push(link.options.flow ? CODE[link.options.flow] : 0);
     for (const e of [a, b])
-      sig.push(e.fixed?.point.x ?? 0, e.fixed?.point.y ?? 0, e.fixed ? 1 : 0, e.sides.length === 1 ? CODE[e.sides[0]] : 0);
+      sig.push(
+        e.fixed?.point.x ?? 0,
+        e.fixed?.point.y ?? 0,
+        e.fixed ? 1 : 0,
+        e.sides.length === 1 ? CODE[e.sides[0]] : 0,
+      );
     for (const o of obstacles)
-      sig.push(o.x, o.y, o.r, o.b, (o.id === a.id ? 1 : o.id === b.id ? 2 : 0) + (o.soft ? 4 : 0) + (o.ground ? 8 : 0) + (o.rim ? 16 : 0));
-    plans.push({ sig, link, a, b, sa: a.sides[0], sb: b.sides[0], pa: mid(A), pb: mid(B), obstacles, points: [] });
+      sig.push(
+        o.x,
+        o.y,
+        o.r,
+        o.b,
+        (o.id === a.id ? 1 : o.id === b.id ? 2 : 0) +
+          (o.soft ? 4 : 0) +
+          (o.ground ? 8 : 0) +
+          (o.rim ? 16 : 0),
+      );
+    plans.push({
+      sig,
+      link,
+      a,
+      b,
+      sa: a.sides[0],
+      sb: b.sides[0],
+      pa: mid(A),
+      pb: mid(B),
+      obstacles,
+      points: [],
+    });
   }
   if (memo) {
     const routed = new Set(plans.map((p) => p.link.id));
@@ -738,25 +886,47 @@ export function routeLinks(
     const gap = Math.max(gapX, gapY);
     return Math.max(6, Math.min(STUB, gap > 0 ? gap / 2 : STUB));
   };
-  const clear = (p: Plan, pa: Point, pb: Point, s: number, sa: Side, sb: Side) => {
+  const clear = (
+    p: Plan,
+    pa: Point,
+    pb: Point,
+    s: number,
+    sa: Side,
+    sb: Side,
+  ) => {
     // A thing so close that the line cannot leave its port clear of it is met at its true
     // edge, by the margin given up there.
     const a1 = add(pa, DIR[sa], s),
       b1 = add(pb, DIR[sb], s);
     const close = (o: Box) =>
       !o.rim &&
-      o.id !== p.a.id && o.id !== p.b.id && (holds(o, a1) || holds(o, b1) || holds(o, pa) || holds(o, pb));
+      o.id !== p.a.id &&
+      o.id !== p.b.id &&
+      (holds(o, a1) || holds(o, b1) || holds(o, pa) || holds(o, pb));
     if (!p.obstacles.some(close)) return p.obstacles;
     return p.obstacles.flatMap((o) => {
       if (!close(o)) return [o];
       const by = o.grown ?? MARGIN;
-      const tight = { ...o, x: o.x + by, y: o.y + by, r: o.r - by, b: o.b - by, tight: true };
+      const tight = {
+        ...o,
+        x: o.x + by,
+        y: o.y + by,
+        r: o.r - by,
+        b: o.b - by,
+        tight: true,
+      };
       return holds(tight, pa) || holds(tight, pb) ? [] : [tight];
     });
   };
-  const pointOf = (e: EndSpec, side: Side, t = 0.5) => e.fixed?.point ?? portOn(e.box, side, t);
+  const pointOf = (e: EndSpec, side: Side, t = 0.5) =>
+    e.fixed?.point ?? portOn(e.box, side, t);
   // What following the figure's flow is worth to a link whose end lies ahead of its start.
-  const OPPOSITE: Record<Side, Side> = { left: "right", right: "left", top: "bottom", bottom: "top" };
+  const OPPOSITE: Record<Side, Side> = {
+    left: "right",
+    right: "left",
+    top: "bottom",
+    bottom: "top",
+  };
   const along = (p: Plan, sa: Side, sb: Side) => {
     const f = p.link.options.flow;
     if (!f) return 0;
@@ -770,14 +940,17 @@ export function routeLinks(
           : f === "right"
             ? B.x - (A.x + A.width)
             : A.x - (B.x + B.width);
-    return ahead >= 12 ? (sa === f ? 150 : 0) + (sb === OPPOSITE[f] ? 150 : 0) : 0;
+    return ahead >= 12
+      ? (sa === f ? 150 : 0) + (sb === OPPOSITE[f] ? 150 : 0)
+      : 0;
   };
   // First, which side each end leaves by, judged with every port at the middle of its side.
   // A pointed shape has one place a side, so each further link there costs more than the
   // last, and its branches leave by different points while they can.
   const pointed = new Set(modules.filter((m) => m.pointed).map((m) => m.id));
   const taken = new Map<string, number>();
-  const crowd = (id: string, side: Side) => (pointed.has(id) ? 90 * (taken.get(id + "\n" + side) ?? 0) : 0);
+  const crowd = (id: string, side: Side) =>
+    pointed.has(id) ? 90 * (taken.get(id + "\n" + side) ?? 0) : 0;
   const count = (p: Plan) => {
     for (const [id, side] of [
       [p.a.id, p.sa],
@@ -788,7 +961,11 @@ export function routeLinks(
   for (const p of plans) {
     const s = stubOf(p),
       k = 0.5 + Math.max(-0.45, Math.min(0.45, p.link.options.bend));
-    const key = [...p.sig, ...p.a.sides.map((side) => crowd(p.a.id, side)), ...p.b.sides.map((side) => crowd(p.b.id, side))];
+    const key = [
+      ...p.sig,
+      ...p.a.sides.map((side) => crowd(p.a.id, side)),
+      ...p.b.sides.map((side) => crowd(p.b.id, side)),
+    ];
     const known = memo?.get(p.link.id)?.sides;
     if (known && alike(known.key, key)) {
       p.sa = known.sa;
@@ -805,10 +982,18 @@ export function routeLinks(
         for (const pts of shapes(pa, sa, pb, sb, s, k, p.a.box, p.b.box)) {
           // A side that faces the other end is preferred among equals.
           const away =
-            (DIR[sa].x * (pb.x - pa.x) + DIR[sa].y * (pb.y - pa.y) < 0 ? 12 : 0) +
-            (DIR[sb].x * (pa.x - pb.x) + DIR[sb].y * (pa.y - pb.y) < 0 ? 12 : 0);
+            (DIR[sa].x * (pb.x - pa.x) + DIR[sa].y * (pb.y - pa.y) < 0
+              ? 12
+              : 0) +
+            (DIR[sb].x * (pa.x - pb.x) + DIR[sb].y * (pa.y - pb.y) < 0
+              ? 12
+              : 0);
           const cost =
-            costOf(pts, obstacles).cost + away - along(p, sa, sb) + crowd(p.a.id, sa) + crowd(p.b.id, sb);
+            costOf(pts, obstacles).cost +
+            away -
+            along(p, sa, sb) +
+            crowd(p.a.id, sa) +
+            crowd(p.b.id, sb);
           if (cost < bestCost - 0.01) {
             bestCost = cost;
             p.sa = sa;
@@ -817,7 +1002,10 @@ export function routeLinks(
         }
       }
     count(p);
-    memo?.set(p.link.id, { ...memo.get(p.link.id), sides: { key, sa: p.sa, sb: p.sb } });
+    memo?.set(p.link.id, {
+      ...memo.get(p.link.id),
+      sides: { key, sa: p.sa, sb: p.sb },
+    });
   }
   // Then the ports. Each link has its own on the side it meets, so every line can be followed
   // from end to end; they stand along the side in the order of where their other ends lie,
@@ -835,7 +1023,11 @@ export function routeLinks(
       const where = e.id + "\n" + side;
       const ports = sidesUsed.get(where) ?? new Map<string, Port>();
       sidesUsed.set(where, ports);
-      const group = p.link.options.trunk ? (end === "a" ? "out" : "in") : "own:" + p.link.id;
+      const group = p.link.options.trunk
+        ? end === "a"
+          ? "out"
+          : "in"
+        : "own:" + p.link.id;
       const port = ports.get(group) ?? { plans: [], toward: 0 };
       port.plans.push({ p, end });
       port.toward += along;
@@ -843,14 +1035,21 @@ export function routeLinks(
     }
   const share = new Map<Plan, { a: number; b: number }>();
   const upright = (side: Side) => side === "left" || side === "right";
-  type Row = { side: Side; box: Bounds; ports: Port[]; at: number[]; gap: number };
+  type Row = {
+    side: Side;
+    box: Bounds;
+    ports: Port[];
+    at: number[];
+    gap: number;
+  };
   const rows: Row[] = [];
   for (const [where, ports] of sidesUsed) {
     const side = where.split("\n")[1] as Side;
     const list = [...ports.entries()]
       .sort(
         ([mk, m], [nk, n]) =>
-          m.toward / m.plans.length - n.toward / n.plans.length || (mk < nk ? -1 : 1),
+          m.toward / m.plans.length - n.toward / n.plans.length ||
+          (mk < nk ? -1 : 1),
       )
       .map(([, port]) => port);
     const box = list[0].plans[0].p[list[0].plans[0].end].box;
@@ -858,13 +1057,18 @@ export function routeLinks(
       start = upright(side) ? box.y : box.x;
     const gap =
       list.length > 1 && !pointed.has(where.split("\n")[0])
-        ? Math.min(24, (length * (list.length > 4 ? 0.86 : 0.7)) / (list.length - 1))
+        ? Math.min(
+            24,
+            (length * (list.length > 4 ? 0.86 : 0.7)) / (list.length - 1),
+          )
         : 0;
     rows.push({
       side,
       box,
       ports: list,
-      at: list.map((_, i) => start + length / 2 + (i - (list.length - 1) / 2) * gap),
+      at: list.map(
+        (_, i) => start + length / 2 + (i - (list.length - 1) / 2) * gap,
+      ),
       gap,
     });
   }
@@ -873,11 +1077,13 @@ export function routeLinks(
   const placeOf = new Map<Plan, { a?: [Row, number]; b?: [Row, number] }>();
   for (const row of rows)
     row.ports.forEach((port, i) => {
-      for (const { p, end } of port.plans) placeOf.set(p, { ...placeOf.get(p), [end]: [row, i] });
+      for (const { p, end } of port.plans)
+        placeOf.set(p, { ...placeOf.get(p), [end]: [row, i] });
     });
   for (let pass = 0; pass < 3; pass++)
     for (const row of rows) {
-      if (pointed.has(row.ports[0].plans[0].p[row.ports[0].plans[0].end].id)) continue;
+      if (pointed.has(row.ports[0].plans[0].p[row.ports[0].plans[0].end].id))
+        continue;
       const length = upright(row.side) ? row.box.height : row.box.width,
         start = upright(row.side) ? row.box.y : row.box.x;
       const pad = Math.min(10, length * 0.14),
@@ -899,11 +1105,18 @@ export function routeLinks(
           const at = far[0].at[far[1]];
           return gapBetween > 0 && at >= lo && at <= hi ? [at] : [];
         });
-        return partners.length ? partners.reduce((m, n) => m + n, 0) / partners.length : row.at[i];
+        return partners.length
+          ? partners.reduce((m, n) => m + n, 0) / partners.length
+          : row.at[i];
       });
-      for (let i = 1; i < wanted.length; i++) wanted[i] = Math.max(wanted[i], wanted[i - 1] + row.gap);
-      wanted[wanted.length - 1] = Math.min(wanted[wanted.length - 1], Math.max(hi, row.at[wanted.length - 1]));
-      for (let i = wanted.length - 2; i >= 0; i--) wanted[i] = Math.min(wanted[i], wanted[i + 1] - row.gap);
+      for (let i = 1; i < wanted.length; i++)
+        wanted[i] = Math.max(wanted[i], wanted[i - 1] + row.gap);
+      wanted[wanted.length - 1] = Math.min(
+        wanted[wanted.length - 1],
+        Math.max(hi, row.at[wanted.length - 1]),
+      );
+      for (let i = wanted.length - 2; i >= 0; i--)
+        wanted[i] = Math.min(wanted[i], wanted[i + 1] - row.gap);
       row.at = wanted;
     }
   for (const row of rows) {
@@ -936,7 +1149,7 @@ export function routeLinks(
       const pa = pointOf(p.a, sa, t.a),
         pb = pointOf(p.b, sb, t.b);
       const obstacles = clear(p, pa, pb, s, sa, sb);
-      let best: ReturnType<typeof costOf> & { pts: Point[] } | undefined;
+      let best: (ReturnType<typeof costOf> & { pts: Point[] }) | undefined;
       for (const pts of shapes(pa, sa, pb, sb, s, k, p.a.box, p.b.box)) {
         const c = costOf(pts, obstacles);
         if (!best || c.cost < best.cost) best = { pts, ...c };
@@ -966,7 +1179,8 @@ export function routeLinks(
       // edge where this one has to run down it to reach its port.
       for (const sa of p.a.sides)
         for (const sb of p.b.sides) {
-          if (!(chosen.hits || chosen.edge) || (sa === p.sa && sb === p.sb)) continue;
+          if (!(chosen.hits || chosen.edge) || (sa === p.sa && sb === p.sb))
+            continue;
           const other = attempt(sa, sb);
           if (other.cost < chosen.cost) {
             chosen = other;
@@ -990,7 +1204,12 @@ export function routeLinks(
       B = boxes.get(b)!;
     const xs = line.map((q) => q.x),
       ys = line.map((q) => q.y);
-    return near(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys))
+    return near(
+      Math.min(...xs),
+      Math.min(...ys),
+      Math.max(...xs),
+      Math.max(...ys),
+    )
       .filter((m) => !ground.has(m.id) && standing(m, a, b, A, B) === "way")
       .filter((m) => {
         const o = boxOf(m.id, m.bounds, -inset);
@@ -1011,13 +1230,22 @@ export function routeLinks(
   // Straight and curved lines say what they pass through, though nothing moves them.
   for (const link of links) {
     const r = out.get(link.id);
-    if (!r || r.kind === "elbow" || link.from.moduleId === link.to.moduleId) continue;
-    r.crosses = passes(sampled(r, link.options.bend), link.from.moduleId, link.to.moduleId, 2);
+    if (!r || r.kind === "elbow" || link.from.moduleId === link.to.moduleId)
+      continue;
+    r.crosses = passes(
+      sampled(r, link.options.bend),
+      link.from.moduleId,
+      link.to.moduleId,
+      2,
+    );
   }
   words(
     links,
     out,
-    [...modules.filter((m) => !ground.has(m.id)), ...keepClear.map((c) => ({ id: c.id + " ", bounds: c.bounds }))],
+    [
+      ...modules.filter((m) => !ground.has(m.id)),
+      ...keepClear.map((c) => ({ id: c.id + " ", bounds: c.bounds })),
+    ],
     union(modules.map((m) => m.bounds)),
   );
   return out;
@@ -1051,21 +1279,35 @@ export function inTheWay<M extends { id: string; bounds: Bounds }>(
 }
 /** A line that is not routed, as the library's arrow draws it, in short straight steps: a
  * bow between its ends for a curve, one sweep square to its sides for a smooth one. */
-export function sampled(r: Pick<Routed, "kind" | "points" | "fromSide" | "toSide">, bend = 0): Point[] {
+export function sampled(
+  r: Pick<Routed, "kind" | "points" | "fromSide" | "toSide">,
+  bend = 0,
+): Point[] {
   const a = r.points[0],
     b = r.points.at(-1)!;
   if (r.kind === "elbow" || r.kind === "straight") return r.points;
   let c1: Point, c2: Point;
   if (r.kind === "smooth") {
     const far = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
-    const da = r.fromSide ? DIR[r.fromSide] : far ? { x: Math.sign(b.x - a.x) || 1, y: 0 } : { x: 0, y: Math.sign(b.y - a.y) || 1 },
+    const da = r.fromSide
+        ? DIR[r.fromSide]
+        : far
+          ? { x: Math.sign(b.x - a.x) || 1, y: 0 }
+          : { x: 0, y: Math.sign(b.y - a.y) || 1 },
       db = r.toSide ? DIR[r.toSide] : { x: -da.x, y: -da.y };
-    const reach = Math.max(18, (Math.abs(da.x ? b.x - a.x : b.y - a.y) || Math.hypot(b.x - a.x, b.y - a.y)) * 0.5);
+    const reach = Math.max(
+      18,
+      (Math.abs(da.x ? b.x - a.x : b.y - a.y) ||
+        Math.hypot(b.x - a.x, b.y - a.y)) * 0.5,
+    );
     c1 = add(a, da, reach);
     c2 = add(b, db, reach);
   } else {
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-    const c = { x: (a.x + b.x) / 2 - ((b.y - a.y) / len) * bend * len, y: (a.y + b.y) / 2 + ((b.x - a.x) / len) * bend * len };
+    const c = {
+      x: (a.x + b.x) / 2 - ((b.y - a.y) / len) * bend * len,
+      y: (a.y + b.y) / 2 + ((b.x - a.x) / len) * bend * len,
+    };
     // The same bow as a cubic.
     c1 = { x: a.x + ((c.x - a.x) * 2) / 3, y: a.y + ((c.y - a.y) * 2) / 3 };
     c2 = { x: b.x + ((c.x - b.x) * 2) / 3, y: b.y + ((c.y - b.y) * 2) / 3 };
@@ -1074,8 +1316,16 @@ export function sampled(r: Pick<Routed, "kind" | "points" | "fromSide" | "toSide
     const t = i / 16,
       u = 1 - t;
     return {
-      x: u * u * u * a.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * b.x,
-      y: u * u * u * a.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * b.y,
+      x:
+        u * u * u * a.x +
+        3 * u * u * t * c1.x +
+        3 * u * t * t * c2.x +
+        t * t * t * b.x,
+      y:
+        u * u * u * a.y +
+        3 * u * u * t * c1.y +
+        3 * u * t * t * c2.y +
+        t * t * t * b.y,
     };
   });
 }
@@ -1083,7 +1333,12 @@ export function sampled(r: Pick<Routed, "kind" | "points" | "fromSide" | "toSide
  * branches of a tree or a mind map do: along the figure's flow where its end lies ahead,
  * else across whichever gap parts the two modules. */
 function smooth(link: RouteLink, A: Bounds, B: Bounds): Routed {
-  const OPP: Record<Side, Side> = { left: "right", right: "left", top: "bottom", bottom: "top" };
+  const OPP: Record<Side, Side> = {
+    left: "right",
+    right: "left",
+    top: "bottom",
+    bottom: "top",
+  };
   const gapX = Math.max(B.x - (A.x + A.width), A.x - (B.x + B.width)),
     gapY = Math.max(B.y - (A.y + A.height), A.y - (B.y + B.height));
   const flow = link.options.flow;
@@ -1091,17 +1346,35 @@ function smooth(link: RouteLink, A: Bounds, B: Bounds): Routed {
   // the way words read and a mind map branches.
   const level = flow ? flow === "left" || flow === "right" : gapX > 0;
   const lone = level && gapX <= 0 ? false : !level && gapY <= 0 ? true : level;
-  let sa: Side = lone ? (mid(B).x >= mid(A).x ? "right" : "left") : mid(B).y >= mid(A).y ? "bottom" : "top";
+  let sa: Side = lone
+    ? mid(B).x >= mid(A).x
+      ? "right"
+      : "left"
+    : mid(B).y >= mid(A).y
+      ? "bottom"
+      : "top";
   let sb: Side = OPP[sa];
   const place = (end: LinkEnd, box: Bounds, side: Side) => {
     if (Array.isArray(end.at))
-      return { p: { x: box.x + end.at[0] * box.width, y: box.y + end.at[1] * box.height }, side: sideOf({ x: end.at[0], y: end.at[1] }) };
+      return {
+        p: {
+          x: box.x + end.at[0] * box.width,
+          y: box.y + end.at[1] * box.height,
+        },
+        side: sideOf({ x: end.at[0], y: end.at[1] }),
+      };
     const on = end.at ?? side;
     return { p: portOn(box, on), side: on as Side | null };
   };
   const a = place(link.from, A, sa),
     b = place(link.to, B, sb);
-  return { kind: "smooth", points: [a.p, b.p], fromSide: a.side, toSide: b.side, crosses: [] };
+  return {
+    kind: "smooth",
+    points: [a.p, b.p],
+    fromSide: a.side,
+    toSide: b.side,
+    crosses: [],
+  };
 }
 /** A link from a module back to itself: out of its right side and round into its top. */
 function loop(box: Bounds, nth: number): Routed {
@@ -1126,18 +1399,31 @@ function loop(box: Bounds, nth: number): Routed {
  * a shared channel. Links from one port, or into one, are branches of a trunk and stay
  * together; any others run side by side, a lane each, ordered so they cross least. */
 function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
-  type Stretch = { p: Plan; i: number; upright: boolean; at: number; lo: number; hi: number; down: boolean; lead: number };
+  type Stretch = {
+    p: Plan;
+    i: number;
+    upright: boolean;
+    at: number;
+    lo: number;
+    hi: number;
+    down: boolean;
+    lead: number;
+    /** The first or last stretch, which belongs to its port: others make way for it. */
+    fixed: boolean;
+  };
   const stretches: Stretch[] = [];
   for (const p of plans) {
     const pts = p.points;
     // Only a stretch between two turns can move; the first and last belong to their ports.
-    for (let i = 1; i < pts.length - 2; i++) {
+    for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i],
         b = pts[i + 1];
       const upright = Math.abs(a.x - b.x) < 0.01;
+      if (!upright && Math.abs(a.y - b.y) >= 0.01) continue;
       stretches.push({
         p,
         i,
+        fixed: i === 0 || i === pts.length - 2,
         upright,
         at: upright ? a.x : a.y,
         lo: Math.min(upright ? a.y : a.x, upright ? b.y : b.x),
@@ -1147,7 +1433,8 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
       });
     }
   }
-  const same = (m: Point, n: Point) => Math.abs(m.x - n.x) < 0.5 && Math.abs(m.y - n.y) < 0.5;
+  const same = (m: Point, n: Point) =>
+    Math.abs(m.x - n.x) < 0.5 && Math.abs(m.y - n.y) < 0.5;
   const kin = (m: Plan, n: Plan) => same(m.pa, n.pa) || same(m.pb, n.pb);
   const used = new Set<Stretch>();
   for (const s of stretches) {
@@ -1167,10 +1454,14 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
           used.add(o);
           group.push(o);
         }
-    // Branches of one trunk take one lane.
+    if (group.every((g) => g.fixed)) continue;
+    // Branches of one trunk take one lane, and so do the stretches held by ports, which
+    // cannot move: the others take lanes beside them.
     const lanes: Stretch[][] = [];
     for (const g of group) {
-      const lane = lanes.find((l) => l.some((o) => kin(o.p, g.p)));
+      const lane = lanes.find(
+        (l) => (g.fixed && l[0].fixed) || l.some((o) => kin(o.p, g.p)),
+      );
       if (lane) lane.push(g);
       else lanes.push([g]);
     }
@@ -1179,11 +1470,24 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
     // the other way round for those running up or left: they then need not cross.
     const order = (l: Stretch[]) => (l[0].down ? -l[0].lead : 1e6 + l[0].lead);
     lanes.sort((m, n) => order(m) - order(n));
+    // Where the lanes go: centred on the line, or, where one is held, out from that one,
+    // in order or else all to one side of it.
+    const held = lanes.findIndex((l) => l.some((g) => g.fixed));
+    const places: ((n: number) => number)[] =
+      held < 0
+        ? [(n) => n - (lanes.length - 1) / 2]
+        : [
+            (n) => n - held,
+            (n) => (n === held ? 0 : n < held ? n + 1 : n),
+            (n) => (n === held ? 0 : n < held ? -(n + 1) : -n),
+          ];
     let step = LANE;
+    let place = places[0];
     const room = (by: number) =>
       lanes.every((lane, n) =>
         lane.every((g) => {
-          const shift = (n - (lanes.length - 1) / 2) * by;
+          const shift = place(n) * by;
+          if (g.fixed) return shift === 0;
           const pts = g.p.points,
             a = pts[g.i],
             b = pts[g.i + 1];
@@ -1210,17 +1514,29 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
               if (o.ground || o.rim) return false;
               // Into a thing's margin is allowed where the lanes need it; into the thing
               // itself never, unless the stretch already ran there.
-              const by = (o.grown ?? (o.id === g.p.a.id || o.id === g.p.b.id ? 0 : MARGIN)) - 3;
-              const itself = { ...o, x: o.x + by, y: o.y + by, r: o.r - by, b: o.b - by };
-              return through(moved[0], moved[1], itself) && !through(a, b, itself);
+              const by =
+                (o.grown ??
+                  (o.id === g.p.a.id || o.id === g.p.b.id ? 0 : MARGIN)) - 3;
+              const itself = {
+                ...o,
+                x: o.x + by,
+                y: o.y + by,
+                r: o.r - by,
+                b: o.b - by,
+              };
+              return (
+                through(moved[0], moved[1], itself) && !through(a, b, itself)
+              );
             })
           );
         }),
       );
-    while (step >= 2.5 && !room(step)) step *= 0.75;
+    const fits = () => places.some((f) => ((place = f), room(step)));
+    while (step >= 2.5 && !fits()) step *= 0.75;
     if (step < 2.5) continue;
     lanes.forEach((lane, n) => {
-      const shift = (n - (lanes.length - 1) / 2) * step;
+      const shift = place(n) * step;
+      if (!shift) return;
       for (const g of lane) {
         const pts = g.p.points;
         if (g.upright) {
@@ -1244,20 +1560,31 @@ function words(
   whole: Bounds,
 ) {
   const placed: Box[] = [];
-  const near = indexed(modules.map((m) => ({ ...boxOf(m.id, m.bounds, 3), bounds: m.bounds })));
+  const near = indexed(
+    modules.map((m) => ({ ...boxOf(m.id, m.bounds, 3), bounds: m.bounds })),
+  );
   // Every stretch of every line, to know which of them a place for words would lie on.
   const stretches = indexed(
     [...routes].flatMap(([id, r]) =>
       r.points.slice(1).map((q, i) => {
         const p = r.points[i];
-        return { id, p, q, x: Math.min(p.x, q.x), y: Math.min(p.y, q.y), r: Math.max(p.x, q.x), b: Math.max(p.y, q.y) };
+        return {
+          id,
+          p,
+          q,
+          x: Math.min(p.x, q.x),
+          y: Math.min(p.y, q.y),
+          r: Math.max(p.x, q.x),
+          b: Math.max(p.y, q.y),
+        };
       }),
     ),
   );
   // Words stay within the figure: beyond its edge they are cut from a picture of it.
   const figure = boxOf("", whole);
   const overlap = (m: Box, n: Box) =>
-    Math.max(0, Math.min(m.r, n.r) - Math.max(m.x, n.x)) * Math.max(0, Math.min(m.b, n.b) - Math.max(m.y, n.y));
+    Math.max(0, Math.min(m.r, n.r) - Math.max(m.x, n.x)) *
+    Math.max(0, Math.min(m.b, n.b) - Math.max(m.y, n.y));
   for (const link of links) {
     const r = routes.get(link.id),
       size = link.options.label;
@@ -1287,15 +1614,24 @@ function words(
             r: at.x + size.width / 2,
             b: at.y + size.height / 2,
           };
-          let score = Math.abs(along - link.options.labelAt) * 220 + (n ? 14 : 0);
+          let score =
+            Math.abs(along - link.options.labelAt) * 220 + (n ? 14 : 0);
           // Words want to lie along a level stretch long enough to hold them.
           if (level && len < size.width + 8 && !n) score += 30;
-          if (box.x < figure.x || box.y < figure.y || box.r > figure.r || box.b > figure.b) score += 400;
-          for (const m of near(box.x, box.y, box.r, box.b)) score += Math.min(4000, overlap(box, m) * 4);
+          if (
+            box.x < figure.x ||
+            box.y < figure.y ||
+            box.r > figure.r ||
+            box.b > figure.b
+          )
+            score += 400;
+          for (const m of near(box.x, box.y, box.r, box.b))
+            score += Math.min(4000, overlap(box, m) * 4);
           for (const o of placed) score += Math.min(4000, overlap(box, o) * 6);
           const struck = new Set<string>();
           for (const s of stretches(box.x, box.y, box.r, box.b))
-            if (s.id !== link.id && !struck.has(s.id) && through(s.p, s.q, box)) struck.add(s.id);
+            if (s.id !== link.id && !struck.has(s.id) && through(s.p, s.q, box))
+              struck.add(s.id);
           score += 260 * struck.size;
           if (!best || score < best.score - 0.01) best = { at, score };
         }
@@ -1337,12 +1673,24 @@ export function connect(
   spacing: Partial<Spacing> = {},
 ): (Connection | undefined)[] {
   const byId = new Map(boxes.map((b) => [b.id, b.bounds]));
-  const near = indexed(boxes.map((b) => ({ ...boxOf(b.id, b.bounds, 2), bounds: b.bounds })));
+  const near = indexed(
+    boxes.map((b) => ({ ...boxOf(b.id, b.bounds, 2), bounds: b.bounds })),
+  );
   const hits = (line: Point[], a: string, b: string) => {
     const xs = line.map((p) => p.x),
       ys = line.map((p) => p.y);
-    return near(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys))
-      .filter((o) => o.id !== a && o.id !== b && line.some((q, i) => i > 0 && through(line[i - 1], q, o)))
+    return near(
+      Math.min(...xs),
+      Math.min(...ys),
+      Math.max(...xs),
+      Math.max(...ys),
+    )
+      .filter(
+        (o) =>
+          o.id !== a &&
+          o.id !== b &&
+          line.some((q, i) => i > 0 && through(line[i - 1], q, o)),
+      )
       .map((o) => o.id);
   };
   const unit = (p: Point, q: Point) => {
@@ -1354,7 +1702,10 @@ export function connect(
     const c = mid(R);
     const dx = to.x - c.x,
       dy = to.y - c.y;
-    const k = Math.min((R.width / 2 + 4) / Math.abs(dx || 1e-6), (R.height / 2 + 4) / Math.abs(dy || 1e-6));
+    const k = Math.min(
+      (R.width / 2 + 4) / Math.abs(dx || 1e-6),
+      (R.height / 2 + 4) / Math.abs(dy || 1e-6),
+    );
     return { x: c.x + dx * k, y: c.y + dy * k };
   };
   type Bowed = { p: Point; c: Point; q: Point; crosses: string[] };
@@ -1368,7 +1719,10 @@ export function connect(
     const bow = Math.min(len * 0.2, 48);
     let best: Bowed | undefined;
     for (const by of [bow, -bow, bow * 2, -bow * 2]) {
-      const c = { x: (p.x + q.x) / 2 - ((q.y - p.y) / len) * by, y: (p.y + q.y) / 2 + ((q.x - p.x) / len) * by };
+      const c = {
+        x: (p.x + q.x) / 2 - ((q.y - p.y) / len) * by,
+        y: (p.y + q.y) / 2 + ((q.x - p.x) / len) * by,
+      };
       const curve = Array.from({ length: 17 }, (_, i) => {
         const t = i / 16;
         return {
@@ -1377,7 +1731,8 @@ export function connect(
         };
       });
       const crosses = hits(curve, line.from, line.to);
-      if (!best || crosses.length < best.crosses.length) best = { p, c, q, crosses };
+      if (!best || crosses.length < best.crosses.length)
+        best = { p, c, q, crosses };
       if (!crosses.length) break;
     }
     return best;
@@ -1391,7 +1746,11 @@ export function connect(
               id: String(i),
               from: { moduleId: line.from },
               to: { moduleId: line.to },
-              options: routing({ route: "elbow", label: line.label, size: line.size }),
+              options: routing({
+                route: "elbow",
+                label: line.label,
+                size: line.size,
+              }),
             },
           ]
         : [],
@@ -1402,7 +1761,8 @@ export function connect(
   );
   const placed: Box[] = [];
   const overlap = (m: Box, n: Box) =>
-    Math.max(0, Math.min(m.r, n.r) - Math.max(m.x, n.x)) * Math.max(0, Math.min(m.b, n.b) - Math.max(m.y, n.y));
+    Math.max(0, Math.min(m.r, n.r) - Math.max(m.x, n.x)) *
+    Math.max(0, Math.min(m.b, n.b) - Math.max(m.y, n.y));
   return lines.map((line, i) => {
     const bow = bowed[i];
     if (!bow) return undefined;
@@ -1425,7 +1785,13 @@ export function connect(
       path += `L${pts[n - 1].x} ${pts[n - 1].y}`;
       if (round.label) {
         const size = routing({ label: line.label, size: line.size }).label!;
-        placed.push({ id: "", x: round.label.x - size.width / 2, y: round.label.y - size.height / 2, r: round.label.x + size.width / 2, b: round.label.y + size.height / 2 });
+        placed.push({
+          id: "",
+          x: round.label.x - size.width / 2,
+          y: round.label.y - size.height / 2,
+          r: round.label.x + size.width / 2,
+          b: round.label.y + size.height / 2,
+        });
       }
       return {
         path,
@@ -1446,9 +1812,18 @@ export function connect(
           x: (1 - t) * (1 - t) * p.x + 2 * t * (1 - t) * c.x + t * t * q.x,
           y: (1 - t) * (1 - t) * p.y + 2 * t * (1 - t) * c.y + t * t * q.y,
         };
-        const box: Box = { id: "", x: at.x - size.width / 2, y: at.y - size.height / 2, r: at.x + size.width / 2, b: at.y + size.height / 2 };
+        const box: Box = {
+          id: "",
+          x: at.x - size.width / 2,
+          y: at.y - size.height / 2,
+          r: at.x + size.width / 2,
+          b: at.y + size.height / 2,
+        };
         const over =
-          near(box.x, box.y, box.r, box.b).reduce((sum, o) => sum + overlap(box, o), 0) +
+          near(box.x, box.y, box.r, box.b).reduce(
+            (sum, o) => sum + overlap(box, o),
+            0,
+          ) +
           placed.reduce((sum, o) => sum + overlap(box, o), 0) +
           Math.abs(t - 0.5);
         if (over < least - 0.01) {
@@ -1456,7 +1831,13 @@ export function connect(
           label = at;
         }
       }
-      placed.push({ id: "", x: label!.x - size.width / 2, y: label!.y - size.height / 2, r: label!.x + size.width / 2, b: label!.y + size.height / 2 });
+      placed.push({
+        id: "",
+        x: label!.x - size.width / 2,
+        y: label!.y - size.height / 2,
+        r: label!.x + size.width / 2,
+        b: label!.y + size.height / 2,
+      });
     }
     return {
       path: `M${p.x} ${p.y}Q${c.x} ${c.y} ${q.x} ${q.y}`,
