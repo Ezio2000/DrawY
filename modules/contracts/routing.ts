@@ -55,6 +55,8 @@ type Box = {
   /** A frame an end stands in: nothing to go round, but its edge is drawn, and a line run
    * down it would read as part of the frame. */
   rim?: boolean;
+  /** One of the link's own ends, at its true size. */
+  end?: boolean;
   /** So near a port that the line leaves beside it with no margin: a side to avoid. */
   tight?: boolean;
   /** How far it was grown past the thing itself. */
@@ -241,7 +243,9 @@ export function groundOf(
 }
 
 const BEND = 28,
-  HIT = 1600;
+  HIT = 1600,
+  /** What running within the margin kept round a thing costs, short of passing through it. */
+  SQUEEZE = 60;
 /** What passing through a thing costs a line, in units of its length. */
 const toll = (o: Box) => (o.ground ? HIT / 8 : o.soft ? HIT / 4 : HIT);
 /** The room lines keep: clear of what they pass, out of a port before they turn, and between
@@ -434,25 +438,66 @@ function costOf(pts: Point[], obstacles: Box[]) {
     over = 0,
     edge = 0;
   let cost = lengthOf(pts) + BEND * Math.max(0, pts.length - 2);
+  // What the line spans, to pass over what lies wholly beside it (it is most of them).
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
+  for (const p of pts) {
+    if (p.x < x0) x0 = p.x;
+    if (p.x > x1) x1 = p.x;
+    if (p.y < y0) y0 = p.y;
+    if (p.y > y1) y1 = p.y;
+  }
+  const NEAR = 6;
+  const inner: Box = { id: "", x: 0, y: 0, r: 0, b: 0 };
   for (const o of obstacles) {
     if (o.tight) cost += 140;
-    for (let i = 1; i < pts.length; i++)
-      if (
-        o.rim
-          ? alongEdge(pts[i - 1], pts[i], o)
-          : through(pts[i - 1], pts[i], o) ||
-            (o.ground && alongEdge(pts[i - 1], pts[i], o))
-      ) {
-        if (o.rim || (o.ground && !through(pts[i - 1], pts[i], o))) edge++;
+    if (o.r < x0 - NEAR || o.x > x1 + NEAR || o.b < y0 - NEAR || o.y > y1 + NEAR) continue;
+    // Into a grown thing's margin, short of the thing itself.
+    if (!drawnEdge(o)) {
+      const g = o.grown ?? 0;
+      inner.x = o.x + g;
+      inner.y = o.y + g;
+      inner.r = o.r - g;
+      inner.b = o.b - g;
+      let into = false,
+        cut = false,
+        along = false;
+      for (let i = 1; i < pts.length; i++) {
+        if (!into && through(pts[i - 1], pts[i], o)) into = true;
+        if (through(pts[i - 1], pts[i], inner)) {
+          cut = true;
+          break;
+        }
+        if (!along && alongEdge(pts[i - 1], pts[i], inner)) along = true;
+      }
+      if (cut) {
+        hits++;
+        cost += toll(o);
+      } else if (into) {
+        if (along) edge++;
+        cost += SQUEEZE;
+      }
+      continue;
+    }
+    for (let i = 1; i < pts.length; i++) {
+      const crossed = !o.rim && through(pts[i - 1], pts[i], o);
+      if (crossed || alongEdge(pts[i - 1], pts[i], o)) {
+        if (!crossed) edge++;
         if (o.ground || o.rim) over++;
-        else hits++;
-        cost += o.rim ? HIT / 8 : toll(o);
+        else if (crossed) hits++;
+        cost += crossed ? toll(o) : HIT / 8;
         break;
       }
+    }
   }
   return { hits, over, edge, cost };
 }
-/** Whether a stretch runs down the drawn edge of a frame, where it cannot be told from it. */
+/** Whether a thing's box is its drawn outline, not one grown by a margin: a frame, an end, or
+ * a thing met at its true edge because it stands too close to a port for any margin. */
+const drawnEdge = (o: Box) => !!(o.ground || o.rim || o.end || o.tight);
+/** Whether a stretch runs down the drawn edge of a thing, where it cannot be told from it. */
 function alongEdge(p: Point, q: Point, o: Box) {
   const NEAR = 6,
     LONG = 24;
@@ -501,38 +546,35 @@ function search(
     [...new Set(values.map((v) => Math.round(v * 100) / 100))].sort(
       (m, n) => m - n,
     );
-  // A group's frame is drawn, so a line along its edge would melt into it: the lines a route
-  // may take by a frame keep a margin off its edge on either side, and run down the middle of
-  // a gap too narrow for that.
-  const frames = near.filter((o) => o.ground || o.rim);
-  const off = (edges: number[]) => {
-    const sorted = [...new Set(edges)].sort((m, n) => m - n);
-    const lines = sorted.flatMap((e) => [e - margin, e + margin]);
-    for (let n = 1; n < sorted.length; n++)
-      if (sorted[n] - sorted[n - 1] < margin * 2)
-        lines.push((sorted[n] + sorted[n - 1]) / 2);
-    const keep = Math.min(margin / 2, 6);
-    return lines.filter((v) => !sorted.some((e) => Math.abs(v - e) < keep));
+  // A drawn outline (a frame, an end, a thing met at its true edge) would swallow a line run
+  // down it: the lines a route may take by one keep a margin off its edge on either side, and
+  // run down the middle of a gap too narrow for that.
+  const frames = near.filter(drawnEdge),
+    solid = near.filter((o) => !drawnEdge(o));
+  const keep = Math.min(margin / 2, 6);
+  const lines = (fixed: number[], drawn: number[], grown: number[], truly: number[]) => {
+    // Where every thing's outline is drawn: its own edge, inside the margin it was grown by.
+    const edges = [...new Set([...drawn, ...truly])].sort((m, n) => m - n);
+    const mids: number[] = [];
+    for (let n = 1; n < edges.length; n++)
+      if (edges[n] - edges[n - 1] > keep * 2 && edges[n] - edges[n - 1] < margin * 2)
+        mids.push((edges[n] + edges[n - 1]) / 2);
+    const clear = (v: number) => !edges.some((e) => Math.abs(v - e) < keep);
+    return line([...fixed, ...[...grown, ...drawn.flatMap((e) => [e - margin, e + margin]), ...mids].filter(clear)]);
   };
-  const solid = near.filter((o) => !o.ground && !o.rim);
-  const xs = line([
-      a1.x,
-      b1.x,
-      prefer.x,
-      region.x,
-      region.r,
-      ...solid.flatMap((o) => [o.x, o.r]),
-      ...off(frames.flatMap((o) => [o.x, o.r])),
-    ]),
-    ys = line([
-      a1.y,
-      b1.y,
-      prefer.y,
-      region.y,
-      region.b,
-      ...solid.flatMap((o) => [o.y, o.b]),
-      ...off(frames.flatMap((o) => [o.y, o.b])),
-    ]);
+  const by = (o: Box) => (o.grown ?? margin);
+  const xs = lines(
+      [a1.x, b1.x, prefer.x, region.x, region.r],
+      frames.flatMap((o) => [o.x, o.r]),
+      solid.flatMap((o) => [o.x, o.r]),
+      solid.flatMap((o) => [o.x + by(o), o.r - by(o)]),
+    ),
+    ys = lines(
+      [a1.y, b1.y, prefer.y, region.y, region.b],
+      frames.flatMap((o) => [o.y, o.b]),
+      solid.flatMap((o) => [o.y, o.b]),
+      solid.flatMap((o) => [o.y + by(o), o.b - by(o)]),
+    );
   const nx = xs.length,
     ny = ys.length;
   const ix = (v: number) => xs.indexOf(Math.round(v * 100) / 100),
@@ -617,9 +659,18 @@ function search(
     }
     return lo;
   };
+  // A thing grown by a margin costs a little within the margin and its full toll within
+  // itself, so a line squeezes between two things standing close rather than cut one.
+  const paints: { o: Box; hit: number }[] = [];
   for (const o of near) {
     if (o.rim) continue;
-    const hit = toll(o);
+    if (drawnEdge(o)) paints.push({ o, hit: toll(o) });
+    else {
+      const g = o.grown ?? margin;
+      paints.push({ o, hit: SQUEEZE }, { o: { ...o, x: o.x + g, y: o.y + g, r: o.r - g, b: o.b - g }, hit: toll(o) - SQUEEZE });
+    }
+  }
+  for (const { o, hit } of paints) {
     // Lines strictly inside it, and steps that overlap it.
     const j0 = first(ys, o.y),
       i0 = first(xs, o.x);
@@ -814,10 +865,10 @@ export function routeLinks(
     const obstacles: Box[] = [];
     for (const m of around(A, B)) {
       const is = standing(m, a.id, b.id, A, B);
-      if (is === "end") obstacles.push(boxOf(m.id, m.bounds));
+      if (is === "end") obstacles.push({ ...boxOf(m.id, m.bounds), end: true });
       else if (is && ground.has(m.id))
         obstacles.push({ ...boxOf(m.id, m.bounds), ground: true, grown: 0 });
-      else if (is) obstacles.push(boxOf(m.id, m.bounds, MARGIN));
+      else if (is) obstacles.push({ ...boxOf(m.id, m.bounds, MARGIN), grown: MARGIN });
       else if (ground.has(m.id) && (inside(m.bounds, A) || inside(m.bounds, B)))
         obstacles.push({ ...boxOf(m.id, m.bounds), rim: true, grown: 0 });
     }
@@ -914,6 +965,7 @@ export function routeLinks(
         r: o.r - by,
         b: o.b - by,
         tight: true,
+        grown: 0,
       };
       return holds(tight, pa) || holds(tight, pb) ? [] : [tight];
     });
@@ -1436,14 +1488,72 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
   const same = (m: Point, n: Point) =>
     Math.abs(m.x - n.x) < 0.5 && Math.abs(m.y - n.y) < 0.5;
   const kin = (m: Plan, n: Plan) => same(m.pa, n.pa) || same(m.pb, n.pb);
+  /** A lone stretch run closer to a thing than the margin, where there is room either side
+   * of it, moves to the middle of the gap: two things standing close leave one way between,
+   * and a line down the middle of it is told from both. */
+  /** The free way either side of a stretch: from the nearest thing on one side to the nearest
+   * on the other, over the length it runs; none where it runs through something already. */
+  const gapOf = (g: Stretch): [number, number] | undefined => {
+    let lo = -Infinity,
+      hi = Infinity;
+    const itself = (o: Box) => {
+      const by = o.grown ?? 0;
+      return { ...o, x: o.x + by, y: o.y + by, r: o.r - by, b: o.b - by };
+    };
+    for (const o of g.p.obstacles) {
+      if (o.ground || o.rim || o.soft) continue;
+      const t = itself(o);
+      const [from, to, near, far] = g.upright ? [t.y, t.b, t.x, t.r] : [t.x, t.r, t.y, t.b];
+      if (to <= g.lo + 1 || from >= g.hi - 1) continue;
+      if (far <= g.at + 0.5) lo = Math.max(lo, far);
+      else if (near >= g.at - 0.5) hi = Math.min(hi, near);
+      else return undefined; // It runs through one already: leave it to what said so.
+    }
+    return Number.isFinite(lo) && Number.isFinite(hi) && hi - lo >= 4 ? [lo, hi] : undefined;
+  };
+  const centre = (g: Stretch) => {
+    const pts = g.p.points,
+      a = pts[g.i],
+      b = pts[g.i + 1];
+    const gap = gapOf(g);
+    if (!gap) return;
+    const [lo, hi] = gap;
+    const target = hi - lo >= MARGIN * 2 ? Math.min(Math.max(g.at, lo + MARGIN), hi - MARGIN) : (lo + hi) / 2;
+    const shift = target - g.at;
+    if (Math.abs(shift) < 0.5) return;
+    const before = pts[g.i - 1],
+      after = pts[g.i + 2];
+    const moved = g.upright
+      ? [{ x: a.x + shift, y: a.y }, { x: b.x + shift, y: b.y }]
+      : [{ x: a.x, y: a.y + shift }, { x: b.x, y: b.y + shift }];
+    // It must not pass its neighbours' far ends.
+    const keeps = g.upright
+      ? Math.sign(a.x - before.x) === Math.sign(moved[0].x - before.x) && Math.sign(after.x - b.x) === Math.sign(after.x - moved[1].x)
+      : Math.sign(a.y - before.y) === Math.sign(moved[0].y - before.y) && Math.sign(after.y - b.y) === Math.sign(after.y - moved[1].y);
+    if (!keeps) return;
+    pts[g.i] = moved[0];
+    pts[g.i + 1] = moved[1];
+  };
   const used = new Set<Stretch>();
+  // Stretches by which way they run and where, in bins as wide as two may be apart and still
+  // lie together, so each looks only at its own bin and the two beside it.
+  const bins = new Map<string, Stretch[]>();
+  const binOf = (upright: boolean, at: number) => (upright ? "|" : "-") + Math.floor(at / 5);
+  for (const s of stretches) {
+    const k = binOf(s.upright, s.at);
+    const bin = bins.get(k);
+    if (bin) bin.push(s);
+    else bins.set(k, [s]);
+  }
+  const besides = (g: Stretch) =>
+    [-1, 0, 1].flatMap((d) => bins.get((g.upright ? "|" : "-") + (Math.floor(g.at / 5) + d)) ?? []);
   for (const s of stretches) {
     if (used.has(s)) continue;
     // Everything lying along the same line as this stretch, gathered through overlaps.
     const group = [s];
     used.add(s);
     for (let n = 0; n < group.length; n++)
-      for (const o of stretches)
+      for (const o of besides(group[n]))
         if (
           !used.has(o) &&
           o.upright === group[n].upright &&
@@ -1465,7 +1575,10 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
       if (lane) lane.push(g);
       else lanes.push([g]);
     }
-    if (lanes.length < 2) continue;
+    if (lanes.length < 2) {
+      if (group.length === 1 && !s.fixed) centre(s);
+      continue;
+    }
     // A stretch running down or right keeps to the far side of one that starts later, and
     // the other way round for those running up or left: they then need not cross.
     const order = (l: Stretch[]) => (l[0].down ? -l[0].lead : 1e6 + l[0].lead);
@@ -1513,19 +1626,17 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
             !g.p.obstacles.some((o) => {
               if (o.ground || o.rim) return false;
               // Into a thing's margin is allowed where the lanes need it; into the thing
-              // itself never, unless the stretch already ran there.
-              const by =
-                (o.grown ??
-                  (o.id === g.p.a.id || o.id === g.p.b.id ? 0 : MARGIN)) - 3;
-              const itself = {
-                ...o,
-                x: o.x + by,
-                y: o.y + by,
-                r: o.r - by,
-                b: o.b - by,
-              };
+              // itself never, unless the stretch already ran through it (along its edge
+              // is not through it).
+              const g0 =
+                o.grown ?? (o.id === g.p.a.id || o.id === g.p.b.id ? 0 : MARGIN);
+              const box = (by: number) => ({ ...o, x: o.x + by, y: o.y + by, r: o.r - by, b: o.b - by });
+              // Touching the thing counts for where it would go; only running inside it
+              // counts for where it already ran.
+              const itself = box(g0 - 1),
+                inside = box(g0 + 0.5);
               return (
-                through(moved[0], moved[1], itself) && !through(a, b, itself)
+                through(moved[0], moved[1], itself) && !through(a, b, inside)
               );
             })
           );
@@ -1533,7 +1644,27 @@ function apart(plans: Plan[], { margin: MARGIN, lane: LANE }: Spacing) {
       );
     const fits = () => places.some((f) => ((place = f), room(step)));
     while (step >= 2.5 && !fits()) step *= 0.75;
-    if (step < 2.5) continue;
+    if (step < 2.5) {
+      // Too narrow for lanes a full step apart: spread them evenly across the free way,
+      // as far from the things either side as from one another.
+      if (held >= 0) continue;
+      let lo = -Infinity,
+        hi = Infinity;
+      for (const g of group) {
+        const gap = gapOf(g);
+        if (!gap) {
+          lo = Infinity;
+          break;
+        }
+        lo = Math.max(lo, gap[0]);
+        hi = Math.min(hi, gap[1]);
+      }
+      if (!(hi - lo >= 4)) continue;
+      const each = (hi - lo) / (lanes.length + 1);
+      step = 1;
+      place = (n) => lo + each * (n + 1) - lanes[n][0].at;
+      if (!room(1)) continue;
+    }
     lanes.forEach((lane, n) => {
       const shift = place(n) * step;
       if (!shift) return;

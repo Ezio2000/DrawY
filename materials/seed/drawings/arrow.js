@@ -226,7 +226,19 @@ if (d.label) {
     anchor = upright ? (n.x > 0 ? "start" : "end") : "middle";
   }
   y -= ((lines.length - 1) * size * 1.3) / 2;
-  label = lines
+  // Words placed on the line itself (where the route found them room) cut it: a sheet of
+  // paper under them, since the halo round each letter leaves the line showing between them.
+  const wide = /[\u1100-\u11ff\u2e80-\u9fff\ua960-\ua97f\uac00-\ud7ff\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/;
+  const across = (s) => [...s].reduce((n, ch) => n + (wide.test(ch) ? 1 : 0.6), 0) * size;
+  const sheet = normal
+    ? ""
+    : lines
+        .map((words, i) => {
+          const wd = across(words) + size * 0.5;
+          return `<rect x="${x - wd / 2}" y="${y + i * size * 1.3 - size * 0.65}" width="${wd}" height="${size * 1.3}" fill="${paper}"/>`;
+        })
+        .join("");
+  label = sheet + lines
     .map(
       (words, i) =>
         `<text x="${x}" y="${y + i * size * 1.3}" text-anchor="${anchor}" dominant-baseline="central" font-size="${size}" fill="${d.labelColor || color}" font-family="${esc(t.font || "system-ui")}" paint-order="stroke" stroke="${paper}" stroke-width="${Math.max(4, size * 0.4)}" stroke-linejoin="round">${esc(words)}</text>`,

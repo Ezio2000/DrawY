@@ -246,6 +246,31 @@ it("keeps off the drawn edges of frames, down the middle of a gap too narrow for
     }
 });
 
+it("squeezes between modules standing close down the middle of the gap, not along an edge or through one", () => {
+  // Rows of blocks with gaps narrower than two margins, as an author places them by hand:
+  // a line from the first row to the third has to pass the second.
+  const at = (c: number, r: number) => box(`r${r}c${c}`, 20 + c * 159, 413 + r * 82, 145, 50);
+  const modules = [0, 1, 2].flatMap((r) => [0, 1, 2, 3].map((c) => at(c, r)));
+  const links = [link("down", "r0c0", "r2c1"), link("over", "r0c2", "r2c3"), link("near", "r0c1", "r2c2")];
+  const routes = routeLinks(links, modules);
+  for (const [id, r] of routes) {
+    expect(r.crosses, id).toEqual([]);
+    for (let i = 1; i < r.points.length; i++) {
+      const p = r.points[i - 1],
+        q = r.points[i];
+      const level = Math.abs(p.y - q.y) < 0.01;
+      for (const m of modules) {
+        const b = m.bounds;
+        const run = level
+          ? Math.min(Math.max(p.x, q.x), b.x + b.width) - Math.max(Math.min(p.x, q.x), b.x)
+          : Math.min(Math.max(p.y, q.y), b.y + b.height) - Math.max(Math.min(p.y, q.y), b.y);
+        const edges = level ? [b.y, b.y + b.height] : [b.x, b.x + b.width];
+        expect(run > 12 && edges.some((e) => Math.abs((level ? p.y : p.x) - e) < 6), `${id} along ${m.id}`).toBe(false);
+      }
+    }
+  }
+});
+
 it("loops a link from a module back to itself, and names a point where its end is given one", () => {
   const modules = [box("a", 0, 0), box("b", 300, 200)];
   const routes = routeLinks(
