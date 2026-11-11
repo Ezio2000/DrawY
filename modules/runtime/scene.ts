@@ -32,6 +32,9 @@ export interface DrawingAPI {
    * runs along another link's line (a trunk it shares), where a label does not belong. */
   route?: Point[];
   shared?: boolean[];
+  /** Where a routed link's words go, clear of the modules, the other lines and their words:
+   * a point on its route, in local coordinates, and the side of the line. */
+  label?: { at: Point; side: "above" | "below" };
   svg: (source: string) => SVGElement;
   html: (source: string) => HTMLElement;
   mermaid: (source: string) => Promise<Element>;
@@ -71,6 +74,17 @@ type Listener = (value: unknown) => unknown;
 type View = { host: HTMLElement; cleanup: (() => void)[]; revision: number };
 const execute = (source: string, api: object): Promise<unknown> =>
   new Function("api", `return (async()=>{${source}\n})()`)(api);
+let ruler: CanvasRenderingContext2D | null | undefined;
+/** How wide a line of words is drawn, measured where there is a canvas to measure with,
+ * else counted: a wide character takes its size, others a little over half of it. */
+function widthOf(words: string, size: number, font = "system-ui") {
+  if (ruler === undefined) ruler = typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
+  if (ruler) {
+    ruler.font = `${size}px ${font}`;
+    return ruler.measureText(words).width;
+  }
+  return [...words].reduce((sum, ch) => sum + (ch.codePointAt(0)! > 0x2e80 ? size : size * 0.56), 0);
+}
 function svg(source: string) {
   const template = document.createElement("template");
   template.innerHTML = source;
@@ -358,6 +372,7 @@ export class SceneRenderer {
       toSide: Side | null;
       route?: Point[];
       shared?: boolean[];
+      label?: { at: Point; side: "above" | "below" };
     },
   ) {
     return this.track(
@@ -509,9 +524,21 @@ export class SceneRenderer {
     if (!asks) return undefined;
     // Links that look alike, whatever their words, may run together as one trunk.
     const { label, labelSide: _, labelColor: __, size: ___, ...look } = d;
+    const words = typeof label === "string" && label.trim() ? label : undefined;
+    const size = Number(d.size ?? 16) || 16;
     return {
-      branch: typeof label === "string" && !!label.trim(),
+      branch: !!words,
       bundle: JSON.stringify([l.drawingId, Object.entries(look).sort(([a], [b]) => a.localeCompare(b))]),
+      ...(words
+        ? {
+            words: {
+              width: widthOf(words, size, this.work.style.font),
+              size,
+              stroke: Number(d.width ?? this.work.style.stroke ?? 1.6) || 1.6,
+              ...(d.labelSide === "above" || d.labelSide === "below" ? { side: d.labelSide as "above" | "below" } : {}),
+            },
+          }
+        : {}),
     };
   }
   /** Lays the routes again among the modules where they are now. */
@@ -554,7 +581,13 @@ export class SceneRenderer {
       to: local(to),
       fromSide: from.side,
       toSide: to.side,
-      ...(r ? { route: r.points.map(local), shared: r.shared } : {}),
+      ...(r
+        ? {
+            route: r.points.map(local),
+            shared: r.shared,
+            ...(r.label ? { label: { at: local(r.label.at), side: r.label.side } } : {}),
+          }
+        : {}),
     });
   }
   /** Draws the links meeting some modules, or all of them, and every link whose route

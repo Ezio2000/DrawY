@@ -3,7 +3,8 @@
 // (straight unless bent), or at right angles as flowcharts do: elbow leaves and arrives
 // along the sides its ends meet, corner turns once. As a link, an elbow follows the route
 // the scene lays for it (api.route) around the other modules, unless bent or given its first
-// axis by hand, and its label sits beside its longest segment that it does not share.
+// axis by hand, and its label sits where the scene found room for it (api.label), else
+// beside its longest segment that it does not share.
 const d = api.data,
   t = api.theme;
 const W = api.width,
@@ -36,7 +37,7 @@ const pull = head === "filled" ? hl * 0.7 : 0;
 const back = (p, dir, by) => ({ x: p.x - dir.x * by, y: p.y - dir.y * by });
 const route = d.route ?? "curve";
 // end and start point out of the line at each end; mid and normal place the label.
-let line, end, start, mid, normal;
+let line, end, start, mid, normal, side;
 if (route === "elbow" || route === "corner") {
   const dx = b.x - a.x,
     dy = b.y - a.y;
@@ -134,11 +135,26 @@ if (route === "elbow" || route === "corner") {
       (own(i) === own(best) && length(i) > length(best))
     )
       best = i;
+  // The scene may have found a place clear of the other lines and words: the segment it is
+  // on, the point and the side.
+  const spot = routed && api.label && api.label.at ? api.label : null;
+  if (spot) {
+    const off = (i) => {
+      const p = pts[i - 1],
+        q = pts[i];
+      const x = Math.max(Math.min(p.x, q.x), Math.min(Math.max(p.x, q.x), spot.at.x)),
+        y = Math.max(Math.min(p.y, q.y), Math.min(Math.max(p.y, q.y), spot.at.y));
+      return Math.hypot(x - spot.at.x, y - spot.at.y);
+    };
+    best = 1;
+    for (let i = 2; i < n; i++) if (off(i) < off(best)) best = i;
+  }
   const p = pts[best - 1],
     q = pts[best],
     l = Math.hypot(q.x - p.x, q.y - p.y) || 1;
-  mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+  mid = spot ? { x: spot.at.x, y: spot.at.y } : { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
   normal = { x: -(q.y - p.y) / l, y: (q.x - p.x) / l };
+  side = spot?.side;
 } else {
   const gap = Math.min(Number(d.gap ?? 6), len / 4);
   a = { x: a.x + ux * gap, y: a.y + uy * gap };
@@ -169,7 +185,7 @@ if (d.label) {
   const size = Number(d.size ?? 16);
   const m = mid;
   let n = normal;
-  const above = (d.labelSide ?? "above") === "above";
+  const above = (side ?? d.labelSide ?? "above") === "above";
   if ((n.y > 0.2 || (Math.abs(n.y) <= 0.2 && n.x > 0)) === above)
     n = { x: -n.x, y: -n.y };
   // Beside an upright line the words start at the line, as they are wider than they are tall.

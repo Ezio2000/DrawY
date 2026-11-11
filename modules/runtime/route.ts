@@ -18,6 +18,8 @@ export interface Route {
   /** For each segment, whether it runs along another link's line, as the trunk of a tree
    * does: a label belongs on a segment of its own. */
   shared: boolean[];
+  /** Where its words go: a point on the route, and the side of the line they stand on. */
+  label?: { at: Point; side: "above" | "below" };
 }
 export interface RouteLink {
   id: string;
@@ -28,6 +30,10 @@ export interface RouteLink {
   /** How it looks: only links that look alike join into a trunk, as a red dashed line
    * merged into a black one would read as one line changing. */
   bundle?: string;
+  /** Its words, to be placed where they are clear of the modules, the other lines and the
+   * other words: their width and font size, the line's width, and the side the author
+   * named, if any. */
+  words?: { width: number; size: number; stroke: number; side?: "above" | "below" };
 }
 
 /** Room kept between a route and the modules it passes. */
@@ -35,7 +41,7 @@ const CLEAR = 20;
 /** What a turn costs, as a length of line. */
 const BEND = 40;
 /** What crossing another link costs. */
-const CROSS = 44;
+const CROSS = 260;
 /** What running along another link costs, per unit of length. */
 const ALONG = 6;
 /** Running into a link that leaves or enters the same module costs less than a fresh line,
@@ -53,7 +59,7 @@ const AWAY = 200;
  * reads as one line running through. Sharing one with a labelled branch reads as a fork of
  * that branch, which is worse. */
 const CONTRARY = 240;
-const FORK = 300;
+const FORK = 1000;
 /** What running off the middle of a channel costs per unit of length, beyond its length:
  * among ways as short and as straight, a line takes the middle of the gap it crosses, as
  * an elbow turns halfway between its ends. A port's own line is a middle too. */
@@ -551,7 +557,7 @@ function search(
       if (t && !(k === 1 || k === points.length - 1)) blocked = true;
     }
   }
-  return { points, from: start, to: bestGoal, blocked };
+  return { points, from: start, to: bestGoal, blocked, cost: best };
 }
 
 /** Lines that run along each other without belonging together are set apart, each moved
@@ -617,6 +623,30 @@ function apart(routes: Map<string, { points: Point[]; ends: string[] }>) {
       });
     }
   }
+}
+
+/** Whether a route crosses one of the lines laid before it. */
+function crosses(points: Point[], laid: Segment[]) {
+  for (let k = 1; k < points.length; k++) {
+    const a = points[k - 1],
+      b = points[k];
+    for (const s of laid) {
+      const flat = Math.abs(a.y - b.y) < 0.5,
+        other = Math.abs(s.a.y - s.b.y) < 0.5;
+      if (flat === other) continue;
+      const [h, v] = flat ? [[a, b], [s.a, s.b]] : [[s.a, s.b], [a, b]];
+      const y = h[0].y,
+        x = v[0].x;
+      if (
+        x > Math.min(h[0].x, h[1].x) + 0.5 &&
+        x < Math.max(h[0].x, h[1].x) - 0.5 &&
+        y > Math.min(v[0].y, v[1].y) + 0.5 &&
+        y < Math.max(v[0].y, v[1].y) - 0.5
+      )
+        return true;
+    }
+  }
+  return false;
 }
 
 /** Whether a segment runs along a segment of another link for most of its length. */
@@ -718,7 +748,9 @@ export function routeLinks(
       CLEAR * 8,
     );
     let result = search(starts, goals, obstacles, laid, ends, near);
-    if (!result || result.blocked) {
+    // Around the figure may be a way that crosses no line, which the search near the two
+    // modules cannot see.
+    if (!result || result.blocked || crosses(result.points, laid)) {
       const x = Math.min(extent.x, near.x),
         y = Math.min(extent.y, near.y);
       const wide = {
@@ -727,7 +759,8 @@ export function routeLinks(
         width: Math.max(extent.x + extent.width, near.x + near.width) - x,
         height: Math.max(extent.y + extent.height, near.y + near.height) - y,
       };
-      result = search(starts, goals, obstacles, laid, ends, wide) ?? result;
+      const around = search(starts, goals, obstacles, laid, ends, wide);
+      if (around && (!result || result.blocked || around.cost < result.cost)) result = around;
     }
     if (!result) return;
     const uses: [string, Use][] = [
@@ -761,7 +794,74 @@ export function routeLinks(
     routes.set(id, { points, fromSide: r.fromSide, toSide: r.toSide, shared: [] });
   }
   for (const [id, r] of routes) r.shared = sharedOf(id, routes);
+  placeLabels(routable, routes, obstacles);
   return routes;
+}
+
+/** Where the words of each routed link go, in order, each clear of the modules, of every
+ * line and of the words placed before it as far as it can be: beside one of its own
+ * segments, near the middle of a long one, on the side the author named or else above or
+ * to the left. The geometry is the one the library arrow draws its words with. */
+function placeLabels(links: RouteLink[], routes: Map<string, Route>, obstacles: { box: Bounds }[]) {
+  const lines: { a: Point; b: Point; link: string }[] = [];
+  for (const [id, r] of routes) for (let k = 1; k < r.points.length; k++) lines.push({ a: r.points[k - 1], b: r.points[k], link: id });
+  const placed: Bounds[] = [];
+  const area = (a: Bounds, b: Bounds) =>
+    Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) *
+    Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+  const cuts = (box: Bounds, a: Point, b: Point) =>
+    Math.min(a.x, b.x) < box.x + box.width &&
+    Math.max(a.x, b.x) > box.x &&
+    Math.min(a.y, b.y) < box.y + box.height &&
+    Math.max(a.y, b.y) > box.y;
+  for (const link of links) {
+    const r = routes.get(link.id),
+      words = link.words;
+    if (!r || !words || r.points.length < 2) continue;
+    const height = words.size * 1.25;
+    const longest = Math.max(...r.points.slice(1).map((q, k) => Math.abs(q.x - r.points[k].x) + Math.abs(q.y - r.points[k].y)));
+    let best: { cost: number; at: Point; side: "above" | "below"; box: Bounds } | undefined;
+    for (let k = 1; k < r.points.length; k++) {
+      const p = r.points[k - 1],
+        q = r.points[k];
+      const upright = Math.abs(p.x - q.x) < 0.5;
+      const length = Math.abs(q.x - p.x) + Math.abs(q.y - p.y);
+      const room = upright ? height + 12 : words.width + 16;
+      for (const t of [0.5, 0.35, 0.65, 0.2, 0.8])
+        for (const side of ["above", "below"] as const) {
+          const at = { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t };
+          // Above a level line, or left of an upright one; below, or to its right.
+          const box: Bounds = upright
+            ? {
+                x: side === "above" ? at.x - words.size * 0.5 - words.stroke - words.width : at.x + words.size * 0.5 + words.stroke,
+                y: at.y - height / 2,
+                width: words.width,
+                height,
+              }
+            : {
+                x: at.x - words.width / 2,
+                y: side === "above" ? at.y - words.size * 0.9 - words.stroke - height / 2 : at.y + words.size * 0.9 + words.stroke - height / 2,
+                width: words.width,
+                height,
+              };
+          const whole = words.width * height || 1;
+          let cost = 0;
+          for (const o of obstacles) cost += (area(box, o.box) / whole) * 1200;
+          for (const o of placed) cost += (area(grow(box, 4), o) / whole) * 1500;
+          const pad = grow(box, 3);
+          for (const s of lines) if (!(s.link === link.id && s.a === p && s.b === q) && cuts(pad, s.a, s.b)) cost += 500;
+          if (r.shared[k - 1]) cost += 300;
+          // Words beside a short segment, or off along it, may read as another line's.
+          cost += Math.max(0, room - length * Math.min(t, 1 - t) * 2) * 4;
+          cost += (1 - length / longest) * 60 + Math.abs(t - 0.5) * 40;
+          if (side !== (words.side ?? "above")) cost += words.side ? 400 : 50;
+          if (!best || cost < best.cost - 0.01) best = { cost, at, side, box };
+        }
+    }
+    if (!best) continue;
+    placed.push(best.box);
+    r.label = { at: best.at, side: best.side };
+  }
 }
 
 /** Whether boxes overlap; exported for the renderer, which leaves overlapping modules to

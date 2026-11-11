@@ -134,6 +134,43 @@ describe("routeLinks", () => {
     expect(routes.get("b")!.points.at(-1)).not.toEqual(routes.get("a")!.points.at(-1));
   });
 
+  it("puts each link's words where they are clear of the modules, the other lines and the other words", () => {
+    const boxes = new Map([
+      ["decide", box(0, 120)],
+      ["yes", box(320, 0)],
+      ["no", box(320, 240)],
+      ["end", box(640, 120)],
+    ]);
+    const words = { width: 90, size: 16, stroke: 2 };
+    const routes = routeLinks(
+      [
+        link("y", "decide", "yes", { branch: true, words }),
+        link("n", "decide", "no", { branch: true, words }),
+        link("ye", "yes", "end", { branch: true, words }),
+        link("ne", "no", "end", { branch: true, words }),
+      ],
+      boxes,
+    );
+    // The words' box, as the library arrow draws them beside the segment the point is on.
+    const placed = [...routes].map(([id, r]) => {
+      const { at, side } = r.label!;
+      const k = segments(r).findIndex(([p, q]) => through({ points: [p, q] } as Route, { x: at.x - 1, y: at.y - 1, width: 2, height: 2 }) > 0);
+      const [p, q] = segments(r)[k];
+      const upright = Math.abs(p.x - q.x) < 0.5;
+      const height = 20;
+      const b: Bounds = upright
+        ? { x: side === "above" ? at.x - 10 - words.width : at.x + 10, y: at.y - height / 2, width: words.width, height }
+        : { x: at.x - words.width / 2, y: side === "above" ? at.y - 26 : at.y + 6, width: words.width, height };
+      return { id, b };
+    });
+    const meet = (a: Bounds, b: Bounds) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    for (const { id, b } of placed) {
+      for (const m of boxes.values()) expect(meet(b, m)).toBe(false);
+      for (const o of placed) if (o.id !== id) expect(meet(b, o.b)).toBe(false);
+      for (const [other, r] of routes) if (other !== id) expect(through(r, b)).toBe(0);
+    }
+  });
+
   it("keeps the side and point a link names", () => {
     const boxes = new Map([
       ["a", box(0, 0)],
