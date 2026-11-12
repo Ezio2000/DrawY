@@ -8,13 +8,10 @@ import { api } from "./api.ts";
 import { cx } from "./cx.ts";
 import { ago } from "./time.ts";
 import { Title } from "./Title.tsx";
-import { pageLocale } from "./ui/locale.tsx";
 import { Spinner } from "./ui/primitives.tsx";
-import { dictionaries } from "./i18n.tsx";
+import { useT, type Words as I18n } from "./i18n.tsx";
 import type { Meter, Span, TraceSummary } from "../../../modules/trace/index.ts";
 
-/** The trace page's words in the page's language. */
-const w = () => dictionaries[pageLocale()].traces;
 const seconds = (ms: number) =>
   ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
 const live = (status: string) => ["running", "viewing"].includes(status);
@@ -27,18 +24,21 @@ const pretty = (v: unknown) => {
     }
   return JSON.stringify(v, null, 2);
 };
+/** The trace page's words. */
+type Words = I18n["traces"];
 const thousands = (n: number) =>
   n >= 10_000 ? `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k` : String(n);
 /** What a meter counts, in words: a known kind of work, or the tool's own name. */
-const meterName = (key: string) =>
-  w().meters[key] ?? (w().kinds as Record<string, string>)[key] ?? key.replace(/[_-]+/g, " ");
+const meterName = (w: Words, key: string) =>
+  w.meters[key] ?? (w.kinds as Record<string, string>)[key] ?? key.replace(/[_-]+/g, " ");
 /** Tool calls and pictures before model turns and the rest. */
 const order = (m: Meter) =>
   m.kind === "tool" ? 0 : m.kind === "generation" ? 1 : m.kind === "turn" ? 2 : 3;
 function Status({ value }: { value: string }) {
+  const w = useT().traces;
   return (
     <i className={cx("status")} data-status={value}>
-      {w().statuses[value] || value}
+      {w.statuses[value] || value}
     </i>
   );
 }
@@ -48,6 +48,7 @@ type Costed = TraceSummary & { cost?: RunCost; services?: RunServices };
 /** Every run of the user's works, and for one run each model turn, tool call, search,
  * generation and capture in time order, with what went in and came out. */
 export function TraceView() {
+  const w = useT().traces;
   // Undefined until the first list arrives, so an empty list is never shown while loading.
   const [list, setList] = useState<Costed[]>();
   const [selected, setSelected] = useState<string | undefined>(
@@ -88,8 +89,8 @@ export function TraceView() {
             <Title name="traces" size="section" />
           </h1>
           <button
-            aria-label={w().refresh}
-            data-tip={w().refresh}
+            aria-label={w.refresh}
+            data-tip={w.refresh}
             onClick={() => void refresh()}
           >
             <RefreshCw size={14} />
@@ -111,7 +112,7 @@ export function TraceView() {
                   <Status value={t.status} />
                   <span>{ago(t.startedAt)}</span>
                   <span>{seconds(t.durationMs)}</span>
-                  {!!t.counts.errors && <em>{w().errorCount(t.counts.errors)}</em>}
+                  {!!t.counts.errors && <em>{w.errorCount(t.counts.errors)}</em>}
                 </small>
               </button>
             </li>
@@ -119,7 +120,7 @@ export function TraceView() {
         </ol>
         {!list && !error && <Spinner />}
         {list && !list.length && !error && (
-          <p className={cx("traces-empty")}>{w().empty}</p>
+          <p className={cx("traces-empty")}>{w.empty}</p>
         )}
       </aside>
       <main>
@@ -149,6 +150,7 @@ function Stat({ label, value, parts }: { label: string; value: ReactNode; parts?
   );
 }
 function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
+  const w = useT().traces;
   const [open, setOpen] = useState<string>();
   const [kinds, setKinds] = useState<Set<Span["kind"]>>(new Set());
   const rows = useMemo(() => {
@@ -178,9 +180,9 @@ function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
     v
       ? [
           v.author,
-          v.effort && `${w().thinkingEffort} ${v.effort}`,
+          v.effort && `${w.thinkingEffort} ${v.effort}`,
           v.speed && v.speed !== "default" && v.speed,
-          v.search === "off" ? w().noSearch : v.search === "builtin" ? w().builtinSearch : v.searchBy,
+          v.search === "off" ? w.noSearch : v.search === "builtin" ? w.builtinSearch : v.searchBy,
           v.image,
         ]
       : []
@@ -202,40 +204,40 @@ function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
         )}
         <dl className={cx("stats")}>
           <Stat
-            label={w().cost}
+            label={w.cost}
             value={c ? money(c.total) : "—"}
             parts={
               c
                 ? [
-                    `${w().costAuthor} ${money(c.author)}`,
-                    `${w().costSearch} ${money(c.search)}`,
-                    `${w().costImage} ${money(c.image)}`,
-                    ...(c.failed ? [`${w().costFailed} ${money(c.failed)}`] : []),
+                    `${w.costAuthor} ${money(c.author)}`,
+                    `${w.costSearch} ${money(c.search)}`,
+                    `${w.costImage} ${money(c.image)}`,
+                    ...(c.failed ? [`${w.costFailed} ${money(c.failed)}`] : []),
                   ]
-                : [w().unpriced]
+                : [w.unpriced]
             }
           />
           <Stat
-            label={w().duration}
+            label={w.duration}
             value={seconds(trace.durationMs)}
-            parts={[w().turnsCount(trace.counts.turn), w().toolsCount(trace.counts.tool)]}
+            parts={[w.turnsCount(trace.counts.turn), w.toolsCount(trace.counts.tool)]}
           />
           <Stat
-            label={w().inputTokens}
+            label={w.inputTokens}
             value={thousands(tk.input)}
             parts={[
-              `${w().cached} ${thousands(tk.cached)}`,
-              tk.input ? `${w().hit} ${Math.round((tk.cached / tk.input) * 100)}%` : "",
+              `${w.cached} ${thousands(tk.cached)}`,
+              tk.input ? `${w.hit} ${Math.round((tk.cached / tk.input) * 100)}%` : "",
             ]}
           />
           <Stat
-            label={w().outputTokens}
+            label={w.outputTokens}
             value={thousands(tk.output)}
-            parts={[`${w().reasoning} ${thousands(tk.reasoning)}`]}
+            parts={[`${w.reasoning} ${thousands(tk.reasoning)}`]}
           />
           {!!trace.counts.errors && (
             <Stat
-              label={w().error}
+              label={w.error}
               value={<span className={cx("stat-bad")}>{trace.counts.errors}</span>}
             />
           )}
@@ -244,9 +246,9 @@ function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
       {!!trace.meters?.length && <Meters meters={trace.meters} />}
       <section className={cx("trace-card")}>
         <header>
-          <h3>{w().timeline}</h3>
+          <h3>{w.timeline}</h3>
           <nav className={cx("trace-filter")}>
-            {(Object.keys(w().kinds) as Span["kind"][])
+            {(Object.keys(w.kinds) as Span["kind"][])
               .filter((k) => trace.counts[k])
               .map((k) => (
                 <button
@@ -260,7 +262,7 @@ function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
                     setKinds(next);
                   }}
                 >
-                  {w().kinds[k]}
+                  {w.kinds[k]}
                   <small>{trace.counts[k]}</small>
                 </button>
               ))}
@@ -276,9 +278,9 @@ function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
                   onClick={() => setOpen(open === s.id ? undefined : s.id)}
                 >
                   <span className={cx("span-name")} style={{ paddingLeft: depth * 16 }}>
-                    <i className={cx("span-kind")}>{w().kinds[s.kind]}</i>
+                    <i className={cx("span-kind")}>{w.kinds[s.kind]}</i>
                     <b>{s.name}</b>
-                    {metric(s) && <small>{metric(s)}</small>}
+                    {metric(w, s) && <small>{metric(w, s)}</small>}
                     {s.error && <em>{s.error.slice(0, 80)}</em>}
                   </span>
                   <span className={cx("span-bar")}>
@@ -303,40 +305,41 @@ function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
 /** What each kind of work in the run used: calls, time, tokens and failures, one row per
  * tool, model or picture model, whatever tools the run had. */
 function Meters({ meters }: { meters: Meter[] }) {
+  const w = useT().traces;
   const rows = [...meters].sort((a, b) => order(a) - order(b) || b.calls - a.calls);
   return (
     <section className={cx("trace-card")}>
       <header>
-        <h3>{w().meterTitle}</h3>
+        <h3>{w.meterTitle}</h3>
       </header>
       <table className={cx("meters")}>
         <thead>
           <tr>
-            <th>{w().meterName}</th>
-            <th>{w().meterCalls}</th>
-            <th>{w().meterTime}</th>
-            <th>{w().input}</th>
-            <th>{w().output}</th>
+            <th>{w.meterName}</th>
+            <th>{w.meterCalls}</th>
+            <th>{w.meterTime}</th>
+            <th>{w.input}</th>
+            <th>{w.output}</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((m) => (
             <tr key={m.key} data-kind={m.kind}>
               <td>
-                <i className={cx("span-kind")}>{w().kinds[m.kind]}</i>
-                {meterName(m.key)}
+                <i className={cx("span-kind")}>{w.kinds[m.kind]}</i>
+                {meterName(w, m.key)}
               </td>
               <td>
                 {m.calls}
-                {!!m.errors && <em> {w().errorCount(m.errors)}</em>}
+                {!!m.errors && <em> {w.errorCount(m.errors)}</em>}
               </td>
               <td>{seconds(m.ms)}</td>
-              <td title={m.cached ? `${w().cached} ${m.cached.toLocaleString()}` : undefined}>
+              <td title={m.cached ? `${w.cached} ${m.cached.toLocaleString()}` : undefined}>
                 {m.input ? thousands(m.input) : "—"}
                 {!!m.cached && (
                   <small>
                     {" "}
-                    {w().cached} {thousands(m.cached)}
+                    {w.cached} {thousands(m.cached)}
                   </small>
                 )}
               </td>
@@ -364,25 +367,26 @@ const usageOf = (a: Item) => {
   };
 };
 /** A few words on what a span did, shown in its row. */
-function metric(s: Span) {
+function metric(w: Words, s: Span) {
   const a = s.attrs as Item;
   if ((s.kind === "turn" || s.kind === "compact") && a.usage) {
     const u = usageOf(a);
-    return w().metric(k(u.input), u.hit, k(u.output));
+    return w.metric(k(u.input), u.hit, k(u.output));
   }
   if (s.kind === "generation")
-    return [a.size, a.usage && w().tokensShort(k(a.usage.input_tokens ?? 0), k(a.usage.output_tokens ?? 0))]
+    return [a.size, a.usage && w.tokensShort(k(a.usage.input_tokens ?? 0), k(a.usage.output_tokens ?? 0))]
       .filter(Boolean)
       .join(" · ");
   // A tool call shows what it was asked: a query, a URL, a subject.
   if (s.kind === "tool") return a.asked ?? "";
   if (s.kind === "search")
     return (a.subjects as string[] | undefined)?.join(", ");
-  if (s.kind === "capture") return w().shots(a.shots ?? 0);
+  if (s.kind === "capture") return w.shots(a.shots ?? 0);
   if (s.kind === "note" && a.status) return `HTTP ${a.status} · ${a.ms}ms`;
   return "";
 }
 function Copy({ value }: { value: unknown }) {
+  const w = useT().traces;
   const [done, setDone] = useState(false);
   return (
     <button
@@ -395,7 +399,7 @@ function Copy({ value }: { value: unknown }) {
         setTimeout(() => setDone(false), 1200);
       }}
     >
-      {done ? w().copied : w().copy}
+      {done ? w.copied : w.copy}
     </button>
   );
 }
@@ -423,6 +427,7 @@ function Part({
 }
 /** Long text shows its beginning until asked for the rest. */
 function Text({ text, citations }: { text: string; citations?: Citation[] }) {
+  const w = useT().traces;
   const [all, setAll] = useState(false);
   const long = text.length > 1600;
   return (
@@ -430,7 +435,7 @@ function Text({ text, citations }: { text: string; citations?: Citation[] }) {
       <pre><CitedText text={long && !all ? text.slice(0, 1200) + "…" : text} citations={citations} /></pre>
       {long && (
         <button onClick={() => setAll(!all)}>
-          {all ? w().fold : w().unfold(text.length.toLocaleString())}
+          {all ? w.fold : w.unfold(text.length.toLocaleString())}
         </button>
       )}
     </div>
@@ -459,20 +464,21 @@ function Content({ part }: { part: Item | string }) {
 /** Model input or output items as a conversation: messages with their text and images,
  * tool calls with their arguments, tool results, and reasoning summaries. */
 function Conversation({ items }: { items: Item[] }) {
+  const w = useT().traces;
   return (
     <ol className={cx("conversation")}>
       {items.map((item, i) => {
         if (item.type === "function_call")
           return (
             <li key={i} data-role="call">
-              <b>{w().call(item.name)}</b>
+              <b>{w.call(item.name)}</b>
               <Text text={pretty(item.arguments)} />
             </li>
           );
         if (item.type === "function_call_output")
           return (
             <li key={i} data-role="result">
-              <b>{w().toolResult}</b>
+              <b>{w.toolResult}</b>
               <Text text={pretty(item.output)} />
             </li>
           );
@@ -480,25 +486,25 @@ function Conversation({ items }: { items: Item[] }) {
         if (typeof item.type === "string" && item.type.endsWith("_call"))
           return (
             <li key={i} data-role="call">
-              <b>{w().call(item.type.replace(/_call$/, ""))}</b>
+              <b>{w.call(item.type.replace(/_call$/, ""))}</b>
               <Text text={pretty(item.action ?? item)} />
             </li>
           );
         if (item.type === "configuration_update")
           return (
             <li key={i} data-role="reasoning">
-              <b>{w().thinkingEffort}</b>
+              <b>{w.thinkingEffort}</b>
               <Text text={item.reasoning?.effort ?? pretty(item)} />
             </li>
           );
         if (item.type === "reasoning")
           return (
             <li key={i} data-role="reasoning">
-              <b>{w().thoughts}</b>
+              <b>{w.thoughts}</b>
               <Text
                 text={
                   (item.summary || []).map((s: Item) => s.text).join("\n\n") ||
-                  w().nothing
+                  w.nothing
                 }
               />
             </li>
@@ -508,7 +514,7 @@ function Conversation({ items }: { items: Item[] }) {
           typeof item.content === "string" ? [item.content] : item.content || [];
         return (
           <li key={i} data-role={role}>
-            <b>{w().roles[role as string] || role}</b>
+            <b>{w.roles[role as string] || role}</b>
             {parts.map((p, j) => (
               <Content key={j} part={p} />
             ))}
@@ -546,51 +552,52 @@ function Attributes({
   span: Span;
   context?: { items: Item[]; complete: boolean };
 }) {
+  const w = useT().traces;
   const a = span.attrs as Item;
   const [view, setView] = useState(context?.complete ? "whole" : "added");
   const parts: ReactNode[] = [];
-  if (span.error) parts.push(<Part key="error" title={w().error} value={span.error} />);
+  if (span.error) parts.push(<Part key="error" title={w.error} value={span.error} />);
   switch (span.kind) {
     case "turn": {
       const u = usageOf(a);
       parts.push(
-        <Part key="usage" title={w().usage}>
+        <Part key="usage" title={w.usage}>
           <dl className={cx("facts")}>
-            <dt>{w().input}</dt>
+            <dt>{w.input}</dt>
             <dd>{u.input.toLocaleString()} tokens</dd>
-            <dt>{w().hit}</dt>
+            <dt>{w.hit}</dt>
             <dd>
-              {u.cached.toLocaleString()} ({u.hit}%) · {w().missed}{" "}
+              {u.cached.toLocaleString()} ({u.hit}%) · {w.missed}{" "}
               {(u.input - u.cached).toLocaleString()}
             </dd>
-            <dt>{w().output}</dt>
+            <dt>{w.output}</dt>
             <dd>
-              {u.output.toLocaleString()} · {w().ofWhichReasoning} {u.reasoning.toLocaleString()}
+              {u.output.toLocaleString()} · {w.ofWhichReasoning} {u.reasoning.toLocaleString()}
             </dd>
-            <dt>{w().firstOutput}</dt>
+            <dt>{w.firstOutput}</dt>
             <dd>{a.firstOutputMs !== undefined ? seconds(a.firstOutputMs) : "—"}</dd>
-            <dt>{w().total}</dt>
-            <dd>{span.endedAt ? seconds(span.endedAt - span.startedAt) : w().inProgress}</dd>
-            <dt>{w().context}</dt>
+            <dt>{w.total}</dt>
+            <dd>{span.endedAt ? seconds(span.endedAt - span.startedAt) : w.inProgress}</dd>
+            <dt>{w.context}</dt>
             <dd>
-              {w().items(a.inputItems, k(a.estimatedTokens))}
+              {w.items(a.inputItems, k(a.estimatedTokens))}
             </dd>
             {a.request && (
               <>
-                <dt>{w().request}</dt>
+                <dt>{w.request}</dt>
                 <dd>
-                  {a.request.model} · {w().thinkingEffort} {a.request.effort} ·{" "}
-                  {a.request.serviceTier} · {w().instructionsChars(k(a.request.instructionsChars))} ·{" "}
-                  {w().toolCount(a.request.tools)}
+                  {a.request.model} · {w.thinkingEffort} {a.request.effort} ·{" "}
+                  {a.request.serviceTier} · {w.instructionsChars(k(a.request.instructionsChars))} ·{" "}
+                  {w.toolCount(a.request.tools)}
                   {a.request.steer?.max_tool_calls !== undefined &&
-                    ` · ${w().searchLeft(a.request.steer.max_tool_calls)}`}
-                  {a.request.steer?.tool_choice && ` · ${w().searchClosed}`}
+                    ` · ${w.searchLeft(a.request.steer.max_tool_calls)}`}
+                  {a.request.steer?.tool_choice && ` · ${w.searchClosed}`}
                 </dd>
               </>
             )}
             {a.response?.id && (
               <>
-                <dt>{w().response}</dt>
+                <dt>{w.response}</dt>
                 <dd>
                   <code>{a.response.id}</code> · {a.response.model} ·{" "}
                   {a.response.service_tier}
@@ -606,27 +613,27 @@ function Attributes({
           key="input"
           title={
             view === "whole" && whole
-              ? w().inputWhole(whole.length)
-              : w().inputAdded((a.input || []).length)
+              ? w.inputWhole(whole.length)
+              : w.inputAdded((a.input || []).length)
           }
           value={view === "whole" && whole ? whole : a.input}
         >
           <nav className={cx("views")}>
             {whole && (
               <button aria-pressed={view === "whole"} onClick={() => setView("whole")}>
-                {w().whole}
+                {w.whole}
               </button>
             )}
             <button aria-pressed={view === "added"} onClick={() => setView("added")}>
-              {w().added}
+              {w.added}
             </button>
             <button aria-pressed={view === "raw"} onClick={() => setView("raw")}>
-              {w().raw}
+              {w.raw}
             </button>
           </nav>
           {view === "whole" && whole && !context.complete && (
             <p className={cx("hint")}>
-              {w().noContext}
+              {w.noContext}
             </p>
           )}
           {view === "raw" ? (
@@ -635,7 +642,7 @@ function Attributes({
             <Conversation items={view === "whole" && whole ? whole : a.input || []} />
           )}
         </Part>,
-        <Part key="output" title={w().outputItems((a.output || []).length)} value={a.output}>
+        <Part key="output" title={w.outputItems((a.output || []).length)} value={a.output}>
           <Conversation items={a.output || []} />
         </Part>,
       );
@@ -643,12 +650,12 @@ function Attributes({
     }
     case "tool":
       parts.push(
-        <Part key="args" title={w().args} value={a.args} />,
-        <Part key="out" title={w().result} value={a.output} />,
+        <Part key="args" title={w.args} value={a.args} />,
+        <Part key="out" title={w.result} value={a.output} />,
       );
       if (Array.isArray(a.images) && a.images.length)
         parts.push(
-          <Part key="images" title={w().images2(a.images.length)}>
+          <Part key="images" title={w.images2(a.images.length)}>
             <div className={cx("shots")}>
               {a.images.map((url: string, i: number) => (
                 <Shot key={i} url={url} />
@@ -659,27 +666,27 @@ function Attributes({
       break;
     case "generation":
       parts.push(
-        <Part key="result" title={w().result}>
+        <Part key="result" title={w.result}>
           <dl className={cx("facts")}>
-            <dt>{w().size}</dt>
+            <dt>{w.size}</dt>
             <dd>{a.size}</dd>
-            <dt>{w().model}</dt>
+            <dt>{w.model}</dt>
             <dd>{a.model}</dd>
             {a.bytes && (
               <>
-                <dt>{w().bytes}</dt>
+                <dt>{w.bytes}</dt>
                 <dd>{k(a.bytes)}B</dd>
               </>
             )}
             {!!a.references?.length && (
               <>
-                <dt>{w().references}</dt>
+                <dt>{w.references}</dt>
                 <dd>{a.references.join(", ")}</dd>
               </>
             )}
             {!!a.styleReferences?.length && (
               <>
-                <dt>{w().styleReferences}</dt>
+                <dt>{w.styleReferences}</dt>
                 <dd>{a.styleReferences.join(", ")}</dd>
               </>
             )}
@@ -689,26 +696,26 @@ function Attributes({
               const given = a.references?.length ?? 0;
               const label =
                 i < given
-                  ? w().reference(a.references[i])
-                  : w().styleReference(a.styleReferences?.[i - given] ?? "");
+                  ? w.reference(a.references[i])
+                  : w.styleReference(a.styleReferences?.[i - given] ?? "");
               return <Shot key={i} url={url} label={label} />;
             })}
-            {a.url && <Shot url={a.url} label={w().generated} />}
+            {a.url && <Shot url={a.url} label={w.generated} />}
           </div>
         </Part>,
-        <Part key="prompt" title={w().prompt} value={a.prompt}>
+        <Part key="prompt" title={w.prompt} value={a.prompt}>
           <Text text={a.prompt || ""} />
         </Part>,
       );
       break;
     case "search":
       parts.push(
-        <Part key="request" title={w().request} value={{ subjects: a.subjects, style: a.style, kinds: a.kinds, roles: a.roles, limit: a.limit }} />,
-        <Part key="results" title={w().result} value={a.results}>
+        <Part key="request" title={w.request} value={{ subjects: a.subjects, style: a.style, kinds: a.kinds, roles: a.roles, limit: a.limit }} />,
+        <Part key="results" title={w.result} value={a.results}>
           {(a.results || []).map((r: Item) => (
             <section key={r.subject} className={cx("hits")}>
               <h5>{r.subject}</h5>
-              {!r.hits.length && <p className={cx("hint")}>{w().noHits}</p>}
+              {!r.hits.length && <p className={cx("hint")}>{w.noHits}</p>}
               <ol>
                 {r.hits.map((h: Item | string, i: number) =>
                   typeof h === "string" ? (
@@ -732,7 +739,7 @@ function Attributes({
       break;
     case "capture":
       parts.push(
-        <Part key="request" title={w().request} value={{ revision: a.revision, sceneId: a.sceneId, regions: a.regions, claims: a.claims, annotate: a.annotate, actions: a.actions }} />,
+        <Part key="request" title={w.request} value={{ revision: a.revision, sceneId: a.sceneId, regions: a.regions, claims: a.claims, annotate: a.annotate, actions: a.actions }} />,
         ...(a.shots || []).map((shot: Item, i: number) => (
           <Part key={"shot" + i} title={shot.view} value={shot}>
             {shot.url ? (
@@ -740,11 +747,11 @@ function Attributes({
                 <Shot url={shot.url} />
               </div>
             ) : (
-              shot.opened && <Text text={w().openedDetail(shot.opened.detail, shot.opened.byTarget)} />
+              shot.opened && <Text text={w.openedDetail(shot.opened.detail, shot.opened.byTarget)} />
             )}
             {!!shot.errors?.length && <Text text={shot.errors.join("\n")} />}
             {shot.modules && (
-              <Part title={w().geometry(shot.modules.length)} value={shot.modules} open={false} />
+              <Part title={w.geometry(shot.modules.length)} value={shot.modules} open={false} />
             )}
           </Part>
         )),
@@ -752,42 +759,42 @@ function Attributes({
       break;
     case "compact":
       parts.push(
-        <Part key="summary" title={w().summary} value={a.summary}>
+        <Part key="summary" title={w.summary} value={a.summary}>
           <Text text={a.summary || ""} />
         </Part>,
-        <Part key="usage" title={w().usageOnly} value={{ size: a.size, usage: a.usage, response: a.response }} />,
+        <Part key="usage" title={w.usageOnly} value={{ size: a.size, usage: a.usage, response: a.response }} />,
       );
       break;
     case "execution": {
       const { instructions, context: start, tools, ...rest } = a;
-      parts.push(<Part key="settings" title={w().settings} value={rest} />);
+      parts.push(<Part key="settings" title={w.settings} value={rest} />);
       if (tools)
         parts.push(
-          <Part key="tools" title={w().toolList(tools.length)} value={tools}>
+          <Part key="tools" title={w.toolList(tools.length)} value={tools}>
             <p className={cx("hint")}>{tools.join(", ")}</p>
           </Part>,
         );
       if (instructions)
         parts.push(
-          <Part key="instructions" title={w().instructions(instructions.length.toLocaleString())} value={instructions} open={false}>
+          <Part key="instructions" title={w.instructions(instructions.length.toLocaleString())} value={instructions} open={false}>
             <Text text={instructions} />
           </Part>,
         );
       if (start)
         parts.push(
-          <Part key="context" title={w().start(start.length)} value={start} open={false}>
+          <Part key="context" title={w.start(start.length)} value={start} open={false}>
             <Conversation items={start} />
           </Part>,
         );
       break;
     }
     default:
-      parts.push(<Part key="attrs" title={w().attrs} value={a} />);
+      parts.push(<Part key="attrs" title={w.attrs} value={a} />);
   }
   return (
     <div className={cx("span-detail")}>
       {parts}
-      <Part title={w().record} value={span} open={false} />
+      <Part title={w.record} value={span} open={false} />
     </div>
   );
 }

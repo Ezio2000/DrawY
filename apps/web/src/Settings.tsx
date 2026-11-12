@@ -30,7 +30,7 @@ import { Title } from "./Title.tsx";
 import { useT, dictionaries } from "./i18n.tsx";
 import { AccountContext, useCan } from "./account.tsx";
 import { ago } from "./time.ts";
-import { Badge, Entry, Group, Head, Row } from "./SettingsParts.tsx";
+import { Badge, Entry, Group, Head, Loaded, Row, useLoaded } from "./SettingsParts.tsx";
 import { ImageSection, LabelSection, SearchSection, WriterSection } from "./ModelSettings.tsx";
 
 /** The section each model tab shows. */
@@ -71,9 +71,9 @@ export function Settings() {
       catalog?: ModelCatalog;
     }>(),
     [value, set] = useState<typeof saved>(),
-    [error, E] = useState(""),
-    [busy, B] = useState(false),
-    [done, D] = useState(false),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false),
+    [done, setDone] = useState(false),
     // The model or service opened for editing.
     [editing, setEditing] = useState<string>();
   useEffect(() => {
@@ -86,7 +86,7 @@ export function Settings() {
         setSaved(v);
         set(v);
       },
-      (e) => E(e.message),
+      (e) => setError(e.message),
     );
   }, [models]);
   const dirty = !!value && JSON.stringify(value) !== JSON.stringify(saved);
@@ -112,7 +112,7 @@ export function Settings() {
     );
   const catalog = value.catalog;
   const change = (catalog: ModelCatalog) => {
-    D(false);
+    setDone(false);
     set({ ...value, catalog });
   };
   const tabs = (
@@ -158,7 +158,7 @@ export function Settings() {
                   value={value.own.preferences}
                   placeholder={w.longTermExample}
                   onChange={(e) => {
-                    D(false);
+                    setDone(false);
                     set({
                       ...value,
                       own: { ...value.own, preferences: e.target.value },
@@ -199,7 +199,7 @@ export function Settings() {
                 className={cx("secondary small")}
                 onClick={() => {
                   set(saved);
-                  E("");
+                  setError("");
                 }}
               >
                 {w.discard}
@@ -208,8 +208,8 @@ export function Settings() {
                 className={cx("primary small")}
                 disabled={busy}
                 onClick={async () => {
-                  B(true);
-                  E("");
+                  setBusy(true);
+                  setError("");
                   try {
                     if (
                       JSON.stringify(value.own) !== JSON.stringify(saved?.own)
@@ -229,11 +229,11 @@ export function Settings() {
                     const now = { ...value, catalog: next };
                     setSaved(now);
                     set(now);
-                    D(true);
+                    setDone(true);
                   } catch (e) {
-                    E(e instanceof Error ? e.message : String(e));
+                    setError(e instanceof Error ? e.message : String(e));
                   } finally {
-                    B(false);
+                    setBusy(false);
                   }
                 }}
               >
@@ -265,122 +265,75 @@ function Accounts() {
   const w = useT().settings,
     roleName = useRoleName();
   const me = useContext(AccountContext)?.id;
-  const [list, setList] = useState<Account[]>(),
-    [roles, setRoles] = useState<AccountRole[]>([]),
-    [q, Q] = useState(""),
-    [error, E] = useState("");
-  useEffect(() => {
-    void Promise.all([
-      api<Account[]>("/admin/accounts"),
-      api<AccountRole[]>("/admin/roles"),
-    ]).then(
-      ([a, r]) => {
-        setList(a);
-        setRoles(r);
-      },
-      (e) => E(e.message),
-    );
-  }, []);
-  const shown = (list ?? []).filter((a) =>
-    a.name.toLowerCase().includes(q.trim().toLowerCase()),
+  const { value, update, error, attempt } = useLoaded(() =>
+    Promise.all([api<Account[]>("/admin/accounts"), api<AccountRole[]>("/admin/roles")]),
   );
+  const [query, setQuery] = useState("");
+  const change = (a: Account, patch: { quota: number | null } | { role: string }) =>
+    attempt(async () => {
+      const changed = await api<Account>("/admin/accounts/" + a.id, "PATCH", patch);
+      update(([list, roles]) => [list.map((x) => (x.id === a.id ? changed : x)), roles]);
+      // Taking away one's own right to manage accounts takes this page away.
+      if (a.id === me && !changed.permissions.includes("accounts.manage")) location.reload();
+    });
   return (
     <section>
       <Head title={useT().titles.accounts} hint={w.accountsHint} />
-      {error && (
-        <p className={cx("error")} role="alert">
-          {error}
-        </p>
-      )}
-      {!list ? (
-        !error && <Spinner />
-      ) : (
-        <div className={cx("group-card members")}>
-          <div className={cx("members-bar")}>
-            <label className={cx("members-search")}>
-              <Search size={15} />
-              <input
-                placeholder={w.searchAccounts}
-                value={q}
-                onChange={(e) => Q(e.target.value)}
-              />
-            </label>
-            <small>{w.accountsCount(list.length)}</small>
-          </div>
-          <div className={cx("members-head")} aria-hidden>
-            <span>{w.accountName}</span>
-            <span className={cx("members-quota-head")} title={w.quotaHint}>
-              {w.accountQuota}
-            </span>
-            <span>{w.accountRole}</span>
-          </div>
-          <ul>
-            {shown.map((a) => (
-              <li key={a.id}>
-                <Avatar name={a.name} />
-                <span className={cx("member-name")}>
-                  <b>{a.name}</b>
-                  {a.id === me && <Badge tone="muted">{w.you}</Badge>}
+      <Loaded value={value} error={error}>
+        {([list, roles]) => {
+          const shown = list.filter((a) => a.name.toLowerCase().includes(query.trim().toLowerCase()));
+          return (
+            <div className={cx("group-card members")}>
+              <div className={cx("members-bar")}>
+                <label className={cx("members-search")}>
+                  <Search size={15} />
+                  <input
+                    placeholder={w.searchAccounts}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                </label>
+                <small>{w.accountsCount(list.length)}</small>
+              </div>
+              <div className={cx("members-head")} aria-hidden>
+                <span>{w.accountName}</span>
+                <span className={cx("members-quota-head")} title={w.quotaHint}>
+                  {w.accountQuota}
                 </span>
-                <Quota
-                  key={a.id + ":" + a.quota}
-                  account={a}
-                  save={async (quota) => {
-                    E("");
-                    try {
-                      const changed = await api<Account>(
-                        "/admin/accounts/" + a.id,
-                        "PATCH",
-                        { quota },
-                      );
-                      setList((old) =>
-                        old!.map((x) => (x.id === a.id ? changed : x)),
-                      );
-                    } catch (err) {
-                      E(err instanceof Error ? err.message : String(err));
-                    }
-                  }}
-                />
-                <select
-                  aria-label={w.accountRole + " · " + a.name}
-                  value={a.role}
-                  onChange={async (e) => {
-                    E("");
-                    try {
-                      const changed = await api<Account>(
-                        "/admin/accounts/" + a.id,
-                        "PATCH",
-                        { role: e.target.value },
-                      );
-                      setList((old) =>
-                        old!.map((x) => (x.id === a.id ? changed : x)),
-                      );
-                      // Taking away one's own right to manage accounts takes this page
-                      // away.
-                      if (
-                        a.id === me &&
-                        !changed.permissions.includes("accounts.manage")
-                      )
-                        location.reload();
-                    } catch (err) {
-                      E(err instanceof Error ? err.message : String(err));
-                    }
-                  }}
-                >
-                  {roles.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {roleName(r)}
-                    </option>
-                  ))}
-                </select>
-              </li>
-            ))}
-            {!shown.length && (
-              <li className={cx("members-none")}>{w.noAccounts}</li>
-            )}
-          </ul>
-        </div>
-      )}
+                <span>{w.accountRole}</span>
+              </div>
+              <ul>
+                {shown.map((a) => (
+                  <li key={a.id}>
+                    <Avatar name={a.name} />
+                    <span className={cx("member-name")}>
+                      <b>{a.name}</b>
+                      {a.id === me && <Badge tone="muted">{w.you}</Badge>}
+                    </span>
+                    <Quota
+                      key={a.id + ":" + a.quota}
+                      account={a}
+                      save={(quota) => void change(a, { quota })}
+                    />
+                    <select
+                      aria-label={w.accountRole + " · " + a.name}
+                      value={a.role}
+                      onChange={(e) => void change(a, { role: e.target.value })}
+                    >
+                      {roles.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {roleName(r)}
+                        </option>
+                      ))}
+                    </select>
+                  </li>
+                ))}
+                {!shown.length && <li className={cx("members-none")}>{w.noAccounts}</li>}
+              </ul>
+            </div>
+          );
+        }}
+      </Loaded>
     </section>
   );
 }
@@ -422,21 +375,8 @@ function Quota({
 function Invites() {
   const t = useT(),
     w = t.settings;
-  const [list, setList] = useState<Invite[]>(),
-    [copied, setCopied] = useState<string>(),
-    [error, E] = useState("");
-  useEffect(() => {
-    void api<Invite[]>("/admin/invites").then(setList, (e) => E(e.message));
-  }, []);
-  const attempt = async (fn: () => Promise<void>) => {
-    E("");
-    try {
-      await fn();
-    } catch (e) {
-      E(e instanceof Error ? e.message : String(e));
-    }
-  };
-  const unused = (list ?? []).filter((i) => !i.usedBy).length;
+  const { value: list, update, error, attempt } = useLoaded(() => api<Invite[]>("/admin/invites"));
+  const [copied, setCopied] = useState<string>();
   return (
     <section>
       <Head title={t.titles.invites} hint={w.invitesHint}>
@@ -448,7 +388,7 @@ function Invites() {
                 const made = await api<Invite[]>("/admin/invites", "POST", {
                   count: 1,
                 });
-                setList((old) => [...made, ...old!]);
+                update((old) => [...made, ...old]);
               })
             }
           >
@@ -457,79 +397,74 @@ function Invites() {
           </button>
         )}
       </Head>
-      {error && (
-        <p className={cx("error")} role="alert">
-          {error}
-        </p>
-      )}
-      {!list ? (
-        !error && <Spinner />
-      ) : (
-        <div className={cx("group-card members invites")}>
-          <div className={cx("members-bar")}>
-            <small>{w.invitesCount(unused, list.length)}</small>
-          </div>
-          <ul>
-            {list.map((i) => (
-              <li key={i.code}>
-                <span className={cx("member-name")}>
-                  <code className={cx("invite-code")}>{i.code}</code>
-                  {i.usedBy ? (
-                    <Badge tone="muted">
-                      {w.inviteUsed(i.usedBy.name ?? w.inviteRemovedAccount)}
-                    </Badge>
-                  ) : (
-                    <Badge tone="accent">{w.inviteUnused}</Badge>
+      <Loaded value={list} error={error}>
+        {(list) => (
+          <div className={cx("group-card members invites")}>
+            <div className={cx("members-bar")}>
+              <small>{w.invitesCount(list.filter((i) => !i.usedBy).length, list.length)}</small>
+            </div>
+            <ul>
+              {list.map((i) => (
+                <li key={i.code}>
+                  <span className={cx("member-name")}>
+                    <code className={cx("invite-code")}>{i.code}</code>
+                    {i.usedBy ? (
+                      <Badge tone="muted">
+                        {w.inviteUsed(i.usedBy.name ?? w.inviteRemovedAccount)}
+                      </Badge>
+                    ) : (
+                      <Badge tone="accent">{w.inviteUnused}</Badge>
+                    )}
+                  </span>
+                  <small className={cx("invite-when")}>
+                    {ago(i.usedAt ?? i.createdAt)}
+                  </small>
+                  {!i.usedBy && (
+                    <>
+                      <button
+                        className={cx("invite-action")}
+                        title={copied === i.code ? w.inviteCopied : w.inviteCopy}
+                        aria-label={w.inviteCopy}
+                        onClick={() =>
+                          void navigator.clipboard?.writeText(i.code).then(() => {
+                            setCopied(i.code);
+                            setTimeout(
+                              () => setCopied((c) => (c === i.code ? undefined : c)),
+                              1500,
+                            );
+                          })
+                        }
+                      >
+                        {copied === i.code ? <Check size={15} /> : <Copy size={15} />}
+                      </button>
+                      <button
+                        className={cx("invite-action")}
+                        title={w.inviteRemove}
+                        aria-label={w.inviteRemove}
+                        onClick={() => {
+                          if (!confirm(w.inviteRemoveConfirm(i.code))) return;
+                          void attempt(async () => {
+                            await api(
+                              "/admin/invites/" + encodeURIComponent(i.code),
+                              "DELETE",
+                            );
+                            update((old) => old.filter((x) => x.code !== i.code));
+                          });
+                        }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </>
                   )}
-                </span>
-                <small className={cx("invite-when")}>
-                  {ago(i.usedAt ?? i.createdAt)}
-                </small>
-                {!i.usedBy && (
-                  <>
-                    <button
-                      className={cx("invite-action")}
-                      title={copied === i.code ? w.inviteCopied : w.inviteCopy}
-                      aria-label={w.inviteCopy}
-                      onClick={() =>
-                        void navigator.clipboard?.writeText(i.code).then(() => {
-                          setCopied(i.code);
-                          setTimeout(
-                            () => setCopied((c) => (c === i.code ? undefined : c)),
-                            1500,
-                          );
-                        })
-                      }
-                    >
-                      {copied === i.code ? <Check size={15} /> : <Copy size={15} />}
-                    </button>
-                    <button
-                      className={cx("invite-action")}
-                      title={w.inviteRemove}
-                      aria-label={w.inviteRemove}
-                      onClick={() => {
-                        if (!confirm(w.inviteRemoveConfirm(i.code))) return;
-                        void attempt(async () => {
-                          await api(
-                            "/admin/invites/" + encodeURIComponent(i.code),
-                            "DELETE",
-                          );
-                          setList((old) => old!.filter((x) => x.code !== i.code));
-                        });
-                      }}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </>
-                )}
-              </li>
-            ))}
-            {!list.length && (
-              <li className={cx("members-none")}>{w.noInvites}</li>
-            )}
-          </ul>
-        </div>
-      )}
+                </li>
+              ))}
+              {!list.length && (
+                <li className={cx("members-none")}>{w.noInvites}</li>
+              )}
+            </ul>
+          </div>
+        )}
+      </Loaded>
     </section>
   );
 }
@@ -540,32 +475,11 @@ function Roles() {
   const t = useT(),
     w = t.settings,
     roleName = useRoleName();
-  const [roles, setRoles] = useState<AccountRole[]>(),
-    [counts, setCounts] = useState<Record<string, number>>({}),
-    [open, setOpen] = useState<string>(),
-    [error, E] = useState("");
-  useEffect(() => {
-    void Promise.all([
-      api<AccountRole[]>("/admin/roles"),
-      api<Account[]>("/admin/accounts"),
-    ]).then(
-      ([r, a]) => {
-        setRoles(r);
-        const n: Record<string, number> = {};
-        for (const x of a) n[x.role] = (n[x.role] ?? 0) + 1;
-        setCounts(n);
-      },
-      (e) => E(e.message),
-    );
-  }, []);
-  const attempt = async (fn: () => Promise<void>) => {
-    E("");
-    try {
-      await fn();
-    } catch (e) {
-      E(e instanceof Error ? e.message : String(e));
-    }
-  };
+  const { value, update, error, attempt } = useLoaded(() =>
+    Promise.all([api<AccountRole[]>("/admin/roles"), api<Account[]>("/admin/accounts")]),
+  );
+  const [open, setOpen] = useState<string>();
+  const roles = value?.[0];
   const save = (r: AccountRole, patch: Partial<AccountRole>) =>
     attempt(async () => {
       const changed = await api<AccountRole>("/admin/roles/" + r.id, "PUT", {
@@ -573,7 +487,7 @@ function Roles() {
         permissions: r.permissions,
         ...patch,
       });
-      setRoles((old) => old!.map((x) => (x.id === r.id ? changed : x)));
+      update(([roles, accounts]) => [roles.map((x) => (x.id === r.id ? changed : x)), accounts]);
     });
   const summary = (r: AccountRole) =>
     r.permissions.length === permissions.length
@@ -596,7 +510,7 @@ function Roles() {
                   name: w.newRole(n),
                   permissions: [],
                 });
-                setRoles((old) => [...old!, made]);
+                update(([roles, accounts]) => [[...roles, made], accounts]);
                 setOpen(made.id);
               })
             }
@@ -606,94 +520,89 @@ function Roles() {
           </button>
         )}
       </Head>
-      {error && (
-        <p className={cx("error")} role="alert">
-          {error}
-        </p>
-      )}
-      {!roles ? (
-        !error && <Spinner />
-      ) : (
-        <ul className={cx("entries")}>
-          {roles.map((r) => (
-            <Entry
-              key={r.id}
-              icon={<ShieldCheck size={16} />}
-              title={roleName(r)}
-              detail={summary(r)}
-              badges={r.builtin && <Badge tone="muted">{w.builtinRole}</Badge>}
-              aside={w.membersCount(counts[r.id] ?? 0)}
-              open={open === r.id}
-              toggle={() => setOpen(open === r.id ? undefined : r.id)}
-            >
-              {r.id === "admin" ? (
-                <p className={cx("entry-note")}>{w.adminHint}</p>
-              ) : r.id === "member" ? (
-                <p className={cx("entry-note")}>{w.memberHint}</p>
-              ) : (
-                <Group>
-                  <Row label={w.roleName}>
-                    <input
-                      defaultValue={r.name}
-                      onBlur={(e) => {
-                        const name = e.target.value.trim();
-                        if (name && name !== r.name) void save(r, { name });
-                        else e.target.value = r.name;
-                      }}
-                    />
-                  </Row>
-                </Group>
-              )}
-              <Group title={w.permissionsTitle}>
-                {permissions.map((p) => (
-                  <Row
-                    key={p}
-                    label={w.permissions[p]}
-                    hint={w.permissionHints[p]}
-                  >
-                    {r.id === "admin" ? (
-                      <Check size={17} className={cx("granted")} />
-                    ) : (
-                      <Switch
-                        checked={r.permissions.includes(p)}
-                        onChange={(on) =>
-                          void save(r, {
-                            permissions: on
-                              ? [...r.permissions, p]
-                              : r.permissions.filter((x) => x !== p),
-                          })
-                        }
+      <Loaded value={value} error={error}>
+        {([roles, accounts]) => (
+          <ul className={cx("entries")}>
+            {roles.map((r) => (
+              <Entry
+                key={r.id}
+                icon={<ShieldCheck size={16} />}
+                title={roleName(r)}
+                detail={summary(r)}
+                badges={r.builtin && <Badge tone="muted">{w.builtinRole}</Badge>}
+                aside={w.membersCount(accounts.filter((a) => a.role === r.id).length)}
+                open={open === r.id}
+                toggle={() => setOpen(open === r.id ? undefined : r.id)}
+              >
+                {r.id === "admin" ? (
+                  <p className={cx("entry-note")}>{w.adminHint}</p>
+                ) : r.id === "member" ? (
+                  <p className={cx("entry-note")}>{w.memberHint}</p>
+                ) : (
+                  <Group>
+                    <Row label={w.roleName}>
+                      <input
+                        defaultValue={r.name}
+                        onBlur={(e) => {
+                          const name = e.target.value.trim();
+                          if (name && name !== r.name) void save(r, { name });
+                          else e.target.value = r.name;
+                        }}
                       />
-                    )}
-                  </Row>
-                ))}
-              </Group>
-              {!r.builtin && (
-                <footer className={cx("entry-foot")}>
-                  <small>{w.removeRoleHint}</small>
-                  <button
-                    className={cx("secondary small danger")}
-                    onClick={() => {
-                      if (!confirm(w.removeRoleConfirm(r.name))) return;
-                      void attempt(async () => {
-                        await api("/admin/roles/" + r.id, "DELETE");
-                        setRoles((old) => old!.filter((x) => x.id !== r.id));
-                        setCounts((old) => ({
-                          ...old,
-                          member: (old.member ?? 0) + (old[r.id] ?? 0),
-                        }));
-                      });
-                    }}
-                  >
-                    <Trash2 size={14} />
-                    {w.removeRole}
-                  </button>
-                </footer>
-              )}
-            </Entry>
-          ))}
-        </ul>
-      )}
+                    </Row>
+                  </Group>
+                )}
+                <Group title={w.permissionsTitle}>
+                  {permissions.map((p) => (
+                    <Row
+                      key={p}
+                      label={w.permissions[p]}
+                      hint={w.permissionHints[p]}
+                    >
+                      {r.id === "admin" ? (
+                        <Check size={17} className={cx("granted")} />
+                      ) : (
+                        <Switch
+                          checked={r.permissions.includes(p)}
+                          onChange={(on) =>
+                            void save(r, {
+                              permissions: on
+                                ? [...r.permissions, p]
+                                : r.permissions.filter((x) => x !== p),
+                            })
+                          }
+                        />
+                      )}
+                    </Row>
+                  ))}
+                </Group>
+                {!r.builtin && (
+                  <footer className={cx("entry-foot")}>
+                    <small>{w.removeRoleHint}</small>
+                    <button
+                      className={cx("secondary small danger")}
+                      onClick={() => {
+                        if (!confirm(w.removeRoleConfirm(r.name))) return;
+                        void attempt(async () => {
+                          await api("/admin/roles/" + r.id, "DELETE");
+                          // Its accounts are members again.
+                          update(([roles, accounts]) => [
+                            roles.filter((x) => x.id !== r.id),
+                            accounts.map((a) => (a.role === r.id ? { ...a, role: "member" } : a)),
+                          ]);
+                        });
+                      }}
+                    >
+                      <Trash2 size={14} />
+                      {w.removeRole}
+                    </button>
+                  </footer>
+                )}
+              </Entry>
+            ))}
+          </ul>
+        )}
+      </Loaded>
     </section>
   );
 }

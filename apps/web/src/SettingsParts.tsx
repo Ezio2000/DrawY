@@ -1,8 +1,9 @@
 /* The pieces every settings page is made of: a row per setting, settings grouped on a
  * card, a section's head, and lists of things that open to their own settings. */
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { cx } from "./cx.ts";
+import { Spinner } from "./ui/primitives.tsx";
 
 export const newId = (prefix: string) => prefix + "-" + crypto.randomUUID().slice(0, 8);
 
@@ -111,3 +112,47 @@ export const Badge = ({
     {children}
   </span>
 );
+
+/** What a section reads from the server once it opens: the value when it has arrived, a
+ * way to change it in place, the last error, and `attempt`, which runs a change and reports
+ * its error the same way. */
+export function useLoaded<T>(load: () => Promise<T>) {
+  const [value, setValue] = useState<T>(),
+    [error, setError] = useState("");
+  useEffect(() => {
+    void load().then(setValue, (e: Error) => setError(e.message));
+  }, []);
+  const update = (change: (value: T) => T) =>
+    setValue((old) => (old === undefined ? old : change(old)));
+  const attempt = async (change: () => Promise<void>) => {
+    setError("");
+    try {
+      await change();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  return { value, update, error, attempt };
+}
+
+/** A section's error, then what it shows once that has arrived; a spinner until then. */
+export function Loaded<T>({
+  value,
+  error,
+  children,
+}: {
+  value: T | undefined;
+  error: string;
+  children: (value: T) => ReactNode;
+}) {
+  return (
+    <>
+      {error && (
+        <p className={cx("error")} role="alert">
+          {error}
+        </p>
+      )}
+      {value === undefined ? !error && <Spinner /> : children(value)}
+    </>
+  );
+}
