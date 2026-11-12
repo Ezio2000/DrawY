@@ -333,10 +333,6 @@ export function historyOf(history: Pick<RevisionSummary, "revision" | "cause" | 
     unsaved: unsaved.map((e) => ({ revision: e.revision, revisions: [...e.revisions] })),
   };
 }
-/** The versions of a work as they stand now, oldest first, from its revisions in any order. */
-export const versionsOf = (
-  history: Pick<RevisionSummary, "revision" | "cause" | "updatedAt">[],
-): Version[] => historyOf(history).versions;
 /** The version a revision belongs to. */
 export const versionOf = (versions: Version[], revision: number) =>
   versions.find((v) => v.revisions.includes(revision));

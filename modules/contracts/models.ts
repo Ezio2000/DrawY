@@ -444,7 +444,7 @@ const writerModelObject = z.object({
   speed: z.enum(speeds),
   builtinSearch: z.boolean(),
   // Catalogs saved before it was asked keep the request limits they always had.
-  toolLimits: z.boolean().default(true),
+  toolLimits: z.boolean(),
   prices: z.object({ ...tokenPricesShape, search: money }),
   speedRates: z.partialRecord(z.enum(speeds), z.number().min(0).max(100)),
 });

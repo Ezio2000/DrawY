@@ -4,10 +4,7 @@ import { z } from "zod";
 import { Library, LibraryError } from "./library.ts";
 import { Streets, StreetsError } from "./streets.ts";
 import {
-  describeSchema,
   kindSchema,
-  reserveSchema,
-  searchSchema,
   shelfSchema,
 } from "./schema.ts";
 
@@ -47,7 +44,7 @@ export function createServer(
   );
   app.get("/styles", (c) => c.json(library.styles()));
   app.post("/search", async (c) =>
-    c.json(library.search(searchSchema.parse(await c.req.json()), viewer(c))),
+    c.json(library.search(await c.req.json(), viewer(c))),
   );
   app.get("/browse", (c) =>
     c.json(
@@ -79,7 +76,7 @@ export function createServer(
     return c.json(library.publish(c.req.param("id"), published));
   });
   app.post("/materials/reserve", async (c) =>
-    c.json(library.reserve(reserveSchema.parse(await c.req.json()), owner(c))),
+    c.json(library.reserve(await c.req.json(), owner(c))),
   );
   app.put("/materials/:id/file", async (c) =>
     c.json(
@@ -101,7 +98,7 @@ export function createServer(
     const file = form.get("file");
     if (!(file instanceof File) || !file.type.startsWith("image/"))
       throw new LibraryError("请上传图片");
-    const meta = describeSchema.parse(JSON.parse(String(form.get("meta"))));
+    const meta = JSON.parse(String(form.get("meta")));
     return c.json(
       await library.ingest(
         new Uint8Array(await file.arrayBuffer()),

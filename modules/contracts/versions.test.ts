@@ -1,5 +1,5 @@
 import { it, expect } from "vitest";
-import { historyOf, stepBefore, versionsOf, type Cause, type RevisionSummary } from "./index.ts";
+import { historyOf, stepBefore, type Cause, type RevisionSummary } from "./index.ts";
 
 const history = (causes: Cause[]): RevisionSummary[] =>
   causes.map((cause, i) => ({ revision: i + 1, updatedAt: i, cause }));
@@ -15,7 +15,7 @@ it("counts one version for each request, however many drafts it saved", () => {
     { kind: "edit" },
     { kind: "save" },
   ]);
-  const versions = versionsOf(h);
+  const versions = historyOf(h).versions;
   expect(versions.map((v) => [v.number, v.cause.kind, v.revision, v.revisions.length])).toEqual([
     [0, "create", 1, 1],
     [1, "run", 9, 8],
@@ -23,7 +23,7 @@ it("counts one version for each request, however many drafts it saved", () => {
     [3, "save", 16, 3],
   ]);
   // Order given does not matter.
-  expect(versionsOf([...h].reverse())).toEqual(versions);
+  expect(historyOf([...h].reverse()).versions).toEqual(versions);
   // Undoing goes back a whole version.
   expect(stepBefore(h, 16)).toBe(13);
 });
@@ -32,21 +32,21 @@ it("goes back to a version instead of making a new one, and forward again", () =
   const h = history([{ kind: "create" }, run("a"), run("b"), run("c")]);
   const back = [...h, { revision: 5, updatedAt: 5, cause: { kind: "restore", revision: 2 } as Cause }];
   // Version 1 is the latest again; 2 and 3 leave the list.
-  expect(versionsOf(back).map((v) => [v.number, v.revision, v.revisions])).toEqual([
+  expect(historyOf(back).versions.map((v) => [v.number, v.revision, v.revisions])).toEqual([
     [0, 1, [1]],
     [1, 2, [2, 5]],
   ]);
   expect(stepBefore(back, 5)).toBe(1);
   // The next request is version 2.
   const next = [...back, { revision: 6, updatedAt: 6, cause: run("d") }];
-  expect(versionsOf(next).map((v) => [v.number, v.revision])).toEqual([
+  expect(historyOf(next).versions.map((v) => [v.number, v.revision])).toEqual([
     [0, 1],
     [1, 2],
     [2, 6],
   ]);
   // Going back to a version that had left the list brings it back with those under it.
   const forward = [...back, { revision: 6, updatedAt: 6, cause: { kind: "restore", revision: 4 } as Cause }];
-  expect(versionsOf(forward).map((v) => [v.number, v.revision])).toEqual([
+  expect(historyOf(forward).versions.map((v) => [v.number, v.revision])).toEqual([
     [0, 1],
     [1, 2],
     [2, 3],
@@ -91,5 +91,5 @@ it("keeps hand edits out of the versions until they are saved as one", () => {
   });
   // A request made on edits not saved takes them into its version.
   const asked = history([{ kind: "create" }, run("a"), draft, run("b")]);
-  expect(versionsOf(asked).at(-1)).toMatchObject({ number: 2, revisions: [3, 4] });
+  expect(historyOf(asked).versions.at(-1)).toMatchObject({ number: 2, revisions: [3, 4] });
 });

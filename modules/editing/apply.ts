@@ -17,6 +17,7 @@ import {
   type Work,
   type WorkEdit,
 } from "../contracts/index.ts";
+import { isRecord } from "../contracts/edit.ts";
 
 /* An edit laid on a work, for both the workspace that commits it and the page that shows a
  * hand edit before the workspace has answered, so both lay it the same way. Everything wrong
@@ -295,8 +296,6 @@ export function readEdit(input: unknown): WorkEdit {
   );
 }
 const records = ["scenes", "modules", "links", "drawings", "details"] as const;
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === "object" && !Array.isArray(v);
 /** Two changes to one record as one, written or not. What the later says wins; objects it
  * changes keep what the earlier said about their other keys, and edits to text run in turn. */
 function bothRecords(a: Record<string, unknown>, b: Record<string, unknown>) {
@@ -305,7 +304,7 @@ function bothRecords(a: Record<string, unknown>, b: Record<string, unknown>) {
     out[key] =
       Array.isArray(a[key]) && Array.isArray(value) && /edits$/i.test(key)
         ? [...a[key], ...value]
-        : isObject(a[key]) && isObject(value) && key !== "target"
+        : isRecord(a[key]) && isRecord(value) && key !== "target"
           ? bothRecords(a[key], value)
           : value;
   return out;
@@ -314,10 +313,10 @@ function bothRecords(a: Record<string, unknown>, b: Record<string, unknown>) {
  * refused write and its correction, or a hand edit in two steps. A record of the same id
  * becomes one record, and what the later removes the earlier no longer adds. */
 export function composed(earlier: unknown, later: unknown): Record<string, unknown> {
-  const a = isObject(earlier) ? earlier : {},
-    b = isObject(later) ? later : {};
+  const a = isRecord(earlier) ? earlier : {},
+    b = isRecord(later) ? later : {};
   const out: Record<string, unknown> = { ...a, ...b };
-  const removed = isObject(b.remove) ? b.remove : {};
+  const removed = isRecord(b.remove) ? b.remove : {};
   for (const section of records) {
     const gone = new Set(Array.isArray(removed[section]) ? (removed[section] as unknown[]) : []);
     const list = [...(Array.isArray(a[section]) ? a[section] : [])].filter(
@@ -325,17 +324,17 @@ export function composed(earlier: unknown, later: unknown): Record<string, unkno
     );
     const add = Array.isArray(b[section]) ? b[section] : [];
     for (const record of add) {
-      const at = isObject(record) ? list.findIndex((r) => r?.id === record.id) : -1;
+      const at = isRecord(record) ? list.findIndex((r) => r?.id === record.id) : -1;
       if (at < 0) list.push(record);
       else list[at] = bothRecords(list[at], record as Record<string, unknown>);
     }
     if (list.length) out[section] = list;
     else delete out[section];
   }
-  if (isObject(a.style) && isObject(b.style)) out.style = { ...a.style, ...b.style };
+  if (isRecord(a.style) && isRecord(b.style)) out.style = { ...a.style, ...b.style };
   if (Array.isArray(a.materials) && Array.isArray(b.materials))
     out.materials = [...new Set([...a.materials, ...b.materials])];
-  if (isObject(a.remove) && isObject(b.remove)) {
+  if (isRecord(a.remove) && isRecord(b.remove)) {
     const union: Record<string, unknown> = { ...a.remove };
     for (const [k, v] of Object.entries(b.remove))
       union[k] = [...new Set([...(Array.isArray(a.remove[k]) ? a.remove[k] : []), ...(Array.isArray(v) ? v : [])])];

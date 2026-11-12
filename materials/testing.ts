@@ -13,27 +13,17 @@ export function serveLibrary(base: string) {
   const library = new Library(dir, new URL("./seed", import.meta.url).pathname);
   const app = createServer(library);
   const real = globalThis.fetch;
-  const routed = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input instanceof Request ? input.url : input);
-    return url.startsWith(base)
-      ? app.request(url.slice(base.length), init)
-      : real(input, init);
-  }) as typeof fetch;
-  vi.stubGlobal("fetch", routed);
+  /** Sends requests for the library to it, and the rest to `rest`. */
+  const route = (rest: typeof fetch) =>
+    vi.stubGlobal("fetch", (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      return url.startsWith(base) ? app.request(url.slice(base.length), init) : rest(input, init);
+    }) as typeof fetch);
+  route(real);
   return {
     library,
     /** Requests that did not go to the library are passed to `fn`. */
-    route(fn: typeof fetch) {
-      vi.stubGlobal("fetch", (async (
-        input: RequestInfo | URL,
-        init?: RequestInit,
-      ) => {
-        const url = String(input instanceof Request ? input.url : input);
-        return url.startsWith(base)
-          ? app.request(url.slice(base.length), init)
-          : fn(input, init);
-      }) as typeof fetch);
-    },
+    route,
     close() {
       vi.stubGlobal("fetch", real);
       library.close();

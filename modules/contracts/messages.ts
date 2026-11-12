@@ -51,7 +51,7 @@ const exact: Record<string, string> = {
   "生图模型 ID 重复": "Two picture models have the same ID",
   默认生图模型不存在: "The default picture model doesn't exist",
   "搜索服务 ID 重复": "Two search services have the same ID",
-  默认搜索服务不存在: "The default search service doesn't exist",
+  默认搜索方式不存在: "The default search doesn't exist",
   "只能打开 http 或 https 网址": "Only http and https pages can be opened",
   "作品版本已更新，请重新读取": "The work has changed; reload it and try again",
   "作品需要一个根场景": "The work needs a root scene",
@@ -85,7 +85,6 @@ const exact: Record<string, string> = {
 };
 
 const patterns: [RegExp, (...m: string[]) => string][] = [
-  [/^模型服务中止了这一轮的输出：(.+)$/, (reason) => `The model service stopped this turn's output: ${reason}`],
   [/^模型服务中止了这一轮的输出：(.+)$/, (reason) => `The model service stopped this turn's output: ${reason}`],
   [/^画布查看服务不可用([\s\S]*)$/, (d) => "The canvas capture service is unavailable" + d],
   [/^生图失败 (\d+): ([\s\S]*)$/, (s, d) => `Image generation failed (${s}): ${d}`],

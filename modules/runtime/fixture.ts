@@ -129,30 +129,20 @@ return root;`,
     },
   };
 }
-/** A scene written whole as an edit. */
-export function sceneEdit(scene: Scene, clear = true): WorkEdit {
-  return {
-    scenes: [
-      {
-        id: scene.id,
-        title: scene.title,
-        ...(scene.parentId ? { parentId: scene.parentId } : {}),
-        interaction: scene.interaction ?? null,
-        checks: scene.checks,
-        ...(clear ? { clear: true } : {}),
-      },
-    ],
-    modules: scene.modules.map(({ bounds, ...m }) => ({ ...m, scene: scene.id, bounds: boxOf(bounds) })),
-    links: scene.links.map((l) => ({ ...l, scene: scene.id })),
-  };
-}
 /** A work's contents written as one edit: its scenes parents first, then the rest. */
 export function workEdit(work: Work): WorkEdit {
-  const scenes = Object.values(work.scenes).map((s) => sceneEdit(s));
+  const scenes = Object.values(work.scenes);
   return {
-    scenes: scenes.flatMap((s) => s.scenes!),
-    modules: scenes.flatMap((s) => s.modules!),
-    links: scenes.flatMap((s) => s.links!),
+    scenes: scenes.map((scene) => ({
+      id: scene.id,
+      title: scene.title,
+      ...(scene.parentId ? { parentId: scene.parentId } : {}),
+      interaction: scene.interaction ?? null,
+      checks: scene.checks,
+      clear: true,
+    })),
+    modules: scenes.flatMap((s) => s.modules.map(({ bounds, ...m }) => ({ ...m, scene: s.id, bounds: boxOf(bounds) }))),
+    links: scenes.flatMap((s) => s.links.map((l) => ({ ...l, scene: s.id }))),
     drawings: Object.values(work.drawings),
     details: Object.values(work.details),
   };

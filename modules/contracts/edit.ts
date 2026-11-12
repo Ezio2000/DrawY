@@ -29,7 +29,7 @@ export class EditRejected extends DomainError {
     );
   }
 }
-const isRecord = (v: unknown): v is Record<string, unknown> =>
+export const isRecord = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
 const POSITION = /^\d+$/;
 /** A list with items changed by position. Positions mean the list as it stands before this

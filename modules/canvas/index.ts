@@ -1682,19 +1682,6 @@ export class Canvas {
   get scale() {
     return this.camera.scale;
   }
-  /** Where a module is on screen. */
-  rectOf(id: string) {
-    const m = this.renderer.instances.get(id);
-    if (!m) return undefined;
-    const r = this.element.getBoundingClientRect(),
-      { x, y, scale } = this.camera;
-    return new DOMRect(
-      r.left + x + m.bounds.x * scale,
-      r.top + y + m.bounds.y * scale,
-      m.bounds.width * scale,
-      m.bounds.height * scale,
-    );
-  }
   /** Shows a module or a link with other data while a change to it is being made. */
   preview(id: string, data: Record<string, unknown>) {
     void this.renderer.redraw(id, data).then(() => this.paint());
