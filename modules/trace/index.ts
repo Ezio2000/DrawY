@@ -190,6 +190,10 @@ export class Tracer {
       )
       .run(span.id, span.traceId, JSON.stringify(span), JSON.stringify(brief(span)));
   }
+  /** A new span's place and name under the current one, its attributes as stored. */
+  private under(parent: Scope, kind: Span["kind"], name: string, attrs: Record<string, unknown>) {
+    return { id: id(), traceId: parent.traceId, parentId: parent.spanId, kind, name, attrs: this.clean(attrs) };
+  }
   /** Runs `fn` as the root of one execution of a trace. */
   within<T>(traceId: string, fn: () => Promise<T>): Promise<T> {
     return scope.run({ traceId, spanId: null }, fn);
@@ -203,16 +207,7 @@ export class Tracer {
   ): Promise<T> {
     const parent = scope.getStore();
     if (!this.db || !parent) return fn(idle);
-    const span: Span = {
-      id: id(),
-      traceId: parent.traceId,
-      parentId: parent.spanId,
-      kind,
-      name,
-      startedAt: Date.now(),
-      status: "running",
-      attrs: this.clean(attrs),
-    };
+    const span: Span = { ...this.under(parent, kind, name, attrs), startedAt: Date.now(), status: "running" };
     const active = new ActiveSpan(this, span);
     this.persist(span);
     try {
@@ -242,16 +237,11 @@ export class Tracer {
     const parent = scope.getStore();
     if (!this.db || !parent) return;
     this.persist({
-      id: id(),
-      traceId: parent.traceId,
-      parentId: parent.spanId,
-      kind,
-      name,
+      ...this.under(parent, kind, name, attrs),
       startedAt: time.startedAt,
       endedAt: time.endedAt ?? Date.now(),
       status: time.error ? "error" : "ok",
       ...(time.error ? { error: time.error } : {}),
-      attrs: this.clean(attrs),
     });
   }
   /** Records something that happened at one moment. */
