@@ -41,19 +41,20 @@ export function setData(
 }
 
 /** The same values changed on several parts of a scene at once, modules and links alike:
- * a selection given one colour, one shape, one size of type. */
+ * a selection given one colour, one shape, one size of type. `patch` may also be worked out
+ * for each part. */
 export function restyle(
   work: Work,
   sceneId: string,
   ids: string[],
-  patch: Record<string, unknown>,
+  patch: Record<string, unknown> | ((part: Instance | Link) => Record<string, unknown>),
 ): WorkEdit | null {
   const modules: NonNullable<WorkEdit["modules"]> = [],
     links: NonNullable<WorkEdit["links"]> = [];
   for (const id of ids) {
     const part = partIn(work, sceneId, id);
     if (!part) continue;
-    const data = diffValue(part.data, { ...part.data, ...patch });
+    const data = diffValue(part.data, { ...part.data, ...(typeof patch === "function" ? patch(part) : patch) });
     if (!Object.keys(data).length) continue;
     (isLink(part) ? links : modules).push({ id, scene: sceneId, data });
   }
@@ -62,19 +63,8 @@ export function restyle(
 }
 
 /** Gives parts the look copied from another: each takes what of it its drawing can. */
-export function pasteLook(work: Work, sceneId: string, ids: string[], look: Look): WorkEdit | null {
-  const modules: NonNullable<WorkEdit["modules"]> = [],
-    links: NonNullable<WorkEdit["links"]> = [];
-  for (const id of ids) {
-    const part = partIn(work, sceneId, id);
-    if (!part) continue;
-    const data = diffValue(part.data, { ...part.data, ...lookFor(work, part, look) });
-    if (!Object.keys(data).length) continue;
-    (isLink(part) ? links : modules).push({ id, scene: sceneId, data });
-  }
-  if (!modules.length && !links.length) return null;
-  return { ...(modules.length ? { modules } : {}), ...(links.length ? { links } : {}) };
-}
+export const pasteLook = (work: Work, sceneId: string, ids: string[], look: Look) =>
+  restyle(work, sceneId, ids, (part) => lookFor(work, part, look));
 
 /** A place in scene units to the hundredth: a drag lands between pixels, and the author
  * reads these numbers. */
