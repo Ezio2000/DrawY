@@ -7,6 +7,7 @@ import {
   drawingOf,
   type Work,
   type Observation,
+  type Defects,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import type { Item } from "../models/index.ts";
@@ -14,6 +15,8 @@ import type { Shot } from "./capture.ts";
 import { tracer } from "../trace/index.ts";
 import { drawnWith } from "../materials/index.ts";
 import { MIN_TEXT, opening, union } from "../contracts/geometry.ts";
+import { defectsSaid, inspect, type Inspector } from "./inspect.ts";
+export { inspectorFrom, type Inspector } from "./inspect.ts";
 export const viewSchema = z.object({
   sceneId: z.string().optional().describe("One scene; leave out to see every nonempty scene"),
   claims: z
@@ -74,6 +77,8 @@ export async function observe(
     observations: [],
     reported: {},
   },
+  /** Who pays for the visual check of each opening view; without one, none is made. */
+  inspector?: Inspector,
 ) {
   const options = viewSchema.parse(input),
     work = store.work(workId);
@@ -115,6 +120,7 @@ export async function observe(
               origin,
               cookie: token,
               annotate: options.annotate,
+              inspect: !!inspector && !closeUpOnly,
               scenes: scenes.map((s) => ({
                 id: s.id,
                 url: `${origin}/api/works/${work.id}/scenes/${encodeURIComponent(s.id)}?revision=${work.revision}`,
@@ -145,6 +151,12 @@ export async function observe(
             : undefined,
         );
         const screenshots = kept.filter((c) => !!c);
+        const checked = await Promise.all(
+          shots.map((s) => (inspector && s.overview ? inspect(inspector, work, s, signal) : undefined)),
+        );
+        const defects = Object.fromEntries(
+          shots.flatMap((s, i) => (checked[i]?.defects ? [[s.sceneId, checked[i].defects]] : [])),
+        ) as Record<string, Defects>;
         span.set({
           shots: shots.map((s, i) => ({
             view: s.label,
@@ -153,6 +165,7 @@ export async function observe(
             camera: s.camera,
             modules: s.modules,
             errors: s.errors,
+            ...(checked[i]?.defects ? { defects: checked[i].defects } : {}),
           })),
         });
         const observation: Observation = {
@@ -162,6 +175,7 @@ export async function observe(
           overview: !closeUpOnly,
           screenshots,
           errors: [...new Set(shots.flatMap((s) => s.errors))],
+          ...(Object.keys(defects).length ? { defects } : {}),
           ...(shots.some((s) => s.overview && s.text?.smallest)
             ? {
                 smallestText: Object.fromEntries(
@@ -200,6 +214,7 @@ export async function observe(
                   ? {
                       figure: figure(work, s),
                       ...(s.text?.clipped.length ? { clippedText: s.text.clipped } : {}),
+                      ...(defects[s.sceneId] ? { defects: defectsSaid(work, s.sceneId, defects[s.sceneId]) } : {}),
                       ...moduleReport(work, s, earlier.reported),
                     }
                   : {}),
@@ -218,7 +233,15 @@ export async function observe(
               : []),
           ]),
         ];
-        return { observation, content };
+        const inspected = checked.filter((c) => !!c);
+        return {
+          observation,
+          content,
+          inspected: {
+            calls: inspected.reduce((n, c) => n + c.calls, 0),
+            cost: inspected.reduce((n, c) => n + c.cost, 0),
+          },
+        };
       } finally {
         store.storage.db.prepare("DELETE FROM sessions WHERE id=?").run(token);
       }

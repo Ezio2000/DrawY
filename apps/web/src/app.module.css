@@ -8949,6 +8949,10 @@ body:has(.resizer[data-dragging]) {
   --swatch: #788c5d;
 }
 
+.spend [data-key="inspect"] {
+  --swatch: #c2a35a;
+}
+
 .spend [data-key="failed"] {
   --swatch: #b0aea5;
 }

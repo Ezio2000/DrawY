@@ -614,6 +614,8 @@ export interface RunCost {
   author: number;
   search: number;
   image: number;
+  /** The visual checks of the canvas, billed per call. */
+  inspect: number;
   /** The drawing model's attempts that failed, apart from `author` and within `total`. */
   failed: number;
   total: number;
@@ -641,7 +643,8 @@ export function costOf(usage: RunUsage | undefined, prices: RunPrices | undefine
         (i.textOutput ?? 0) * p.textOutput) /
         1e6
     : 0;
-  return { author, search, image, failed, total: author + search + image + failed };
+  const inspect = u.inspections?.cost ?? 0;
+  return { author, search, image, inspect, failed, total: author + search + image + inspect + failed };
 }
 
 /** What one run is made with: the drawing model with the options picked, how it searches
@@ -656,10 +659,18 @@ export interface Settings {
   imageName: string;
   prices: RunPrices;
   preferences: string;
+  /** The key the visual check of each look is paid with: an OpenRouter drawing provider's,
+   * whichever model is picked, since the check runs on OpenRouter. */
+  inspector?: { credential: string };
 }
+/** The first OpenRouter drawing provider with a key. */
+const openRouterKey = (catalog: ModelCatalog) =>
+  catalog.writers.find((p) => /(^|\.)openrouter\.ai$/.test(new URL(p.baseUrl).hostname) && p.credential)
+    ?.credential;
 export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings {
   const { label, writer, effort, speed, search, painter } = picked(catalog, own);
   const { provider: p, model: m } = writer;
+  const inspectWith = openRouterKey(catalog);
   const rate = m.speedRates[speed] ?? speedRates[speed];
   const scaled = (n: number) => n * rate;
   return {
@@ -703,6 +714,7 @@ export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings 
       image: painter.model.prices,
     },
     preferences: own.preferences,
+    ...(inspectWith ? { inspector: { credential: inspectWith } } : {}),
   };
 }
 

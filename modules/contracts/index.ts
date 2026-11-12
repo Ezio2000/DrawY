@@ -580,6 +580,18 @@ export interface Observation {
   errors: string[];
   /** The smallest text of each scene seen whole, in screenshot pixels. */
   smallestText?: Record<string, number>;
+  /** What the visual check found in each scene seen whole, where it found anything. */
+  defects?: Record<string, Defects>;
+}
+/** The faults the visual check looks for in a picture. */
+export const faults = ["text_pierce", "text_overlap", "line_merge"] as const;
+export type Fault = (typeof faults)[number];
+/** What the visual check found in one scene: the faults, and the modules and links most
+ * hurt, most likely first. */
+export interface Defects {
+  faults: Fault[];
+  modules: string[];
+  links: string[];
 }
 export interface Picture {
   name: string;
@@ -728,6 +740,8 @@ export interface RunUsage {
     imageInput?: number;
     textOutput?: number;
   };
+  /** Visual checks of the canvas, and what they cost in US dollars as the service bills it. */
+  inspections?: { count: number; cost: number };
   /** What failed and did not count towards the above, though it was spent all the same. */
   failed?: FailedUsage;
 }

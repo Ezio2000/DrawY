@@ -55,6 +55,8 @@ services:
       DRAWY_MATERIALS_URL: http://materials:8090
       DRAWY_CAPTURE_URL: http://capture:8091
       DRAWY_INTERNAL_URL: http://drawy-app:8080
+      # The visual check's OpenRouter key, when no OpenRouter drawing provider is set up.
+      DRAWY_INSPECT_KEY: ${DRAWY_INSPECT_KEY:-}
     networks:
       default:
         aliases: [drawy-app]

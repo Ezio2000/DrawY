@@ -39,6 +39,7 @@ vi.mock("../observation/index.ts", async (original) => ({
     content: [
       { type: "input_image", image_url: "data:image/png;base64,dmlzaWJsZQ==" },
     ],
+    inspected: { calls: 0, cost: 0 },
   })),
 }));
 /** What a scripted turn says: a tool call, or for `finish` the closing words of a turn
@@ -2190,7 +2191,7 @@ it("takes closing words as the end when the latest revision has been seen, witho
     rmSync(dir, { recursive: true });
   }
 });
-it("holds the end once for text too small to read, then takes the closing words", async () => {
+it("holds the end once for text too small to read and what the visual check found, then takes the closing words", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
   try {
@@ -2211,8 +2212,10 @@ it("holds the end once for text too small to read, then takes the closing words"
         screenshots: [],
         errors: [],
         smallestText: { root: 11 },
+        defects: { root: { faults: ["text_pierce"], modules: ["apex"], links: ["l-1"] } },
       },
       content: [],
+      inspected: { calls: 5, cost: 0.0009 },
     }));
     const turns = [called("view_canvas", {}), said("画好了。"), said("地图上的小字是底图自带的地名，画好了。")];
     let turn = 0;
@@ -2223,6 +2226,10 @@ it("holds the end once for text too small to read, then takes the closing words"
     const held = ctx.input.filter((i) => String(i.content).startsWith("The work is not done yet: "));
     expect(held).toHaveLength(1);
     expect(held[0].content).toContain("root 11px");
+    expect(held[0].content).toContain("root: apex, l-1");
+    // The check is billed with the run, apart from the drawing model.
+    expect(run.usage?.inspections).toEqual({ count: 5, cost: 0.0009 });
+    expect(costOf(run.usage, store.settings().prices)!.inspect).toBeCloseTo(0.0009);
   } finally {
     db.close();
     rmSync(dir, { recursive: true });

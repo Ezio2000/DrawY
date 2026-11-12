@@ -784,6 +784,7 @@ export function spentBy(run: Run) {
     pages: u?.pages ?? 0,
     images: u?.images?.count ?? 0,
     imageTokens: (u?.images?.input ?? 0) + (u?.images?.output ?? 0),
+    inspections: u?.inspections?.count ?? 0,
     hosted: Object.entries(u?.hosted ?? {}).filter(([n]) => n !== "web_search"),
     failed: {
       attempts: u?.failed?.attempts ?? 0,
@@ -810,6 +811,7 @@ const total = (list: Spent[]): Spent => ({
   pages: list.map((s) => s.pages).reduce(sum, 0),
   images: list.map((s) => s.images).reduce(sum, 0),
   imageTokens: list.map((s) => s.imageTokens).reduce(sum, 0),
+  inspections: list.map((s) => s.inspections).reduce(sum, 0),
   hosted: list.flatMap((s) => s.hosted),
   failed: {
     attempts: list.map((s) => s.failed.attempts).reduce(sum, 0),
@@ -826,6 +828,7 @@ const total = (list: Spent[]): Spent => ({
         author: list.map((s) => s.cost?.author ?? 0).reduce(sum, 0),
         search: list.map((s) => s.cost?.search ?? 0).reduce(sum, 0),
         image: list.map((s) => s.cost?.image ?? 0).reduce(sum, 0),
+        inspect: list.map((s) => s.cost?.inspect ?? 0).reduce(sum, 0),
         failed: list.map((s) => s.cost?.failed ?? 0).reduce(sum, 0),
         total: list.map((s) => s.cost?.total ?? 0).reduce(sum, 0),
       }
@@ -880,6 +883,14 @@ function Stats({
       parts: [w.images(s.images), !!s.imageTokens && w.tokens(k(s.imageTokens))],
       cost: s.cost?.image,
       used: s.images > 0,
+    },
+    {
+      key: "inspect",
+      label: w.inspect,
+      who: undefined,
+      parts: [w.inspections(s.inspections)],
+      cost: s.cost?.inspect,
+      used: s.inspections > 0,
     },
     {
       key: "failed",

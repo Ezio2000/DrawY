@@ -41,6 +41,7 @@ import {
 } from "../materials/index.ts";
 import { develop, type Development } from "../images/index.ts";
 import {
+  inspectorFrom,
   observe,
   requireObserved,
   Unavailable,
@@ -874,8 +875,8 @@ async function questions(
 }
 export class Agent {
   active = new Map<string, AbortController>();
-  /** Runs already held once for text too small to read. */
-  private heldForText = new Set<string>();
+  /** Runs already held once for what a look measured or the visual check found. */
+  private heldForCraft = new Set<string>();
   /** Pictures each run has asked for, developing in the background. */
   developments = new Map<string, (Development & { reported?: boolean })[]>();
   constructor(public publish: (user: string, event: object) => void) {}
@@ -1431,7 +1432,7 @@ export class Agent {
           run.status = "completed";
           store.context(run.id, ctx);
           this.developments.delete(run.id);
-          this.heldForText.delete(run.id);
+          this.heldForCraft.delete(run.id);
           return;
         }
         ctx.input.push({
@@ -1515,18 +1516,34 @@ export class Agent {
     );
     if (unseen.length)
       return `图片 ${unseen.map((d) => d.id).join(", ")} 在最后一次查看之后才显影，请再看一次画布`;
-    // Text too small to read holds the end once: some of it, such as the names a map
-    // draws, is not the author's to change, and it can say so and end.
-    if (this.heldForText.has(run.id)) return undefined;
-    const small = Object.values(work.scenes).flatMap((scene) => {
-      const px = run.observations
-        .filter((o) => o.revision === work.revision && o.overview && o.smallestText?.[scene.id] !== undefined)
-        .at(-1)?.smallestText?.[scene.id];
-      return px !== undefined && px < MIN_TEXT ? [`${scene.id} ${px}px`] : [];
-    });
-    if (!small.length) return undefined;
-    this.heldForText.add(run.id);
-    return `最小的字小于 ${MIN_TEXT} 像素（${small.join("，")}），读者看不清：放大或删减这些字再看一次；如果这些字不由你决定（比如地图自带的地名），说明原因后结束`;
+    // What a look measured or the check found holds the end once: some of it, such as the
+    // names a map draws or a fault the check imagined, is not the author's to change, and
+    // it can say so and end.
+    if (this.heldForCraft.has(run.id)) return undefined;
+    const latest = (scene: string) =>
+      run.observations
+        .filter((o) => o.revision === work.revision && o.overview && o.sceneIds.includes(scene))
+        .at(-1);
+    const small: string[] = [],
+      faulty: string[] = [];
+    for (const scene of Object.keys(work.scenes)) {
+      const look = latest(scene);
+      const px = look?.smallestText?.[scene];
+      if (px !== undefined && px < MIN_TEXT) small.push(`${scene} ${px}px`);
+      const d = look?.defects?.[scene];
+      if (d) faulty.push(`${scene}: ${[...d.modules, ...d.links].join(", ") || d.faults.join(", ")}`);
+    }
+    if (!small.length && !faulty.length) return undefined;
+    this.heldForCraft.add(run.id);
+    return [
+      small.length
+        ? `最小的字小于 ${MIN_TEXT} 像素（${small.join("，")}），读者看不清：放大或删减这些字`
+        : "",
+      faulty.length ? `最后一次查看的视觉检查仍发现线穿字、标签重叠或连线并线（${faulty.join("；")}）：改好这些部件` : "",
+    ]
+      .filter(Boolean)
+      .join("；") +
+      "，再看一次；如果这些不由你决定（比如地图自带的地名）或你看图确认没有问题，就写结束语。结束语只讲作品，不提这次检查";
   }
   /** Runs one tool call. `done` ends this execution: the run finished or waits for the user. */
   private async call(
@@ -1847,10 +1864,14 @@ export class Agent {
             let result: Awaited<ReturnType<typeof observe>> | undefined;
             for (const wait of [2000, 6000, 0]) {
               try {
-                result = await observe(store, run.workId, args, abort.signal, {
-                  observations: run.observations,
-                  reported: (ctx.reported ??= {}),
-                });
+                result = await observe(
+                  store,
+                  run.workId,
+                  args,
+                  abort.signal,
+                  { observations: run.observations, reported: (ctx.reported ??= {}) },
+                  inspectorFrom(ctx.settings.inspector),
+                );
                 break;
               } catch (e) {
                 if (!(e instanceof Unavailable) || !wait) throw e;
@@ -1859,6 +1880,11 @@ export class Agent {
             }
             if (!result) throw new Unavailable("画布查看服务不可用");
             run.observations.push(result.observation);
+            if (result.inspected.calls) {
+              const spent = (usageOf(run).inspections ??= { count: 0, cost: 0 });
+              spent.count += result.inspected.calls;
+              spent.cost += result.inspected.cost;
+            }
             const searched = research(run);
             output = searched
               ? { ...result.observation, research: searched }

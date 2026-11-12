@@ -202,3 +202,73 @@ it("needs a scene named for a close-up when several are drawn, and an action's e
     rmSync(dir, { recursive: true });
   }
 });
+
+it("has each opening view checked when there is a key, telling the author what was hurt and what it cost", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-observe-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.scenes.child.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const plain = { base64: "cGxhaW4=", frame: { x: 0, y: 0, width: 760, height: 700 }, quarters: [] };
+    const decisions: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        if (url.endsWith("/capture"))
+          return Response.json({
+            shots: [
+              {
+                sceneId: "root",
+                label: "全图",
+                overview: true,
+                viewport: { width: 1296, height: 828 },
+                base64: Buffer.from("image").toString("base64"),
+                errors: [],
+                camera: { x: 0, y: 0, scale: 1 },
+                modules: work.scenes.root.modules.map(({ id, bounds }) => ({ id, bounds })),
+                text: { small: [], clipped: [], words: { "level-1": "尊重需求" } },
+                plain,
+              },
+            ],
+          });
+        decisions.push(JSON.parse(String(init.body)));
+        return Response.json({
+          answers: {
+            has_text_pierce: { type: "noul", noul: 0.77 },
+            has_text_overlap: { type: "noul", noul: 0.05 },
+            culprit_module: { type: "choice", probabilities: { "level-1": 0.62, heading: 0.31, "level-2": 0.07 } },
+          },
+          usage: { input_tokens: 1300, cost: 0.00018 },
+        });
+      }),
+    );
+    const signal = new AbortController().signal;
+    const result = await observe(store, work.id, {}, signal, undefined, { credential: "key" });
+    expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).inspect).toBe(true);
+    expect(decisions).toHaveLength(1);
+    expect(result.inspected).toEqual({ calls: 1, cost: 0.00018 });
+    const defects = { faults: ["text_pierce"], modules: ["level-1", "heading"], links: [] };
+    expect(result.observation.defects).toEqual({ root: defects });
+    // Beside the screenshot, in words and ids the author can act on.
+    const said = result.content.flatMap((c) => (c.text?.startsWith("{") ? [JSON.parse(c.text)] : []));
+    expect(said[0].defects).toEqual({
+      note: expect.stringContaining("sometimes wrong"),
+      seen: ["a line crosses or touches words"],
+      modules: ["level-1", "heading"],
+    });
+    // Without a key nothing is checked, and the capture service is not asked for a plain view.
+    vi.mocked(fetch).mockClear();
+    decisions.length = 0;
+    const unchecked = await observe(store, work.id, {}, signal);
+    expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).inspect).toBe(false);
+    expect(decisions).toHaveLength(0);
+    expect(unchecked.observation.defects).toBeUndefined();
+    expect(unchecked.inspected).toEqual({ calls: 0, cost: 0 });
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});

@@ -859,6 +859,7 @@ it("captures full scenes and completed interaction states through the same runti
     origin,
     cookie: "fixture",
     annotate: true,
+    inspect: true,
     scenes: [
       {
         id: "root",
@@ -891,6 +892,47 @@ it("captures full scenes and completed interaction states through the same runti
   expect(shots.every((s) => s.errors.length === 0)).toBe(true);
   expect(shots.filter((s) => s.sceneId === "child")).toHaveLength(1);
   expect(shots[0].base64).not.toBe(shots[1].base64);
+  // The visual check is shown the opening view cropped to the figure, without the paper's
+  // dots or the annotations, and in four overlapping quarters.
+  const { plain } = shots[0];
+  expect(plain!.quarters).toHaveLength(4);
+  expect(plain!.frame.width).toBeLessThan(shots[0].viewport.width);
+  expect(shots.slice(1).every((s) => !s.plain)).toBe(true);
+  expect(shots[0].text!.words["level-0"]).toBeTruthy();
+  /** The pixels that are not white paper in a band of rows, and the annotations' red. */
+  const marks = (base64: string, band: { top: number; left: number; width: number; height: number }) =>
+    page.evaluate(
+      async ({ src, band }) => {
+        const img = new Image();
+        img.src = src;
+        await img.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0);
+        const all = ctx.getImageData(0, 0, img.width, img.height).data;
+        let red = 0;
+        for (let i = 0; i < all.length; i += 4) if (all[i] > 150 && all[i + 1] < 100 && all[i + 2] < 100) red++;
+        const data = ctx.getImageData(band.left, band.top, band.width, band.height).data;
+        let marked = 0;
+        for (let i = 0; i < data.length; i += 4) if (data[i] + data[i + 1] + data[i + 2] < 750) marked++;
+        return { width: img.width, height: img.height, marked, red };
+      },
+      { src: "data:image/png;base64," + base64, band },
+    );
+  // The top rows of the crop lie in its margin above the figure, on bare paper.
+  const { frame } = plain!;
+  const crop = await marks(plain!.base64, { top: 0, left: 0, width: frame.width, height: 12 });
+  expect(crop).toMatchObject({ width: frame.width, height: frame.height, marked: 0, red: 0 });
+  // The paper left of the figure has its dots in the screenshot, before the crop and after.
+  expect(frame.x).toBeGreaterThan(60);
+  const paper = { top: 0, left: 0, width: frame.x - 20, height: 60 };
+  expect((await marks(shots[0].base64!, paper)).marked).toBeGreaterThan(10);
+  expect((await marks(shots[1].base64!, paper)).marked).toBeGreaterThan(10);
+  expect((await marks(plain!.quarters[3].base64, { top: 0, left: 0, width: 10, height: 10 })).width).toBe(
+    plain!.quarters[3].frame.width,
+  );
 }, 30000);
 it("keeps words uncut at large sizes and at the edges of every library drawing, and reports what is cut", async () => {
   const drawings = seed("drawings") as DrawingMaterial[];

@@ -14,6 +14,8 @@ export interface CaptureRequest {
     actions?: Scene["checks"];
   }[];
   annotate?: boolean;
+  /** Whether each opening view also comes as a plain picture for the visual check. */
+  inspect?: boolean;
   cookie: string;
   origin: string;
 }
@@ -25,6 +27,16 @@ export interface TextReport {
    * them all. */
   small: { moduleId: string; text: string; px: number }[];
   clipped: { moduleId: string; text: string }[];
+  /** The first words each module and link draws, as the visual check names them. */
+  words: Record<string, string>;
+}
+/** The opening view as the visual check is shown it: cropped to the figure, without the
+ * paper's dots, lossless, and again as four overlapping quarters for a closer look. Frames
+ * are in screenshot pixels. */
+export interface Plain {
+  base64: string;
+  frame: Bounds;
+  quarters: { base64: string; frame: Bounds }[];
 }
 export interface Shot {
   camera: { x: number; y: number; scale: number };
@@ -37,6 +49,8 @@ export interface Shot {
   }[];
   /** On the opening view. */
   text?: TextReport;
+  /** On the opening view, when the request asks for the visual check. */
+  plain?: Plain;
   sceneId: string;
   label: string;
   /** The opening view of the whole scene, as the canvas first shows it. */
@@ -54,7 +68,7 @@ export interface Shot {
 /** Runs in the page, so its helpers live inside it: reads every part's text. A size is the
  * font's own, scaled as the camera and any viewBox or transform above it scale it. */
 export function readText(limit: number): TextReport {
-  const report: TextReport = { small: [], clipped: [] };
+  const report: TextReport = { small: [], clipped: [], words: {} };
   const seen = new Set<string>();
   const least = new Map<string, { moduleId: string; text: string; px: number }>();
   const view = { right: innerWidth, bottom: innerHeight };
@@ -87,6 +101,9 @@ export function readText(limit: number): TextReport {
       if (!box.width || !box.height) continue;
       const size = parseFloat(shown.fontSize) * scaleOf(parent);
       const px = Math.round(size);
+      const said = report.words[moduleId];
+      if (!said) report.words[moduleId] = text.slice(0, 30);
+      else if (said.length < 30) report.words[moduleId] = (said + " " + text).slice(0, 30);
       if (!report.smallest || px < report.smallest.px)
         report.smallest = { moduleId, text: text.slice(0, 30), px };
       if (px < limit && px < (least.get(moduleId)?.px ?? Infinity))
@@ -115,6 +132,49 @@ export function readText(limit: number): TextReport {
   }
   report.small = [...least.values()].sort((a, b) => a.px - b.px).slice(0, 12);
   return report;
+}
+/** The opening view cropped to the figure, a little past its modules for what links and
+ * labels reach out to, with the paper's dots taken away: they read as marks to the check. */
+async function plain(page: Page): Promise<Plain> {
+  const frame = await page.evaluate(() => {
+    const { x, y, scale } = window.drawyView.view;
+    const b = window.drawyView.renderer.bounds;
+    const left = Math.max(0, Math.floor(x + b.x * scale - 16)),
+      top = Math.max(0, Math.floor(y + b.y * scale - 16));
+    const right = Math.min(innerWidth, Math.ceil(x + (b.x + b.width) * scale + 16)),
+      bottom = Math.min(innerHeight, Math.ceil(y + (b.y + b.height) * scale + 16));
+    window.drawyView.element.dataset.dots = window.drawyView.element.style.backgroundImage;
+    window.drawyView.element.style.backgroundImage = "none";
+    return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+  });
+  try {
+    const take = async (clip: Bounds) => (await page.screenshot({ clip, type: "png" })).toString("base64");
+    // Each quarter overlaps its neighbours by 15% of the figure, so a fault on a seam is
+    // whole in one of them.
+    const quarters = [0, 1].flatMap((row) =>
+      [0, 1].map((col) => {
+        const width = Math.round(frame.width * 0.575),
+          height = Math.round(frame.height * 0.575);
+        return {
+          x: frame.x + (col ? frame.width - width : 0),
+          y: frame.y + (row ? frame.height - height : 0),
+          width,
+          height,
+        };
+      }),
+    );
+    return {
+      base64: await take(frame),
+      frame,
+      quarters: await Promise.all(quarters.map(async (q) => ({ base64: await take(q), frame: q }))),
+    };
+  } finally {
+    await page.evaluate(() => {
+      const element = window.drawyView.element;
+      element.style.backgroundImage = element.dataset.dots ?? "";
+      delete element.dataset.dots;
+    });
+  }
 }
 async function ready(page: Page) {
   await page.waitForFunction(() => window.drawyReady, {}, { timeout: 30000 });
@@ -204,6 +264,8 @@ export async function capture(
             ),
           };
         });
+        // Taken before any annotation is laid over the view.
+        const clean = overview && request.inspect ? await plain(page) : undefined;
         if (request.annotate)
           await page.evaluate(({ camera, modules }) => {
             const overlay = document.createElement("div");
@@ -225,7 +287,11 @@ export async function capture(
         shots.push({
           camera: geometry.camera,
           ...(overview
-            ? { modules: geometry.modules, text: await page.evaluate(readText, MIN_TEXT) }
+            ? {
+                modules: geometry.modules,
+                text: await page.evaluate(readText, MIN_TEXT),
+                ...(clean ? { plain: clean } : {}),
+              }
             : {}),
           sceneId: await page.evaluate(() => window.drawyData.sceneId),
           label: `${size.width}px / ${label}`,
