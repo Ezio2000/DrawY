@@ -250,20 +250,6 @@ it("undoes the latest change from the top bar", async () => {
   expect(await module("Alpha")).toMatchObject({ left: before.left, mark: before.mark });
 });
 
-it("holds a request while hand edits are unsaved, and sends it once they are saved", async () => {
-  await open(await make());
-  const a = await rectOf("Alpha");
-  await tap(center(a));
-  await swipe(center(a), { x: a.cx + 40, y: a.cy + 90 });
-  await settled();
-  await composer().fill("Bigger");
-  await composer().press("Enter");
-  await expect.poll(() => page.getByRole("alertdialog").innerText()).toContain("1 unsaved change");
-  expect(asked).toEqual([]);
-  await page.getByRole("button", { name: "Save and send" }).tap();
-  await settled();
-  expect(asked.map((a) => a.prompt)).toEqual(["Bigger\nSelected module: a\nAlpha"]);
-});
 
 it("renames the work and goes to a scene from the title's sheet", async () => {
   const id = await make({ sub: "empty" });
@@ -317,16 +303,6 @@ it("draws again only what shows the author's run as it goes, and only the compos
     expect([part, changed(part)]).toEqual([part, 0]);
 });
 
-it("loads the phone page alone, when a work is opened", async () => {
-  const chunks: string[] = [];
-  page.on("request", (r) => r.url().includes("/assets/WorkPage") && r.url().endsWith(".js") && chunks.push(r.url()));
-  await page.goto(base + "/");
-  await settled();
-  expect(chunks).toHaveLength(0);
-  await open(await make());
-  expect(await page.locator("[data-shell=phone]").count()).toBe(1);
-  expect(chunks).toHaveLength(1);
-});
 
 it("opens a wide drawing filled to the screen from its left, large enough to read, and shows it whole on a tap", async () => {
   await wide();

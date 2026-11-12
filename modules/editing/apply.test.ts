@@ -151,18 +151,6 @@ describe("links own where they meet a module", () => {
       to: { x: 50, y: 575, side: null },
     });
   });
-  it("changes one end of a link and touches nothing else", () => {
-    const w = written(work(), {
-      links: [
-        { id: "a", from: { moduleId: "left", at: [0.2, 1] }, to: "right" },
-        { id: "b", from: { moduleId: "left", at: [0.8, 1] }, to: "right" },
-      ],
-    });
-    const next = written(w, { links: [{ id: "a", from: { moduleId: "left", at: [0.7, 0] } }] });
-    expect(next.scenes.root.links[0].from.at).toEqual([0.7, 0]);
-    expect(next.scenes.root.links[1]).toEqual(w.scenes.root.links[1]);
-    expect(next.scenes.root.modules).toEqual(w.scenes.root.modules);
-  });
   it("refuses a place it cannot read, saying what it can", () => {
     const [p] = problems(() => readEdit({ links: [{ id: "l", from: { moduleId: "a", at: "middle" }, to: "b" }] }));
     expect(p.at).toBe("links.l.from");

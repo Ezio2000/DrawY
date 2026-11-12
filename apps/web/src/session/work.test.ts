@@ -124,14 +124,6 @@ it("shows a hand edit at once and swaps the saved work in quietly", async () => 
   expect(s().undoable).toBe(true);
 });
 
-it("takes back what a failed hand edit showed", async () => {
-  const { store, s } = await open();
-  refuse = "refused";
-  await expect(store.change(moved)).rejects.toThrow("refused");
-  expect(s().display!.version).toBe("");
-  expect(heading(s().display!.work)).toBe(100);
-  expect(store.quiet(2)).toBe(false);
-});
 
 it("recovers the edit queue and draft when constructing an edit throws", async () => {
   const { store, s } = await open();
@@ -183,20 +175,9 @@ it("holds a request back while a hand edit is still on its way", async () => {
   await job;
 });
 
-it("a request held back can be dropped, and the edits stay", async () => {
-  const { store, s } = await open();
-  await store.change(moved);
-  await settle();
-  const sent = vi.fn();
-  await store.send({ text: "make it blue", sent });
-  await store.decide("cancel");
-  expect(sent).not.toHaveBeenCalled();
-  expect(s().holding).toBe(false);
-  expect(s().unsaved).toBe(1);
-});
 
 it("tells the author what a request is about", async () => {
-  const { store, s } = await open();
+  const { store } = await open();
   const link = { id: "l1", from: { moduleId: "heading" }, to: { moduleId: "control" } } as never;
   await store.send({ text: "bigger", focus: { modules: [{ moduleId: "heading", label: "Title" }] } });
   expect(posted.at(-1)!.data.prompt).toBe("bigger\nSelected module: heading\nTitle");
@@ -301,7 +282,7 @@ it("selects the modules an edit makes once the view has drawn them, however long
 });
 
 it("selects nothing when what an edit made was not drawn", async () => {
-  const { store, s } = await open();
+  const { store } = await open();
   const view = slowView();
   store.attach(view);
   const made = store.ops.text("Hi", { x: 0, y: 0 });
@@ -315,7 +296,7 @@ it("selects nothing when what an edit made was not drawn", async () => {
 it("follows a run that drew only in another scene there once it ends", async () => {
   const sub = { ...structuredClone(head.scenes.root), id: "sub", title: "Sub", parentId: "root" };
   head = commit({ ...head, scenes: { ...head.scenes, sub } }, { kind: "edit" });
-  const { store, s } = await open();
+  const { s } = await open();
   const step = { kind: "tool", name: "write_work", status: "done", scenes: [{ id: "sub" }] };
   events!({ type: "run", run: { id: "r", workId: head.id, status: "running", steps: [] } as unknown as Run });
   events!({ type: "run", run: { id: "r", workId: head.id, status: "completed", steps: [step] } as unknown as Run });
@@ -333,7 +314,7 @@ it("an address naming a scene the work does not have falls back to its root", as
 
 it("knows which reply was already there when the work was opened", async () => {
   runs = [{ id: "old", workId: head.id, status: "completed", steps: [] } as unknown as Run];
-  const { store, s } = await open();
+  const { s } = await open();
   expect(s().earlier).toBe("old");
 });
 

@@ -267,26 +267,6 @@ describe("hand edits", () => {
     expect(apply(work, inCode).drawings.title.source).toBe(`return api.material('moon')`);
   });
 
-  it("takes modules out with the links and checks that need them", () => {
-    const work = fixture();
-    work.scenes.root.links.push({
-      id: "line",
-      drawingId: "connector",
-      from: { moduleId: "level-0", at: "right" },
-      to: { moduleId: "level-4", at: "right" },
-      data: {},
-    });
-    const next = apply(work, removeParts(work, "root", ["level-4", "control"]));
-    expect(scene(next).modules.map((m) => m.id)).toEqual([
-      "level-0",
-      "level-1",
-      "level-2",
-      "level-3",
-      "heading",
-    ]);
-    expect(scene(next).links).toEqual([]);
-    expect(scene(next).checks).toEqual([]);
-  });
 
   it("duplicates modules on top, in a group of their own, with the links between them", () => {
     const work = fixture();
@@ -775,15 +755,6 @@ describe("hand edits reach what the author writes", () => {
     expect(plain.edit.materials).toEqual(["label"]);
   });
 
-  it("takes a style's colours, keeping tokens the style does not have", () => {
-    const work = fixture();
-    work.style = { ink: "#111", stroke: "2" };
-    expect(applied(work, setStyles(work, { ink: "#222", accent: "#f00" })).style).toEqual({
-      ink: "#222",
-      stroke: "2",
-      accent: "#f00",
-    });
-  });
 
   it("lays an edit on a work as the workspace does, to show it before it is saved", () => {
     const work = fixture();

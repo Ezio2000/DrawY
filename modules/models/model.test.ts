@@ -301,9 +301,7 @@ it("keeps what a Chat Completions turn spent before its output limit, and whethe
   expect(thinking.thoughtOnly).toBe(true);
   expect(thinking.usage).toMatchObject({ input_tokens: 10, output_tokens: 20 });
   vi.stubGlobal("fetch", vi.fn(async () => cut({ reasoning_content: "hmm", content: "x" })));
-  expect((await ask()).thoughtOnly).toBe(false);
-});
-it("fails a Chat Completions turn cut off by its output limit", async () => {
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(chunks([{ choices: [{ delta: { content: "x" }, finish_reason: "length" }] }]))));
-  await expect(generate(deepseek, { instructions: "", input: [], tools: [], signal: new AbortController().signal })).rejects.toThrow("截断");
+  const writing = await ask();
+  expect(writing.thoughtOnly).toBe(false);
+  expect(writing.message).toContain("截断");
 });

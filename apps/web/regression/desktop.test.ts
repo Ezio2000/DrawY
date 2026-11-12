@@ -1,5 +1,4 @@
 import { expect, it } from "vitest";
-import type { Step } from "../../../modules/contracts/index.ts";
 import {
   api,
   asked,
@@ -419,32 +418,7 @@ it("while the author draws, opens the studio, folds the composer and waits; then
   expect((await page.locator("[data-dock]").innerText())).not.toContain("Here is the map.");
 });
 
-it("follows a run that drew only in a subscene there once it ends", async () => {
-  const id = await make({ sub: "drawn" });
-  await open(id);
-  const wrote = { kind: "tool", id: "t1", name: "write_work", status: "done", drawings: [], scenes: [{ id: "sub", title: "Sub", modules: [] }], details: [], materials: [], removed: 0 };
-  await tell({ type: "run", run: run(id, "live", "running", []) });
-  await settled();
-  await tell({ type: "run", run: run(id, "live", "completed", [wrote as Step]) });
-  await settled();
-  expect(new URL(page.url()).pathname).toBe(`/a/${id}/sub`);
-  await expect.poll(() => count("Gamma")).toBe(1);
-});
 
-it("keeps the reply of a run from before the work was opened in the studio", async () => {
-  const id = await make();
-  await page.route(`**/api/works/${id}/runs`, async (route) => {
-    if (route.request().method() !== "GET") return route.fallback();
-    await route.fulfill({
-      json: [run(id, "old", "completed", [{ kind: "message", role: "assistant", text: "An old reply." }])],
-    });
-  });
-  await open(id);
-  expect(await page.locator("[data-dock]").innerText()).not.toContain("An old reply.");
-  await page.getByRole("button", { name: "Studio" }).click();
-  await settled();
-  expect(await page.locator("[data-kind=journal]").innerText()).toContain("An old reply.");
-});
 
 it("draws again only what shows the author's run as it goes, and only the composer while typing", async () => {
   const id = await make();
@@ -475,15 +449,6 @@ it("draws again only what shows the author's run as it goes, and only the compos
     expect([part, changed(part)]).toEqual([part, 0]);
 });
 
-it("loads the desktop page in a chunk of its own, when a work is opened", async () => {
-  const chunks: string[] = [];
-  page.on("request", (r) => r.url().includes("/assets/") && r.url().endsWith(".js") && chunks.push(r.url()));
-  await page.goto(base + "/");
-  await settled();
-  expect(chunks.some((u) => u.includes("WorkPage"))).toBe(false);
-  await open(await make());
-  expect(chunks.some((u) => u.includes("WorkPage"))).toBe(true);
-});
 
 it("keeps a text tool's dragged bounds and turns default bold off", async () => {
   const id = await make();

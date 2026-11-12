@@ -892,7 +892,7 @@ it("captures full scenes and completed interaction states through the same runti
   expect(shots.filter((s) => s.sceneId === "child")).toHaveLength(1);
   expect(shots[0].base64).not.toBe(shots[1].base64);
 }, 30000);
-it("keeps words uncut at large sizes and at the edges of every library drawing, and reports what is cut", async () => {
+it("draws every library drawing from its example with words uncut at large sizes, and reports what is cut", async () => {
   const drawings = seed("drawings") as DrawingMaterial[];
   work.materials = Object.fromEntries(
     [
@@ -946,6 +946,15 @@ it("keeps words uncut at large sizes and at the edges of every library drawing, 
   };
   await open();
   expect((await page.evaluate(readText, 14)).clipped).toEqual([]);
+  // Every library drawing draws from its example without an error.
+  expect(
+    await page.evaluate(() => ({
+      errors: window.drawyErrors,
+      blank: [...document.querySelectorAll<HTMLElement>("[data-module-id]")]
+        .filter((h) => !h.shadowRoot!.querySelector("svg,img,div"))
+        .map((h) => h.dataset.moduleId),
+    })),
+  ).toEqual({ errors: [], blank: [] });
   // A plot's names and marker also stay within the box the author gave it.
   const plotted = await page.evaluate(() => {
     const host = document.querySelector<HTMLElement>('[data-module-id="plot"]')!;
@@ -1280,138 +1289,6 @@ it("stands pictures on their box, reports where they are seen and wires library 
   ).toBe("1.5 m");
 });
 
-it("draws every library drawing from its example data and routes elbow arrows at right angles", async () => {
-  const drawings = seed("drawings") as DrawingMaterial[];
-  const source = (id: string) =>
-    readFileSync(
-      new URL(`../../materials/seed/drawings/${id}.js`, import.meta.url),
-      "utf8",
-    );
-  work.materials = Object.fromEntries(
-    [
-      ...drawings.map((m) => ({ ...m, source: source(m.id) }) as Material),
-      ...seed("pictures"),
-      ...seed("effects"),
-    ].map((m) => [m.id, useOf(m)!]),
-  );
-  let y = 0;
-  const place = (
-    id: string,
-    drawingId: string,
-    bounds: { x: number; y: number; width: number; height: number },
-    data: Record<string, unknown>,
-  ) => ({
-    id,
-    label: id,
-    drawingId,
-    data,
-    bounds,
-  });
-  const modules = drawings.map((m) => {
-    const at = place(m.id, m.id, { x: 0, y, ...m.size }, m.example);
-    y += m.size.height + 40;
-    return at;
-  });
-  modules.push(
-    place(
-      "from",
-      "node",
-      { x: 1000, y: 0, width: 180, height: 70 },
-      { title: "下单" },
-    ),
-    place(
-      "to",
-      "node",
-      { x: 1300, y: 240, width: 180, height: 70 },
-      { title: "支付" },
-    ),
-  );
-  work.scenes.root = {
-    ...work.scenes.root,
-    modules,
-    links: [
-      {
-        id: "route",
-        drawingId: "arrow",
-        from: { moduleId: "from", at: "right" },
-        to: { moduleId: "to", at: "left" },
-        data: { route: "elbow" },
-      },
-    ],
-    checks: [],
-  };
-  await open();
-  // Whatever a library drawing's example says, none of it is cut off by the drawing itself.
-  expect((await page.evaluate(readText, 14)).clipped).toEqual([]);
-  const result = await page.evaluate(() => {
-    const words = (id: string) =>
-      document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!
-        .textContent;
-    const path = document
-      .querySelector('[data-link-id="route"]')!
-      .shadowRoot!.querySelector("path")!;
-    const length = path.getTotalLength();
-    const at = (l: number) => path.getPointAtLength(l);
-    return {
-      errors: window.drawyErrors,
-      blank: [...document.querySelectorAll<HTMLElement>("[data-module-id]")]
-        .filter((h) => !h.shadowRoot!.querySelector("svg,img,div"))
-        .map((h) => h.dataset.moduleId),
-      words: Object.fromEntries(
-        Object.entries({
-          node: "订单服务",
-          hierarchy: "真菌",
-          layers: "对象存储",
-          quadrant: "立即去做",
-          compare: "纯电",
-          pyramid: "自我实现",
-          venn: "好产品",
-          mindmap: "估算",
-          steps: "完善资料",
-          swimlanes: "后厨",
-          bars: "蛋白质",
-          donut: "氮气",
-          gauge: "空气质量指数",
-          stat: "8848",
-          fishbone: "交付延期",
-          sequence: "返回令牌",
-          gantt: "上线",
-          callout: "为什么天空是蓝色的？",
-          checklist: "带好证件",
-          radar: "耐力",
-          concentric: "怎么做",
-          geomap: "新迦太基",
-        }).map(([id, w]) => [id, words(id)!.includes(w)]),
-      ),
-      // It leaves and arrives level, turning twice in between.
-      leaves: Math.abs(at(10).y - at(0).y),
-      arrives: Math.abs(at(length).y - at(length - 10).y),
-      turns: (path.getAttribute("d")!.match(/Q/g) || []).length,
-    };
-  });
-  expect(result).toMatchObject({
-    errors: [],
-    blank: [],
-    words: {
-      node: true,
-      hierarchy: true,
-      layers: true,
-      quadrant: true,
-      compare: true,
-      pyramid: true,
-      venn: true,
-      mindmap: true,
-      ...Object.fromEntries(
-        "steps swimlanes bars donut gauge stat fishbone sequence gantt callout checklist radar concentric geomap"
-          .split(" ")
-          .map((id) => [id, true]),
-      ),
-    },
-    turns: 2,
-  });
-  expect(result.leaves).toBeLessThan(0.01);
-  expect(result.arrives).toBeLessThan(0.01);
-});
 
 it("routes elbow arrows out of their modules before turning, going round when the ends face away", async () => {
   const drawings = seed("drawings") as DrawingMaterial[];

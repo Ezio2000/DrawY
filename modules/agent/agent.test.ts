@@ -11,7 +11,7 @@ import { restore, writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { CutOff, generate } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
-import { boxOf, costOf, labelOf, modelCatalogSchema, type Run, type Step, type Work } from "../contracts/index.ts";
+import { boxOf, costOf, labelOf, modelCatalogSchema, type Run, type Work } from "../contracts/index.ts";
 import { removeParts, setData } from "../editing/index.ts";
 import { tracer } from "../trace/index.ts";
 import { library as client } from "../materials/index.ts";
@@ -1034,7 +1034,6 @@ it("tells the author what the user changed themselves since its last turn", asyn
     /^Since your last turn the user changed the work themselves \(revision 2 to 4\)\.[^\n]*\n- scene root: changed level-0; removed control; interaction checks changed\nCurrent scene: root\n/,
   );
   // With nothing changed since, the work is given as it is.
-  const work2 = store.work(work.id);
   agent.cancel(store, run.id);
   await writeWork(
     store,

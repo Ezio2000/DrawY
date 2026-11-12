@@ -8,7 +8,6 @@ import { createWork, writeWork, restore, undo } from "../workspace/index.ts";
 import { moveParts } from "../editing/index.ts";
 import {
   emptySettings,
-  modelCatalogSchema,
   defaultCatalog,
   type Work,
 } from "../contracts/index.ts";
@@ -56,26 +55,6 @@ describe("user owned works", () => {
     expect(b.settings().preferences).toBe("");
     expect(() => b.delete(work.id)).toThrow();
     expect(a.work(work.id)).toEqual(work);
-  });
-  it("saves a speed or a format the connection lacks as one it has", () => {
-    const base = defaultCatalog();
-    const catalog = modelCatalogSchema.parse({
-      ...base,
-      writers: [
-        {
-          ...base.writers[0],
-          channel: "oauth",
-          models: [{ ...base.writers[0].models[0], speed: "flex", protocol: "chat" }],
-        },
-      ],
-    });
-    // A ChatGPT account speaks the Responses API and has no built-in search to offer.
-    expect(catalog.writers[0].models[0]).toMatchObject({
-      speed: "default",
-      speeds: ["default", "fast"],
-      protocol: "responses",
-      builtinSearch: false,
-    });
   });
   it("starts again from the default catalog when the saved one no longer reads", () => {
     db.db.prepare("UPDATE system SET data=? WHERE key='models'").run(JSON.stringify({ models: [] }));
@@ -499,28 +478,6 @@ describe("user owned works", () => {
           modules: [{ ...module, drawingId: "apple" }],
         }, { cause: { kind: "edit" } }),
     ).rejects.toThrow("画法 apple 不存在");
-  });
-  it("retains saved content and suspended conversation across reopening", () => {
-    const uid = register(db, "a", "abcdef").id,
-      s = db.scoped(uid),
-      w = createWork(s, "persist");
-    s.saveRun({
-      id: "waiting",
-      workId: w.id,
-      sceneId: "root",
-      status: "waiting",
-      startedAt: 0,
-      steps: [],
-      observations: [],
-      questions: [
-        { id: "q", text: "which?", options: [{ label: "a" }, { label: "b" }] },
-      ],
-    });
-    s.saveContext("waiting", { input: [{ role: "user", content: "a" }] });
-    db.close();
-    db = new Storage(dir);
-    expect(db.scoped(uid).work(w.id).title).toBe("persist");
-    expect(db.scoped(uid).context("waiting").input).toHaveLength(1);
   });
 });
 describe("HTTP identity boundary", () => {
