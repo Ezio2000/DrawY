@@ -52,8 +52,7 @@ import { SessionError, type Context } from "./types.ts";
  * the host, so it can be called and forgotten. */
 
 /** A library drawing as a drawing of the work's own. */
-function ownCopy(m: Material, locale: "zh" | "en"): Omit<Drawing, "id"> {
-  if (m.kind !== "drawing") throw Error(m.id);
+function ownCopy(m: DrawingMaterial, locale: "zh" | "en"): Omit<Drawing, "id"> {
   const editable = Object.entries(m.params).filter(([, p]) =>
     (paramTypes as readonly string[]).includes(p.type),
   );
@@ -112,27 +111,6 @@ export function editOps(ctx: Context) {
     view.reveal?.(ids);
     return ids[0];
   };
-  /** Adds something at a point, in the middle of the view, or filling a box drawn for it. */
-  const place = async (what: Addition, at?: Point, box?: Bounds) => {
-    const w = shown(),
-      view = ctx.view;
-    if (!w || !view) return;
-    const centre = at ?? view.center(),
-      sceneId = scene();
-    try {
-      // A work whose own drawing uses the library drawing's id gets a copy of it.
-      const own = shadowed(w, what)
-        ? ownCopy(await api<Material>("/materials/" + drawingFor(what)), ctx.host.locale())
-        : undefined;
-      if (scene() !== sceneId || ctx.view !== view) return;
-      return await made((work) => {
-        const r = add(work, sceneId, centre, what, own, box);
-        return { edit: r.edit, ids: [r.id] };
-      });
-    } catch (e) {
-      fail(e);
-    }
-  };
   /** Library drawings asked for by id, each fetched once. */
   const library = new Map<string, Promise<DrawingMaterial>>();
   const fromLibrary = (id: string) => {
@@ -147,6 +125,27 @@ export function editOps(ctx: Context) {
     }
     return known;
   };
+  /** Adds something at a point, in the middle of the view, or filling a box drawn for it. */
+  const place = async (what: Addition, at?: Point, box?: Bounds) => {
+    const w = shown(),
+      view = ctx.view;
+    if (!w || !view) return;
+    const centre = at ?? view.center(),
+      sceneId = scene();
+    try {
+      // A work whose own drawing uses the library drawing's id gets a copy of it.
+      const own = shadowed(w, what)
+        ? ownCopy(await fromLibrary(drawingFor(what)), ctx.host.locale())
+        : undefined;
+      if (scene() !== sceneId || ctx.view !== view) return;
+      return await made((work) => {
+        const r = add(work, sceneId, centre, what, own, box);
+        return { edit: r.edit, ids: [r.id] };
+      });
+    } catch (e) {
+      fail(e);
+    }
+  };
   /** What a link drawn by hand is drawn with: like the scene's other links, or with the
    * library's arrow when it has none, which comes in as a copy when one of the work's own
    * drawings already uses its id. */
@@ -156,7 +155,7 @@ export function editOps(ctx: Context) {
       look: like ?? { drawingId: "arrow", data: {} },
       own:
         !like && w.drawings.arrow
-          ? ownCopy(await api<Material>("/materials/arrow"), ctx.host.locale())
+          ? ownCopy(await fromLibrary("arrow"), ctx.host.locale())
           : undefined,
     };
   };

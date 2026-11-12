@@ -24,6 +24,33 @@ export function linkLook(
   const { label: _l, text: _t, ...data } = like.data;
   return { drawingId: like.drawingId, data: structuredClone(data) };
 }
+/** A link end on a module: on the side named, or following the side facing the other end. */
+const end = (moduleId: string, side?: Side): LinkEnd => (side ? { moduleId, at: side } : { moduleId });
+/** The edit that draws a new link as `look`: a library drawing the work does not have is
+ * taken in, or, given `copy`, the work gets its own copy of it under a fresh id. */
+function newLink(
+  work: Work,
+  link: { id: string; scene: string; from: LinkEnd; to: LinkEnd },
+  look: { drawingId: string; data: Record<string, unknown> },
+  copy?: Omit<Drawing, "id">,
+): WorkEdit {
+  const drawing = copy && { ...copy, id: fresh(look.drawingId, drawingIds(work)) };
+  const taken = !drawing && !work.drawings[look.drawingId];
+  return {
+    links: [
+      {
+        id: link.id,
+        scene: link.scene,
+        drawingId: drawing?.id ?? look.drawingId,
+        from: link.from,
+        to: link.to,
+        data: structuredClone(look.data),
+      },
+    ],
+    ...(taken ? { materials: [look.drawingId] } : {}),
+    ...(drawing ? { drawings: [drawing] } : {}),
+  };
+}
 /** Connects one module to another with a link drawn as `look`: from and to the sides named,
  * or, for an end that names none, the side facing the other end, wherever the modules then
  * move. A library drawing the work does not have is taken in; `copy` gives the work its own
@@ -41,29 +68,14 @@ export function connect(
   if (from.moduleId === to.moduleId) throw Error("连线要连到另一个元素");
   if (![from, to].every((e) => scene.modules.some((m) => m.id === e.moduleId)))
     throw Error("元素不存在");
-  const drawing = copy && {
-    ...copy,
-    id: fresh(look.drawingId, drawingIds(work)),
-  };
   const id = fresh(`${from.moduleId}-to-${to.moduleId}`, partIds(work));
-  const taken = !drawing && !work.drawings[look.drawingId];
-  return {
-    edit: {
-      links: [
-        {
-          id,
-          scene: sceneId,
-          drawingId: drawing?.id ?? look.drawingId,
-          from: { moduleId: from.moduleId, ...(from.side ? { at: from.side } : {}) },
-          to: { moduleId: to.moduleId, ...(to.side ? { at: to.side } : {}) },
-          data: structuredClone(look.data),
-        },
-      ],
-      ...(taken ? { materials: [look.drawingId] } : {}),
-      ...(drawing ? { drawings: [drawing] } : {}),
-    },
-    id,
-  };
+  const edit = newLink(
+    work,
+    { id, scene: sceneId, from: end(from.moduleId, from.side), to: end(to.moduleId, to.side) },
+    look,
+    copy,
+  );
+  return { edit, id };
 }
 /** Moves one end of a link to a side of its module, or back to following the side facing the
  * other end, or, given another module, onto that one; a link never ends where it starts. */
@@ -71,19 +83,18 @@ export function reattach(
   work: Work,
   sceneId: string,
   linkId: string,
-  end: "from" | "to",
+  which: "from" | "to",
   side: Side | undefined,
   moduleId?: string,
 ): WorkEdit {
   const scene = sceneOf(work, sceneId);
   const link = scene.links.find((l) => l.id === linkId);
   if (!link) throw Error("连线不存在");
-  const m = scene.modules.find((x) => x.id === (moduleId ?? link[end].moduleId));
+  const m = scene.modules.find((x) => x.id === (moduleId ?? link[which].moduleId));
   if (!m) throw Error("元素不存在");
-  if (m.id === link[end === "from" ? "to" : "from"].moduleId)
+  if (m.id === link[which === "from" ? "to" : "from"].moduleId)
     throw Error("连线要连到另一个元素");
-  const place: LinkEnd = side ? { moduleId: m.id, at: side } : { moduleId: m.id };
-  return { links: [{ id: linkId, scene: sceneId, [end]: place }] };
+  return { links: [{ id: linkId, scene: sceneId, [which]: end(m.id, side) }] };
 }
 /** Turns a link round: what it came from it now goes to. */
 export function reverse(work: Work, sceneId: string, linkId: string): WorkEdit {
@@ -152,27 +163,18 @@ export function extend(
   const id = fresh(source.id, taken);
   taken.add(id);
   const module: Instance = { id, bounds, drawingId: source.drawingId, data };
-  const drawing = copy && { ...copy, id: fresh(look.drawingId, drawingIds(work)) };
   const link = fresh(`${source.id}-to-${id}`, taken);
   const middle = { x: source.bounds.x + width / 2, y: source.bounds.y + height / 2 };
-  const taking = !drawing && !work.drawings[look.drawingId];
-  return {
-    edit: {
-      modules: [newModule(sceneId, module)],
-      links: [
-        {
-          id: link,
-          scene: sceneId,
-          drawingId: drawing?.id ?? look.drawingId,
-          from: { moduleId: source.id, at: from.side },
-          to: { moduleId: id, at: to.at ? facing(bounds, middle) : opposite[from.side] },
-          data: structuredClone(look.data),
-        },
-      ],
-      ...(taking ? { materials: [look.drawingId] } : {}),
-      ...(drawing ? { drawings: [drawing] } : {}),
+  const joined = newLink(
+    work,
+    {
+      id: link,
+      scene: sceneId,
+      from: end(source.id, from.side),
+      to: end(id, to.at ? facing(bounds, middle) : opposite[from.side]),
     },
-    id,
-    link,
-  };
+    look,
+    copy,
+  );
+  return { edit: { modules: [newModule(sceneId, module)], ...joined }, id, link };
 }
