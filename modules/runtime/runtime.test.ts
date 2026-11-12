@@ -140,6 +140,25 @@ async function open() {
   await page.goto(origin + "/api/works/fixture/scenes/root?revision=1");
   await page.waitForFunction(() => window.drawyReady);
 }
+/** A library drawing as a work holds it, its code read from the seed. */
+const libraryDrawing = (id: string) =>
+  useOf({
+    ...seed("drawings").find((m) => m.id === id)!,
+    source: readFileSync(new URL(`../../materials/seed/drawings/${id}.js`, import.meta.url), "utf8"),
+  } as Material)!;
+/** What the page kept of a canvas callback in `document.body.dataset`. */
+const data = (key: string) => page.evaluate((k) => document.body.dataset[k], key);
+/** Where a point of the scene is on screen now. */
+const screen = (x: number, y: number) =>
+  page.evaluate(
+    ([x, y]) => {
+      const v = window.drawyView,
+        r = v.element.getBoundingClientRect(),
+        c = v.view;
+      return { x: r.left + c.x + x * c.scale, y: r.top + c.y + y * c.scale };
+    },
+    [x, y],
+  );
 
 it("fits the complete composition, keeps camera out of the work and anchors zoom at the pointer", async () => {
   await open();
@@ -312,8 +331,6 @@ it("selects what is pressed while editing, instead of opening or operating it, a
     view.options.open = (t) => (body.opened = t.id);
     view.options.point = (p) => (body.pointed = JSON.stringify(p));
   });
-  const data = (key: string) =>
-    page.evaluate((k) => document.body.dataset[k], key);
   // A level opens its explanation when explored; while editing, a press only selects it,
   // and Shift adds another.
   await page.locator('[data-module-id="level-0"]').click();
@@ -429,19 +446,6 @@ it("edits like a drawing app: a box selects, handles resize a selection as one, 
     view.options.extend = (from, at) => (body.extended = JSON.stringify({ from, at: at ?? null }));
     view.options.duplicate = (ids, by) => (body.copied = JSON.stringify({ ids, by }));
   });
-  const data = (key: string) =>
-    page.evaluate((k) => document.body.dataset[k], key);
-  // Where a point of the scene is on screen now.
-  const screen = (x: number, y: number) =>
-    page.evaluate(
-      ([x, y]) => {
-        const v = window.drawyView,
-          r = v.element.getBoundingClientRect(),
-          c = v.view;
-        return { x: r.left + c.x + x * c.scale, y: r.top + c.y + y * c.scale };
-      },
-      [x, y],
-    );
   const drag = async (
     from: { x: number; y: number },
     to: { x: number; y: number },
@@ -610,18 +614,6 @@ it("selects a link by its line while editing, drags its ends onto other modules 
       (body.reconnected = JSON.stringify({ id, end, to }));
     view.options.point = (p) => (body.pointed = JSON.stringify(p));
   });
-  const data = (key: string) =>
-    page.evaluate((k) => document.body.dataset[k], key);
-  const screen = (x: number, y: number) =>
-    page.evaluate(
-      ([x, y]) => {
-        const v = window.drawyView,
-          r = v.element.getBoundingClientRect(),
-          c = v.view;
-        return { x: r.left + c.x + x * c.scale, y: r.top + c.y + y * c.scale };
-      },
-      [x, y],
-    );
   // A press a few pixels off the line, between the modules, takes the link in place of
   // the selected module.
   const first = await screen(420, 150);
@@ -1091,7 +1083,6 @@ it("swaps a later revision into the open canvas and reports the scene it shows",
 it("draws with materials: fitted pictures, library drawing code, effects, and pictures that develop later", async () => {
   const pictures = seed("pictures");
   const apple = useOf(pictures.find((m) => m.id === "apple")!)!;
-  const arrow = seed("drawings").find((m) => m.id === "arrow")!;
   work.materials = {
     apple,
     "g-late": {
@@ -1100,13 +1091,7 @@ it("draws with materials: fitted pictures, library drawing code, effects, and pi
       url: "/materials/files/g-late",
       status: "developing",
     },
-    arrow: useOf({
-      ...arrow,
-      source: readFileSync(
-        new URL("../../materials/seed/drawings/arrow.js", import.meta.url),
-        "utf8",
-      ),
-    } as Material)!,
+    arrow: libraryDrawing("arrow"),
     "pencil-grain": useOf(
       seed("effects").find((m) => m.id === "pencil-grain")!,
     )!,
@@ -1188,16 +1173,9 @@ return svg;`,
 });
 it("stands pictures on their box, reports where they are seen and wires library controls to the scene", async () => {
   const apple = useOf(seed("pictures").find((m) => m.id === "apple")!)!;
-  const slider = seed("drawings").find((m) => m.id === "slider")!;
   work.materials = {
     apple,
-    slider: useOf({
-      ...slider,
-      source: readFileSync(
-        new URL("../../materials/seed/drawings/slider.js", import.meta.url),
-        "utf8",
-      ),
-    } as Material)!,
+    slider: libraryDrawing("slider"),
   };
   work.drawings.picture = {
     id: "picture",
@@ -1398,17 +1376,7 @@ it("routes elbow arrows out of their modules before turning, going round when th
 });
 
 it("maps across the 180th meridian in one piece and names what the view shows", async () => {
-  const drawings = seed("drawings") as DrawingMaterial[];
-  const geomap = drawings.find((m) => m.id === "geomap")!;
-  work.materials = {
-    geomap: useOf({
-      ...geomap,
-      source: readFileSync(
-        new URL("../../materials/seed/drawings/geomap.js", import.meta.url),
-        "utf8",
-      ),
-    } as Material)!,
-  };
+  work.materials = { geomap: libraryDrawing("geomap") };
   const map = (id: string, y: number, data: Record<string, unknown>) => ({
     id,
     label: id,
@@ -1497,17 +1465,7 @@ it("maps across the 180th meridian in one piece and names what the view shows", 
 });
 
 it("draws a city's real streets under a walk through it, and says so when they cannot load", async () => {
-  const drawings = seed("drawings") as DrawingMaterial[];
-  const geomap = drawings.find((m) => m.id === "geomap")!;
-  work.materials = {
-    geomap: useOf({
-      ...geomap,
-      source: readFileSync(
-        new URL("../../materials/seed/drawings/geomap.js", import.meta.url),
-        "utf8",
-      ),
-    } as Material)!,
-  };
+  work.materials = { geomap: libraryDrawing("geomap") };
   // A walk of a few kilometres with no bounds given: the view fits the stops, not a
   // region around them.
   const walk = {
@@ -1630,17 +1588,7 @@ it("draws a city's real streets under a walk through it, and says so when they c
 });
 
 it("draws the world in a rounded projection and a country in relief, naming what the map is about", async () => {
-  const drawings = seed("drawings") as DrawingMaterial[];
-  const geomap = drawings.find((m) => m.id === "geomap")!;
-  work.materials = {
-    geomap: useOf({
-      ...geomap,
-      source: readFileSync(
-        new URL("../../materials/seed/drawings/geomap.js", import.meta.url),
-        "utf8",
-      ),
-    } as Material)!,
-  };
+  work.materials = { geomap: libraryDrawing("geomap") };
   const map = (id: string, y: number, data: Record<string, unknown>) => ({
     id,
     label: id,

@@ -24,6 +24,16 @@ beforeEach(() => {
 /** A fresh invite for signing up over HTTP once the app has an account. */
 const invite = () =>
   db.hasAccounts() ? createInvites(db, db.accounts()[0].id)[0].code : undefined;
+/** Signs an account up over HTTP: who it is, and the cookie it is signed in with. */
+const signup = async (app: ReturnType<typeof createApp>["app"], name: string) => {
+  const r = await app.request("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, password: "abcdef", invite: invite() }),
+  });
+  const account = (await r.json()) as { id: string; role: string };
+  return { ...account, cookie: r.headers.get("set-cookie")!.split(";")[0] };
+};
 afterEach(() => {
   library.close();
   db.close();
@@ -280,19 +290,8 @@ describe("user owned works", () => {
   });
   it("commits a hand edit from the canvas as a revision of its own, changing only what it names", async () => {
     const { app } = createApp(db);
-    const signup = async (name: string) => {
-      const r = await app.request("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, password: "abcdef", invite: invite() }),
-      });
-      return {
-        cookie: r.headers.get("set-cookie")!.split(";")[0],
-        id: ((await r.json()) as { id: string }).id,
-      };
-    };
-    const alice = await signup("alice"),
-      bob = await signup("bob");
+    const alice = await signup(app, "alice"),
+      bob = await signup(app, "bob");
     const store = db.scoped(alice.id),
       work = createWork(store, "test"),
       content = fixture();
@@ -483,16 +482,8 @@ describe("user owned works", () => {
 describe("HTTP identity boundary", () => {
   it("uses session ownership on reads, scene rendering and mutations", async () => {
     const { app } = createApp(db);
-    const signup = async (name: string) => {
-      const r = await app.request("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, password: "abcdef", invite: invite() }),
-      });
-      return r.headers.get("set-cookie")!.split(";")[0];
-    };
-    const a = await signup("alice"),
-      b = await signup("bob");
+    const a = (await signup(app, "alice")).cookie,
+      b = (await signup(app, "bob")).cookie;
     const request = (
       path: string,
       cookie: string,
@@ -529,15 +520,6 @@ describe("HTTP identity boundary", () => {
 describe("roles and shared models", () => {
   it("lets the first account administer models, materials and roles, and others only pick", async () => {
     const { app } = createApp(db);
-    const signup = async (name: string) => {
-      const r = await app.request("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, password: "abcdef", invite: invite() }),
-      });
-      const account = (await r.json()) as { id: string; role: string };
-      return { ...account, cookie: r.headers.get("set-cookie")!.split(";")[0] };
-    };
     const call = async (
       cookie: string,
       path: string,
@@ -551,8 +533,8 @@ describe("roles and shared models", () => {
       });
       return { status: r.status, body: await r.json() };
     };
-    const admin = await signup("admin"),
-      member = await signup("member");
+    const admin = await signup(app, "admin"),
+      member = await signup(app, "member");
     expect([admin.role, member.role]).toEqual(["admin", "member"]);
     // Members see labels by name only, never the models in them, and cannot manage
     // anything.
@@ -742,18 +724,9 @@ describe("roles and shared models", () => {
   });
   it("shelves materials apart and lets those who manage them publish", async () => {
     const { app } = createApp(db);
-    const signup = async (name: string) => {
-      const r = await app.request("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, password: "abcdef", invite: invite() }),
-      });
-      const account = (await r.json()) as { id: string };
-      return { ...account, cookie: r.headers.get("set-cookie")!.split(";")[0] };
-    };
-    const admin = await signup("admin"),
-      alice = await signup("alice"),
-      bob = await signup("bob");
+    const admin = await signup(app, "admin"),
+      alice = await signup(app, "alice"),
+      bob = await signup(app, "bob");
     const mine = await client.ingest(
       await picture(),
       "image/png",
