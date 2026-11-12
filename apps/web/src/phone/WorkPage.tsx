@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Dialog } from "@drawy/ui";
+import { Dialog } from "../ui/dialogs.tsx";
 import type { Material } from "@drawy/materials/schema";
 import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
 import type { Selection, Target } from "../../../../modules/contracts/index.ts";

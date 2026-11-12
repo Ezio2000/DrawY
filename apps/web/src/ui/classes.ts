@@ -1,3 +1,5 @@
+import vocabularySheet from "./ui.module.css";
+
 /** Resolves the class names a package writes against the stylesheets it draws on. A name
  * that sheets define takes each one's scoped name, so a package's own rules and a shared
  * vocabulary meet on one element; a name none defines — a hook a library such as React Flow
@@ -23,3 +25,8 @@ export function classes(...sheets: Readonly<Record<string, string>>[]) {
     return out;
   };
 }
+
+/** The interface vocabulary every page resolves its class names against: buttons, fields,
+ * dialogs, toasts and switches. */
+export const vocabulary: Readonly<Record<string, string>> = vocabularySheet;
+export const cx = classes(vocabulary);

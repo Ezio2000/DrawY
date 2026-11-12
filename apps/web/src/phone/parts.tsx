@@ -13,7 +13,7 @@ import {
   Undo2,
   X,
 } from "lucide-react";
-import { Segmented } from "@drawy/ui";
+import { Segmented } from "../ui/primitives.tsx";
 import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
 import {
   versionOf,

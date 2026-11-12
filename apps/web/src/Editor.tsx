@@ -66,7 +66,9 @@ import type {
   Material,
   PictureMaterial,
 } from "@drawy/materials/schema";
-import { Dialog, Switch, useLocale } from "@drawy/ui";
+import { Dialog } from "./ui/dialogs.tsx";
+import { Switch } from "./ui/primitives.tsx";
+import { useLocale } from "./ui/locale.tsx";
 import { DrawingPanel, ModuleRecord } from "./EditCode.tsx";
 import {
   Amount,

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Locale } from "@drawy/ui";
+import type { Locale } from "../ui/locale.tsx";
 import type { Material, StyleMaterial } from "@drawy/materials/schema";
 import { api } from "../api.ts";
 import { SessionError } from "./types.ts";

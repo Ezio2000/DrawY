@@ -1,14 +1,8 @@
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { X, ImagePlus } from "lucide-react";
-import {
-  Spinner,
-  useLocale,
-  LocaleContext,
-  Tooltips,
-  Presence,
-  UndoToast,
-  Dialog,
-} from "@drawy/ui";
+import { Spinner, Tooltips, Presence, UndoToast } from "./ui/primitives.tsx";
+import { useLocale, LocaleContext } from "./ui/locale.tsx";
+import { Dialog } from "./ui/dialogs.tsx";
 import type { Material } from "@drawy/materials/schema";
 import type { SettingsChange, Work } from "../../../modules/contracts/index.ts";
 import { api, type Models, type Summary, type User } from "./api.ts";

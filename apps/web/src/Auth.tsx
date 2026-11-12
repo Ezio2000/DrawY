@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { ArrowRight, ArrowUp, Eye, EyeOff } from "lucide-react";
-import { Spinner } from "@drawy/ui";
-import { ModelSketch, KinshipSketch } from "@drawy/ui/sketches";
-import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
+import { Spinner } from "./ui/primitives.tsx";
+import { ModelSketch, KinshipSketch } from "./ui/brand/sketches.tsx";
+import { OrbitSketch } from "./ui/brand/orbit.tsx";
 import { Brand, Seal } from "./Title.tsx";
 import { LanguageSwitch, useT } from "./i18n.tsx";
 import { api, type User } from "./api.ts";

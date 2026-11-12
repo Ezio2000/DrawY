@@ -11,12 +11,14 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { Ellipsis, type LucideIcon } from "lucide-react";
-import { reducedMotion } from "./motion.ts";
 import { useInView } from "./place.ts";
-import { cx } from "./cx.ts";
-import { useWords } from "./locale.tsx";
-import { words } from "./words.ts";
+import { cx } from "./classes.ts";
+import { useLocale } from "./locale.tsx";
+
+/** Whether the reader asked for less motion. */
+export const reducedMotion = () =>
+  typeof matchMedia === "function" &&
+  matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const Closing = createContext(false);
 /** True while the surrounding Presence plays its exit animation. */
@@ -241,94 +243,6 @@ export function Tooltips() {
     : null;
 }
 
-interface MenuItem {
-  icon: LucideIcon;
-  label: string;
-  onSelect: () => void;
-}
-/** Secondary actions behind one control: a list that opens from it and closes on a
- * choice, a tap elsewhere or Escape. `icon` replaces the ellipsis, `labelled` shows the
- * name beside it, and `className` lets a place open the list its own way. */
-export function Menu({
-  label,
-  items,
-  icon: Icon = Ellipsis,
-  labelled = false,
-  className,
-}: {
-  label: string;
-  items: MenuItem[];
-  icon?: LucideIcon;
-  labelled?: boolean;
-  className?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useInView(ref, open);
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    // Captured first, so Escape closes the list instead of leaving the level.
-    const key = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      setOpen(false);
-    };
-    addEventListener("pointerdown", away, true);
-    addEventListener("keydown", key, true);
-    return () => {
-      removeEventListener("pointerdown", away, true);
-      removeEventListener("keydown", key, true);
-    };
-  }, [open]);
-  return (
-    <div className={cx(className ? `menu ${className}` : "menu")} ref={ref}>
-      <button
-        className={cx(labelled ? "menu-trigger" : "icon-button")}
-        aria-label={label}
-        data-tip={labelled ? undefined : label}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <Icon size={labelled ? 18 : 19} />
-        {labelled && <span>{label}</span>}
-      </button>
-      <Presence show={open} ms={180}>
-        <MenuList items={items} onPick={() => setOpen(false)} />
-      </Presence>
-    </div>
-  );
-}
-function MenuList({
-  items,
-  onPick,
-}: {
-  items: MenuItem[];
-  onPick: () => void;
-}) {
-  const closing = useClosing();
-  return (
-    <div className={cx(`menu-list${closing ? " closing" : ""}`)} role="menu">
-      {items.map(({ icon: Icon, label, onSelect }) => (
-        <button
-          key={label}
-          role="menuitem"
-          onClick={() => {
-            onPick();
-            onSelect();
-          }}
-        >
-          <Icon size={16} />
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** A deletion notice with an undo action. */
 export function UndoToast({
   text,
@@ -338,16 +252,11 @@ export function UndoToast({
   onUndo: () => void;
 }) {
   const closing = useClosing(),
-    w = useWords(words);
-  const ref = useRef<HTMLDivElement>(null);
+    locale = useLocale();
   return (
-    <div
-      className={cx(`toast undo${closing ? " closing" : ""}`)}
-      ref={ref}
-      role="status"
-    >
+    <div className={cx(`toast undo${closing ? " closing" : ""}`)} role="status">
       <span>{text}</span>
-      <button onClick={onUndo}>{w.undo}</button>
+      <button onClick={onUndo}>{locale === "zh" ? "撤销" : "Undo"}</button>
     </div>
   );
 }

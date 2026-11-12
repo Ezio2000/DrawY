@@ -10,8 +10,8 @@ import {
   SquarePen,
   MonitorSmartphone,
 } from "lucide-react";
-import { PanelMark } from "@drawy/ui/brand";
-import { useLocale } from "@drawy/ui";
+import { PanelMark } from "./ui/brand/hand.tsx";
+import { useLocale } from "./ui/locale.tsx";
 import type { ShellChoice, Shells } from "./shells.ts";
 import { cx } from "./cx.ts";
 import { useDismiss } from "./popover.ts";

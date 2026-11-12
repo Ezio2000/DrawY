@@ -1,4 +1,4 @@
-import { Lantern } from "@drawy/ui/brand";
+import { Lantern } from "./ui/brand/hand.tsx";
 import { cx } from "./cx.ts";
 import { useT, type Words } from "./i18n.tsx";
 

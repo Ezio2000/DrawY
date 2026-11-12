@@ -25,7 +25,7 @@ import {
 } from "../../../modules/editing/index.ts";
 import type { Work } from "../../../modules/contracts/index.ts";
 import type { StyleMaterial } from "@drawy/materials/schema";
-import { useLocale } from "@drawy/ui";
+import { useLocale } from "./ui/locale.tsx";
 import { styleList } from "./Composer.tsx";
 import { Code } from "./EditCode.tsx";
 import { hex, Picker } from "./EditControls.tsx";

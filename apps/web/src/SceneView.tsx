@@ -2,7 +2,8 @@ import { detailElement } from "../../../modules/runtime/detail.ts";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Lightbulb } from "lucide-react";
-import { reducedMotion, Spinner, useLocale } from "@drawy/ui";
+import { reducedMotion, Spinner } from "./ui/primitives.tsx";
+import { useLocale } from "./ui/locale.tsx";
 import {
   Canvas,
   type CanvasOptions,

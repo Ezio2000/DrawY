@@ -7,7 +7,7 @@ import {
 } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, Plus, RotateCcw, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { Switch } from "@drawy/ui";
+import { Switch } from "./ui/primitives.tsx";
 import type { Canvas } from "../../../modules/canvas/index.ts";
 import {
   fieldsOf,

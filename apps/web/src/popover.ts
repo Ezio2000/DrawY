@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useInView } from "@drawy/ui";
+import { useInView } from "./ui/place.ts";
 
 /** What every menu that opens from a control does: it stays inside what can be seen (see
  * `useInView`), and closes on a press outside `ref`, which holds the control and the menu,

@@ -14,7 +14,8 @@ import {
   Globe,
   Tags,
 } from "lucide-react";
-import { Switch, Spinner, pageLocale } from "@drawy/ui";
+import { Switch, Spinner } from "./ui/primitives.tsx";
+import { pageLocale } from "./ui/locale.tsx";
 import {
   permissions,
   type Account,

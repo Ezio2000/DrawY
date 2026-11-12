@@ -1,5 +1,4 @@
 packages:
-  - modules/ui
   - materials
 allowBuilds:
   esbuild: true

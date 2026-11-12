@@ -1,5 +1,5 @@
 import { lazy, memo, useEffect, useState, type ComponentType } from "react";
-import type { Locale } from "@drawy/ui";
+import type { Locale } from "./ui/locale.tsx";
 import type { ShellProps } from "./shell.ts";
 import { store, stored } from "./storage.ts";
 

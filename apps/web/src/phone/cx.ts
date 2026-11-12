@@ -1,4 +1,4 @@
-import { classes, vocabulary } from "@drawy/ui";
+import { classes, vocabulary } from "../ui/classes.ts";
 import sheet from "./phone.module.css";
 
 /** Class names for the phone page: its own sheet and the app's shared vocabulary (buttons,

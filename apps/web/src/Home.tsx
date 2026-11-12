@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Plus } from "lucide-react";
-import { OrbitSketch } from "../../../modules/ui/brand/orbit.tsx";
-import { ModelSketch, KinshipSketch } from "@drawy/ui/sketches";
+import { OrbitSketch } from "./ui/brand/orbit.tsx";
+import { ModelSketch, KinshipSketch } from "./ui/brand/sketches.tsx";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 import { Seal, Title } from "./Title.tsx";

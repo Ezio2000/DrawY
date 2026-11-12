@@ -1,4 +1,4 @@
-import type { Locale } from "@drawy/ui";
+import type { Locale } from "../ui/locale.tsx";
 import type { Link, Point, Run, Selection, Work, WorkEdit } from "../../../../modules/contracts/index.ts";
 import type { Drawn } from "../../../../modules/canvas/index.ts";
 import type { Listener } from "../events.ts";

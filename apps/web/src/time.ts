@@ -1,4 +1,4 @@
-import { pageLocale } from "@drawy/ui";
+import { pageLocale } from "./ui/locale.tsx";
 import { dictionaries } from "./i18n.tsx";
 
 const pad = (n: number) => String(n).padStart(2, "0");

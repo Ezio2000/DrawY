@@ -11,7 +11,8 @@ import {
   Share2,
   Square,
 } from "lucide-react";
-import { Spinner, useLocale } from "@drawy/ui";
+import { Spinner } from "./ui/primitives.tsx";
+import { useLocale } from "./ui/locale.tsx";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 import { useDismiss } from "./popover.ts";

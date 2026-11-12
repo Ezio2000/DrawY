@@ -9,7 +9,8 @@ import {
   Lock,
   Users,
 } from "lucide-react";
-import { Segmented, Spinner, reducedMotion, useLocale } from "@drawy/ui";
+import { Segmented, Spinner, reducedMotion } from "./ui/primitives.tsx";
+import { useLocale } from "./ui/locale.tsx";
 import type {
   Material,
   MaterialPage,

@@ -744,19 +744,7 @@ async function compact(
       span.set({ error: String(e), replaced: false });
       return;
     }
-    const references = [
-      ...new Set(
-        store
-          .runs(run.workId)
-          .flatMap((r) =>
-            r.steps.flatMap((s) =>
-              s.kind === "message" && s.role === "user"
-                ? s.materials || []
-                : [],
-            ),
-          ),
-      ),
-    ];
+    const references = [...new Set(userMessages(store, run.workId).flatMap((s) => s.materials || []))];
     ctx.input = [
       preferencesMessage((ctx.preferences = preferencesOf(ctx.settings))),
       await userMessage(
@@ -800,25 +788,20 @@ const transient = (e: unknown) =>
     /^模型请求 (429|5\d\d)|模型连接在完成前中断|terminated|ECONNRESET|socket/.test(
       e.message,
     ));
+/** The user's messages on this work, oldest first. */
+const userMessages = (store: UserStore, workId: string) =>
+  store
+    .runs(workId)
+    .flatMap((r) => r.steps.flatMap((s) => (s.kind === "message" && s.role === "user" ? [s] : [])));
 /** Everything the user has said about this work, for checking a brief's quotes. */
-function said(store: UserStore, workId: string, preferences: string) {
-  return [
-    preferences,
-    ...store
-      .runs(workId)
-      .flatMap((r) =>
-        r.steps.flatMap((s) =>
-          s.kind === "message" && s.role === "user" ? [s.text] : [],
-        ),
-      ),
-  ];
-}
+const said = (store: UserStore, workId: string, preferences: string) => [
+  preferences,
+  ...userMessages(store, workId).map((s) => s.text),
+];
 /** Where a conversation starts when the one before it cannot be continued: what the user has
  * asked of this work so far. The whole work follows it. */
 function earlierRequests(store: UserStore, workId: string): Item[] {
-  const asked = store
-    .runs(workId)
-    .flatMap((r) => r.steps.flatMap((s) => (s.kind === "message" && s.role === "user" ? [s.text] : [])));
+  const asked = userMessages(store, workId).map((s) => s.text);
   return asked.length
     ? [{ role: "user", content: `Earlier requests on this work, oldest first:\n${asked.map((a) => `- ${a}`).join("\n")}` }]
     : [];
@@ -921,9 +904,7 @@ export class Agent {
       // Told again only when they changed since this conversation last heard them.
       ...(before?.preferences === ctx.preferences ? [] : [preferencesMessage(ctx.preferences!)]),
       message,
-      before
-        ? catchUp(store, sceneId, work, before.known)
-        : workMessage(sceneId, work, ownChanges(store, work)),
+      catchUp(store, sceneId, work, before?.known),
     );
     this.emit(store, run);
     store.saveContext(run.id, ctx);
@@ -1048,7 +1029,6 @@ export class Agent {
       15 * 60 * 1000,
     );
     const start = Date.now();
-    let flush: ReturnType<typeof setTimeout> | undefined;
     const settings = ctx.settings;
     run.services = {
       label: settings.label,
@@ -1102,9 +1082,6 @@ export class Agent {
                 abort,
                 instructions,
                 start,
-                (f) => {
-                  flush = f;
-                },
               );
             } catch (e) {
               console.error("DrawY run failed", run.id, e);
@@ -1130,7 +1107,6 @@ export class Agent {
                   });
               store.saveContext(run.id, ctx);
               clearTimeout(timeout);
-              clearTimeout(flush);
               this.active.delete(run.id);
               run.elapsedMs = (run.elapsedMs || 0) + Date.now() - start;
               this.emit(store, run);
@@ -1149,7 +1125,6 @@ export class Agent {
     abort: AbortController,
     instructions: string,
     start: number,
-    flushing: (f: ReturnType<typeof setTimeout> | undefined) => void,
   ) {
     const settings = ctx.settings;
     const availableTools = toolsFor(settings);
@@ -1162,329 +1137,331 @@ export class Agent {
     const emitSoon = () => {
       flush ??= setTimeout(() => {
         flush = undefined;
-        flushing(undefined);
         for (const d of drafts.values())
           Object.assign(d.step, activity(d.name, partialJson(d.text) ?? {}, run.sceneId));
         this.emit(store, run);
       }, 250);
-      flushing(flush);
     };
-    let seen = ctx.input.length;
-    while (ctx.generations++ < 24) {
-      let thinking: Extract<Step, { kind: "thinking" }> | undefined;
-      // Progress the author writes takes its place among the steps as it streams.
-      let said: Extract<Step, { kind: "message" }> | undefined;
-      abort.signal.throwIfAborted();
-      ctx.input.push(...(await this.developed(store, run)));
-      await compact(store, run, ctx, abort.signal, instructions, availableTools);
-      if (seen > ctx.input.length) seen = 0;
-      holdEffort(ctx.input, settings.author);
-      const turnStart = Date.now();
-      const steer = steering(run, availableTools, settings.author);
-      let firstOutput: number | undefined;
-      const result = await tracer.span(
-        "turn",
-        `turn ${ctx.generations}`,
-        {
-          input: ctx.input.slice(seen),
-          inputItems: ctx.input.length,
-          estimatedTokens: contextSize(ctx),
-          request: {
-            ...requestOf(settings.author),
-            effort: settings.author.effort,
-            instructionsChars: instructions.length,
-            tools: availableTools.length,
-            ...(Object.keys(steer).length ? { steer } : {}),
+    try {
+      let seen = ctx.input.length;
+      while (ctx.generations++ < 24) {
+        let thinking: Extract<Step, { kind: "thinking" }> | undefined;
+        // Progress the author writes takes its place among the steps as it streams.
+        let said: Extract<Step, { kind: "message" }> | undefined;
+        abort.signal.throwIfAborted();
+        ctx.input.push(...(await this.developed(store, run)));
+        await compact(store, run, ctx, abort.signal, instructions, availableTools);
+        if (seen > ctx.input.length) seen = 0;
+        holdEffort(ctx.input, settings.author);
+        const turnStart = Date.now();
+        const steer = steering(run, availableTools, settings.author);
+        let firstOutput: number | undefined;
+        const result = await tracer.span(
+          "turn",
+          `turn ${ctx.generations}`,
+          {
+            input: ctx.input.slice(seen),
+            inputItems: ctx.input.length,
+            estimatedTokens: contextSize(ctx),
+            request: {
+              ...requestOf(settings.author),
+              effort: settings.author.effort,
+              instructionsChars: instructions.length,
+              tools: availableTools.length,
+              ...(Object.keys(steer).length ? { steer } : {}),
+            },
           },
-        },
-        async (span) => {
-          // A dropped stream, a rate limit or a server error is tried again from the
-          // same input; what the broken attempt had shown is taken back first.
-          const mark = run.steps.length;
-          // When each hosted call began, to time its span once it is done.
-          const began = new Map<string, number>();
-          let result!: Awaited<ReturnType<typeof generate>>;
-          let asked = { role: settings.author, effort: settings.author.effort };
-          let lessened = false;
-          for (let attempt = 0, waits = [2000, 8000, 0]; attempt < waits.length; attempt++) {
-            const wait = waits[attempt];
-            const tried = Date.now();
-            let reported: Item | undefined,
-              chars = 0;
-            try {
-              result = await generate(asked.role, {
-                instructions,
-                input: ctx.input,
-                tools: availableTools,
-                signal: abort.signal,
-                // One key for all of a user's works: every request begins with the same
-                // instructions and tools, and a work's turns extend its earlier ones.
-                cacheKey: store.userId,
-                steer,
-                effort: asked.effort,
-                onEvent: (event) => {
-                  if (event.type === "response.usage") {
-                    reported = event.usage;
-                    return;
-                  }
-                  if (event.type.endsWith(".delta") && typeof event.delta === "string")
-                    chars += event.delta.length;
-                  if (
-                    firstOutput === undefined &&
-                    event.type.endsWith(".delta")
-                  )
-                    firstOutput = Date.now() - turnStart;
-                  if (
-                    run.firstOutputMs === undefined &&
-                    event.type.endsWith(".delta")
-                  ) {
-                    run.firstOutputMs = Date.now() - start;
-                    this.emit(store, run);
-                  }
-                  switch (event.type) {
-                    case "response.reasoning_summary_part.added":
-                      thinking = { kind: "thinking", text: "" };
-                      run.steps.push(thinking);
-                      emitSoon();
-                      break;
-                    case "response.reasoning_summary_text.delta":
-                      if (thinking) thinking.text += event.delta;
-                      emitSoon();
-                      break;
-                    case "response.reasoning_summary_text.done":
-                      if (thinking) thinking.text = event.text;
-                      emitSoon();
-                      break;
-                    case "response.output_text.delta":
-                      if (said) said.text += event.delta;
-                      emitSoon();
-                      break;
-                    case "response.output_item.added": {
-                      const { type, name, call_id, id: item } = event.item;
-                      if (type === "message" && !said) {
-                        said = { kind: "message", role: "assistant", text: "" };
-                        run.steps.push(said);
-                      }
-                      if (hosted(event.item)) {
-                        began.set(item, Date.now());
-                        run.steps.push({
-                          kind: "tool",
-                          id: item,
-                          status: "running",
-                          ...hostedActivity(event.item),
-                        });
-                        this.emit(store, run);
-                      }
-                      if (type === "function_call" && !silent.has(name)) {
-                        const step: ToolStep = {
-                          kind: "tool",
-                          id: call_id,
-                          status: "running",
-                          ...activity(name, {}, run.sceneId),
-                        };
-                        run.steps.push(step);
-                        drafts.set(item, { step, name, text: "" });
-                        this.emit(store, run);
-                      }
-                      break;
-                    }
-                    case "response.function_call_arguments.delta": {
-                      const draft = drafts.get(event.item_id);
-                      if (draft) {
-                        draft.text += event.delta;
-                        emitSoon();
-                      }
-                      break;
-                    }
-                    case "response.output_item.done": {
-                      drafts.delete(event.item.id);
-                      if (hosted(event.item)) {
-                        const call = event.item,
-                          failed = call.status === "failed",
-                          tool = call.type.replace(/_call$/, "");
-                        const step = run.steps.find(
-                          (s): s is ToolStep =>
-                            s.kind === "tool" && s.id === call.id,
-                        );
-                        if (step)
-                          Object.assign(step, hostedActivity(call), {
-                            status: failed ? "failed" : "done",
-                          });
-                        const used = (usageOf(run).hosted ??= {});
-                        used[tool] = (used[tool] ?? 0) + 1;
-                        if (call.type === "web_search_call") counted(run, call.action?.type);
-                        // Recorded like any tool call, under the turn that made it.
-                        tracer.record(
-                          "tool",
-                          tool,
-                          {
-                            hosted: true,
-                            args: call.action ?? call.arguments ?? null,
-                            output: call,
-                          },
-                          {
-                            startedAt: began.get(call.id) ?? Date.now(),
-                            ...(failed ? { error: `${tool} failed` } : {}),
-                          },
-                        );
-                        this.emit(store, run);
-                      }
-                      break;
-                    }
-                  }
-                },
-              });
-              break;
-            } catch (e) {
-              // Spent whatever becomes of the run, and told apart from what it paid for.
-              const spent = spendFailed(run, {
-                usage: e instanceof CutOff ? e.usage : reported,
-                ms: Date.now() - tried,
-                chars,
-              });
-              tracer.record(
-                "turn",
-                `turn ${ctx.generations} failed attempt`,
-                {
-                  failed: true,
-                  inputItems: ctx.input.length,
-                  estimatedTokens: contextSize(ctx),
-                  usage: { ...spent.usage, output_tokens: spent.output },
-                  ...(spent.estimated ? { estimatedOutput: spent.estimated } : {}),
-                },
-                { startedAt: tried, error: e instanceof Error ? e.message : String(e) },
-              );
-              if (e instanceof CutOff) {
-                span.set({ incomplete: e.reason ?? "unknown" });
-                const less =
-                  e.thoughtOnly && !lessened && !abort.signal.aborted
-                    ? withLessThought(ctx.input, settings.author, asked.effort)
-                    : undefined;
-                if (less) {
-                  // A turn that thinks away its budget would do so again as it is, and
-                  // this attempt is not one the connection's retries should count.
-                  asked = less;
-                  lessened = true;
-                  attempt--;
-                  tracer.note("less thought", { effort: less.effort }, e.message);
-                  run.steps.splice(mark);
-                  thinking = said = undefined;
-                  firstOutput = undefined;
-                  drafts.clear();
-                  this.emit(store, run);
-                  continue;
-                }
-              }
-              if (abort.signal.aborted || !transient(e)) throw e;
-              if (!wait)
-                throw Error(
-                  `与模型的连接中断了（${e instanceof Error ? e.message : e}），已保存的内容仍可继续修改`,
-                );
-              tracer.note("retry", { wait }, String(e));
+          async (span) => {
+            // A dropped stream, a rate limit or a server error is tried again from the
+            // same input; what the broken attempt had shown is taken back first.
+            const mark = run.steps.length;
+            const rewind = () => {
               run.steps.splice(mark);
               thinking = said = undefined;
               firstOutput = undefined;
               drafts.clear();
-              failedOf(run).ms += wait;
-              this.emit(store, run);
-              await new Promise((resolve) => setTimeout(resolve, wait));
+            };
+            // When each hosted call began, to time its span once it is done.
+            const began = new Map<string, number>();
+            let result!: Awaited<ReturnType<typeof generate>>;
+            let asked = { role: settings.author, effort: settings.author.effort };
+            let lessened = false;
+            for (let attempt = 0, waits = [2000, 8000, 0]; attempt < waits.length; attempt++) {
+              const wait = waits[attempt];
+              const tried = Date.now();
+              let reported: Item | undefined,
+                chars = 0;
+              try {
+                result = await generate(asked.role, {
+                  instructions,
+                  input: ctx.input,
+                  tools: availableTools,
+                  signal: abort.signal,
+                  // One key for all of a user's works: every request begins with the same
+                  // instructions and tools, and a work's turns extend its earlier ones.
+                  cacheKey: store.userId,
+                  steer,
+                  effort: asked.effort,
+                  onEvent: (event) => {
+                    if (event.type === "response.usage") {
+                      reported = event.usage;
+                      return;
+                    }
+                    if (event.type.endsWith(".delta") && typeof event.delta === "string")
+                      chars += event.delta.length;
+                    if (
+                      firstOutput === undefined &&
+                      event.type.endsWith(".delta")
+                    )
+                      firstOutput = Date.now() - turnStart;
+                    if (
+                      run.firstOutputMs === undefined &&
+                      event.type.endsWith(".delta")
+                    ) {
+                      run.firstOutputMs = Date.now() - start;
+                      this.emit(store, run);
+                    }
+                    switch (event.type) {
+                      case "response.reasoning_summary_part.added":
+                        thinking = { kind: "thinking", text: "" };
+                        run.steps.push(thinking);
+                        emitSoon();
+                        break;
+                      case "response.reasoning_summary_text.delta":
+                        if (thinking) thinking.text += event.delta;
+                        emitSoon();
+                        break;
+                      case "response.reasoning_summary_text.done":
+                        if (thinking) thinking.text = event.text;
+                        emitSoon();
+                        break;
+                      case "response.output_text.delta":
+                        if (said) said.text += event.delta;
+                        emitSoon();
+                        break;
+                      case "response.output_item.added": {
+                        const { type, name, call_id, id: item } = event.item;
+                        if (type === "message" && !said) {
+                          said = { kind: "message", role: "assistant", text: "" };
+                          run.steps.push(said);
+                        }
+                        if (hosted(event.item)) {
+                          began.set(item, Date.now());
+                          run.steps.push({
+                            kind: "tool",
+                            id: item,
+                            status: "running",
+                            ...hostedActivity(event.item),
+                          });
+                          this.emit(store, run);
+                        }
+                        if (type === "function_call" && !silent.has(name)) {
+                          const step: ToolStep = {
+                            kind: "tool",
+                            id: call_id,
+                            status: "running",
+                            ...activity(name, {}, run.sceneId),
+                          };
+                          run.steps.push(step);
+                          drafts.set(item, { step, name, text: "" });
+                          this.emit(store, run);
+                        }
+                        break;
+                      }
+                      case "response.function_call_arguments.delta": {
+                        const draft = drafts.get(event.item_id);
+                        if (draft) {
+                          draft.text += event.delta;
+                          emitSoon();
+                        }
+                        break;
+                      }
+                      case "response.output_item.done": {
+                        drafts.delete(event.item.id);
+                        if (hosted(event.item)) {
+                          const call = event.item,
+                            failed = call.status === "failed",
+                            tool = call.type.replace(/_call$/, "");
+                          const step = run.steps.find(
+                            (s): s is ToolStep =>
+                              s.kind === "tool" && s.id === call.id,
+                          );
+                          if (step)
+                            Object.assign(step, hostedActivity(call), {
+                              status: failed ? "failed" : "done",
+                            });
+                          const used = (usageOf(run).hosted ??= {});
+                          used[tool] = (used[tool] ?? 0) + 1;
+                          if (call.type === "web_search_call") counted(run, call.action?.type);
+                          // Recorded like any tool call, under the turn that made it.
+                          tracer.record(
+                            "tool",
+                            tool,
+                            {
+                              hosted: true,
+                              args: call.action ?? call.arguments ?? null,
+                              output: call,
+                            },
+                            {
+                              startedAt: began.get(call.id) ?? Date.now(),
+                              ...(failed ? { error: `${tool} failed` } : {}),
+                            },
+                          );
+                          this.emit(store, run);
+                        }
+                        break;
+                      }
+                    }
+                  },
+                });
+                break;
+              } catch (e) {
+                // Spent whatever becomes of the run, and told apart from what it paid for.
+                const spent = spendFailed(run, {
+                  usage: e instanceof CutOff ? e.usage : reported,
+                  ms: Date.now() - tried,
+                  chars,
+                });
+                tracer.record(
+                  "turn",
+                  `turn ${ctx.generations} failed attempt`,
+                  {
+                    failed: true,
+                    inputItems: ctx.input.length,
+                    estimatedTokens: contextSize(ctx),
+                    usage: { ...spent.usage, output_tokens: spent.output },
+                    ...(spent.estimated ? { estimatedOutput: spent.estimated } : {}),
+                  },
+                  { startedAt: tried, error: e instanceof Error ? e.message : String(e) },
+                );
+                if (e instanceof CutOff) {
+                  span.set({ incomplete: e.reason ?? "unknown" });
+                  const less =
+                    e.thoughtOnly && !lessened && !abort.signal.aborted
+                      ? withLessThought(ctx.input, settings.author, asked.effort)
+                      : undefined;
+                  if (less) {
+                    // A turn that thinks away its budget would do so again as it is, and
+                    // this attempt is not one the connection's retries should count.
+                    asked = less;
+                    lessened = true;
+                    attempt--;
+                    tracer.note("less thought", { effort: less.effort }, e.message);
+                    rewind();
+                    this.emit(store, run);
+                    continue;
+                  }
+                }
+                if (abort.signal.aborted || !transient(e)) throw e;
+                if (!wait)
+                  throw Error(
+                    `与模型的连接中断了（${e instanceof Error ? e.message : e}），已保存的内容仍可继续修改`,
+                  );
+                tracer.note("retry", { wait }, String(e));
+                rewind();
+                failedOf(run).ms += wait;
+                this.emit(store, run);
+                await new Promise((resolve) => setTimeout(resolve, wait));
+              }
             }
-          }
-          span.set({
-            output: result.items,
-            usage: result.usage,
-            response: result.response,
-            firstOutputMs: firstOutput,
-          });
-          return result;
-        },
-      );
-      drafts.clear();
-      spend(run, result.usage);
-      ctx.input.push(...result.items);
-      seen = ctx.input.length;
-      if (result.usage.input_tokens)
-        ctx.measured = {
-          tokens: result.usage.input_tokens + (result.usage.output_tokens ?? 0),
-          items: ctx.input.length,
-        };
-      const text = textOf(result.items);
-      const citations = citationsOf(result.items);
-      if (said) {
-        said.text = text;
-        if (citations.length) said.citations = citations;
-        if (!text) run.steps.splice(run.steps.indexOf(said), 1);
-      } else if (text)
-        run.steps.push({ kind: "message", role: "assistant", text, ...(citations.length ? { citations } : {}) });
-      this.emit(store, run);
-      const calls = result.items.filter((i) => i.type === "function_call");
-      if (!calls.length) {
-        // Words with no call end the run once the work is done: they are its closing words.
-        const blocked = this.done(store, run);
-        if (text && blocked === undefined) {
-          run.status = "completed";
-          store.saveContext(run.id, ctx);
-          this.developments.delete(run.id);
-          this.heldForText.delete(run.id);
-          return;
-        }
-        ctx.input.push({
-          role: "user",
-          content: blocked
-            ? `The work is not done yet: ${blocked}. Take the next step with a tool, keeping any note to the user in the same message.`
-            : "Your last message had neither closing words nor a tool call. Write your closing words if the work is done, or take the next step with a tool.",
-        });
-        continue;
-      }
-      let writeError: string | undefined;
-      // Every call's result comes before any picture: a service that checks a batch's
-      // results in order takes a message between them for a call left unanswered.
-      const shown: Item[] = [];
-      for (const call of calls) {
-        abort.signal.throwIfAborted();
-        const outcome = await tracer.span(
-          "tool",
-          call.name,
-          { args: call.arguments },
-          async (span) => {
-            const r = await this.call(
-              store,
-              run,
-              ctx,
-              call,
-              calls,
-              abort,
-              start,
-              writeError,
-            );
             span.set({
-              output: r.output,
-              images: r.images.map((i) => i.image_url).filter(Boolean),
-              ...(r.error ? { error: r.error } : {}),
+              output: result.items,
+              usage: result.usage,
+              response: result.response,
+              firstOutputMs: firstOutput,
             });
-            if (r.error)
-              tracer.note("tool error", { tool: call.name }, r.error);
-            return r;
+            return result;
           },
         );
-        if (outcome.done) return;
-        if (call.name === "write_work" && outcome.error) writeError = outcome.error;
-        ctx.input.push({
-          type: "function_call_output",
-          call_id: call.call_id,
-          output:
-            typeof outcome.output === "string"
-              ? outcome.output
-              : JSON.stringify(outcome.output),
-        });
-        if (outcome.images.length) shown.push({ role: "user", content: outcome.images });
-        store.saveContext(run.id, ctx);
+        drafts.clear();
+        spend(run, result.usage);
+        ctx.input.push(...result.items);
+        seen = ctx.input.length;
+        if (result.usage.input_tokens)
+          ctx.measured = {
+            tokens: result.usage.input_tokens + (result.usage.output_tokens ?? 0),
+            items: ctx.input.length,
+          };
+        const text = textOf(result.items);
+        const citations = citationsOf(result.items);
+        if (said) {
+          said.text = text;
+          if (citations.length) said.citations = citations;
+          if (!text) run.steps.splice(run.steps.indexOf(said), 1);
+        } else if (text)
+          run.steps.push({ kind: "message", role: "assistant", text, ...(citations.length ? { citations } : {}) });
         this.emit(store, run);
+        const calls = result.items.filter((i) => i.type === "function_call");
+        if (!calls.length) {
+          // Words with no call end the run once the work is done: they are its closing words.
+          const blocked = this.done(store, run);
+          if (text && blocked === undefined) {
+            run.status = "completed";
+            store.saveContext(run.id, ctx);
+            this.developments.delete(run.id);
+            this.heldForText.delete(run.id);
+            return;
+          }
+          ctx.input.push({
+            role: "user",
+            content: blocked
+              ? `The work is not done yet: ${blocked}. Take the next step with a tool, keeping any note to the user in the same message.`
+              : "Your last message had neither closing words nor a tool call. Write your closing words if the work is done, or take the next step with a tool.",
+          });
+          continue;
+        }
+        let writeError: string | undefined;
+        // Every call's result comes before any picture: a service that checks a batch's
+        // results in order takes a message between them for a call left unanswered.
+        const shown: Item[] = [];
+        for (const call of calls) {
+          abort.signal.throwIfAborted();
+          const outcome = await tracer.span(
+            "tool",
+            call.name,
+            { args: call.arguments },
+            async (span) => {
+              const r = await this.call(
+                store,
+                run,
+                ctx,
+                call,
+                calls,
+                abort,
+                start,
+                writeError,
+              );
+              span.set({
+                output: r.output,
+                images: r.images.map((i) => i.image_url).filter(Boolean),
+                ...(r.error ? { error: r.error } : {}),
+              });
+              if (r.error)
+                tracer.note("tool error", { tool: call.name }, r.error);
+              return r;
+            },
+          );
+          if (outcome.done) return;
+          if (call.name === "write_work" && outcome.error) writeError = outcome.error;
+          ctx.input.push({
+            type: "function_call_output",
+            call_id: call.call_id,
+            output:
+              typeof outcome.output === "string"
+                ? outcome.output
+                : JSON.stringify(outcome.output),
+          });
+          if (outcome.images.length) shown.push({ role: "user", content: outcome.images });
+          store.saveContext(run.id, ctx);
+          this.emit(store, run);
+        }
+        ctx.input.push(...shown);
+        store.saveContext(run.id, ctx);
       }
-      ctx.input.push(...shown);
-      store.saveContext(run.id, ctx);
+      throw Error("已达到本轮 24 次生成上限");
+    } finally {
+      clearTimeout(flush);
     }
-    throw Error("已达到本轮 24 次生成上限");
   }
   /** What still stands in the way of finishing: every picture developed and the latest
    * revision seen since, whole and without errors. */

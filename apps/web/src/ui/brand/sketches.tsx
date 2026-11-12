@@ -1,9 +1,5 @@
 import { useId, type CSSProperties } from "react";
-import { random } from "./hand.tsx";
-import { handLine, pointsOf } from "./pen.tsx";
-const useCatalogue = () => ({
-  painting: (id: string) => ({ src: `/materials/files/${id}` }),
-});
+import { handLine, pointsOf, random } from "./pen.tsx";
 import { cx } from "./cx.ts";
 
 /* Each painted subject is an independent transparent asset. SVG supplies the composition,
@@ -180,7 +176,6 @@ const TIES = [
 
 /** Five separately generated portraits, arranged and connected by editable SVG lines. */
 export function KinshipSketch() {
-  const catalogue = useCatalogue();
   return (
     <svg
       className={cx("sketch kinship-sketch")}
@@ -200,7 +195,7 @@ export function KinshipSketch() {
       {FIGURES.map((p, i) => (
         <image
           key={i}
-          href={catalogue.painting(p.painting)?.src}
+          href={`/materials/files/${p.painting}`}
           x={p.x}
           y={p.y}
           width={p.w}

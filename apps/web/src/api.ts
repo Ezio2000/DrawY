@@ -1,4 +1,4 @@
-import { pageLocale } from "@drawy/ui";
+import { pageLocale } from "./ui/locale.tsx";
 import type { Account, ModelMenu, WorkProgress } from "../../../modules/contracts/index.ts";
 export async function api<T = any>(
   path: string,

@@ -8,7 +8,8 @@ import { api } from "./api.ts";
 import { cx } from "./cx.ts";
 import { ago } from "./time.ts";
 import { Title } from "./Title.tsx";
-import { pageLocale, Spinner } from "@drawy/ui";
+import { pageLocale } from "./ui/locale.tsx";
+import { Spinner } from "./ui/primitives.tsx";
 import { dictionaries } from "./i18n.tsx";
 import type { Meter, Span, TraceSummary } from "../../../modules/trace/index.ts";
 

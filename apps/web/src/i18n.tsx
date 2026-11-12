@@ -1,6 +1,6 @@
 import { createContext, useContext, useState } from "react";
 import { Languages } from "lucide-react";
-import { browserLocale, langOf, useLocale, type Locale } from "@drawy/ui";
+import { browserLocale, langOf, useLocale, type Locale } from "./ui/locale.tsx";
 import { cx } from "./cx.ts";
 import { store, stored } from "./storage.ts";
 

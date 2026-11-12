@@ -20,7 +20,7 @@ import {
   Copy,
   Star,
 } from "lucide-react";
-import { Segmented, Switch } from "@drawy/ui";
+import { Segmented, Switch } from "./ui/primitives.tsx";
 import {
   BUILTIN,
   OFF,

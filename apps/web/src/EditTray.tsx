@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Hand, ImagePlus, LibraryBig, MousePointer2, Search, Spline, Type } from "lucide-react";
 import type { DrawingMaterial, Material } from "@drawy/materials/schema";
-import { useLocale } from "@drawy/ui";
+import { useLocale } from "./ui/locale.tsx";
 import { api } from "./api.ts";
 import { DrawingLook } from "./Library.tsx";
 import { shapes, type EditOps, type Shape, type Tool } from "./desktop/editing.ts";

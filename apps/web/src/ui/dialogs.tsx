@@ -1,9 +1,8 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { useClosing } from "./primitives.tsx";
-import { cx } from "./cx.ts";
-import { useWords } from "./locale.tsx";
-import { words } from "./words.ts";
+import { cx } from "./classes.ts";
+import { useLocale } from "./locale.tsx";
 
 /** Desktop dialog, closed by its button, backdrop or Escape. */
 export function Dialog({
@@ -26,7 +25,7 @@ export function Dialog({
   wide?: boolean;
 }) {
   const closing = useClosing(),
-    w = useWords(words);
+    locale = useLocale();
   const panel = useRef<HTMLElement>(null),
     overlay = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
@@ -74,7 +73,7 @@ export function Dialog({
           </div>
           <button
             className={cx("close-button")}
-            aria-label={w.close}
+            aria-label={locale === "zh" ? "关闭" : "Close"}
             onClick={onClose}
           >
             <X size={15} strokeWidth={2.4} />

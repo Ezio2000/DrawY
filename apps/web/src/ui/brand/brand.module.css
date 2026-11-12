@@ -14,10 +14,6 @@
   stroke-linejoin: round;
 }
 
-.hand-mark .mark-thick {
-  stroke-width: 2.6;
-}
-
 .hand-mark .mark-accent {
   stroke: var(--ai);
   stroke-width: 1.4;
@@ -41,24 +37,8 @@
   fill-opacity: 0.3;
 }
 
-.spark path {
-  stroke-width: 1.35;
-}
-
 /* A host sets how fast the big star twinkles and the small one glimmers; neither moves
    unless it does. */
-
-.spark .spark-big {
-  fill: var(--ai);
-  transform-origin: 10.6px 11px;
-  animation: twinkle var(--spark-twinkle, 0s) var(--ease-in-out) infinite;
-}
-
-.spark .spark-small {
-  fill: var(--lamp);
-  transform-origin: 18.7px 16.6px;
-  animation: glimmer var(--spark-glimmer, 0s) var(--ease-in-out) infinite;
-}
 
 /* The lantern drawn by hand: a seal-red frame, a candle, a warm flame with its glow, and
    rays in lamplight yellow. */
@@ -100,44 +80,7 @@
 
 /* A pencil: wooden yellow body, seal-red band, dark point. */
 
-.pen path {
-  stroke: #3a352c;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.pen .pen-body {
-  fill: var(--lamp);
-}
-
-.pen .pen-band {
-  fill: none;
-  stroke: var(--brand);
-  stroke-width: 1.8;
-}
-
-.pen .pen-wood {
-  fill: #f3dfbd;
-}
-
-.pen .pen-lead {
-  fill: #3a352c;
-}
-
 /* The name written by hand, in the ink around it. */
-
-.wordmark {
-  overflow: visible;
-}
-
-.wordmark path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
 
 /* Individually painted transparent subjects connected by light pencil lines. */
 
@@ -233,43 +176,6 @@
 /* While the AI composes the first drawing a pencil sketches on the empty paper: boxes
    and arrows drawn line by line, once, the pencil then resting beside them. */
 
-.sketching {
-  width: min(300px, 70vw);
-  height: auto;
-  overflow: visible;
-}
-
-.sketch-drawing path {
-  fill: none;
-  stroke: color-mix(in srgb, var(--text) 62%, transparent);
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.sketch-pen {
-  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.126));
-}
-
-.sketching[data-resting] .sketch-pen {
-  transition: transform 0.7s var(--ease-out);
-  animation: pen-rest 2.4s var(--ease-in-out) infinite alternate;
-}
-
-.loupe {
-  transition: transform 0.5s var(--spring);
-  transform: var(--loupe-transform, none);
-}
-
-.sketching[data-resting] {
-  opacity: 0.35;
-  transition: opacity 0.4s var(--ease);
-}
-
-.sketching[data-resting] .sketch-pen {
-  display: none;
-}
-
 @keyframes node-light {
   0%,
   100% {
@@ -294,34 +200,5 @@
   90% {
     stroke-dashoffset: 0;
     opacity: 0;
-  }
-}
-
-@keyframes pen-rest {
-  to {
-    translate: 0 -5px;
-    rotate: 4deg;
-  }
-}
-
-@keyframes glimmer {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(0.55);
-    opacity: 0.45;
-  }
-}
-
-@keyframes twinkle {
-  0%,
-  100% {
-    transform: scale(1) rotate(0deg);
-  }
-  50% {
-    transform: scale(0.82) rotate(18deg);
   }
 }

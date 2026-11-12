@@ -70,25 +70,9 @@
   font-size: 13px;
 }
 
-.secondary:active:not(:disabled),
-.icon-button:active:not(:disabled) {
+.secondary:active:not(:disabled) {
   transform: scale(0.94);
   transition-duration: 0.1s;
-}
-
-.icon-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--r-control);
-  color: var(--text-2);
-}
-
-.icon-button:hover:not(:disabled) {
-  background: var(--fill);
-  color: var(--text);
 }
 
 .quiet {
@@ -233,77 +217,7 @@
 
 /* ---------- Secondary action menu ---------- */
 
-.menu {
-  position: relative;
-  flex-shrink: 0;
-}
-
-.menu-list {
-  position: absolute;
-  z-index: 60;
-  top: calc(100% + 8px);
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  min-width: 196px;
-  padding: 5px;
-  border-radius: var(--r-card);
-  background: var(--bg);
-  box-shadow: var(--shadow-2);
-  transform-origin: top right;
-  animation: menu-in 0.2s var(--ease-out);
-}
-
-.menu-list.closing {
-  pointer-events: none;
-  animation: menu-out 0.18s var(--ease-in) both;
-}
-
-.menu-list button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 6px;
-  font-size: 14px;
-  color: var(--text);
-  text-align: left;
-  white-space: nowrap;
-}
-
-.menu-list button svg {
-  color: var(--text-2);
-}
-
-.menu-list button:hover {
-  background: var(--fill);
-}
-
-.menu-list button:active {
-  background: var(--fill-2);
-}
-
 /* A menu whose name shows beside its icon, as in a sidebar. */
-
-.menu-trigger {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  height: 36px;
-  padding: 0 9px;
-  border-radius: 8px;
-  font-size: 14px;
-  color: var(--text-2);
-  white-space: nowrap;
-}
-
-.menu-trigger:hover,
-.menu-trigger[aria-expanded="true"] {
-  background: var(--fill);
-  color: var(--text);
-}
 
 /* ---------- Dialog ---------- */
 
@@ -654,13 +568,6 @@
   from {
     opacity: 0;
     transform: scale(0.96) translateY(-3px);
-  }
-}
-
-@keyframes menu-out {
-  to {
-    opacity: 0;
-    transform: scale(0.94);
   }
 }
 

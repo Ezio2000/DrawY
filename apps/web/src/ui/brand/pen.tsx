@@ -39,3 +39,14 @@ const pt = (p: P) => `${f(p.x)} ${f(p.y)}`;
 
 /** A polyline's points as SVG path data, `L` between them. */
 export const pointsOf = (line: P[]) => line.map(pt).join("L");
+
+/** A deterministic wobble, so the same sketch is drawn the same way each time. */
+export function random(seed: number) {
+  let s = seed >>> 0 || 1;
+  return () => {
+    s ^= s << 13;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    return ((s >>> 0) % 10000) / 10000;
+  };
+}

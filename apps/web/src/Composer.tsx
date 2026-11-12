@@ -11,7 +11,8 @@ import {
   PencilLine,
 } from "lucide-react";
 import type { SettingsChange } from "../../../modules/contracts/index.ts";
-import { Spinner, sendsOnEnter, useLocale } from "@drawy/ui";
+import { Spinner, sendsOnEnter } from "./ui/primitives.tsx";
+import { useLocale } from "./ui/locale.tsx";
 import type { StyleMaterial } from "@drawy/materials/schema";
 import { api, type Models } from "./api.ts";
 import { cx } from "./cx.ts";
