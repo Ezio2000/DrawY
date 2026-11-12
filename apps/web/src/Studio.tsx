@@ -33,6 +33,7 @@ import { counted } from "./probe.ts";
 import { live } from "./session/work.ts";
 import {
   costOf,
+  versionOf,
   type Run,
   type Step,
   type Work,
@@ -1372,6 +1373,37 @@ export function WorkStatus({
       dismiss={dismiss}
       resume={resume}
       restore={restore}
+    />
+  );
+}
+
+/** The open work's runs as the studio shows them; `follow` is called as they change, so the
+ * panel can keep the latest in view. */
+export function WorkStudio({
+  session,
+  restore,
+  resume,
+  go,
+  follow,
+}: {
+  session: WorkSession;
+  restore: (revision: number) => void;
+  resume: () => void;
+  go: (path: string) => void;
+  follow: () => void;
+}) {
+  counted("studio");
+  const s = useSelect(session, (s) => ({ runs: s.runs, loaded: s.loaded, work: s.work!, versions: s.versions }));
+  useEffect(follow, [s.runs]);
+  return (
+    <Studio
+      runs={s.runs}
+      loaded={s.loaded}
+      work={s.work}
+      restore={restore}
+      versionOf={(r) => versionOf(s.versions, r)?.number}
+      resume={resume}
+      openTrace={(id) => go("/traces/" + id)}
     />
   );
 }

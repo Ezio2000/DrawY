@@ -4,6 +4,10 @@ import { Seal } from "./Title.tsx";
 import { ago } from "./time.ts";
 import { useT, type Words } from "./i18n.tsx";
 import { versionOf, type Version } from "../../../modules/contracts/index.ts";
+import type { WorkSession } from "./session/work.ts";
+import { useSelect } from "./session/store.ts";
+import type { Feedback } from "./feedback.ts";
+import { counted } from "./probe.ts";
 
 /** What a version came from, in the words the person used: what they asked, edits made by
  * hand, a version brought back, or the blank start. */
@@ -157,5 +161,48 @@ export function Drafts({
         })}
       </ol>
     </>
+  );
+}
+
+/** The open work's versions, to look at, go back to, or save the hand edits as one;
+ * `before` runs ahead of looking or going back, such as putting a sheet away. */
+export function WorkDrafts({
+  session,
+  restore,
+  feedback,
+  before,
+}: {
+  session: WorkSession;
+  restore: (revision: number) => void;
+  feedback: Feedback;
+  before?: () => void;
+}) {
+  counted("drafts");
+  const { attempt } = feedback;
+  const s = useSelect(session, (s) => ({
+    versions: s.versions,
+    unsaved: s.unsaved,
+    current: s.work!.revision,
+    previewing: s.preview?.revision,
+    locked: s.engaged || !s.loaded,
+  }));
+  return (
+    <Drafts
+      versions={s.versions}
+      unsaved={s.unsaved}
+      current={s.current}
+      previewing={s.previewing}
+      locked={s.locked}
+      look={(r) => {
+        before?.();
+        void attempt(() => session.look(r));
+      }}
+      restore={(r) => {
+        before?.();
+        restore(r);
+      }}
+      save={() => void attempt(session.save)}
+      discard={() => void attempt(session.discard)}
+    />
   );
 }

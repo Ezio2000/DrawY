@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { WorkStudio } from "../Studio.tsx";
+import { WorkDrafts } from "../Drafts.tsx";
 import {
   ChevronDown,
   ChevronLeft,
@@ -23,7 +25,6 @@ import {
   type Work,
 } from "../../../../modules/contracts/index.ts";
 import { shownName } from "../../../../modules/editing/index.ts";
-import { Drafts } from "../Drafts.tsx";
 import { ExportItems, useExports } from "../Export.tsx";
 import type { Feedback } from "../feedback.ts";
 import { useT } from "../i18n.tsx";
@@ -31,7 +32,6 @@ import { counted } from "../probe.ts";
 import { SceneView } from "../SceneView.tsx";
 import { useSelect } from "../session/store.ts";
 import type { Snapshot, WorkSession } from "../session/work.ts";
-import { Studio } from "../Studio.tsx";
 import { Seal } from "../Title.tsx";
 import { cx } from "./cx.ts";
 
@@ -512,14 +512,8 @@ export function StudioSheet({
   go: (path: string) => void;
   show: (tab: "studio" | "versions") => void;
 }) {
-  counted("phone.studio");
   const t = useT();
   const body = useRef<HTMLDivElement>(null);
-  const s = useSelect(session, (s) => ({ runs: s.runs, loaded: s.loaded, work: s.work!, versions: s.versions }));
-  useEffect(() => {
-    const el = body.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [s.runs]);
   return (
     <Sheet
       title={t.phone.studio}
@@ -529,14 +523,15 @@ export function StudioSheet({
       close={close}
       body={body}
     >
-      <Studio
-        runs={s.runs}
-        loaded={s.loaded}
-        work={s.work}
+      <WorkStudio
+        session={session}
         restore={restore}
-        versionOf={(r) => versionOf(s.versions, r)?.number}
         resume={resume}
-        openTrace={(id) => go("/traces/" + id)}
+        go={go}
+        follow={() => {
+          const el = body.current;
+          if (el) el.scrollTop = el.scrollHeight;
+        }}
       />
     </Sheet>
   );
@@ -557,16 +552,7 @@ export function VersionsSheet({
   feedback: Feedback;
   show: (tab: "studio" | "versions") => void;
 }) {
-  counted("phone.versions");
   const t = useT();
-  const { attempt } = feedback;
-  const s = useSelect(session, (s) => ({
-    versions: s.versions,
-    unsaved: s.unsaved,
-    current: s.work!.revision,
-    previewing: s.preview?.revision,
-    locked: s.engaged || !s.loaded,
-  }));
   return (
     <Sheet
       title={t.phone.versions}
@@ -574,23 +560,7 @@ export function VersionsSheet({
       tall
       close={close}
     >
-      <Drafts
-        versions={s.versions}
-        unsaved={s.unsaved}
-        current={s.current}
-        previewing={s.previewing}
-        locked={s.locked}
-        look={(r) => {
-          close();
-          void attempt(() => session.look(r));
-        }}
-        restore={(r) => {
-          close();
-          restore(r);
-        }}
-        save={() => void attempt(session.save)}
-        discard={() => void attempt(session.discard)}
-      />
+      <WorkDrafts session={session} feedback={feedback} restore={restore} before={close} />
     </Sheet>
   );
 }

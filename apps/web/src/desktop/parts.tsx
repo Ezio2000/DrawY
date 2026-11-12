@@ -1,10 +1,9 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useRef } from "react";
 import { ChevronDown, X, MessagesSquare, PencilLine, History, Check, Undo2, Redo2 } from "lucide-react";
 import type { Canvas, CanvasOptions, Pointed } from "../../../../modules/canvas/index.ts";
 import { versionOf, type Selection, type Target } from "../../../../modules/contracts/index.ts";
 import { shownName } from "../../../../modules/editing/index.ts";
 import { cx } from "../cx.ts";
-import { Drafts } from "../Drafts.tsx";
 import { SelectionBar } from "../EditBar.tsx";
 import { EditMenu } from "../EditMenu.tsx";
 import { EditTray } from "../EditTray.tsx";
@@ -19,7 +18,6 @@ import { SceneView } from "../SceneView.tsx";
 import { Seal } from "../Title.tsx";
 import { useSelect } from "../session/store.ts";
 import type { Change, Snapshot, WorkSession } from "../session/work.ts";
-import { Studio } from "../Studio.tsx";
 import type { EditOps, useEditing } from "./editing.ts";
 
 /* The parts of the desktop work page. Each reads from the session only what it shows, so
@@ -473,76 +471,6 @@ export function SideTools({
         done={feedback.say}
       />
     </nav>
-  );
-}
-
-/** The studio: every run on the work, followed to its end while the person reads at the
- * bottom. */
-export function StudioPane({
-  session,
-  restore,
-  resume,
-  go,
-  body,
-  following,
-}: {
-  session: WorkSession;
-  restore: (revision: number) => void;
-  resume: () => void;
-  go: (path: string) => void;
-  body: RefObject<HTMLElement | null>;
-  following: RefObject<boolean>;
-}) {
-  counted("studio");
-  const s = useSelect(session, (s) => ({ runs: s.runs, loaded: s.loaded, work: s.work!, versions: s.versions }));
-  useEffect(() => {
-    const el = body.current;
-    if (el && following.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [s.runs]);
-  return (
-    <Studio
-      runs={s.runs}
-      loaded={s.loaded}
-      work={s.work}
-      restore={restore}
-      versionOf={(r) => versionOf(s.versions, r)?.number}
-      resume={resume}
-      openTrace={(id) => go("/traces/" + id)}
-    />
-  );
-}
-
-/** Every version, to look at, go back to, or save the hand edits as one. */
-export function DraftsPane({
-  session,
-  restore,
-  feedback,
-}: {
-  session: WorkSession;
-  restore: (revision: number) => void;
-  feedback: Feedback;
-}) {
-  counted("drafts");
-  const { attempt } = feedback;
-  const s = useSelect(session, (s) => ({
-    versions: s.versions,
-    unsaved: s.unsaved,
-    current: s.work!.revision,
-    previewing: s.preview?.revision,
-    locked: s.engaged || !s.loaded,
-  }));
-  return (
-    <Drafts
-      versions={s.versions}
-      unsaved={s.unsaved}
-      current={s.current}
-      previewing={s.previewing}
-      locked={s.locked}
-      look={(r) => void attempt(() => session.look(r))}
-      restore={restore}
-      save={() => void attempt(session.save)}
-      discard={() => void attempt(session.discard)}
-    />
   );
 }
 

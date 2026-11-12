@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { WorkComposer } from "../Composer.tsx";
-import { WorkStatus } from "../Studio.tsx";
+import { WorkStatus, WorkStudio } from "../Studio.tsx";
+import { WorkDrafts } from "../Drafts.tsx";
 import { WorkDetail } from "../SceneView.tsx";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { Dialog } from "../ui/dialogs.tsx";
@@ -24,12 +25,10 @@ import { panelWidth, Resizer } from "./panels.tsx";
 import {
   Bars,
   CanvasArea,
-  DraftsPane,
   EditOverlay,
   EditPane,
   nameIn,
   SideTools,
-  StudioPane,
   Topbar,
   type Panel,
 } from "./parts.tsx";
@@ -470,15 +469,17 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
                 ask={() => ask()}
               />
             ) : drafting ? (
-              <DraftsPane session={session} restore={restore} feedback={feedback} />
+              <WorkDrafts session={session} restore={restore} feedback={feedback} />
             ) : (
-              <StudioPane
+              <WorkStudio
                 session={session}
                 restore={restore}
                 resume={resume}
                 go={go}
-                body={conversation}
-                following={following}
+                follow={() => {
+                  const el = conversation.current;
+                  if (el && following.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+                }}
               />
             )}
           </section>
