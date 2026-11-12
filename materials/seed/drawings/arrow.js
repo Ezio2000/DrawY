@@ -1,7 +1,8 @@
 // An arrow with a head sized to its line, between api.from and api.to (as a link) or
 // between data.from and data.to (normalized points of the module). It runs as a curve
 // (straight unless bent), or at right angles as flowcharts do: elbow leaves and arrives
-// along the sides its ends meet, corner turns once.
+// along the sides its ends meet, corner turns once; both step straight out of a module
+// before turning and go round when the ends face away.
 const d = api.data,
   t = api.theme;
 const W = api.width,
@@ -60,13 +61,63 @@ if (route === "elbow" || route === "corner") {
         ? leave
         : (axis(api.toSide) ?? leave);
   const k = 0.5 + Number(d.bend ?? 0);
-  // Leaving and arriving along one axis takes a cross segment; along both, one turn.
-  let pts =
-    leave !== arrive
-      ? [a, leave === "h" ? { x: b.x, y: a.y } : { x: a.x, y: b.y }, b]
-      : leave === "h"
-        ? [a, { x: a.x + dx * k, y: a.y }, { x: a.x + dx * k, y: b.y }, b]
-        : [a, { x: a.x, y: a.y + dy * k }, { x: b.x, y: a.y + dy * k }, b];
+  // A line first runs this far straight out of the side it leaves, and into the side it
+  // arrives at, before it turns, so it never turns on a module's edge or runs back
+  // through the module.
+  const STUB = 24;
+  // The way out of a module through an end's side along an axis: 1, -1, or 0 when the
+  // end is not on a side across that axis.
+  const out = (side, ax) =>
+    ax === "h"
+      ? side === "right" ? 1 : side === "left" ? -1 : 0
+      : side === "bottom" ? 1 : side === "top" ? -1 : 0;
+  // Points given by their coordinate along an axis and across it.
+  const at = (ax, along, across) =>
+    ax === "h" ? { x: along, y: across } : { x: across, y: along };
+  const ak = leave === "h" ? "x" : "y",
+    ck = leave === "h" ? "y" : "x";
+  const fo = out(api.fromSide, leave),
+    to = out(api.toSide, arrive);
+  let pts;
+  if (leave !== arrive) {
+    // One turn, where the line leaves along one axis and arrives along the other, as long
+    // as it moves out of both modules; otherwise it steps out of each and goes round.
+    const leaves = fo === 0 || fo * (b[ak] - a[ak]) >= STUB,
+      arrives = to === 0 || to * (a[ck] - b[ck]) >= STUB;
+    if (leaves && arrives) pts = [a, at(leave, b[ak], a[ck]), b];
+    else {
+      const s = at(leave, a[ak] + fo * STUB, a[ck]),
+        e = at(leave, b[ak], b[ck] + to * STUB);
+      pts = [a, s, at(leave, s[ak], e[ck]), e, b];
+    }
+  } else {
+    // A cross segment between two runs along one axis: bend places it between the ends,
+    // and it stays out of the modules the line leaves and arrives at.
+    const want = a[ak] + (b[ak] - a[ak]) * k;
+    let lo = -Infinity,
+      hi = Infinity;
+    if (fo > 0) lo = Math.max(lo, a[ak] + STUB);
+    if (fo < 0) hi = Math.min(hi, a[ak] - STUB);
+    if (to > 0) lo = Math.max(lo, b[ak] + STUB);
+    if (to < 0) hi = Math.min(hi, b[ak] - STUB);
+    const ahead =
+      (fo === 0 || fo * (b[ak] - a[ak]) > 0) &&
+      (to === 0 || to * (a[ak] - b[ak]) > 0);
+    if (lo <= hi || ahead) {
+      // Ends facing each other closer than two steps keep the cross segment between them.
+      const c =
+        lo <= hi
+          ? Math.min(hi, Math.max(lo, want))
+          : Math.min(Math.max(a[ak], b[ak]), Math.max(Math.min(a[ak], b[ak]), want));
+      pts = [a, at(leave, c, a[ck]), at(leave, c, b[ck]), b];
+    } else {
+      // Back to back: out of each, across between them, and in.
+      const m = a[ck] + (b[ck] - a[ck]) * k,
+        c1 = a[ak] + fo * STUB,
+        c2 = b[ak] + to * STUB;
+      pts = [a, at(leave, c1, a[ck]), at(leave, c1, m), at(leave, c2, m), at(leave, c2, b[ck]), b];
+    }
+  }
   // Ends already in line need no turn: repeated points and straight-through ones go.
   const kept = [];
   for (const p of pts) {
