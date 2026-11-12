@@ -419,37 +419,11 @@
   padding: 14px 22px 18px 26px;
 }
 
-.footer-note {
-  margin-right: auto;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 12px;
-  color: var(--text-3);
-}
-
-.footer-note code {
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: var(--fill);
-  font-size: 11.5px;
-  color: var(--text-2);
-}
-
 .dialog .error {
   padding: 11px 14px;
   border-radius: 8px;
   background: rgba(198, 42, 47, 0.07);
   animation: pane-in 0.35s var(--ease-out) backwards;
-}
-
-.section-label {
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text-3);
 }
 
 .switch {
@@ -599,36 +573,6 @@
   view-transition-name: chrome;
 }
 
-.stage-lead,
-.stage-tools {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-  min-height: 44px;
-  padding: 4px;
-  border-radius: 12px;
-  pointer-events: auto;
-  background: transparent;
-  transition:
-    background-color 0.35s var(--ease),
-    box-shadow 0.35s var(--ease);
-}
-
-.stage-lead:hover,
-.stage-tools:hover,
-.stage-lead:focus-within,
-.stage-tools:focus-within {
-  background: color-mix(in srgb, var(--paper) 94%, transparent);
-  box-shadow: 0 0 0 0.5px var(--line-strong);
-}
-
-.stage-tools {
-  flex-shrink: 0;
-  margin-left: auto;
-  gap: 4px;
-}
-
 .field {
   display: flex;
   flex-direction: column;
@@ -662,10 +606,6 @@
   width: auto;
 }
 
-.field .field-error {
-  color: var(--red-text);
-}
-
 .empty {
   display: flex;
   align-items: center;
@@ -679,15 +619,6 @@
 .muted {
   color: var(--text-2);
   font-size: 13px;
-}
-
-.code-editor {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.55;
-  min-height: 140px;
-  white-space: pre;
-  tab-size: 2;
 }
 
 @keyframes activity {

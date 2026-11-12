@@ -457,8 +457,6 @@ function StepView({
   used: Set<string>;
   zoom: (p: Picture) => void;
 }) {
-  const t = useT(),
-    locale = useLocale();
   if (step.kind === "message")
     return (
       <li className={cx("step")} data-kind="note">

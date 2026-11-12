@@ -35,7 +35,6 @@ import type { Canvas, Pointed } from "../../../modules/canvas/index.ts";
 import {
   addScene,
   composed,
-  labelOf,
   shownName,
   moveParts,
   reattach,
@@ -85,6 +84,7 @@ import type { Change } from "./session/work.ts";
 import type { EditOps } from "./desktop/editing.ts";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
+import { store, stored } from "./storage.ts";
 
 
 /** Two edits of the same revision as one, so a change that makes a scene or a detail and
@@ -127,18 +127,12 @@ export function EditPanel({
   openScene: (id: string) => void;
 }) {
   const t = useT();
-  const [tab, setTab] = useState<"properties" | "layers">(() => {
-    try {
-      return localStorage.getItem(TAB) === "layers" ? "layers" : "properties";
-    } catch {
-      return "properties";
-    }
-  });
+  const [tab, setTab] = useState<"properties" | "layers">(() =>
+    stored(TAB) === "layers" ? "layers" : "properties",
+  );
   const choose = (next: typeof tab) => {
     setTab(next);
-    try {
-      localStorage.setItem(TAB, next);
-    } catch {}
+    store(TAB, next);
   };
   const scene = work.scenes[sceneId];
   const top = useRef<HTMLDivElement>(null);
@@ -406,7 +400,7 @@ function Selected({
           <DrawingPanel key={one.id} work={work} sceneId={sceneId} module={one} change={change} pick={pick} />
           <div className={cx("field")}>
             <span className={cx("field-name")}>{t.edit.code.record}</span>
-            <ModuleRecord key={one.id} work={work} sceneId={sceneId} module={one} change={change} />
+            <ModuleRecord key={one.id} sceneId={sceneId} module={one} change={change} />
           </div>
         </Section>
       )}

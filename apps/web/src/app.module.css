@@ -1721,8 +1721,7 @@ span.model-bar {
   width: 340px;
 }
 
-.models-menu > button,
-.models-group > button {
+.models-menu > button {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1736,13 +1735,11 @@ span.model-bar {
   white-space: normal;
 }
 
-.models-menu > button:hover,
-.models-group > button:hover {
+.models-menu > button:hover {
   background: var(--fill);
 }
 
-.models-menu > button > span,
-.models-group > button > span {
+.models-menu > button > span {
   display: grid;
   gap: 1px;
   flex: 1;
@@ -1754,20 +1751,17 @@ span.model-bar {
   color: var(--text-3);
 }
 
-.models-menu > button > svg:last-child,
-.models-group > button > svg:last-child {
+.models-menu > button > svg:last-child {
   flex: none;
   color: var(--ai-deep);
 }
 
-.models-menu > button:disabled,
-.models-group > button:disabled {
+.models-menu > button:disabled {
   opacity: 0.55;
   cursor: default;
 }
 
-.models-menu > button:disabled:hover,
-.models-group > button:disabled:hover {
+.models-menu > button:disabled:hover {
   background: none;
 }
 
@@ -1779,66 +1773,7 @@ span.model-bar {
   color: var(--text-3);
 }
 
-.models-sub {
-  margin: 8px 10px 2px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-3);
-}
-
 /* Effort and speed under the drawing models: a row of levels each. */
-.models-setting {
-  margin-top: 6px;
-  padding: 2px 4px 4px;
-  border-top: 1px solid var(--separator);
-}
-
-.models-setting .models-head {
-  margin-left: 6px;
-}
-
-.models-seg {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 8px;
-  background: var(--fill);
-}
-
-.models-seg > button {
-  flex: 1;
-  min-width: 0;
-  height: 30px;
-  padding: 0 8px;
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--text-2);
-  white-space: nowrap;
-}
-
-.models-seg > button:hover {
-  color: var(--text);
-}
-
-.models-seg > button[aria-checked="true"] {
-  background: var(--bg);
-  color: var(--text);
-  font-weight: 500;
-  box-shadow: 0 0 0 0.5px var(--line-strong), 0 1px 2px rgba(0, 0, 0, 0.056);
-}
-
-.models-hint {
-  display: block;
-  margin: 6px 6px 0;
-  font-size: 12px;
-  color: var(--text-3);
-}
-
-.models-group + .models-group {
-  margin-top: 2px;
-  padding-top: 2px;
-  border-top: 1px solid var(--separator);
-}
 
 /* The composer at the bottom of the home page, under the shelf. */
 .home-composer {
@@ -3574,10 +3509,6 @@ body:has(.resizer[data-dragging]) {
   flex-direction: column;
   gap: 14px;
   padding: 4px 0 12px;
-}
-
-.edit-adds:has(> :nth-child(3)) {
-  grid-template-columns: repeat(3, 1fr);
 }
 
 /* The selected module's name, written over in place. */

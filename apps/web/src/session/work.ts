@@ -7,7 +7,7 @@ import { Revisions } from "./revisions.ts";
 import { Runs } from "./runs.ts";
 import { Scenes } from "./scenes.ts";
 import { Sending } from "./sending.ts";
-import { Store, kept, useSelect } from "./store.ts";
+import { Store, kept } from "./store.ts";
 import type { Ask, Back, Change, Context, Happening, SessionHost, View } from "./types.ts";
 import { Versions } from "./versions.ts";
 
@@ -246,7 +246,3 @@ export function useWorkSession(id: string | undefined, host: SessionHost) {
     },
   };
 }
-
-/** A slice of the open work's snapshot, for a part of the page that shows only it. */
-export const useSession = <U,>(session: WorkSession, select: (s: Snapshot) => U) =>
-  useSelect(session, select);

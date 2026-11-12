@@ -516,7 +516,7 @@ describe("user owned works", () => {
         { id: "q", text: "which?", options: [{ label: "a" }, { label: "b" }] },
       ],
     });
-    s.context("waiting", { input: [{ role: "user", content: "a" }] });
+    s.saveContext("waiting", { input: [{ role: "user", content: "a" }] });
     db.close();
     db = new Storage(dir);
     expect(db.scoped(uid).work(w.id).title).toBe("persist");

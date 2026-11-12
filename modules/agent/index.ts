@@ -30,7 +30,6 @@ import { changesBetween, composed } from "../editing/index.ts";
 import { MIN_TEXT } from "../contracts/geometry.ts";
 import {
   attached,
-  candidate,
   find,
   kit,
   library,
@@ -741,7 +740,7 @@ async function compact(
       // Without a summary the run goes on with less to read rather than stopping.
       ctx.input = withoutOldPictures(ctx.input);
       ctx.measured = undefined;
-      store.context(run.id, ctx);
+      store.saveContext(run.id, ctx);
       span.set({ error: String(e), replaced: false });
       return;
     }
@@ -770,7 +769,7 @@ async function compact(
     ctx.known = store.work(run.workId).revision;
     ctx.measured = undefined;
     ctx.reported = undefined;
-    store.context(run.id, ctx);
+    store.saveContext(run.id, ctx);
     // The next turn starts from this summary alone.
     span.set({ summary, replaced: true });
   });
@@ -892,12 +891,7 @@ export class Agent {
     locale: MessageLocale = "zh",
   ) {
     const work = store.work(workId);
-    if (
-      store
-        .runs(workId)
-        .some((r) => ["running", "viewing", "waiting"].includes(r.status))
-    )
-      throw new DomainError("请先完成或取消当前任务", 409);
+    if (store.busy(workId)) throw new DomainError("请先完成或取消当前任务", 409);
     if (!work.scenes[sceneId]) throw new DomainError("场景不存在", 404);
     const settings = store.settings();
     const message = await userMessage(store, prompt, materials, locale);
@@ -932,7 +926,7 @@ export class Agent {
         : workMessage(sceneId, work, ownChanges(store, work)),
     );
     this.emit(store, run);
-    store.context(run.id, ctx);
+    store.saveContext(run.id, ctx);
     tracer.begin({
       id: run.id,
       userId: store.userId,
@@ -976,7 +970,7 @@ export class Agent {
     run.status = "running";
     ctx.generations = 0;
     this.emit(store, run);
-    store.context(run.id, ctx);
+    store.saveContext(run.id, ctx);
     tracer.status(run.id, run.status);
     void this.execute(store, run, ctx, "answer");
     return run;
@@ -1134,7 +1128,7 @@ export class Agent {
                     output:
                       "Execution interrupted. Read the current work before continuing.",
                   });
-              store.context(run.id, ctx);
+              store.saveContext(run.id, ctx);
               clearTimeout(timeout);
               clearTimeout(flush);
               this.active.delete(run.id);
@@ -1429,7 +1423,7 @@ export class Agent {
         const blocked = this.done(store, run);
         if (text && blocked === undefined) {
           run.status = "completed";
-          store.context(run.id, ctx);
+          store.saveContext(run.id, ctx);
           this.developments.delete(run.id);
           this.heldForText.delete(run.id);
           return;
@@ -1484,11 +1478,11 @@ export class Agent {
               : JSON.stringify(outcome.output),
         });
         if (outcome.images.length) shown.push({ role: "user", content: outcome.images });
-        store.context(run.id, ctx);
+        store.saveContext(run.id, ctx);
         this.emit(store, run);
       }
       ctx.input.push(...shown);
-      store.context(run.id, ctx);
+      store.saveContext(run.id, ctx);
     }
     throw Error("已达到本轮 24 次生成上限");
   }
@@ -1672,7 +1666,7 @@ export class Agent {
             call_id: call.call_id,
             output: "Questions shown. Waiting for the user.",
           });
-          store.context(run.id, ctx);
+          store.saveContext(run.id, ctx);
           this.emit(store, run);
           return { done: true, output: null, images: [] };
         }

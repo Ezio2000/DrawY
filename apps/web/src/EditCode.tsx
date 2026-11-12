@@ -255,12 +255,10 @@ export function DrawingPanel({
 /** A module written out in full, as the author writes it: its name, place, drawing,
  * group, where it leads and all its data. */
 export function ModuleRecord({
-  work,
   sceneId,
   module,
   change,
 }: {
-  work: Work;
   sceneId: string;
   module: Instance;
   change: Change;

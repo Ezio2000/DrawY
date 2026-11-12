@@ -1507,7 +1507,7 @@ it("shows any hosted tool as a step, records it under its turn and adds up what 
     store.commit(work, 0, { kind: "edit" });
     const run: Run = { id: "hosted-run", workId: work.id, sceneId: "root", status: "running", steps: [], observations: [], startedAt: Date.now() };
     store.saveRun(run);
-    tracer.begin({ id: run.id, userId: store.userId, workId: work.id, title: "t", prompt: "p", status: "running" });
+    tracer.begin({ id: run.id, userId: store.userId, workId: work.id, title: "t", prompt: "p", status: "running", startedAt: run.startedAt });
     const code = { type: "code_interpreter_call", id: "ci_1", status: "completed", code: "print(6 * 7)" };
     const search = { type: "web_search_call", id: "ws_1", status: "completed", action: { type: "open_page", url: "https://example.com/a" } };
     const usage = (n: number) => ({ input_tokens: n, output_tokens: 10, input_tokens_details: { cached_tokens: n / 2 }, output_tokens_details: { reasoning_tokens: 4 } });
@@ -2600,7 +2600,7 @@ it("starts over from what was asked when the saved conversation is in an older f
     const earlier = { ...run_(work), id: "earlier", status: "completed" as const };
     earlier.steps = [{ kind: "message", role: "user", text: "画需求层次", materials: [] }];
     store.saveRun(earlier);
-    store.context("earlier", {
+    store.saveContext("earlier", {
       input: [{ type: "function_call", name: "write_work", arguments: '{"baseRevision":1}', call_id: "old" }],
       known: 1,
       settings: store.settings(),

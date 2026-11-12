@@ -1,11 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   id,
   ADMIN,
   MEMBER,
-  DEFAULT_QUOTA,
   historyOf,
   type WorkProgress,
   defaultCatalog,
@@ -28,7 +27,6 @@ import {
   type Cause,
   type RevisionSummary,
 } from "../contracts/index.ts";
-import { upgradeWork, WORK_FORMAT, type OldWork } from "./upgrade.ts";
 export class Storage {
   db: DatabaseSync;
   dir: string;
@@ -37,10 +35,10 @@ export class Storage {
     mkdirSync(join(dir, "captures"), { recursive: true });
     this.db = new DatabaseSync(join(dir, "drawy.sqlite"));
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
- CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,name TEXT UNIQUE NOT NULL,password TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,name TEXT UNIQUE NOT NULL,password TEXT NOT NULL,role TEXT NOT NULL,quota INTEGER);
  CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id));
  CREATE TABLE IF NOT EXISTS works(user_id TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(user_id,id));
- CREATE TABLE IF NOT EXISTS revisions(user_id TEXT NOT NULL,work_id TEXT NOT NULL,revision INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(user_id,work_id,revision));
+ CREATE TABLE IF NOT EXISTS revisions(user_id TEXT NOT NULL,work_id TEXT NOT NULL,revision INTEGER NOT NULL,data TEXT NOT NULL,cause TEXT NOT NULL,PRIMARY KEY(user_id,work_id,revision));
  CREATE TABLE IF NOT EXISTS captures(user_id TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(user_id,id));
  CREATE TABLE IF NOT EXISTS settings(user_id TEXT PRIMARY KEY,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS runs(user_id TEXT NOT NULL,id TEXT NOT NULL,work_id TEXT NOT NULL,data TEXT NOT NULL,context TEXT,PRIMARY KEY(user_id,id));
@@ -48,83 +46,18 @@ export class Storage {
  CREATE TABLE IF NOT EXISTS roles(id TEXT PRIMARY KEY,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS system(key TEXT PRIMARY KEY,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS invites(code TEXT PRIMARY KEY,created_by TEXT,created_at INTEGER NOT NULL,used_by TEXT,used_at INTEGER);`);
-    const columns = this.db.prepare("PRAGMA table_info(revisions)").all();
-    if (!columns.some((c) => c.name === "cause")) this.recordCauses();
-    this.upgradeWorks();
     this.recordRoles();
     if (!this.db.prepare("SELECT 1 FROM system WHERE key='models'").get())
       this.saveModels(defaultCatalog());
   }
-  /** Brings every saved work and revision to the form this code reads, as one transaction
-   * after a copy of the database is put aside: it either all happens or the app does not
-   * start, and the copy stays in `backups/` to go back to. An empty database just starts at
-   * the current format. */
-  private upgradeWorks() {
-    const db = this.db;
-    const { user_version: format } = db.prepare("PRAGMA user_version").get() as { user_version: number };
-    if (format >= WORK_FORMAT) return;
-    const { n } = db.prepare("SELECT COUNT(*) AS n FROM revisions").get() as { n: number };
-    if (n) {
-      mkdirSync(join(this.dir, "backups"), { recursive: true });
-      const backup = join(this.dir, "backups", `drawy-format-${format}.sqlite`);
-      if (!existsSync(backup)) db.exec(`VACUUM INTO '${backup.replaceAll("'", "''")}'`);
-    }
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      const upgrade = (table: "works" | "revisions", key: string) => {
-        const write = db.prepare(`UPDATE ${table} SET data=? WHERE rowid=?`);
-        for (const row of db.prepare(`SELECT rowid,${key} AS id,data FROM ${table}`).all()) {
-          try {
-            const work = upgradeWork(JSON.parse(row.data as string) as OldWork);
-            write.run(JSON.stringify(work), row.rowid as number);
-          } catch (e) {
-            throw Error(`作品数据升级失败（${table} ${row.id}）：${e instanceof Error ? e.message : e}`);
-          }
-        }
-      };
-      upgrade("works", "id");
-      upgrade("revisions", "work_id || ':' || revision");
-      db.exec(`PRAGMA user_version=${WORK_FORMAT}`);
-      db.exec("COMMIT");
-    } catch (e) {
-      db.exec("ROLLBACK");
-      throw e;
-    }
-  }
-  /** Gives the app its two built-in roles and every account one: accounts made before
-   * roles existed are members, except the first, who set the app up and administers it. */
+  /** The two built-in roles; the first account registers as administrator. */
   private recordRoles() {
-    const db = this.db;
-    const columns = db.prepare("PRAGMA table_info(users)").all();
-    if (!columns.some((c) => c.name === "role"))
-      db.exec(
-        `ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT '${MEMBER}'`,
-      );
-    // Requests left to make; null is no limit. Accounts get the default allowance, those
-    // who administer the app none.
-    if (!columns.some((c) => c.name === "quota"))
-      db.exec(
-        `ALTER TABLE users ADD COLUMN quota INTEGER DEFAULT ${DEFAULT_QUOTA};
- UPDATE users SET quota=NULL WHERE role='${ADMIN}';`,
-      );
     const builtin: AccountRole[] = [
-      {
-        id: ADMIN,
-        name: "管理员",
-        permissions: [...permissions],
-        builtin: true,
-      },
+      { id: ADMIN, name: "管理员", permissions: [...permissions], builtin: true },
       { id: MEMBER, name: "普通用户", permissions: [], builtin: true },
     ];
     for (const r of builtin)
-      db.prepare("INSERT OR IGNORE INTO roles VALUES(?,?)").run(
-        r.id,
-        JSON.stringify(r),
-      );
-    if (!db.prepare("SELECT 1 FROM users WHERE role=?").get(ADMIN))
-      db.prepare(
-        "UPDATE users SET role=? WHERE rowid=(SELECT MIN(rowid) FROM users)",
-      ).run(ADMIN);
+      this.db.prepare("INSERT OR IGNORE INTO roles VALUES(?,?)").run(r.id, JSON.stringify(r));
   }
   /** The shared model catalog; one that no longer reads (saved by an older version)
    * gives way to the starting one. */
@@ -190,7 +123,6 @@ export class Storage {
   }
   /** Sets how many more requests an account may make; null is no limit. */
   setQuota(userId: string, quota: number | null) {
-    this.account(userId);
     this.db.prepare("UPDATE users SET quota=? WHERE id=?").run(quota, userId);
     return this.account(userId);
   }
@@ -285,40 +217,8 @@ export class Storage {
   hasAccounts() {
     return !!this.db.prepare("SELECT 1 FROM users LIMIT 1").get();
   }
-  /** Gives revisions saved before they recorded their cause one: the first creates the
-   * work, those a run's steps saved belong to its request, and the rest were edits. */
-  private recordCauses() {
-    const db = this.db;
-    db.exec("BEGIN");
-    try {
-      db.exec(`ALTER TABLE revisions ADD COLUMN cause TEXT NOT NULL DEFAULT '{"kind":"edit"}';
- UPDATE revisions SET cause='{"kind":"create"}' WHERE revision=1;`);
-      const update = db.prepare(
-        "UPDATE revisions SET cause=? WHERE user_id=? AND work_id=? AND revision=?",
-      );
-      for (const row of db
-        .prepare("SELECT user_id,data FROM runs ORDER BY rowid")
-        .all()) {
-        const run = JSON.parse(row.data as string) as Run;
-        const first = run.steps[0];
-        const cause = JSON.stringify({
-          kind: "run",
-          runId: run.id,
-          prompt: first?.kind === "message" ? first.text : "",
-        });
-        for (const step of run.steps)
-          if (
-            step.kind === "tool" &&
-            (step.name === "write_work" || step.name === "set_brief") &&
-            step.revision
-          )
-            update.run(cause, row.user_id as string, run.workId, step.revision);
-      }
-      db.exec("COMMIT");
-    } catch (e) {
-      db.exec("ROLLBACK");
-      throw e;
-    }
+  endSession(token: string) {
+    this.db.prepare("DELETE FROM sessions WHERE id=?").run(token);
   }
   session(userId: string) {
     const token = id();
@@ -485,14 +385,13 @@ export class UserStore {
       throw e;
     }
   }
-  /** Whether this account's role allows it. */
-  can(permission: Permission) {
-    return this.storage.account(this.userId).permissions.includes(permission);
-  }
   /** Who the material library serves: this user, and everyone's materials if their role
    * lets them see all. */
   get viewer() {
-    return { id: this.userId, all: this.can("materials.all") };
+    return {
+      id: this.userId,
+      all: this.storage.account(this.userId).permissions.includes("materials.all"),
+    };
   }
   /** The user's own preferences and picks; a pick saved in another shape is let go. */
   ownSettings(): UserSettings {
@@ -548,13 +447,6 @@ export class UserStore {
       runId,
     );
   }
-  /** A run, if this user has one by that id. */
-  runOrUndefined(runId: string): Run | undefined {
-    const r = this.storage.db
-      .prepare("SELECT data FROM runs WHERE user_id=? AND id=?")
-      .get(this.userId, runId) as { data: string } | undefined;
-    return r && (JSON.parse(r.data) as Run);
-  }
   /** What a run spent, at what prices and with which services, read without the rest of
    * the run. */
   runCost(runId: string): Pick<Run, "usage" | "prices" | "services"> | undefined {
@@ -576,15 +468,21 @@ export class UserStore {
       .all(this.userId, workId)
       .map((r) => JSON.parse(r.data as string));
   }
-  context(runId: string, value?: unknown) {
-    this.run(runId);
-    if (value !== undefined)
-      this.storage.db
-        .prepare("UPDATE runs SET context=? WHERE user_id=? AND id=?")
-        .run(JSON.stringify(value), this.userId, runId);
+  /** Whether a run of the work is still going, or waits for an answer. */
+  busy(workId: string) {
+    return this.runs(workId).some((r) => ["running", "viewing", "waiting"].includes(r.status));
+  }
+  /** The conversation a run carries on, kept beside it; null before one is saved. */
+  context(runId: string) {
     const row = this.storage.db
       .prepare("SELECT context FROM runs WHERE user_id=? AND id=?")
       .get(this.userId, runId);
-    return row?.context ? JSON.parse(row.context as string) : null;
+    if (!row) throw new DomainError("资源不存在", 404);
+    return row.context ? JSON.parse(row.context as string) : null;
+  }
+  saveContext(runId: string, value: unknown) {
+    this.storage.db
+      .prepare("UPDATE runs SET context=? WHERE user_id=? AND id=?")
+      .run(JSON.stringify(value), this.userId, runId);
   }
 }

@@ -24,6 +24,7 @@ import type { PictureMaterial } from "@drawy/materials/schema";
 import type { Change } from "./session/work.ts";
 import { cx } from "./cx.ts";
 import { useT, type Words as Dictionary } from "./i18n.tsx";
+import { store, stored } from "./storage.ts";
 
 /* The controls a part's values are changed with: plain controls for words, pictures,
  * choices, colours, numbers and switches, and a data editor for everything else a part
@@ -805,12 +806,8 @@ function NewKey({ add }: { add: (key: string) => void }) {
 }
 
 const opened = (id: string, fallback: boolean) => {
-  try {
-    const v = localStorage.getItem("drawy.edit." + id);
-    return v === null ? fallback : v === "1";
-  } catch {
-    return fallback;
-  }
+  const v = stored("drawy.edit." + id);
+  return v === null ? fallback : v === "1";
 };
 /** A part of the editing panel under a heading, folded away until it is wanted; whether
  * it is open is remembered in this browser. */
@@ -839,9 +836,7 @@ export function Section({
           aria-expanded={open}
           onClick={() => {
             setOpen(!open);
-            try {
-              localStorage.setItem("drawy.edit." + id, open ? "0" : "1");
-            } catch {}
+            store("drawy.edit." + id, open ? "0" : "1");
           }}
         >
           <ChevronRight size={13} />

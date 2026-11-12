@@ -883,7 +883,6 @@ export class Canvas {
       setTimeout(() => before.dispose(), 440);
     } else before?.dispose();
     if (!this.options.motion) return;
-    const now = performance.now();
     const content = (r: SceneRenderer, m: Instance) =>
       JSON.stringify([
         m.drawingId,

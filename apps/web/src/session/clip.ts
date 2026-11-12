@@ -1,5 +1,5 @@
 import { isClip, type Clip } from "../../../../modules/editing/index.ts";
-import type { KeyValue } from "../storage.ts";
+import { store, stored } from "../storage.ts";
 import { Store } from "./store.ts";
 
 /** The type a clip goes by on the system clipboard. */
@@ -12,27 +12,24 @@ export const newer = (a: Stamped, b?: Stamped) =>
   (b?.copiedAt ?? 0) > (a.copiedAt ?? 0) ? b! : a;
 
 /** The parts last copied, for pasting into any scene, work or tab: kept in this page and,
- * through the storage it is given, for the other tabs. Its snapshot says whether there is
+ * in local storage, for the other tabs. Its snapshot says whether there is
  * anything to paste. */
 export class Clipboard extends Store<boolean> {
   private held?: Stamped;
-  constructor(private storage: KeyValue) {
-    super();
-  }
   protected build() {
     return !!this.kept();
   }
   keep(clip: Clip) {
     const stamped: Stamped = { ...clip, copiedAt: Date.now() };
     this.held = stamped;
-    this.storage.set(CLIP_KEY, JSON.stringify(stamped));
+    store(CLIP_KEY, JSON.stringify(stamped));
     this.changed();
     return stamped;
   }
   kept(): Stamped | undefined {
     try {
-      const stored = JSON.parse(this.storage.get(CLIP_KEY) ?? "null");
-      if (isClip(stored)) return newer(stored, this.held);
+      const saved = JSON.parse(stored(CLIP_KEY) ?? "null");
+      if (isClip(saved)) return newer(saved, this.held);
     } catch {}
     return this.held;
   }

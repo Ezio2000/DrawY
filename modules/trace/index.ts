@@ -103,32 +103,18 @@ export function sanitize(
 const FILE = /^[0-9a-f]{24}\.(png|jpeg|webp|gif)$/;
 
 /** A span being recorded; attributes added before it ends are kept with it. */
-export class ActiveSpan {
+class ActiveSpan {
   constructor(
     private tracer: Tracer,
-    readonly span: Span,
+    private span: Span,
   ) {}
   set(attrs: Record<string, unknown>) {
     Object.assign(this.span.attrs, this.tracer.clean(attrs));
     this.tracer.persist(this.span);
   }
 }
-const idle = new ActiveSpan(
-  {
-    persist() {},
-    clean: (attrs: Record<string, unknown>) => attrs,
-  } as unknown as Tracer,
-  {
-    id: "",
-    traceId: "",
-    parentId: null,
-    kind: "note",
-    name: "",
-    startedAt: 0,
-    status: "ok",
-    attrs: {},
-  },
-);
+/** What a span is handed when nothing is being recorded. */
+const idle = { set() {} } as unknown as ActiveSpan;
 
 /** Records what happens in each run, in its own database, for looking into later. Spans
  * nest by async context, so any module can record without being handed a trace. */
@@ -156,23 +142,12 @@ export class Tracer {
     this.db?.close();
     this.db = undefined;
   }
-  /** Creates or updates the record of a run. */
-  begin(t: Omit<Trace, "updatedAt" | "startedAt"> & { startedAt?: number }) {
+  /** Starts the record of a run. */
+  begin(t: Omit<Trace, "updatedAt">) {
     if (!this.db) return;
-    const old = this.db
-      .prepare("SELECT data FROM traces WHERE id=?")
-      .get(t.id) as { data: string } | undefined;
-    const trace: Trace = {
-      ...(old
-        ? JSON.parse(old.data)
-        : { startedAt: t.startedAt ?? Date.now() }),
-      ...t,
-      updatedAt: Date.now(),
-    };
+    const trace: Trace = { ...t, updatedAt: Date.now() };
     this.db
-      .prepare(
-        "INSERT INTO traces VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at",
-      )
+      .prepare("INSERT INTO traces VALUES(?,?,?,?)")
       .run(trace.id, trace.userId, JSON.stringify(trace), trace.updatedAt);
   }
   status(traceId: string, status: string) {
@@ -281,21 +256,8 @@ export class Tracer {
   }
   /** Records something that happened at one moment. */
   note(name: string, attrs: Record<string, unknown>, error?: string) {
-    const parent = scope.getStore();
-    if (!this.db || !parent) return;
     const now = Date.now();
-    this.persist({
-      id: id(),
-      traceId: parent.traceId,
-      parentId: parent.spanId,
-      kind: "note",
-      name,
-      startedAt: now,
-      endedAt: now,
-      status: error ? "error" : "ok",
-      ...(error ? { error } : {}),
-      attrs: this.clean(attrs),
-    });
+    this.record("note", name, attrs, { startedAt: now, endedAt: now, error });
   }
   /** Every span of a trace as its brief, in time order. */
   spans(traceId: string): Span[] {

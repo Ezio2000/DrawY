@@ -314,12 +314,6 @@ export function ungroup(work: Work, sceneId: string, ids: string[]): WorkEdit {
     { group: null },
   );
 }
-/** The modules a group holds. */
-export const membersOf = (work: Work, sceneId: string, group: string) =>
-  sceneOf(work, sceneId)
-    .modules.filter((m) => m.group === group)
-    .map((m) => m.id);
-
 /** Where a click on a module leads: into a scene, into a detail, or nowhere. */
 export function setTarget(
   work: Work,

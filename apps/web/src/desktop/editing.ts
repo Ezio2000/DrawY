@@ -14,7 +14,6 @@ import type { DrawingMaterial, Material, PictureMaterial } from "@drawy/material
 import { CLIP_TYPE, Clipboard, newer } from "../session/clip.ts";
 import { useSelect, useStore } from "../session/store.ts";
 import type { WorkSession } from "../session/work.ts";
-import { browserStorage } from "../storage.ts";
 import { useT } from "../i18n.tsx";
 
 /* Editing by hand with a mouse and a keyboard: the tools in the tray beside the canvas, the
@@ -49,7 +48,7 @@ const canvasTool = (tool: Tool): CanvasTool =>
   tool === "select" || tool === "hand" || tool === "link" ? tool : "draw";
 
 /** The parts last copied, shared by every work and, through local storage, every tab. */
-const clipboard = new Clipboard(browserStorage);
+const clipboard = new Clipboard();
 /** The look last copied from a part, to give to others in any scene of this page. */
 let brush: Look | null = null;
 

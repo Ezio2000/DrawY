@@ -2,6 +2,7 @@ import { createContext, useContext, useState } from "react";
 import { Languages } from "lucide-react";
 import { browserLocale, langOf, useLocale, type Locale } from "@drawy/ui";
 import { cx } from "./cx.ts";
+import { store, stored } from "./storage.ts";
 
 /* The interface's words in Chinese and English. Chinese is the reference: English must
  * say everything Chinese says, which the type checks. Words that depend on a number or a
@@ -2493,7 +2494,7 @@ export const useT = () => dictionaries[useLocale()];
 
 const KEY = "drawy.locale";
 const kept = (): Locale => {
-  const v = typeof localStorage === "undefined" ? null : localStorage.getItem(KEY);
+  const v = stored(KEY);
   return v === "zh" || v === "en" ? v : browserLocale();
 };
 /** The language the user chose, kept in this browser; the browser's own until then. The
@@ -2506,7 +2507,7 @@ export function useLanguage() {
   });
   const choose = (l: Locale) => {
     document.documentElement.lang = langOf(l);
-    localStorage.setItem(KEY, l);
+    store(KEY, l);
     set(l);
   };
   return [locale, choose] as const;

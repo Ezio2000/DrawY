@@ -5,7 +5,7 @@ import { keys } from "./EditMenu.tsx";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 import { useDismiss } from "./popover.ts";
-import { browserStorage } from "./storage.ts";
+import { store, stored } from "./storage.ts";
 
 /* How the canvas is looked at and measured while a work is edited by hand: the scale of
  * the view, the rulers along the drawing board's edges, and what a dragged box snaps to. */
@@ -27,7 +27,7 @@ const defaults: BoardSettings = { rulers: true, guides: true, grid: false };
 export function useBoard() {
   const [board, setBoard] = useState<BoardSettings>(() => {
     try {
-      return { ...defaults, ...JSON.parse(browserStorage.get(KEY) ?? "{}") };
+      return { ...defaults, ...JSON.parse(stored(KEY) ?? "{}") };
     } catch {
       return defaults;
     }
@@ -35,7 +35,7 @@ export function useBoard() {
   const set = (change: Partial<BoardSettings>) =>
     setBoard((b) => {
       const next = { ...b, ...change };
-      browserStorage.set(KEY, JSON.stringify(next));
+      store(KEY, JSON.stringify(next));
       return next;
     });
   return [board, set] as const;

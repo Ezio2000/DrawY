@@ -93,18 +93,20 @@ export function createApp(storage: Storage) {
     fns.forEach((fn) => fn(shown));
   };
   const agent = new Agent(publish);
+  /** Tells the user's pages of a work saved by hand, and answers with it. */
+  const published = async (c: { get(k: "store"): UserStore; json(v: unknown): Response }, work: Work) => {
+    const store = c.get("store");
+    work = await freshen(work, store.viewer);
+    publish(store.userId, { type: "work", work });
+    return c.json(work);
+  };
   // Text goes out compressed: the app's code, works, runs, traces and map layers are
   // several times smaller that way. Pictures are already compressed and the event stream
   // must not be held back, so the default filter passes them over.
   app.use("*", compress());
   app.onError((e, c) =>
     c.json(
-      {
-        error: localize(
-          e.message,
-          requestLocale((k) => c.req.header(k)),
-        ),
-      },
+      { error: localize(e.message, localeOf(c)) },
       e instanceof DomainError || e instanceof MaterialsError
         ? (e.status as 400)
         : e instanceof z.ZodError
@@ -112,6 +114,8 @@ export function createApp(storage: Storage) {
           : 500,
     ),
   );
+  const localeOf = (c: { req: { header(name: string): string | undefined } }) =>
+    requestLocale((k) => c.req.header(k));
   const userOf = (token?: string) =>
     token ? storage.userFor(token) : undefined;
   app.get("/api/health", (c) => c.json({ ok: true }));
@@ -142,16 +146,7 @@ export function createApp(storage: Storage) {
     });
   app.use("/api/*", async (c, next) => {
     const user = userOf(getCookie(c, "drawy_session"));
-    if (!user)
-      return c.json(
-        {
-          error: localize(
-            "请先登录",
-            requestLocale((k) => c.req.header(k)),
-          ),
-        },
-        401,
-      );
+    if (!user) throw new DomainError("请先登录", 401);
     c.set("user", user);
     c.set("store", storage.scoped(user.id));
     await next();
@@ -165,10 +160,22 @@ export function createApp(storage: Storage) {
     if (!c.get("user").permissions.includes(permission))
       throw new DomainError("没有权限", 403);
   };
+  // What each administration route asks of a role. Traces show every request sent to the
+  // models, so only those who manage models see them.
+  const guarded: [string, Permission][] = [
+    ["/api/admin/models", "models.manage"],
+    ["/api/traces/*", "models.manage"],
+    ["/api/admin/accounts/*", "accounts.manage"],
+    ["/api/admin/invites/*", "accounts.manage"],
+    ["/api/admin/roles/*", "accounts.manage"],
+  ];
+  for (const [path, permission] of guarded)
+    app.use(path, async (c, next) => {
+      allowed(c, permission);
+      await next();
+    });
   app.post("/api/auth/logout", (c) => {
-    storage.db
-      .prepare("DELETE FROM sessions WHERE id=?")
-      .run(getCookie(c, "drawy_session")!);
+    storage.endSession(getCookie(c, "drawy_session")!);
     deleteCookie(c, "drawy_session", { path: "/" });
     return c.json({ ok: true });
   });
@@ -186,21 +193,17 @@ export function createApp(storage: Storage) {
     c.json(menuFor(storage.models(), c.get("store").ownSettings())),
   );
   app.get("/api/admin/models", (c) => {
-    allowed(c, "models.manage");
     return c.json(storage.models());
   });
   app.put("/api/admin/models", async (c) => {
-    allowed(c, "models.manage");
     const catalog = modelCatalogSchema.parse(await c.req.json());
     storage.saveModels(catalog);
     return c.json(catalog);
   });
   app.get("/api/admin/accounts", (c) => {
-    allowed(c, "accounts.manage");
     return c.json(storage.accounts());
   });
   app.patch("/api/admin/accounts/:id", async (c) => {
-    allowed(c, "accounts.manage");
     const { role, quota } = z
       .object({
         role: z.string().optional(),
@@ -212,35 +215,28 @@ export function createApp(storage: Storage) {
     return c.json(storage.account(c.req.param("id")));
   });
   app.get("/api/admin/invites", (c) => {
-    allowed(c, "accounts.manage");
     return c.json(storage.invites());
   });
   app.post("/api/admin/invites", async (c) => {
-    allowed(c, "accounts.manage");
     const { count } = z
       .object({ count: z.number().int().min(1).max(50).default(1) })
       .parse(await c.req.json().catch(() => ({})));
     return c.json(createInvites(storage, c.get("user").id, count));
   });
   app.delete("/api/admin/invites/:code", (c) => {
-    allowed(c, "accounts.manage");
     storage.deleteInvite(c.req.param("code"));
     return c.json({ ok: true });
   });
   app.get("/api/admin/roles", (c) => {
-    allowed(c, "accounts.manage");
     return c.json(storage.roles());
   });
   app.post("/api/admin/roles", async (c) => {
-    allowed(c, "accounts.manage");
     return c.json(saveRole(storage, await c.req.json()));
   });
   app.put("/api/admin/roles/:id", async (c) => {
-    allowed(c, "accounts.manage");
     return c.json(saveRole(storage, await c.req.json(), c.req.param("id")));
   });
   app.delete("/api/admin/roles/:id", (c) => {
-    allowed(c, "accounts.manage");
     removeRole(storage, c.req.param("id"));
     return c.json({ ok: true });
   });
@@ -277,19 +273,11 @@ export function createApp(storage: Storage) {
     const { title } = z
       .object({ title: z.string().trim().min(1).max(80) })
       .parse(await c.req.json());
-    const store = c.get("store");
-    const work = await freshen(
-      store.rename(c.req.param("id"), title),
-      store.viewer,
-    );
-    publish(store.userId, { type: "work", work });
-    return c.json(work);
+    return published(c, c.get("store").rename(c.req.param("id"), title));
   });
   app.delete("/api/works/:id", (c) => {
     const store = c.get("store");
-    for (const r of store.runs(c.req.param("id")))
-      if (["running", "viewing", "waiting"].includes(r.status))
-        throw new DomainError("请先取消当前任务", 409);
+    if (store.busy(c.req.param("id"))) throw new DomainError("请先取消当前任务", 409);
     store.delete(c.req.param("id"));
     return c.json({ ok: true });
   });
@@ -298,12 +286,7 @@ export function createApp(storage: Storage) {
   );
   /** Changing the drawing by hand waits for the author to finish or be stopped. */
   const idle = (store: UserStore, workId: string) => {
-    if (
-      store
-        .runs(workId)
-        .some((r) => ["running", "viewing", "waiting"].includes(r.status))
-    )
-      throw new DomainError("请先完成或取消当前任务", 409);
+    if (store.busy(workId)) throw new DomainError("请先完成或取消当前任务", 409);
   };
   app.get("/api/works/:id/revisions/:revision", async (c) => {
     const store = c.get("store");
@@ -321,17 +304,13 @@ export function createApp(storage: Storage) {
     const { revision } = z
       .object({ revision: z.number().int().positive() })
       .parse(await c.req.json());
-    const work = await freshen(restore(store, workId, revision), store.viewer);
-    publish(store.userId, { type: "work", work });
-    return c.json(work);
+    return published(c, restore(store, workId, revision));
   });
   app.post("/api/works/:id/undo", async (c) => {
     const store = c.get("store"),
       workId = c.req.param("id");
     idle(store, workId);
-    const work = await freshen(undo(store, workId), store.viewer);
-    publish(store.userId, { type: "work", work });
-    return c.json(work);
+    return published(c, undo(store, workId));
   });
   app.get("/api/works/:id/scenes/:scene", async (c) => {
     const store = c.get("store"),
@@ -415,7 +394,7 @@ export function createApp(storage: Storage) {
         Object.entries(work.drawings).map(async ([id, d]) => [id, { ...d, source: await inline(d.source) }]),
       ),
     );
-    const english = requestLocale((n) => c.req.header(n)) === "en";
+    const english = localeOf(c) === "en";
     const url = new URL(c.req.url);
     const origin =
       (c.req.header("x-forwarded-proto") || url.protocol.replace(":", "")) +
@@ -455,9 +434,7 @@ export function createApp(storage: Storage) {
     const store = c.get("store"),
       workId = c.req.param("id");
     idle(store, workId);
-    const work = await freshen(saveEdits(store, workId), store.viewer);
-    publish(store.userId, { type: "work", work });
-    return c.json(work);
+    return published(c, saveEdits(store, workId));
   });
   app.get("/api/works/:id/runs", (c) =>
     c.json(
@@ -487,7 +464,7 @@ export function createApp(storage: Storage) {
         args.sceneId,
         args.prompt,
         args.materials,
-        requestLocale((k) => c.req.header(k)),
+        localeOf(c),
       );
       return c.json(showRun(run, c.get("user")));
     } catch (e) {
@@ -510,7 +487,7 @@ export function createApp(storage: Storage) {
           c.req.param("id"),
           answer,
           materials,
-          requestLocale((k) => c.req.header(k)),
+          localeOf(c),
         ),
         c.get("user"),
       ),
@@ -592,13 +569,7 @@ export function createApp(storage: Storage) {
     const run = store.runCost(trace.id);
     return { ...trace, cost: run && costOf(run.usage, run.prices), services: run?.services };
   };
-  // Traces show every request sent to the models, so only those who manage models see them.
-  app.use("/api/traces/*", async (c, next) => {
-    allowed(c, "models.manage");
-    await next();
-  });
   app.get("/api/traces", (c) => {
-    allowed(c, "models.manage");
     return c.json(
       tracer
         .list(c.get("user").id, Number(c.req.query("limit") || 60))

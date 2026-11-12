@@ -20,7 +20,6 @@ import {
   setInteraction,
   setStyle,
   setStyles,
-  labelOf,
   shownName,
   syntaxError,
 } from "../../../modules/editing/index.ts";

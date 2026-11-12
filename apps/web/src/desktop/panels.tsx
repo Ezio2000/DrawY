@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { cx } from "../cx.ts";
+import { store, stored } from "../storage.ts";
 
 /** How wide the studio, the drafts panel and the editor are, each as the person last
  * dragged it: the conversation reads best wide, a list of drafts needs far less, and the
@@ -15,18 +16,10 @@ export const panelWidth = {
   clamp: (kind: Sized, n: number) =>
     Math.min(panelWidth.max(), Math.max(panelWidths[kind].min, n)),
   read(kind: Sized) {
-    try {
-      const n = Number(localStorage.getItem("drawy.panel." + kind));
-      return n ? panelWidth.clamp(kind, n) : panelWidths[kind].initial;
-    } catch {
-      return panelWidths[kind].initial;
-    }
+    const n = Number(stored("drawy.panel." + kind));
+    return n ? panelWidth.clamp(kind, n) : panelWidths[kind].initial;
   },
-  save(kind: Sized, n: number) {
-    try {
-      localStorage.setItem("drawy.panel." + kind, String(Math.round(n)));
-    } catch {}
-  },
+  save: (kind: Sized, n: number) => store("drawy.panel." + kind, String(Math.round(n))),
 };
 /** The panel's left edge, dragged to share the page between the canvas and the panel; the
  * width is remembered for next time. Arrow keys move it too. */

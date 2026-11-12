@@ -97,43 +97,22 @@ export async function observe(
         o.sceneIds.includes(scenes[0].id) &&
         !o.errors.length,
     );
-  const origin = process.env.DRAWY_INTERNAL_URL || "http://127.0.0.1:8080";
-  const token = store.storage.session(store.userId);
   return tracer.span(
     "capture",
     "view_canvas",
     { revision: work.revision, ...options },
-    async (span) => {
-      try {
-        const response = await fetch(
-          (process.env.DRAWY_CAPTURE_URL || "http://127.0.0.1:8091") +
-            "/capture",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              origin,
-              cookie: token,
-              annotate: options.annotate,
-              scenes: scenes.map((s) => ({
-                id: s.id,
-                url: `${origin}/api/works/${work.id}/scenes/${encodeURIComponent(s.id)}?revision=${work.revision}`,
-                checks: s.checks,
-                overview: !closeUpOnly,
-                regions: options.regions?.map(boundsOf),
-                actions: options.actions,
-              })),
-            }),
-            signal,
-          },
-        ).catch((e) => {
-          if (signal.aborted) throw e;
-          throw new Unavailable("画布查看服务不可用: " + e.message);
-        });
-        if (!response.ok)
-          throw new Unavailable(
-            `画布查看服务不可用 (${response.status}): ${(await response.text()).slice(0, 300)}`,
-          );
+    async (span) =>
+      captureService(store, "/capture", signal, (origin) => ({
+        annotate: options.annotate,
+        scenes: scenes.map((s) => ({
+          id: s.id,
+          url: sceneUrl(origin, work, s.id),
+          checks: s.checks,
+          overview: !closeUpOnly,
+          regions: options.regions?.map(boundsOf),
+          actions: options.actions,
+        })),
+      }), async (response) => {
         const { shots } = (await response.json()) as { shots: Shot[] };
         if (!shots.length) throw Error("截图服务没有返回画面");
         const kept = shots.map((s, i) =>
@@ -219,10 +198,7 @@ export async function observe(
           ]),
         ];
         return { observation, content };
-      } finally {
-        store.storage.db.prepare("DELETE FROM sessions WHERE id=?").run(token);
-      }
-    },
+      }),
   );
 }
 /** A page a click opened, in words: the app lays out a detail page the same way for every
@@ -280,31 +256,49 @@ export async function picture(
   const work = store.work(workId);
   if (!work.scenes[sceneId]?.modules.length)
     throw new DomainError("没有可查看的场景");
+  return captureService(
+    store,
+    "/render",
+    undefined,
+    (origin) => ({ format, url: sceneUrl(origin, work, sceneId) }),
+    async (response) => new Uint8Array(await response.arrayBuffer()),
+  );
+}
+
+const sceneUrl = (origin: string, work: Work, sceneId: string) =>
+  `${origin}/api/works/${work.id}/scenes/${encodeURIComponent(sceneId)}?revision=${work.revision}`;
+
+/** Asks the capture service for pictures of the user's work, signed in for the length of
+ * the request so it can open the work's pages. */
+async function captureService<T>(
+  store: UserStore,
+  path: string,
+  signal: AbortSignal | undefined,
+  body: (origin: string) => object,
+  read: (response: Response) => Promise<T>,
+): Promise<T> {
   const origin = process.env.DRAWY_INTERNAL_URL || "http://127.0.0.1:8080";
   const token = store.storage.session(store.userId);
   try {
     const response = await fetch(
-      (process.env.DRAWY_CAPTURE_URL || "http://127.0.0.1:8091") + "/render",
+      (process.env.DRAWY_CAPTURE_URL || "http://127.0.0.1:8091") + path,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          origin,
-          cookie: token,
-          format,
-          url: `${origin}/api/works/${work.id}/scenes/${encodeURIComponent(sceneId)}?revision=${work.revision}`,
-        }),
+        body: JSON.stringify({ origin, cookie: token, ...body(origin) }),
+        signal,
       },
     ).catch((e) => {
+      if (signal?.aborted) throw e;
       throw new Unavailable("画布查看服务不可用: " + e.message);
     });
     if (!response.ok)
       throw new Unavailable(
         `画布查看服务不可用 (${response.status}): ${(await response.text()).slice(0, 300)}`,
       );
-    return new Uint8Array(await response.arrayBuffer());
+    return await read(response);
   } finally {
-    store.storage.db.prepare("DELETE FROM sessions WHERE id=?").run(token);
+    store.storage.endSession(token);
   }
 }
 export function requireObserved(work: Work, observations: Observation[]) {

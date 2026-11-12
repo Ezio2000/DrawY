@@ -32,14 +32,12 @@ import {
   useWorkSession,
   type Ask,
   type SessionHost,
-  type WorkSession,
 } from "./session/work.ts";
 import { Feedback } from "./feedback.ts";
 import type { Asking } from "./shell.ts";
 import type { ComponentType } from "react";
 import type { ShellProps } from "./shell.ts";
 import { useShell } from "./shells.ts";
-import { browserStorage } from "./storage.ts";
 import { followViewport } from "./viewport.ts";
 
 export function App() {
@@ -60,7 +58,7 @@ export function App() {
     [dragging, setDragging] = useState(false),
     [trash, setTrash] = useState<Summary>();
   const page = pageOf(path);
-  const shells = useShell(browserStorage);
+  const shells = useShell();
   const deleting = useRef<{ id: string; timer: ReturnType<typeof setTimeout> }>(undefined);
   const language = useRef({ t, locale });
   language.current = { t, locale };

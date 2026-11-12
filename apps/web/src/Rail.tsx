@@ -217,7 +217,7 @@ export function Rail({
               </button>
             )}
             <LanguageSwitch label />
-            {shells.devices.length > 1 && <ShellSwitch shells={shells} />}
+            <ShellSwitch shells={shells} />
             <hr />
             <button
               role="menuitem"
@@ -252,7 +252,7 @@ export function Rail({
 function ShellSwitch({ shells }: { shells: Shells }) {
   const t = useT(),
     locale = useLocale();
-  const order: ShellChoice[] = ["auto", ...shells.devices];
+  const order: ShellChoice[] = ["auto", "phone", "desktop"];
   const next = order[(order.indexOf(shells.choice) + 1) % order.length];
   const name = (c: ShellChoice) =>
     c === "auto" ? t.rail.layoutAuto(shells.nameOf(shells.fits, locale)) : shells.nameOf(c, locale);
