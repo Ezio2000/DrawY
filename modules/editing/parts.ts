@@ -123,65 +123,6 @@ export const newModule = (sceneId: string, m: Instance): ModuleEdit => {
   const { bounds, ...rest } = m;
   return { ...rest, scene: sceneId, bounds: boxOf(bounds) };
 };
-/** Copies modules a little way off (the same step across and down, or a distance each
- * way, as a copy dragged off its original), on top of everything, with the links between
- * them; copies of grouped modules form a group of their own. Returns the copies' ids. */
-export function duplicate(
-  work: Work,
-  sceneId: string,
-  ids: string[],
-  offset: number | { x: number; y: number },
-): { edit: WorkEdit; ids: string[] } {
-  const scene = sceneOf(work, sceneId);
-  const by = typeof offset === "number" ? { x: offset, y: offset } : offset;
-  const taken = partIds(work),
-    groups = new Set(scene.modules.flatMap((m) => (m.group ? [m.group] : []))),
-    copyOf = new Map<string, string>(),
-    groupOf = new Map<string, string>();
-  const copies = scene.modules
-    .filter((m) => ids.includes(m.id))
-    .map((m) => {
-      const id = fresh(m.id, taken);
-      taken.add(id);
-      copyOf.set(m.id, id);
-      let group = m.group;
-      if (group) {
-        if (!groupOf.has(group)) {
-          const g = fresh(group, groups);
-          groups.add(g);
-          groupOf.set(group, g);
-        }
-        group = groupOf.get(group)!;
-      }
-      return {
-        ...structuredClone(m),
-        id,
-        ...(group ? { group } : {}),
-        bounds: { ...m.bounds, x: m.bounds.x + by.x, y: m.bounds.y + by.y },
-      };
-    });
-  const links = scene.links
-    .filter((l) => copyOf.has(l.from.moduleId) && copyOf.has(l.to.moduleId))
-    .map((l) => {
-      const id = fresh(l.id, taken);
-      taken.add(id);
-      return {
-        ...structuredClone(l),
-        id,
-        scene: sceneId,
-        from: { ...l.from, moduleId: copyOf.get(l.from.moduleId)! },
-        to: { ...l.to, moduleId: copyOf.get(l.to.moduleId)! },
-      };
-    });
-  return {
-    edit: {
-      modules: copies.map((c) => newModule(sceneId, c)),
-      ...(links.length ? { links } : {}),
-    },
-    ids: copies.map((c) => c.id),
-  };
-}
-
 /** Where modules go in the stacking order: in front of all the others or behind them,
  * one step forward or back past the next module they overlap, or to a place in the list. */
 export type Stacking = "front" | "back" | "forward" | "backward";

@@ -71,7 +71,8 @@ export function copy(work: Work, sceneId: string, ids: string[]): Clip | null {
 export const clipBounds = (clip: Clip): Bounds =>
   union(clip.modules.map((m) => m.bounds));
 /** Pastes a clip into a scene, on top of everything, selected as one: shifted by
- * `offset`, or centred on `centre`, or where it was. Parts get ids of their own; a drawing
+ * `offset` (the same step across and down, or a distance each way), or centred on
+ * `centre`, or where it was. Parts get ids of their own; a drawing
  * the work has under the same id with other code comes in under a new id; a library
  * drawing whose id one of the work's own drawings uses comes in as a drawing of the work's
  * own under a new id; targets the work does not have lead nowhere. Returns the pasted
@@ -83,7 +84,7 @@ export function paste(
   {
     offset = 0,
     centre,
-  }: { offset?: number; centre?: Point } = {},
+  }: { offset?: number | Point; centre?: Point } = {},
 ): { edit: WorkEdit; ids: string[] } {
   sceneOf(work, sceneId);
   const ids = partIds(work),
@@ -124,8 +125,9 @@ export function paste(
     });
   }
   const box = clipBounds(clip);
-  const dx = centre ? centre.x - (box.x + box.width / 2) : offset,
-    dy = centre ? centre.y - (box.y + box.height / 2) : offset;
+  const by = typeof offset === "number" ? { x: offset, y: offset } : offset;
+  const dx = centre ? centre.x - (box.x + box.width / 2) : by.x,
+    dy = centre ? centre.y - (box.y + box.height / 2) : by.y;
   const moduleOf = new Map<string, string>(),
     groupOf = new Map<string, string>();
   const has = (t: NonNullable<Instance["target"]>) =>
@@ -176,4 +178,16 @@ export function paste(
     },
     ids: modules.map((m) => m.id),
   };
+}
+/** Copies modules a little way off (the same step across and down, or a distance each
+ * way, as a copy dragged off its original), on top of everything, with the links between
+ * them; copies of grouped modules form a group of their own. Returns the copies' ids. */
+export function duplicate(
+  work: Work,
+  sceneId: string,
+  ids: string[],
+  offset: number | Point,
+): { edit: WorkEdit; ids: string[] } {
+  const clip = copy(work, sceneId, ids);
+  return clip ? paste(work, sceneId, clip, { offset }) : { edit: {}, ids: [] };
 }
