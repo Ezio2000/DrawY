@@ -8,17 +8,6 @@ import { fixture } from "../runtime/fixture.ts";
 import { develop } from "./index.ts";
 import { library as client, useOf } from "../materials/index.ts";
 import type { ImageRole, ModelCatalog } from "../contracts/index.ts";
-/** The catalog's picture provider reached and named as a test wants it. */
-const painting = (c: ModelCatalog, r: Partial<ImageRole>) => {
-  const { model, ...connection } = r;
-  return [
-    {
-      ...c.painters[0],
-      ...connection,
-      models: [{ ...c.painters[0].models[0], ...(model ? { model } : {}) }],
-    },
-  ];
-};
 import { serveLibrary, picture, solid } from "@drawy/materials/testing";
 
 let dir: string, db: Storage, library: ReturnType<typeof serveLibrary>;
@@ -33,28 +22,36 @@ afterEach(() => {
   rmSync(dir, { recursive: true });
   vi.unstubAllGlobals();
 });
+/** An author whose catalog paints at a test address, and the picture role their runs hold. */
+const author = (connection: Partial<ImageRole> = {}) => {
+  const store = db.scoped(register(db, "author", "abcdef").id);
+  const catalog = store.storage.models();
+  const { model, ...rest } = { credential: "test", baseUrl: "https://example.invalid", ...connection };
+  store.storage.saveModels({
+    ...catalog,
+    painters: [
+      {
+        ...catalog.painters[0],
+        ...rest,
+        models: [{ ...catalog.painters[0].models[0], ...(model ? { model } : {}) }],
+      },
+    ],
+  });
+  return { store, role: store.settings().image };
+};
+/** What the picture service answers with one picture. */
+const painted = (png: Buffer, usage?: object) =>
+  Response.json({ data: [{ b64_json: png.toString("base64") }], ...(usage && { usage }) });
 for (const channel of ["api", "oauth"] as const)
   it(`develops ${channel} pictures in the work's style into the library`, async () => {
-    const store = db.scoped(register(db, "author", "abcdef").id);
-    const settings = store.settings();
-    settings.image = {
-      channel,
-      model: "gpt-image-2",
-      credential: "test",
-      baseUrl: "https://example.invalid",
-    };
-    store.storage.saveModels({
-      ...store.storage.models(),
-      painters: painting(store.storage.models(), settings.image),
-    });
+    const { store, role } = author({ channel, model: "gpt-image-2" });
     const png = await picture();
     const calls: RequestInit[] = [];
     library.route(async (_url, init) => {
       calls.push(init!);
-      return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+      return painted(png);
     });
     const work = fixture();
-    const role = store.settings().image;
     // A later account/catalog change must not replace the supplied run connection.
     const changed = store.storage.models();
     changed.painters[0].credential = "";
@@ -105,17 +102,13 @@ for (const channel of ["api", "oauth"] as const)
       });
   });
 it("cuts a long name before trimming its hyphens, so no id carries \"--\"", async () => {
-  const store = db.scoped(register(db, "author", "abcdef").id);
-  store.storage.saveModels({
-    ...store.storage.models(),
-    painters: painting(store.storage.models(), { credential: "test", baseUrl: "https://example.invalid" }),
-  });
+  const { store, role } = author();
   const png = await picture();
   library.route(async () =>
-    Response.json({ data: [{ b64_json: png.toString("base64") }] }),
+    painted(png),
   );
   // Cut at 28 characters this name ends on a hyphen, which the work's references would not read.
-  const [cut] = await develop(store, store.settings().image, fixture(), [
+  const [cut] = await develop(store, role, fixture(), [
     {
       name: { zh: "塑料瓶和铝罐", en: "plastic bottle and aluminum can" },
       role: "object",
@@ -126,28 +119,18 @@ it("cuts a long name before trimming its hyphens, so no id carries \"--\"", asyn
   await cut.done;
 });
 it("retries a dropped connection or a busy server before giving up", async () => {
-  const store = db.scoped(register(db, "author", "abcdef").id);
-  const settings = store.settings();
-  settings.image = {
-    ...settings.image,
-    credential: "test",
-    baseUrl: "https://example.invalid",
-  };
-  store.storage.saveModels({
-    ...store.storage.models(),
-    painters: painting(store.storage.models(), settings.image),
-  });
+  const { store, role } = author();
   const png = await picture();
   let calls = 0;
   library.route(async () => {
     calls++;
     if (calls === 1) throw new TypeError("fetch failed");
     if (calls === 2) return new Response("busy", { status: 503 });
-    return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+    return painted(png);
   });
   vi.useFakeTimers({ toFake: ["setTimeout"] });
   try {
-    const [made] = await develop(store, store.settings().image, fixture(), [
+    const [made] = await develop(store, role, fixture(), [
       { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
     ]);
     while (!made.settled) await vi.advanceTimersByTimeAsync(1000);
@@ -158,25 +141,20 @@ it("retries a dropped connection or a busy server before giving up", async () =>
   }
 });
 it("paints a cut-out again when it comes out with a background, and says so when it does twice", async () => {
-  const store = db.scoped(register(db, "author", "abcdef").id);
-  store.storage.saveModels({
-    ...store.storage.models(),
-    painters: painting(store.storage.models(), { credential: "test", baseUrl: "https://example.invalid" }),
-  });
+  const { store, role } = author();
   const [clear, boxed] = [await picture(), await solid()];
   const usage = { input_tokens: 10, output_tokens: 100 };
   let answers = [boxed, clear];
   let calls = 0;
   library.route(async () => {
-    const png = answers[calls++] ?? boxed;
-    return Response.json({ data: [{ b64_json: png.toString("base64") }], usage });
+    return painted(answers[calls++] ?? boxed, usage);
   });
   const ask = (en: string, role: "object" | "scene" = "object") => ({
     name: { zh: en, en },
     role,
     depicts: "a " + en,
   });
-  const [ship] = await develop(store, store.settings().image, fixture(), [ask("ship")]);
+  const [ship] = await develop(store, role, fixture(), [ask("ship")]);
   // Both paintings are paid for.
   expect(await ship.done).toEqual({ status: "ready", count: 2, usage: { input_tokens: 20, output_tokens: 200 } });
   expect(calls).toBe(2);
@@ -185,31 +163,21 @@ it("paints a cut-out again when it comes out with a background, and says so when
 
   answers = [];
   calls = 0;
-  const [boat] = await develop(store, store.settings().image, fixture(), [ask("boat")]);
+  const [boat] = await develop(store, role, fixture(), [ask("boat")]);
   expect(await boat.done).toMatchObject({ status: "ready", opaque: true });
   expect(boat.settled).toMatchObject({ status: "ready", opaque: true });
   expect(calls).toBe(2);
 
   // A scene is whole by its role, and is not painted again for it.
   calls = 0;
-  const [sea] = await develop(store, store.settings().image, fixture(), [ask("sea", "scene")]);
+  const [sea] = await develop(store, role, fixture(), [ask("sea", "scene")]);
   expect(await sea.done).toMatchObject({ status: "ready" });
   expect(calls).toBe(1);
 });
 it("records a failed picture so the work and the author both learn of it", async () => {
-  const store = db.scoped(register(db, "author", "abcdef").id);
-  const settings = store.settings();
-  settings.image = {
-    ...settings.image,
-    credential: "test",
-    baseUrl: "https://example.invalid",
-  };
-  store.storage.saveModels({
-    ...store.storage.models(),
-    painters: painting(store.storage.models(), settings.image),
-  });
+  const { store, role } = author();
   library.route(async () => new Response("unsafe prompt", { status: 400 }));
-  const [made] = await develop(store, store.settings().image, fixture(), [
+  const [made] = await develop(store, role, fixture(), [
     { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
   ]);
   expect(await made.done).toMatchObject({
@@ -221,25 +189,14 @@ it("records a failed picture so the work and the author both learn of it", async
     "400",
   );
   await expect(
-    develop(store, store.settings().image, { ...fixture(), brief: null }, [
+    develop(store, role, { ...fixture(), brief: null }, [
       { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
     ]),
   ).rejects.toThrow("set_brief");
 });
 
 it("makes pictures that reference another in the same request after it, all private to their maker", async () => {
-  const store = db.scoped(register(db, "author", "abcdef").id);
-  const settings = store.settings();
-  settings.image = {
-    ...settings.image,
-    channel: "oauth",
-    credential: "test",
-    baseUrl: "https://example.invalid",
-  };
-  store.storage.saveModels({
-    ...store.storage.models(),
-    painters: painting(store.storage.models(), settings.image),
-  });
+  const { store, role } = author({ channel: "oauth" });
   const png = await picture();
   const prompts: { subject: string; references: number }[] = [];
   library.route(async (_url, init) => {
@@ -248,7 +205,7 @@ it("makes pictures that reference another in the same request after it, all priv
       subject: body.prompt.split("\n")[1],
       references: body.images?.length ?? 0,
     });
-    return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+    return painted(png);
   });
   const mine = await client.ingest(
     png,
@@ -261,7 +218,7 @@ it("makes pictures that reference another in the same request after it, all priv
     },
     store.userId,
   );
-  const [rabbit, scene, kept] = await develop(store, store.settings().image, fixture(), [
+  const [rabbit, scene, kept] = await develop(store, role, fixture(), [
     {
       key: "rabbit",
       name: { zh: "兔子", en: "rabbit" },
@@ -299,27 +256,16 @@ it("makes pictures that reference another in the same request after it, all priv
 });
 
 it("paints new pictures to look like the ones the work already has in its style", async () => {
-  const store = db.scoped(register(db, "author", "abcdef").id);
-  const settings = store.settings();
-  settings.image = {
-    ...settings.image,
-    channel: "oauth",
-    credential: "test",
-    baseUrl: "https://example.invalid",
-  };
-  store.storage.saveModels({
-    ...store.storage.models(),
-    painters: painting(store.storage.models(), settings.image),
-  });
+  const { store, role } = author({ channel: "oauth" });
   const png = await picture();
   const sent: { prompt: string; images: number }[] = [];
   library.route(async (url, init) => {
     const body = JSON.parse(init!.body as string);
     sent.push({ prompt: body.prompt, images: body.images?.length ?? 0 });
     expect(String(url)).toMatch(/\/images\/edits$/);
-    return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+    return painted(png);
   });
-  const [earlier] = await develop(store, store.settings().image, fixture(), [
+  const [earlier] = await develop(store, role, fixture(), [
     { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
   ]);
   await earlier.done;
@@ -330,7 +276,7 @@ it("paints new pictures to look like the ones the work already has in its style"
   ]);
   const work = fixture();
   work.materials[earlier.id] = useOf(m)!;
-  const [later] = await develop(store, store.settings().image, work, [
+  const [later] = await develop(store, role, work, [
     {
       name: { zh: "海豚", en: "dolphin" },
       role: "object",
@@ -349,16 +295,6 @@ it("paints new pictures to look like the ones the work already has in its style"
 });
 
 describe("pictures that depend on each other", () => {
-  const ready = async () => {
-    const store = db.scoped(register(db, "author", "abcdef").id);
-    const settings = store.settings();
-    settings.image = { ...settings.image, channel: "oauth", credential: "test", baseUrl: "https://example.invalid" };
-    store.storage.saveModels({
-      ...store.storage.models(),
-      painters: painting(store.storage.models(), settings.image),
-    });
-    return store;
-  };
   const ask = (en: string, references: string[] = [], key?: string) => ({
     name: { zh: en, en },
     role: "figure" as const,
@@ -367,7 +303,7 @@ describe("pictures that depend on each other", () => {
     ...(key ? { key } : {}),
   });
   it("works from a picture listed later, and paints the independent ones side by side", async () => {
-    const store = await ready();
+    const { store, role } = author({ channel: "oauth" });
     const png = await picture();
     const started: string[] = [];
     let open = 0,
@@ -377,10 +313,10 @@ describe("pictures that depend on each other", () => {
       most = Math.max(most, ++open);
       await new Promise((r) => setTimeout(r, 30));
       open--;
-      return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+      return painted(png);
     });
     // The otter's picture came out failed: it named one reserved after its own.
-    const made = await develop(store, store.settings().image, fixture(), [
+    const made = await develop(store, role, fixture(), [
       ask("pup on the bank", ["pups"]),
       ask("sleeping pups", [], "pups"),
       ask("fish"),
@@ -394,16 +330,16 @@ describe("pictures that depend on each other", () => {
     expect(most).toBeGreaterThanOrEqual(2);
   });
   it("does not paint what depends on a failed picture, and says why", async () => {
-    const store = await ready();
+    const { store, role } = author({ channel: "oauth" });
     const png = await picture();
     let calls = 0;
     library.route(async (_url, init) => {
       calls++;
       return JSON.parse(init!.body as string).prompt.includes("broken")
         ? new Response("no", { status: 400 })
-        : Response.json({ data: [{ b64_json: png.toString("base64") }] });
+        : painted(png);
     });
-    const [dependent, broken] = await develop(store, store.settings().image, fixture(), [
+    const [dependent, broken] = await develop(store, role, fixture(), [
       ask("after", ["first"]),
       ask("broken", [], "first"),
     ]);
@@ -412,17 +348,17 @@ describe("pictures that depend on each other", () => {
     expect(calls).toBe(1);
   });
   it("refuses circles and unknown references before anything is painted", async () => {
-    const store = await ready();
+    const { store, role } = author({ channel: "oauth" });
     let calls = 0;
     library.route(async () => {
       calls++;
       return new Response("no", { status: 400 });
     });
     await expect(
-      develop(store, store.settings().image, fixture(), [ask("a", ["kb"], "ka"), ask("b", ["ka"], "kb")]),
+      develop(store, role, fixture(), [ask("a", ["kb"], "ka"), ask("b", ["ka"], "kb")]),
     ).rejects.toThrow("循环");
     await expect(
-      develop(store, store.settings().image, fixture(), [ask("a", ["no-such-picture"])]),
+      develop(store, role, fixture(), [ask("a", ["no-such-picture"])]),
     ).rejects.toThrow("参考图不存在: no-such-picture");
     expect(calls).toBe(0);
   });
