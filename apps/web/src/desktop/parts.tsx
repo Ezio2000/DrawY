@@ -1,10 +1,8 @@
-import { useEffect, useRef, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { ChevronDown, X, MessagesSquare, PencilLine, History, Check, Undo2, Redo2 } from "lucide-react";
 import type { Canvas, CanvasOptions, Pointed } from "../../../../modules/canvas/index.ts";
 import { versionOf, type Selection, type Target } from "../../../../modules/contracts/index.ts";
 import { shownName } from "../../../../modules/editing/index.ts";
-import { useAccount } from "../account.tsx";
-import { Composer, Unconnected } from "../Composer.tsx";
 import { cx } from "../cx.ts";
 import { Drafts } from "../Drafts.tsx";
 import { SelectionBar } from "../EditBar.tsx";
@@ -17,12 +15,11 @@ import type { Feedback } from "../feedback.ts";
 import { useT } from "../i18n.tsx";
 import { counted } from "../probe.ts";
 import { Rename } from "../Rail.tsx";
-import { SceneView, DetailView } from "../SceneView.tsx";
+import { SceneView } from "../SceneView.tsx";
 import { Seal } from "../Title.tsx";
 import { useSelect } from "../session/store.ts";
 import type { Change, Snapshot, WorkSession } from "../session/work.ts";
-import type { Asking } from "../shell.ts";
-import { Now, Studio } from "../Studio.tsx";
+import { Studio } from "../Studio.tsx";
 import type { EditOps, useEditing } from "./editing.ts";
 
 /* The parts of the desktop work page. Each reads from the session only what it shows, so
@@ -276,60 +273,6 @@ export function EditOverlay({
   );
 }
 
-/** What the author is doing, its question or its reply, at the top of the composer. */
-export function Status({
-  session,
-  journal,
-  putAway,
-  answer,
-  choose,
-  reveal,
-  dismiss,
-  resume,
-  restore,
-  feedback,
-}: {
-  session: WorkSession;
-  journal: boolean;
-  putAway: boolean;
-  answer: (text: string) => void;
-  choose: (text: string) => void;
-  reveal: () => void;
-  dismiss: () => void;
-  resume: () => void;
-  restore: (revision: number) => void;
-  feedback: Feedback;
-}) {
-  counted("status");
-  const s = useSelect(session, (s) => ({
-    run: s.run,
-    work: s.work!,
-    offline: s.offline,
-    waiting: s.waiting,
-    working: s.working,
-    pictures: !!s.scene?.modules.length,
-  }));
-  // While drawing, the bar always shows how far it has got; with the studio open, which
-  // tells the rest, only the stages.
-  if (!(s.offline || s.waiting || s.working || (!journal && !putAway))) return null;
-  return (
-    <Now
-      compact={journal && s.working}
-      run={s.run}
-      work={s.work}
-      offline={s.offline}
-      pictures={s.pictures}
-      answer={answer}
-      choose={choose}
-      cancel={() => void feedback.attempt(session.cancel)}
-      reveal={reveal}
-      dismiss={dismiss}
-      resume={resume}
-      restore={restore}
-    />
-  );
-}
-
 /** The bars over the composer: the version looked at, what went wrong or well, going back
  * to take back, and hand edits to save (or decide about before a request goes). */
 export function Bars({
@@ -456,100 +399,6 @@ export function Bars({
       )}
     </>
   );
-}
-
-/** The composer under the canvas. It reads the request itself, so typing draws only it. */
-export function DockComposer({
-  session,
-  asking,
-  feedback,
-  go,
-  status,
-  quote,
-  unquote,
-  selecting,
-  edit,
-  send,
-  stop,
-}: {
-  session: WorkSession;
-  asking: Asking;
-  feedback: Feedback;
-  go: (path: string) => void;
-  status: ReactNode;
-  quote?: string;
-  unquote: () => void;
-  /** Whether something is selected for the request to be about. */
-  selecting: boolean;
-  edit?: () => void;
-  send: () => void;
-  stop: () => void;
-}) {
-  counted("composer");
-  const t = useT();
-  const user = useAccount()!;
-  const { draft } = asking;
-  const request = useSelect(draft, (r) => r);
-  const s = useSelect(session, (s) => ({
-    working: s.working,
-    waiting: s.waiting,
-    engaged: s.engaged,
-    busy: s.sending || !s.loaded || !s.synced,
-  }));
-  const note = request.handed && request.text && (
-    <div className={cx("now")}>
-      <span className={cx("now-line")}>{request.handed}</span>
-    </div>
-  );
-  return (
-    <Composer
-      place="dock"
-      value={request.text}
-      set={draft.write}
-      attachments={request.attachments}
-      detach={draft.detach}
-      uploading={request.uploading}
-      focus={request.asked}
-      quote={quote}
-      unquote={unquote}
-      edit={edit}
-      placeholder={
-        s.waiting
-          ? t.composer.answering
-          : selecting
-            ? t.composer.selected
-            : s.working
-              ? t.composer.working
-              : t.composer.continue
-      }
-      status={(asking.blocked === "unconnected" && <Unconnected go={go} />) || note || status}
-      working={s.working}
-      busy={s.busy}
-      send={send}
-      stop={stop}
-      attach={(files) => void feedback.attempt(() => draft.upload(files))}
-      pick={asking.pick}
-      models={s.engaged ? undefined : asking.models}
-      collapsed={s.working}
-      quota={user.quota}
-      spent={asking.blocked === "spent" && !s.waiting}
-      choose={asking.choose}
-    />
-  );
-}
-
-/** The detail page open over the scene, as the work has it now. */
-export function DetailLayer({
-  session,
-  detailId,
-  close,
-}: {
-  session: WorkSession;
-  detailId?: string;
-  close: () => void;
-}) {
-  const detail = useSelect(session, (s) => (detailId ? s.work!.details[detailId] : undefined));
-  return detail ? <DetailView detail={detail} close={close} /> : null;
 }
 
 export type Panel = "" | "journal" | "drafts" | "edit";

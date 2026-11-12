@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { WorkComposer } from "../Composer.tsx";
+import { WorkStatus } from "../Studio.tsx";
+import { WorkDetail } from "../SceneView.tsx";
 import { Dialog } from "../ui/dialogs.tsx";
 import type { Material } from "@drawy/materials/schema";
 import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
@@ -15,14 +18,11 @@ import { Title } from "../Title.tsx";
 import { cx } from "./cx.ts";
 import {
   Actions,
-  Detail,
   nameIn,
   Notes,
   PhoneCanvas,
-  PhoneComposer,
   ScenesSheet,
   ShareSheet,
-  Status,
   StudioSheet,
   TopBar,
   VersionsSheet,
@@ -198,13 +198,13 @@ export default function PhoneWorkPage({ session, asking, feedback, go }: ShellPr
               deselect={deselect}
             />
           )}
-          <PhoneComposer
+          <WorkComposer
             session={session}
             asking={asking}
             feedback={feedback}
             go={go}
             status={
-              <Status
+              <WorkStatus
                 session={session}
                 putAway={putAway}
                 answer={(o) => send({ text: o, picked: "" })}
@@ -223,7 +223,7 @@ export default function PhoneWorkPage({ session, asking, feedback, go }: ShellPr
             stop={stop}
           />
         </div>
-        <Detail session={session} detailId={detailId} close={() => setDetail(undefined)} />
+        <WorkDetail session={session} detailId={detailId} close={() => setDetail(undefined)} />
       </div>
       {sheet === "studio" && (
         <StudioSheet

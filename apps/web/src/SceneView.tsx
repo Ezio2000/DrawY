@@ -1,4 +1,6 @@
 import { detailElement } from "../../../modules/runtime/detail.ts";
+import type { WorkSession } from "./session/work.ts";
+import { useSelect } from "./session/store.ts";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Lightbulb } from "lucide-react";
@@ -454,4 +456,18 @@ export function DetailView({
     return () => removeEventListener("keydown", key);
   }, []);
   return <div className={cx("detail")} ref={ref} />;
+}
+
+/** The detail page open over the scene, as the work has it now. */
+export function WorkDetail({
+  session,
+  detailId,
+  close,
+}: {
+  session: WorkSession;
+  detailId?: string;
+  close: () => void;
+}) {
+  const detail = useSelect(session, (s) => (detailId ? s.work!.details[detailId] : undefined));
+  return detail ? <DetailView detail={detail} close={close} /> : null;
 }

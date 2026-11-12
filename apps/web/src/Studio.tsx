@@ -26,6 +26,10 @@ import { useLocale } from "./ui/locale.tsx";
 import { localize } from "../../../modules/contracts/messages.ts";
 import { money } from "./money.ts";
 import { useCan } from "./account.tsx";
+import type { WorkSession } from "./session/work.ts";
+import { useSelect } from "./session/store.ts";
+import type { Feedback } from "./feedback.ts";
+import { counted } from "./probe.ts";
 import { live } from "./session/work.ts";
 import {
   costOf,
@@ -1314,5 +1318,60 @@ function Lightbox({ picture, close }: { picture: Picture; close: () => void }) {
       </button>
       <img src={picture.url} alt={picture.name} />
     </div>
+  );
+}
+
+/** What the author is doing, its question or its reply, at the top of the composer. */
+export function WorkStatus({
+  session,
+  journal,
+  putAway,
+  answer,
+  choose,
+  reveal,
+  dismiss,
+  resume,
+  restore,
+  feedback,
+}: {
+  session: WorkSession;
+  /** Whether the studio is open beside the canvas, which tells the rest. */
+  journal?: boolean;
+  putAway: boolean;
+  answer: (text: string) => void;
+  choose: (text: string) => void;
+  reveal: () => void;
+  dismiss: () => void;
+  resume: () => void;
+  restore: (revision: number) => void;
+  feedback: Feedback;
+}) {
+  counted("status");
+  const s = useSelect(session, (s) => ({
+    run: s.run,
+    work: s.work!,
+    offline: s.offline,
+    waiting: s.waiting,
+    working: s.working,
+    pictures: !!s.scene?.modules.length,
+  }));
+  // While drawing, the bar always shows how far it has got; with the studio open, which
+  // tells the rest, only the stages.
+  if (!(s.offline || s.waiting || s.working || (!journal && !putAway))) return null;
+  return (
+    <Now
+      compact={journal && s.working}
+      run={s.run}
+      work={s.work}
+      offline={s.offline}
+      pictures={s.pictures}
+      answer={answer}
+      choose={choose}
+      cancel={() => void feedback.attempt(session.cancel)}
+      reveal={reveal}
+      dismiss={dismiss}
+      resume={resume}
+      restore={restore}
+    />
   );
 }

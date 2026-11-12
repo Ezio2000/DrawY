@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { WorkComposer } from "../Composer.tsx";
+import { WorkStatus } from "../Studio.tsx";
+import { WorkDetail } from "../SceneView.tsx";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { Dialog } from "../ui/dialogs.tsx";
 import type { Material } from "@drawy/materials/schema";
@@ -21,14 +24,11 @@ import { panelWidth, Resizer } from "./panels.tsx";
 import {
   Bars,
   CanvasArea,
-  DetailLayer,
-  DockComposer,
   DraftsPane,
   EditOverlay,
   EditPane,
   nameIn,
   SideTools,
-  Status,
   StudioPane,
   Topbar,
   type Panel,
@@ -373,13 +373,13 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
         )}
         <div className={cx("dock")} data-dock>
           <Bars session={session} feedback={feedback} restore={restore} undo={undo} />
-          <DockComposer
+          <WorkComposer
             session={session}
             asking={asking}
             feedback={feedback}
             go={go}
             status={
-              <Status
+              <WorkStatus
                 session={session}
                 journal={journal}
                 putAway={putAway}
@@ -415,7 +415,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             <span>{t.edit.tabs.properties}</span>
           </button>
         )}
-        <DetailLayer session={session} detailId={detailId} close={() => setDetail(undefined)} />
+        <WorkDetail session={session} detailId={detailId} close={() => setDetail(undefined)} />
       </section>
       <aside className={cx("side")} aria-label={t.work.panel}>
         <SideTools session={session} panel={panel} toggle={toggle} undo={undo} feedback={feedback} />

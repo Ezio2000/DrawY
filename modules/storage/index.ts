@@ -18,7 +18,6 @@ import {
   type Invite,
   type AccountRole,
   type ModelCatalog,
-  type Permission,
   type UserSettings,
   type Work,
   type Capture,

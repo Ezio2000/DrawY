@@ -23,20 +23,16 @@ import {
   type Work,
 } from "../../../../modules/contracts/index.ts";
 import { shownName } from "../../../../modules/editing/index.ts";
-import { useAccount } from "../account.tsx";
-import { Composer, Unconnected } from "../Composer.tsx";
 import { Drafts } from "../Drafts.tsx";
 import { ExportItems, useExports } from "../Export.tsx";
 import type { Feedback } from "../feedback.ts";
 import { useT } from "../i18n.tsx";
 import { counted } from "../probe.ts";
-import { DetailView, SceneView } from "../SceneView.tsx";
+import { SceneView } from "../SceneView.tsx";
 import { useSelect } from "../session/store.ts";
 import type { Snapshot, WorkSession } from "../session/work.ts";
-import type { Asking } from "../shell.ts";
-import { Now, Studio } from "../Studio.tsx";
+import { Studio } from "../Studio.tsx";
 import { Seal } from "../Title.tsx";
-import { cx as shared } from "../cx.ts";
 import { cx } from "./cx.ts";
 
 /* The parts of the phone work page. Each reads from the session only what it shows, as on
@@ -381,132 +377,6 @@ export function Actions({
   );
 }
 
-/** What the author is doing, its question or its reply, at the top of the composer. A tap
- * on it opens the studio. */
-export function Status({
-  session,
-  putAway,
-  answer,
-  choose,
-  reveal,
-  dismiss,
-  resume,
-  restore,
-  feedback,
-}: {
-  session: WorkSession;
-  putAway: boolean;
-  answer: (text: string) => void;
-  choose: (text: string) => void;
-  reveal: () => void;
-  dismiss: () => void;
-  resume: () => void;
-  restore: (revision: number) => void;
-  feedback: Feedback;
-}) {
-  counted("phone.status");
-  const s = useSelect(session, (s) => ({
-    run: s.run,
-    work: s.work!,
-    offline: s.offline,
-    waiting: s.waiting,
-    working: s.working,
-    pictures: !!s.scene?.modules.length,
-  }));
-  if (!(s.offline || s.waiting || s.working || !putAway)) return null;
-  return (
-    <Now
-      run={s.run}
-      work={s.work}
-      offline={s.offline}
-      pictures={s.pictures}
-      answer={answer}
-      choose={choose}
-      cancel={() => void feedback.attempt(session.cancel)}
-      reveal={reveal}
-      dismiss={dismiss}
-      resume={resume}
-      restore={restore}
-    />
-  );
-}
-
-/** The composer at the foot of the page. It reads the request itself, so typing draws only
- * it; while the author draws it folds to its progress and the button that stops it. */
-export function PhoneComposer({
-  session,
-  asking,
-  feedback,
-  go,
-  status,
-  quote,
-  unquote,
-  selecting,
-  send,
-  stop,
-}: {
-  session: WorkSession;
-  asking: Asking;
-  feedback: Feedback;
-  go: (path: string) => void;
-  status: ReactNode;
-  quote?: string;
-  unquote: () => void;
-  selecting: boolean;
-  send: () => void;
-  stop: () => void;
-}) {
-  counted("phone.composer");
-  const t = useT();
-  const user = useAccount()!;
-  const { draft } = asking;
-  const request = useSelect(draft, (r) => r);
-  const s = useSelect(session, (s) => ({
-    working: s.working,
-    waiting: s.waiting,
-    engaged: s.engaged,
-    busy: s.sending || !s.loaded || !s.synced,
-  }));
-  const note = request.handed && request.text && (
-    <div className={shared("now")}>
-      <span className={shared("now-line")}>{request.handed}</span>
-    </div>
-  );
-  return (
-    <Composer
-      place="dock"
-      value={request.text}
-      set={draft.write}
-      attachments={request.attachments}
-      detach={draft.detach}
-      uploading={request.uploading}
-      focus={request.asked}
-      quote={quote}
-      unquote={unquote}
-      placeholder={
-        s.waiting
-          ? t.composer.answering
-          : selecting
-            ? t.composer.selected
-            : s.working
-              ? t.composer.working
-              : t.composer.continue
-      }
-      status={(asking.blocked === "unconnected" && <Unconnected go={go} />) || note || status}
-      working={s.working}
-      busy={s.busy}
-      send={send}
-      stop={stop}
-      attach={(files) => void feedback.attempt(() => draft.upload(files))}
-      pick={asking.pick}
-      models={s.engaged ? undefined : asking.models}
-      collapsed={s.working}
-      quota={user.quota}
-      spent={asking.blocked === "spent" && !s.waiting}
-      choose={asking.choose}
-    />
-  );
-}
 
 /** How far a sheet is pulled down, in pixels, before letting go closes it. */
 const PULLED = 72;
@@ -818,16 +688,3 @@ export function ScenesSheet({
   );
 }
 
-/** The detail page open over the scene, as the work has it now. */
-export function Detail({
-  session,
-  detailId,
-  close,
-}: {
-  session: WorkSession;
-  detailId?: string;
-  close: () => void;
-}) {
-  const detail = useSelect(session, (s) => (detailId ? s.work!.details[detailId] : undefined));
-  return detail ? <DetailView detail={detail} close={close} /> : null;
-}

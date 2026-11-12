@@ -19,7 +19,12 @@ import { cx } from "./cx.ts";
 import { useDismiss } from "./popover.ts";
 import { useT } from "./i18n.tsx";
 import type { Attachment } from "./session/request.ts";
-import { useCan } from "./account.tsx";
+import { useAccount, useCan } from "./account.tsx";
+import type { WorkSession } from "./session/work.ts";
+import { useSelect } from "./session/store.ts";
+import type { Asking } from "./shell.ts";
+import type { Feedback } from "./feedback.ts";
+import { counted } from "./probe.ts";
 
 let styles: Promise<StyleMaterial[]> | undefined;
 /** The library's styles, loaded once. */
@@ -528,5 +533,86 @@ export function Unconnected({ go }: { go: (path: string) => void }) {
         </button>
       )}
     </div>
+  );
+}
+
+/** The composer under a work. It reads the request itself, so typing draws only it; while
+ * the author draws it folds to its progress and the button that stops it. */
+export function WorkComposer({
+  session,
+  asking,
+  feedback,
+  go,
+  status,
+  quote,
+  unquote,
+  selecting,
+  edit,
+  send,
+  stop,
+}: {
+  session: WorkSession;
+  asking: Asking;
+  feedback: Feedback;
+  go: (path: string) => void;
+  status: ReactNode;
+  quote?: string;
+  unquote: () => void;
+  /** Whether something is selected for the request to be about. */
+  selecting: boolean;
+  edit?: () => void;
+  send: () => void;
+  stop: () => void;
+}) {
+  counted("composer");
+  const t = useT();
+  const user = useAccount()!;
+  const { draft } = asking;
+  const request = useSelect(draft, (r) => r);
+  const s = useSelect(session, (s) => ({
+    working: s.working,
+    waiting: s.waiting,
+    engaged: s.engaged,
+    busy: s.sending || !s.loaded || !s.synced,
+  }));
+  const note = request.handed && request.text && (
+    <div className={cx("now")}>
+      <span className={cx("now-line")}>{request.handed}</span>
+    </div>
+  );
+  return (
+    <Composer
+      place="dock"
+      value={request.text}
+      set={draft.write}
+      attachments={request.attachments}
+      detach={draft.detach}
+      uploading={request.uploading}
+      focus={request.asked}
+      quote={quote}
+      unquote={unquote}
+      edit={edit}
+      placeholder={
+        s.waiting
+          ? t.composer.answering
+          : selecting
+            ? t.composer.selected
+            : s.working
+              ? t.composer.working
+              : t.composer.continue
+      }
+      status={(asking.blocked === "unconnected" && <Unconnected go={go} />) || note || status}
+      working={s.working}
+      busy={s.busy}
+      send={send}
+      stop={stop}
+      attach={(files) => void feedback.attempt(() => draft.upload(files))}
+      pick={asking.pick}
+      models={s.engaged ? undefined : asking.models}
+      collapsed={s.working}
+      quota={user.quota}
+      spent={asking.blocked === "spent" && !s.waiting}
+      choose={asking.choose}
+    />
   );
 }

@@ -302,8 +302,8 @@ it("draws again only what shows the author's run as it goes, and only the compos
   const after = await renders();
   const grew = (part: string) => (after[part] ?? 0) - (before[part] ?? 0);
   expect(grew("phone.canvas")).toBeGreaterThan(0);
-  expect(grew("phone.status")).toBeGreaterThan(0);
-  for (const part of ["phone.page", "phone.top", "phone.notes", "phone.composer"])
+  expect(grew("status")).toBeGreaterThan(0);
+  for (const part of ["phone.page", "phone.top", "phone.notes", "composer"])
     expect([part, grew(part)]).toEqual([part, 0]);
   await tell({ type: "run", run: run(id, "live", "completed", [user]) });
   await settled();
@@ -312,8 +312,8 @@ it("draws again only what shows the author's run as it goes, and only the compos
   await settled();
   const typed = await renders();
   const changed = (part: string) => (typed[part] ?? 0) - (quiet[part] ?? 0);
-  expect(changed("phone.composer")).toBeGreaterThan(0);
-  for (const part of ["phone.page", "phone.top", "phone.notes", "phone.canvas", "phone.status"])
+  expect(changed("composer")).toBeGreaterThan(0);
+  for (const part of ["phone.page", "phone.top", "phone.notes", "phone.canvas", "status"])
     expect([part, changed(part)]).toEqual([part, 0]);
 });
 
