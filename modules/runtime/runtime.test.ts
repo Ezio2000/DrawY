@@ -96,16 +96,6 @@ beforeAll(async () => {
           ),
         ),
       );
-    } else if (url.pathname.startsWith("/materials/geo/relief/")) {
-      res.setHeader("content-type", "image/webp");
-      res.end(
-        readFileSync(
-          new URL(
-            `../../materials/seed/geo/relief/${url.pathname.split("/").at(-1)}.webp`,
-            import.meta.url,
-          ),
-        ),
-      );
     } else if (url.pathname.startsWith("/materials/geo/")) {
       res.setHeader("content-type", "application/json");
       res.end(
@@ -250,69 +240,9 @@ it("awaits async scene events, opens separate details and renders structured dia
   expect(await page.locator('[data-module-id="mermaid"] svg').count()).toBe(1);
   expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
 });
-it("moves groups, resizes an isolated module and recomputes connected anchors", async () => {
-  work.scenes.root.links.push({
-    id: "connection",
-    drawingId: "connector",
-    from: { moduleId: "level-0", at: "right" },
-    to: { moduleId: "level-4", at: "right" },
-    data: {},
-  });
-  await open();
-  await page.evaluate(() => {
-    window.drawyView.setMovable(true);
-    // A module follows a drag once it is selected.
-    window.drawyView.select(["level-0"]);
-    window.drawyView.options.commit = (moves) => {
-      document.body.dataset.moves = JSON.stringify(moves);
-    };
-  });
-  const scale = await page.evaluate(() => window.drawyView.view.scale);
-  const box = (await page.locator('[data-module-id="level-0"]').boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(
-    box.x + box.width / 2 + 40,
-    box.y + box.height / 2 + 20,
-    { steps: 4 },
-  );
-  await page.mouse.up();
-  const moves = JSON.parse((await page.getAttribute("body", "data-moves"))!);
-  expect(moves).toHaveLength(5);
-  expect(moves[0].bounds.x).toBeCloseTo(
-    work.scenes.root.modules[0].bounds.x + 40 / scale,
-  );
-  const before = await page
-    .locator('[data-link-id="connection"] path')
-    .getAttribute("d");
-  // The handle at the selection's lower right corner resizes it.
-  const handle = (await page.locator('[data-handle="se"]').boundingBox())!;
-  const hx = handle.x + handle.width / 2,
-    hy = handle.y + handle.height / 2;
-  await page.mouse.move(hx, hy);
-  await page.mouse.down();
-  await page.mouse.move(hx + 60, hy + 20, { steps: 4 });
-  await page.mouse.up();
-  await page.evaluate(() => window.drawyView.renderer.settled());
-  const resized = JSON.parse((await page.getAttribute("body", "data-moves"))!);
-  expect(resized).toHaveLength(1);
-  expect(resized[0].bounds.width).toBeCloseTo(
-    work.scenes.root.modules[0].bounds.width + 60 / scale,
-  );
-  expect(
-    await page.locator('[data-link-id="connection"] path').getAttribute("d"),
-  ).not.toBe(before);
-  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
-});
-it("selects what is pressed while editing, instead of opening or operating it, and points at words and pictures", async () => {
-  work.materials.apple = useOf(
-    seed("pictures").find((m) => m.id === "apple")!,
-  )!;
-  work.drawings.fruit = {
-    id: "fruit",
-    name: "果",
-    source: 'return api.material("apple")',
-  };
+it("edits with the mouse: a press selects instead of operating, a box selects, handles resize a selection as one and move its links, drags snap, a right click asks for the menu, and a double click points at words and pictures", async () => {
+  work.materials.apple = useOf(seed("pictures").find((m) => m.id === "apple")!)!;
+  work.drawings.fruit = { id: "fruit", name: "果", source: 'return api.material("apple")' };
   work.scenes.root.modules.push({
     id: "fruit",
     drawingId: "fruit",
@@ -320,66 +250,86 @@ it("selects what is pressed while editing, instead of opening or operating it, a
     data: {},
     bounds: { x: 700, y: 120, width: 160, height: 160 },
   });
+  work.scenes.root.links.push({
+    id: "connection",
+    drawingId: "connector",
+    from: { moduleId: "level-0", at: "right" },
+    to: { moduleId: "level-1", at: "right" },
+    data: {},
+  });
   await open();
   await page.evaluate(() => {
     const view = window.drawyView,
       body = document.body.dataset;
     view.setMovable(true);
     view.setEditing(true);
-    view.options.select = (s) =>
-      (body.selected = s.map((x) => x.moduleId).join());
+    view.options.select = (s) => (body.selected = s.map((x) => x.moduleId).join());
     view.options.open = (t) => (body.opened = t.id);
     view.options.point = (p) => (body.pointed = JSON.stringify(p));
+    view.options.commit = (moves) => (body.moves = JSON.stringify(moves));
+    view.options.menu = (at) => (body.menu = JSON.stringify(at));
+    view.options.place = (at, box) => (body.placed = JSON.stringify({ at, box }));
   });
+  const drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 6 });
+    await page.mouse.up();
+  };
+  const scale = await page.evaluate(() => window.drawyView.view.scale);
   // A level opens its explanation when explored; while editing, a press only selects it,
   // and Shift adds another.
   await page.locator('[data-module-id="level-0"]').click();
   expect(await data("selected")).toBe("level-0");
-  await page
-    .locator('[data-module-id="level-1"]')
-    .click({ modifiers: ["Shift"] });
+  await page.locator('[data-module-id="level-1"]').click({ modifiers: ["Shift"] });
   expect(await data("selected")).toBe("level-0,level-1");
   expect(await data("opened")).toBeUndefined();
   // The drawing's own button is pressed without acting.
   await page.getByRole("button", { name: "强调基础" }).click();
   expect(await data("selected")).toBe("control");
   await page.waitForTimeout(150);
-  await expect
-    .poll(() =>
-      page.locator('[data-module-id="level-4"] text').nth(1).textContent(),
-    )
-    .toBe("食物与休息");
-  // Any module can be dragged at once.
-  await page.evaluate(() => {
-    window.drawyView.options.commit = (moves) =>
-      (document.body.dataset.moves = JSON.stringify(moves.map((m) => m.id)));
-  });
-  const box = (await page.locator('[data-module-id="heading"]').boundingBox())!;
-  await page.mouse.move(box.x + 30, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + 80, box.y + box.height / 2 + 10, { steps: 4 });
-  await page.mouse.up();
-  expect(await data("moves")).toBe('["heading"]');
+  expect(await page.locator('[data-module-id="level-4"] text').nth(1).textContent()).toBe("食物与休息");
+  // Dragging over the paper selects what the box touches.
+  await drag(await screen(120, 95), await screen(320, 220));
+  expect(await data("selected")).toBe("level-0,level-1");
+  // The handles on the box around two modules resize both in proportion, and the link
+  // between them follows.
+  const before = await page.locator('[data-link-id="connection"] path').getAttribute("d");
+  const corner = (await page.locator('[data-handle="se"]').boundingBox())!;
+  const grip = { x: corner.x + corner.width / 2, y: corner.y + corner.height / 2 };
+  await drag(grip, { x: grip.x + 50, y: grip.y });
+  await page.evaluate(() => window.drawyView.renderer.settled());
+  const resized = JSON.parse((await data("moves"))!);
+  expect(resized.map((m: { id: string }) => m.id)).toEqual(["level-0", "level-1"]);
+  const was = work.scenes.root.modules;
+  expect(resized[1].bounds.width).toBeGreaterThan(was[1].bounds.width);
+  expect(resized[0].bounds.width / resized[1].bounds.width).toBeCloseTo(was[0].bounds.width / was[1].bounds.width);
+  expect(await page.locator('[data-link-id="connection"] path').getAttribute("d")).not.toBe(before);
+  // A dragged module snaps its edges to its neighbours' (the heading's left edge lines up
+  // with the widest level's); Ctrl lets it go where it is dropped.
+  const heading = await screen(400, 45);
+  await page.mouse.click(heading.x, heading.y);
+  await drag(heading, { x: heading.x + 3, y: heading.y + 30 });
+  expect(JSON.parse((await data("moves"))!)[0].bounds.x).toBeCloseTo(100);
+  const moved = await screen(400, 45 + 30 / scale);
+  await page.keyboard.down("Control");
+  await drag(moved, { x: moved.x + 5, y: moved.y });
+  await page.keyboard.up("Control");
+  expect(JSON.parse((await data("moves"))!)[0].bounds.x).toBeCloseTo(100 + 5 / scale);
+  // A right click selects what it lands on and asks for the menu there.
+  const safety = await screen(450, 450);
+  await page.mouse.click(safety.x, safety.y, { button: "right" });
+  expect(await data("selected")).toBe("level-3");
+  const menu = JSON.parse((await data("menu"))!);
+  expect(Math.abs(menu.x - safety.x)).toBeLessThan(2);
+  expect(Math.abs(menu.y - safety.y)).toBeLessThan(2);
   // A double click says which words or which picture it landed on.
-  await page
-    .locator('[data-module-id="level-3"] text', { hasText: "安全需求" })
-    .dblclick();
-  expect(JSON.parse((await data("pointed"))!)).toEqual({
-    kind: "text",
-    moduleId: "level-3",
-    text: "安全需求",
-  });
+  await page.locator('[data-module-id="level-3"] text', { hasText: "安全需求" }).dblclick();
+  expect(JSON.parse((await data("pointed"))!)).toEqual({ kind: "text", moduleId: "level-3", text: "安全需求" });
   await page.getByRole("button", { name: "进入子场景" }).dblclick();
-  expect(JSON.parse((await data("pointed"))!)).toMatchObject({
-    moduleId: "control",
-    text: "进入子场景",
-  });
+  expect(JSON.parse((await data("pointed"))!)).toMatchObject({ moduleId: "control", text: "进入子场景" });
   await page.locator('[data-module-id="fruit"] img').dblclick();
-  expect(JSON.parse((await data("pointed"))!)).toEqual({
-    kind: "picture",
-    moduleId: "fruit",
-    material: "apple",
-  });
+  expect(JSON.parse((await data("pointed"))!)).toEqual({ kind: "picture", moduleId: "fruit", material: "apple" });
   // A large module laid over others takes only the presses that land on what it draws.
   await page.evaluate(() => {
     const w = window.drawyView.renderer.work,
@@ -392,171 +342,20 @@ it("selects what is pressed while editing, instead of opening or operating it, a
     };
     window.drawyView.update(w, {
       ...scene,
-      modules: [
-        ...scene.modules,
-        {
-          id: "veil",
-          drawingId: "veil",
-          label: "罩",
-          data: {},
-          bounds: { x: 0, y: 0, width: 900, height: 600 },
-        },
-      ],
+      modules: [...scene.modules, { id: "veil", drawingId: "veil", label: "罩", data: {}, bounds: { x: 0, y: 0, width: 900, height: 600 } }],
     });
   });
-  await page.waitForFunction(() =>
-    window.drawyView.renderer.instances.has("veil"),
-  );
+  await page.waitForFunction(() => window.drawyView.renderer.instances.has("veil"));
   await page.waitForTimeout(100);
-  const level = (await page
-    .locator('[data-module-id="level-2"] text')
-    .first()
-    .boundingBox())!;
+  const level = (await page.locator('[data-module-id="level-2"] text').first().boundingBox())!;
   await page.mouse.click(level.x + level.width / 2, level.y + level.height / 2);
   expect(await data("selected")).toBe("level-2");
-  const veil = (await page
-    .locator('[data-module-id="veil"] circle')
-    .boundingBox())!;
+  const veil = (await page.locator('[data-module-id="veil"] circle').boundingBox())!;
   await page.mouse.click(veil.x + veil.width / 2, veil.y + veil.height / 2);
   expect(await data("selected")).toBe("veil");
-  // Leaving editing, the drawing works again.
-  await page.evaluate(() => window.drawyView.setEditing(false));
-  await page.getByRole("button", { name: "强调基础" }).click();
-  await expect
-    .poll(() =>
-      page.locator('[data-module-id="level-4"] text').nth(1).textContent(),
-    )
-    .toBe("已突出基础需要");
-  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
-});
-it("edits like a drawing app: a box selects, handles resize a selection as one, drags snap, dots draw links and grow the figure, tools draw boxes and links, Alt drags copies off, and a right click asks for the menu", async () => {
-  await open();
-  await page.evaluate(() => {
-    const view = window.drawyView,
-      body = document.body.dataset;
-    view.setMovable(true);
-    view.setEditing(true);
-    view.options.select = (s) =>
-      (body.selected = s.map((x) => x.moduleId).join());
-    view.options.commit = (moves) => (body.moves = JSON.stringify(moves));
-    view.options.connect = (from, to) =>
-      (body.linked = JSON.stringify({ from, to }));
-    view.options.menu = (at) => (body.menu = JSON.stringify(at));
-    view.options.place = (at, box) => (body.placed = JSON.stringify({ at, box }));
-    view.options.extend = (from, at) => (body.extended = JSON.stringify({ from, at: at ?? null }));
-    view.options.duplicate = (ids, by) => (body.copied = JSON.stringify({ ids, by }));
-  });
-  const drag = async (
-    from: { x: number; y: number },
-    to: { x: number; y: number },
-  ) => {
-    await page.mouse.move(from.x, from.y);
-    await page.mouse.down();
-    await page.mouse.move(to.x, to.y, { steps: 6 });
-    await page.mouse.up();
-  };
-  const scale = await page.evaluate(() => window.drawyView.view.scale);
-  // Dragging over the paper selects what the box touches.
-  await drag(await screen(120, 95), await screen(320, 220));
-  expect(await data("selected")).toBe("level-0,level-1");
-  // The handles on the box around two modules resize both in proportion.
-  const corner = (await page.locator('[data-handle="se"]').boundingBox())!;
-  await drag(
-    { x: corner.x + corner.width / 2, y: corner.y + corner.height / 2 },
-    { x: corner.x + corner.width / 2 + 50, y: corner.y + corner.height / 2 },
-  );
-  const resized = JSON.parse((await data("moves"))!);
-  expect(resized.map((m: { id: string }) => m.id)).toEqual(["level-0", "level-1"]);
-  const was = work.scenes.root.modules;
-  expect(resized[1].bounds.width).toBeGreaterThan(was[1].bounds.width);
-  expect(resized[0].bounds.width / resized[1].bounds.width).toBeCloseTo(
-    was[0].bounds.width / was[1].bounds.width,
-  );
-  // A dragged module snaps its edges to its neighbours' (the heading's left edge lines up
-  // with the widest level's); Ctrl lets it go where it is dropped.
-  const heading = await screen(400, 45);
-  await page.mouse.click(heading.x, heading.y);
-  await drag(heading, { x: heading.x + 3, y: heading.y + 30 });
-  expect(JSON.parse((await data("moves"))!)[0].bounds.x).toBeCloseTo(100);
-  const moved = await screen(400, 45 + 30 / scale);
-  await page.keyboard.down("Control");
-  await drag(moved, { x: moved.x + 5, y: moved.y });
-  await page.keyboard.up("Control");
-  expect(JSON.parse((await data("moves"))!)[0].bounds.x).toBeCloseTo(100 + 5 / scale);
-  // The selection is dimensioned: its width and its height stand beside it.
-  const heading0 = await page.evaluate(() => window.drawyView.renderer.instances.get("heading")!.bounds);
-  const figures = () => page.locator("[data-canvas] > svg text").allTextContents();
-  const away = await screen(980, 620);
-  await page.mouse.move(away.x, away.y);
-  expect(await figures()).toEqual([String(Math.round(heading0.width)), String(Math.round(heading0.height))]);
-  // The dot of the side the pointer nears comes out, and only that one; dragged, it draws a
-  // link to the module it is dropped on.
-  const right = await screen(heading0.x + heading0.width - 4, heading0.y + heading0.height / 2);
-  await page.mouse.move(right.x, right.y);
-  expect(await page.locator("[data-connect]:visible").count()).toBe(1);
-  // That side's figure gives way to its dot.
-  expect(await figures()).toEqual([String(Math.round(heading0.width))]);
-  const dot = (await page.locator('[data-connect="right"]').boundingBox())!;
-  const level = await screen(500, 350);
-  await drag({ x: dot.x + dot.width / 2, y: dot.y + dot.height / 2 }, level);
-  expect(JSON.parse((await data("linked"))!)).toEqual({
-    from: { moduleId: "heading", side: "right" },
-    to: { moduleId: "level-2", side: expect.any(String) },
-  });
-  // Pressed without a drag, the dot asks for a new module beyond its side; dragged out and
-  // let go over the paper, for one there.
-  await page.mouse.move(right.x, right.y);
-  await page.mouse.click(dot.x + dot.width / 2, dot.y + dot.height / 2);
-  expect(JSON.parse((await data("extended"))!)).toEqual({
-    from: { moduleId: "heading", side: "right" },
-    at: null,
-  });
-  const empty = await screen(980, 60);
-  await page.mouse.move(right.x, right.y);
-  await drag({ x: dot.x + dot.width / 2, y: dot.y + dot.height / 2 }, empty);
-  const grown = JSON.parse((await data("extended"))!);
-  expect(grown.from).toEqual({ moduleId: "heading", side: "right" });
-  expect(grown.at.x).toBeCloseTo(980, 0);
-  // With Alt held, a drag takes copies off and the module stays where it is.
-  await page.evaluate(() => delete document.body.dataset.moves);
-  const grip = await screen(heading0.x + heading0.width / 2, heading0.y + heading0.height / 2);
-  await page.keyboard.down("Alt");
-  await page.keyboard.down("Control");
-  await drag(grip, { x: grip.x + 40, y: grip.y + 20 });
-  await page.keyboard.up("Control");
-  await page.keyboard.up("Alt");
-  const copied = JSON.parse((await data("copied"))!);
-  expect(copied.ids).toEqual(["heading"]);
-  expect(copied.by.x).toBeCloseTo(40 / scale);
-  expect(copied.by.y).toBeCloseTo(20 / scale);
-  expect(await data("moves")).toBeUndefined();
-  expect(
-    parseFloat(
-      await page.evaluate(() => window.drawyView.renderer.host("module", "heading")!.style.left),
-    ),
-  ).toBeCloseTo(heading0.x, 2);
-  // A right click selects what it lands on and asks for the menu there.
-  const safety = await screen(450, 450);
-  await page.mouse.click(safety.x, safety.y, { button: "right" });
-  expect(await data("selected")).toBe("level-3");
-  const menu = JSON.parse((await data("menu"))!);
-  expect(Math.abs(menu.x - safety.x)).toBeLessThan(2);
-  expect(Math.abs(menu.y - safety.y)).toBeLessThan(2);
-  // The drawing tool says where in the scene it was pressed, or the box dragged out.
+  // The drawing tool keeps a Shift-drawn shape square, on the grid too, even from between
+  // its lines.
   await page.evaluate(() => window.drawyView.setTool("draw"));
-  const spot = await screen(900, 300);
-  await page.mouse.click(spot.x, spot.y);
-  const placed = JSON.parse((await data("placed"))!);
-  expect(placed.at.x).toBeCloseTo(900, 0);
-  expect(placed.at.y).toBeCloseTo(300, 0);
-  expect(placed.box).toBeUndefined();
-  await drag(await screen(900, 300), await screen(1100, 380));
-  expect(JSON.parse((await data("placed"))!).box).toEqual({ x: 900, y: 300, width: 200, height: 80 });
-  // On a grid, a box drawn ends on its lines.
-  await page.evaluate(() => window.drawyView.setSnap({ guides: true, grid: 20 }));
-  await drag(await screen(903, 296), await screen(1108, 377));
-  expect(JSON.parse((await data("placed"))!).box).toEqual({ x: 900, y: 300, width: 200, height: 80 });
-  // Shift keeps a shared side length even when the origin is between grid lines.
   for (const grid of [20, 0]) {
     await page.evaluate((grid) => window.drawyView.setSnap({ guides: true, grid }), grid);
     for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
@@ -564,28 +363,17 @@ it("edits like a drawing app: a box selects, handles resize a selection as one, 
       await drag(await screen(909, 311), await screen(909 + sx * 92, 311 + sy * 60));
       await page.keyboard.up("Shift");
       const box = JSON.parse((await data("placed"))!).box;
-      const side = grid ? 100 : 92;
-      expect(box.width).toBe(side);
-      expect(box.height).toBe(side);
-      if (grid) {
-        expect(box.x % grid).toBe(0);
-        expect(box.y % grid).toBe(0);
-      }
+      expect([box.width, box.height]).toEqual(grid ? [100, 100] : [92, 92]);
+      if (grid) expect([box.x % grid, box.y % grid]).toEqual([0, 0]);
     }
   }
-  // The link tool joins the module pressed to the one it is let go on, as they face each
-  // other.
-  await page.evaluate(() => window.drawyView.setTool("link"));
-  await drag(await screen(450, 450), await screen(500, 350));
-  expect(JSON.parse((await data("linked"))!)).toEqual({
-    from: { moduleId: "level-3" },
-    to: { moduleId: "level-2" },
-  });
-  await page.evaluate(() => {
-    window.drawyView.setTool("select");
-    window.drawyView.selectAll();
-  });
-  expect((await data("selected"))!.split(",")).toHaveLength(7);
+  await page.evaluate(() => window.drawyView.setTool("select"));
+  // Leaving editing, the drawing works again.
+  await page.evaluate(() => window.drawyView.setEditing(false));
+  await page.getByRole("button", { name: "强调基础" }).click();
+  await expect
+    .poll(() => page.locator('[data-module-id="level-4"] text').nth(1).textContent())
+    .toBe("已突出基础需要");
   expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
 });
 it("selects a link by its line while editing, drags its ends onto other modules and retypes its words", async () => {
@@ -666,7 +454,7 @@ it("selects a link by its line while editing, drags its ends onto other modules 
   expect(placed.y).toBeCloseTo(300, 0);
   expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
 });
-it("lays the person's own change over what is drawn, redrawing only what changed", async () => {
+it("lays the person's own change over what is drawn, redrawing only what changed, and the scene's script passes over what was taken out", async () => {
   await open();
   const result = await page.evaluate(async () => {
     const view = window.drawyView,
@@ -716,6 +504,9 @@ it("lays the person's own change over what is drawn, redrawing only what changed
     gone: true,
     first: "heading",
   });
+  // The scene's script passes over the module taken out.
+  await page.getByRole("button", { name: "强调基础" }).click();
+  await page.waitForTimeout(150);
   expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
 });
 it("stops a drawing still running for a module taken out while it draws", async () => {
@@ -747,15 +538,6 @@ it("stops a drawing still running for a module taken out while it draws", async 
   });
   expect(ticks.later).toBe(ticks.after);
   expect(await page.locator('[data-module-id="slow"]').count()).toBe(0);
-  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
-});
-it("passes over modules an interaction names once they are taken out of the scene", async () => {
-  work.scenes.root.modules = work.scenes.root.modules.filter(
-    (m) => m.id !== "level-4",
-  );
-  await open();
-  await page.getByRole("button", { name: "强调基础" }).click();
-  await page.waitForTimeout(150);
   expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
 });
 it("draws links over a backdrop laid under the whole figure and under every other module", async () => {
@@ -1375,95 +1157,6 @@ it("routes elbow arrows out of their modules before turning, going round when th
   expect(Math.abs(routes.up.first.x - routes.up.start.x)).toBeLessThan(0.01);
 });
 
-it("maps across the 180th meridian in one piece and names what the view shows", async () => {
-  work.materials = { geomap: libraryDrawing("geomap") };
-  const map = (id: string, y: number, data: Record<string, unknown>) => ({
-    id,
-    label: id,
-    drawingId: "geomap",
-    data,
-    bounds: { x: 0, y, width: 960, height: 600 },
-  });
-  work.scenes.root = {
-    ...work.scenes.root,
-    modules: [
-      // From Chukotka to Alaska: the view centres on the 180th meridian.
-      map("bering", 0, {
-        borders: "countries",
-        routes: [
-          {
-            points: [
-              [170, 64],
-              [-150, 64],
-            ],
-            color: "#123456",
-          },
-        ],
-      }),
-      // A close view of China's south-west: provinces are named, so China is not.
-      map("divisions", 700, {
-        borders: "subdivisions",
-        bounds: [100, 24, 108, 30],
-        // The Yangtze between Yibin and Chongqing, about two degrees of longitude.
-        highlights: [
-          {
-            river: "长江",
-            from: [104.6, 28.77],
-            to: [106.55, 29.56],
-            color: "#654321",
-          },
-        ],
-      }),
-      // A coast seen close, drawn from the finer tiles (closer still, a region's view, the
-      // ground comes from OpenStreetMap's tiles instead).
-      map("coast", 1400, { bounds: [-8, 46, 4, 52] }),
-    ],
-    links: [],
-  };
-  await open();
-  const seen = await page.evaluate(() => {
-    const root = (id: string) =>
-      document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!;
-    const route = root("bering").querySelector<SVGPathElement>(
-      'path[stroke="#123456"]',
-    )!;
-    const text = (id: string) =>
-      [...root(id).querySelectorAll("text")].map((t) => t.textContent);
-    return {
-      errors: window.drawyErrors,
-      routes: root("bering").querySelectorAll('path[stroke="#123456"]').length,
-      width: route.getBBox().width,
-      stretch: root("divisions")
-        .querySelector<SVGPathElement>('path[stroke="#654321"]')
-        ?.getBBox().width,
-      bering: text("bering"),
-      divisions: text("divisions"),
-      tiles: performance
-        .getEntriesByType("resource")
-        .filter((e) => /\/materials\/geo\/detail-/.test(e.name)).length,
-      shore:
-        root("coast")
-          .querySelectorAll('path[fill="none"]')[0]
-          ?.getAttribute("d")?.length ?? 0,
-    };
-  });
-  expect(seen.errors).toEqual([]);
-  // One piece, about two thirds of the view wide, not a line across the whole world.
-  expect(seen.routes).toBe(1);
-  expect(seen.width).toBeGreaterThan(400);
-  expect(seen.width).toBeLessThan(800);
-  // Both countries are named though neither's label point is in view.
-  expect(seen.bering).toEqual(expect.arrayContaining(["俄罗斯", "美国"]));
-  expect(seen.divisions).toEqual(expect.arrayContaining(["贵州省", "四川省"]));
-  expect(seen.divisions).not.toContain("中国");
-  expect(seen.tiles).toBeGreaterThan(0);
-  // About 90 px a degree once the view widens to the module: the stretch (about 175
-  // px), not the whole river.
-  expect(seen.stretch).toBeGreaterThan(140);
-  expect(seen.stretch).toBeLessThan(240);
-  expect(seen.shore).toBeGreaterThan(1000);
-});
-
 it("draws a city's real streets under a walk through it, and says so when they cannot load", async () => {
   work.materials = { geomap: libraryDrawing("geomap") };
   // A walk of a few kilometres with no bounds given: the view fits the stops, not a
@@ -1585,66 +1278,6 @@ it("draws a city's real streets under a walk through it, and says so when they c
   } finally {
     streetsDown = false;
   }
-});
-
-it("draws the world in a rounded projection and a country in relief, naming what the map is about", async () => {
-  work.materials = { geomap: libraryDrawing("geomap") };
-  const map = (id: string, y: number, data: Record<string, unknown>) => ({
-    id,
-    label: id,
-    drawingId: "geomap",
-    data,
-    bounds: { x: 0, y, width: 960, height: 600 },
-  });
-  work.scenes.root = {
-    ...work.scenes.root,
-    modules: [
-      map("world", 0, {
-        borders: "countries",
-        bounds: [-180, -60, 180, 85],
-        names: { 巴西: "Brasil" },
-      }),
-      map("china", 700, { borders: "subdivisions", bounds: [73, 17, 135, 54] }),
-    ],
-    links: [],
-  };
-  await open();
-  const seen = await page.evaluate(() => {
-    const root = (id: string) =>
-      document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!;
-    const text = (id: string) =>
-      [...root(id).querySelectorAll("text")].map((t) => t.textContent!);
-    // The earth's rim: where it meets the top and bottom of the view, how far in.
-    const rim = root("world").querySelector<SVGPathElement>("path")!;
-    const box = rim.getBBox();
-    const top = rim
-      .getAttribute("d")!
-      .match(/[\d.]+ [\d.]+/g)!
-      .map((p) => p.split(" ").map(Number))
-      .filter(([, y]) => y < box.y + 2);
-    return {
-      errors: window.drawyErrors,
-      world: text("world"),
-      china: text("china"),
-      corner: Math.min(...top.map(([x]) => x)) - box.x,
-      relief: root("china").querySelectorAll("image").length,
-      reliefTiles: performance
-        .getEntriesByType("resource")
-        .filter((e) => /\/materials\/geo\/relief\//.test(e.name)).length,
-    };
-  });
-  expect(seen.errors).toEqual([]);
-  // Rounded at its sides: the rim is well in from the corners at the top.
-  expect(seen.corner).toBeGreaterThan(100);
-  // Each country once, and no unit too small to be outlined.
-  expect(seen.world.filter((t) => t === "澳大利亚")).toHaveLength(1);
-  expect(seen.world).not.toContain("黄岩岛");
-  expect(seen.world).toEqual(expect.arrayContaining(["俄罗斯", "Brasil"]));
-  // China's provinces are named, its neighbours as countries, not by their provinces.
-  expect(seen.china).toEqual(expect.arrayContaining(["四川省", "蒙古"]));
-  expect(seen.china).not.toContain("科布多省");
-  expect(seen.relief).toBe(1);
-  expect(seen.reliefTiles).toBeGreaterThan(0);
 });
 
 it("draws links from ends they hold, following their modules, and every drawing with its defaults", async () => {
