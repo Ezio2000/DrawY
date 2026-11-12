@@ -24,15 +24,25 @@ beforeEach(() => {
 /** A fresh invite for signing up over HTTP once the app has an account. */
 const invite = () =>
   db.hasAccounts() ? createInvites(db, db.accounts()[0].id)[0].code : undefined;
+/** Calls the API as whoever `cookie` signs in: the status, the body read, and the cookie set. */
+const caller =
+  (app: ReturnType<typeof createApp>["app"]) =>
+  async (cookie: string, path: string, method = "GET", body?: object) => {
+    const r = await app.request("/api" + path, {
+      method,
+      headers: { cookie, "Content-Type": "application/json" },
+      body: body && JSON.stringify(body),
+    });
+    return {
+      status: r.status,
+      body: r.headers.get("content-type")?.includes("json") ? await r.json() : await r.text(),
+      cookie: r.headers.get("set-cookie")?.split(";")[0] ?? "",
+    };
+  };
 /** Signs an account up over HTTP: who it is, and the cookie it is signed in with. */
-const signup = async (app: ReturnType<typeof createApp>["app"], name: string) => {
-  const r = await app.request("/api/auth/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, password: "abcdef", invite: invite() }),
-  });
-  const account = (await r.json()) as { id: string; role: string };
-  return { ...account, cookie: r.headers.get("set-cookie")!.split(";")[0] };
+const signup = async (call: ReturnType<typeof caller>, name: string) => {
+  const r = await call("", "/auth/register", "POST", { name, password: "abcdef", invite: invite() });
+  return { ...(r.body as { id: string; role: string }), cookie: r.cookie };
 };
 afterEach(() => {
   library.close();
@@ -289,9 +299,9 @@ describe("user owned works", () => {
     expect(cleared.drawings.tier).toBeUndefined();
   });
   it("commits a hand edit from the canvas as a revision of its own, changing only what it names", async () => {
-    const { app } = createApp(db);
-    const alice = await signup(app, "alice"),
-      bob = await signup(app, "bob");
+    const call = caller(createApp(db).app);
+    const alice = await signup(call, "alice"),
+      bob = await signup(call, "bob");
     const store = db.scoped(alice.id),
       work = createWork(store, "test"),
       content = fixture();
@@ -305,12 +315,7 @@ describe("user owned works", () => {
         ...workEdit(content),
       }, { cause: { kind: "run", runId: "r", prompt: "draw" } });
     const m = saved.scenes.root.modules[0];
-    const send = (cookie: string, body: object) =>
-      app.request(`/api/works/${work.id}/edits`, {
-        method: "POST",
-        headers: { cookie, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+    const send = (cookie: string, body: object) => call(cookie, `/works/${work.id}/edits`, "POST", body);
     const edit = {
       baseRevision: saved.revision,
       edit: moveParts(saved, "root", [{ id: m.id, bounds: { ...m.bounds, x: 901 } }]),
@@ -318,7 +323,7 @@ describe("user owned works", () => {
     expect((await send(bob.cookie, edit)).status).toBe(404);
     const r = await send(alice.cookie, edit);
     expect(r.status).toBe(200);
-    const moved = (await r.json()) as Work;
+    const moved = r.body as Work;
     expect(moved.revision).toBe(4);
     expect(moved.drawings).toEqual(saved.drawings);
     expect(moved.scenes.root.modules[0]).toEqual({
@@ -337,12 +342,11 @@ describe("user owned works", () => {
     // Until the person saves it, the edit is not a version of its own.
     expect(store.revisions(work.id)[0].cause).toEqual({ kind: "edit" });
     expect(store.progress(work.id)).toMatchObject({ version: 1, unsaved: 1 });
-    const save = (cookie: string) =>
-      app.request(`/api/works/${work.id}/save`, { method: "POST", headers: { cookie } });
+    const save = (cookie: string) => call(cookie, `/works/${work.id}/save`, "POST");
     expect((await save(bob.cookie)).status).toBe(404);
     const kept = await save(alice.cookie);
     expect(kept.status).toBe(200);
-    expect(((await kept.json()) as Work).scenes).toEqual(moved.scenes);
+    expect((kept.body as Work).scenes).toEqual(moved.scenes);
     expect(store.progress(work.id)).toMatchObject({ version: 2 });
     expect(store.progress(work.id).unsaved).toBeUndefined();
     // With nothing left to save, saving says so.
@@ -479,63 +483,66 @@ describe("user owned works", () => {
     ).rejects.toThrow("画法 apple 不存在");
   });
 });
-describe("HTTP identity boundary", () => {
-  it("uses session ownership on reads, scene rendering and mutations", async () => {
-    const { app } = createApp(db);
-    const a = (await signup(app, "alice")).cookie,
-      b = (await signup(app, "bob")).cookie;
-    const request = (
-      path: string,
-      cookie: string,
-      method = "GET",
-      body?: object,
-    ) =>
-      app.request(path, {
-        method,
-        headers: { cookie, "Content-Type": "application/json" },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-    const w = await (
-      await request("/api/works", a, "POST", { title: "private" })
-    ).json();
-    expect((await request("/api/works/" + w.id, b)).status).toBe(404);
-    expect(
-      (await request("/api/works/" + w.id + "/scenes/root", b)).status,
-    ).toBe(404);
-    expect(
-      (
-        await request("/api/works/" + w.id + "/restore", b, "POST", {
-          revision: 1,
-        })
-      ).status,
-    ).toBe(404);
-    expect((await request("/api/works/" + w.id, b, "DELETE")).status).toBe(404);
-    expect((await app.request("/api/works")).status).toBe(401);
-    expect((await request("/api/works/" + w.id, a)).status).toBe(200);
-    await request("/api/auth/logout", a, "POST");
-    expect((await request("/api/works", a)).status).toBe(401);
-    expect(() => login(db, "alice", "wrong")).toThrow();
+describe("over HTTP, by role", () => {
+  it("lets the first account set the app up, admits each later one with an unused invite, and keeps it signed in until it signs out", async () => {
+    const { app } = createApp(db),
+      call = caller(app);
+    expect((await call("", "/auth/signup")).body.invite).toBe(false);
+    const first = await call("", "/auth/register", "POST", { name: "admin", password: "abcdef" });
+    expect(first.status).toBe(200);
+    const admin = first.cookie;
+    expect((await call("", "/auth/signup")).body.invite).toBe(true);
+    // Without an invite, or with one that doesn't exist, nobody else gets in.
+    const join = (name: string, invite?: string) =>
+      call("", "/auth/register", "POST", { name, password: "abcdef", invite });
+    expect((await join("a")).status).toBe(400);
+    expect((await join("a", "NOPE-NOPE")).status).toBe(403);
+    const [one, two] = (await call(admin, "/admin/invites", "POST", { count: 2 })).body as { code: string }[];
+    expect(one.code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+    // A failed sign-up leaves the invite; a lowercase, undashed one still works, once.
+    expect((await join("admin", one.code)).status).toBe(409);
+    const member = await join("a", one.code.toLowerCase().replace("-", " "));
+    expect(member.status).toBe(200);
+    expect((await join("b", one.code)).status).toBe(403);
+    // Only those who manage accounts see and change invites.
+    expect((await call(member.cookie, "/admin/invites")).status).toBe(403);
+    expect((await call(member.cookie, "/admin/invites", "POST", {})).status).toBe(403);
+    const list = (await call(admin, "/admin/invites")).body;
+    expect(list).toHaveLength(2);
+    expect(list.find((i: { code: string }) => i.code === one.code)).toMatchObject({
+      createdBy: "admin",
+      usedBy: { name: "a" },
+    });
+    expect(list.find((i: { code: string }) => i.code === two.code).usedBy).toBeNull();
+    // A used invite stays as a record; an unused one can be withdrawn.
+    expect((await call(admin, "/admin/invites/" + one.code, "DELETE")).status).toBe(409);
+    expect((await call(admin, "/admin/invites/" + two.code, "DELETE")).status).toBe(200);
+    expect((await join("b", two.code)).status).toBe(403);
+    expect((await call(admin, "/admin/invites")).body).toHaveLength(1);
+    // Signed out, the session no longer reads anything; a wrong password does not sign in.
+    expect((await call(member.cookie, "/works")).status).toBe(200);
+    await call(member.cookie, "/auth/logout", "POST");
+    expect((await call(member.cookie, "/works")).status).toBe(401);
+    expect((await call("", "/works")).status).toBe(401);
+    expect(() => login(db, "a", "wrong")).toThrow();
   });
-});
-describe("roles and shared models", () => {
-  it("lets the first account administer models, materials and roles, and others only pick", async () => {
-    const { app } = createApp(db);
-    const call = async (
-      cookie: string,
-      path: string,
-      method = "GET",
-      body?: object,
-    ) => {
-      const r = await app.request("/api" + path, {
-        method,
-        headers: { cookie, "Content-Type": "application/json" },
-        body: body && JSON.stringify(body),
-      });
-      return { status: r.status, body: await r.json() };
-    };
-    const admin = await signup(app, "admin"),
-      member = await signup(app, "member");
+  it("lets an administrator set models, labels, roles, allowances and the public shelf, while a member keeps to their own works and picks a label", async () => {
+    const { app } = createApp(db),
+      call = caller(app);
+    const admin = await signup(call, "admin"),
+      member = await signup(call, "member"),
+      bob = await signup(call, "bob");
     expect([admin.role, member.role]).toEqual(["admin", "member"]);
+    // A work is its owner's alone, on reads, scene rendering and changes.
+    const w = (await call(member.cookie, "/works", "POST", { title: "private" })).body;
+    for (const [path, method, body] of [
+      ["", "GET"],
+      ["/scenes/root", "GET"],
+      ["/restore", "POST", { revision: 1 }],
+      ["", "DELETE"],
+    ] as const)
+      expect((await call(bob.cookie, "/works/" + w.id + path, method, body)).status).toBe(404);
+    expect((await call(member.cookie, "/works/" + w.id)).status).toBe(200);
     // Members see labels by name only, never the models in them, and cannot manage
     // anything.
     const seen = await call(member.cookie, "/models");
@@ -561,26 +568,15 @@ describe("roles and shared models", () => {
       { id: "fast", name: "快速", description: "", writer: "quick", web: "off", image },
       { id: "deep", name: "深入", description: "", writer: "quick", effort: "high", web: "builtin", image },
     ];
-    expect(
-      (
-        await call(admin.cookie, "/admin/models", "PUT", {
-          ...catalog,
-          writers: [...catalog.writers, quick],
-          labels: [...labels, { ...labels[0], id: "broken", writer: "missing" }],
-          defaults: { ...catalog.defaults, label: "fast" },
-        })
-      ).status,
-    ).toBe(400);
-    expect(
-      (
-        await call(admin.cookie, "/admin/models", "PUT", {
-          ...catalog,
-          writers: [...catalog.writers, quick],
-          labels,
-          defaults: { ...catalog.defaults, label: "fast" },
-        })
-      ).status,
-    ).toBe(200);
+    const models = (labels: object[]) =>
+      call(admin.cookie, "/admin/models", "PUT", {
+        ...catalog,
+        writers: [...catalog.writers, quick],
+        labels,
+        defaults: { ...catalog.defaults, label: "fast" },
+      });
+    expect((await models([...labels, { ...labels[0], id: "broken", writer: "missing" }])).status).toBe(400);
+    expect((await models(labels)).status).toBe(200);
     expect((await call(member.cookie, "/models")).body.chosen.label).toBe("fast");
     expect(db.scoped(member.id).settings()).toMatchObject({
       label: "快速",
@@ -599,30 +595,22 @@ describe("roles and shared models", () => {
     // sets how many are left, and a request past them is refused.
     expect((await call(member.cookie, "/auth/me")).body.quota).toBe(10);
     expect((await call(admin.cookie, "/auth/me")).body.quota).toBe(null);
-    expect(
-      (await call(member.cookie, "/admin/accounts/" + member.id, "PATCH", { quota: 99 })).status,
-    ).toBe(403);
-    expect(
-      (await call(admin.cookie, "/admin/accounts/" + member.id, "PATCH", { quota: 1 })).body,
-    ).toMatchObject({ quota: 1, role: "member" });
+    expect((await call(member.cookie, "/admin/accounts/" + member.id, "PATCH", { quota: 99 })).status).toBe(403);
+    expect((await call(admin.cookie, "/admin/accounts/" + member.id, "PATCH", { quota: 1 })).body).toMatchObject({
+      quota: 1,
+      role: "member",
+    });
     db.spendQuota(member.id);
     expect(() => db.spendQuota(member.id)).toThrow("提问次数已用完");
     db.refundQuota(member.id);
     expect(db.account(member.id).quota).toBe(1);
     db.setQuota(member.id, 0);
-    const w = (await call(member.cookie, "/works", "POST", { title: "t" })).body;
-    const refused = await call(member.cookie, "/works/" + w.id + "/runs", "POST", {
-      prompt: "draw",
-      sceneId: w.rootSceneId,
-    });
-    expect(refused.status).toBe(403);
+    const run = (sceneId: string) =>
+      call(member.cookie, "/works/" + w.id + "/runs", "POST", { prompt: "draw", sceneId });
+    expect((await run(w.rootSceneId)).status).toBe(403);
     // A request that cannot start gives its allowance back.
     db.setQuota(member.id, 1);
-    const missing = await call(member.cookie, "/works/" + w.id + "/runs", "POST", {
-      prompt: "draw",
-      sceneId: "nowhere",
-    });
-    expect(missing.status).toBe(404);
+    expect((await run("nowhere")).status).toBe(404);
     expect(db.account(member.id).quota).toBe(1);
     // The list of works says where each has got to.
     expect((await call(member.cookie, "/works")).body[0].progress).toEqual({
@@ -631,50 +619,8 @@ describe("roles and shared models", () => {
       version: 0,
       blank: true,
     });
-    // A role that manages models makes its accounts able to.
-    const editors = await call(admin.cookie, "/admin/roles", "POST", {
-      name: "Model editors",
-      permissions: ["models.manage"],
-    });
-    expect(
-      (
-        await call(admin.cookie, "/admin/accounts/" + member.id, "PATCH", {
-          role: editors.body.id,
-        })
-      ).body,
-    ).toMatchObject({ role: editors.body.id, permissions: ["models.manage"] });
-    expect((await call(member.cookie, "/admin/models")).status).toBe(200);
-    expect((await call(member.cookie, "/admin/roles")).status).toBe(403);
-    // Built-in roles stay; the last administrator stays one.
-    expect(
-      (
-        await call(admin.cookie, "/admin/roles/admin", "PUT", {
-          name: "x",
-          permissions: [],
-        })
-      ).status,
-    ).toBe(409);
-    expect(
-      (await call(admin.cookie, "/admin/roles/member", "DELETE")).status,
-    ).toBe(409);
-    expect(
-      (
-        await call(admin.cookie, "/admin/accounts/" + admin.id, "PATCH", {
-          role: "member",
-        })
-      ).status,
-    ).toBe(409);
-    // Removing a role makes its accounts members again.
-    await call(admin.cookie, "/admin/roles/" + editors.body.id, "DELETE");
-    expect((await call(member.cookie, "/auth/me")).body).toMatchObject({
-      role: "member",
-      permissions: [],
-    });
-  });
-  it("shows material model names only to accounts that manage models", async () => {
-    const admin = register(db, "admin", "abcdef"),
-      member = register(db, "member", "abcdef"),
-      { app } = createApp(db);
+    // A member's pictures are on their own shelf; those who see all materials see them
+    // under the member's name, with the model that made them, which the member is not told.
     const made = await client.ingest(
       await picture(),
       "image/png",
@@ -686,169 +632,68 @@ describe("roles and shared models", () => {
       },
       member.id,
     );
-    const cookies = [admin, member].map((a) => "drawy_session=" + db.session(a.id));
-    const read = async (cookie: string, path: string) => {
-      const response = await app.request("/api/materials" + path, { headers: { cookie } });
-      expect(response.status).toBe(200);
-      return response.json();
-    };
-    const withoutModel = ({ model, ...origin }: typeof made.origin) => origin;
-    for (const material of [
-      await read(cookies[1], "/" + made.id),
-      (await read(cookies[1], "?kind=picture&shelf=mine")).items[0],
-    ])
-      expect(material.origin).toEqual(withoutModel(made.origin));
-    expect((await read(cookies[0], "/" + made.id)).origin).toEqual(made.origin);
-    expect((await read(cookies[0], "?kind=picture&shelf=others")).items[0]).toMatchObject({
-      ownerName: "member",
-      origin: made.origin,
-    });
-    // Managing materials alone does not grant access to model names, including on publish.
-    db.saveRole({ id: "librarian", name: "Librarian", permissions: ["materials.manage"], builtin: false });
-    db.setRole(member.id, "librarian");
-    const published = await app.request(`/api/materials/${made.id}/publish`, {
-      method: "POST",
-      headers: { cookie: cookies[1], "Content-Type": "application/json" },
-      body: JSON.stringify({ published: true }),
-    });
-    expect(published.status).toBe(200);
-    expect((await published.json()).origin).toEqual(withoutModel(made.origin));
-    expect((await read(cookies[1], "?kind=picture&shelf=public")).items
-      .find((m: { id: string }) => m.id === made.id).origin)
-      .toEqual(withoutModel(made.origin));
-    // Filtering a response leaves provenance available in the library and to model managers.
-    expect((await client.get([made.id], { id: member.id }))[0].origin).toEqual(made.origin);
-    db.saveRole({ id: "model-editor", name: "Model editor", permissions: ["models.manage"], builtin: false });
-    db.setRole(member.id, "model-editor");
-    expect((await read(cookies[1], "/" + made.id)).origin).toEqual(made.origin);
-  });
-  it("shelves materials apart and lets those who manage them publish", async () => {
-    const { app } = createApp(db);
-    const admin = await signup(app, "admin"),
-      alice = await signup(app, "alice"),
-      bob = await signup(app, "bob");
-    const mine = await client.ingest(
-      await picture(),
-      "image/png",
-      {
-        role: "object",
-        name: { zh: "私图", en: "private" },
-        style: null,
-        origin: { kind: "upload" },
-      },
-      alice.id,
-    );
+    const { model, ...unnamed } = made.origin as typeof made.origin & { model: string };
+    expect(model).toBe("image-model");
     const shelf = async (cookie: string, on: string) => {
-      const r = await app.request(
-        `/api/materials?kind=picture&size=200&shelf=${on}`,
-        { headers: { cookie } },
-      );
-      return r.ok
-        ? ((await r.json()) as { items: { id: string; ownerName?: string }[] })
-            .items
-        : r.status;
+      const r = await call(cookie, `/materials?kind=picture&size=200&shelf=${on}`);
+      return r.status === 200 ? (r.body.items as { id: string; ownerName?: string; origin: object }[]) : r.status;
     };
     const ids = (items: Awaited<ReturnType<typeof shelf>>) =>
       typeof items === "number" ? items : items.map((m) => m.id);
-    expect(ids(await shelf(alice.cookie, "mine"))).toEqual([mine.id]);
-    expect(ids(await shelf(alice.cookie, "public"))).not.toContain(mine.id);
+    expect(await shelf(member.cookie, "mine")).toEqual([expect.objectContaining({ id: made.id, origin: unnamed })]);
+    expect((await call(member.cookie, "/materials/" + made.id)).body.origin).toEqual(unnamed);
+    expect(ids(await shelf(member.cookie, "public"))).not.toContain(made.id);
     expect(ids(await shelf(bob.cookie, "mine"))).toEqual([]);
     expect(await shelf(bob.cookie, "others")).toBe(400);
-    const others = await shelf(admin.cookie, "others");
-    expect(others).toEqual([
-      expect.objectContaining({ id: mine.id, ownerName: "alice" }),
+    expect(await shelf(admin.cookie, "others")).toEqual([
+      expect.objectContaining({ id: made.id, ownerName: "member", origin: made.origin }),
     ]);
+    expect((await call(admin.cookie, "/materials/" + made.id)).body.origin).toEqual(made.origin);
     // The picture file itself follows the same rule.
-    const file = (cookie: string) =>
-      app.request("/materials/files/" + mine.id, { headers: { cookie } });
+    const file = (cookie: string) => app.request("/materials/files/" + made.id, { headers: { cookie } });
     expect((await file(bob.cookie)).status).toBe(404);
     expect((await file(admin.cookie)).status).toBe(200);
+    // Those who manage materials publish it, for everyone, and give it back.
     const publish = (cookie: string, published: boolean) =>
-      app.request(`/api/materials/${mine.id}/publish`, {
-        method: "POST",
-        headers: { cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ published }),
-      });
-    expect((await publish(alice.cookie, true)).status).toBe(403);
+      call(cookie, `/materials/${made.id}/publish`, "POST", { published });
+    expect((await publish(member.cookie, true)).status).toBe(403);
     expect((await publish(admin.cookie, true)).status).toBe(200);
-    expect(ids(await shelf(bob.cookie, "public"))).toContain(mine.id);
+    expect(ids(await shelf(bob.cookie, "public"))).toContain(made.id);
     expect((await file(bob.cookie)).status).toBe(200);
     expect((await publish(admin.cookie, false)).status).toBe(200);
-    expect(ids(await shelf(alice.cookie, "mine"))).toEqual([mine.id]);
-  });
-});
-describe("invites", () => {
-  it("lets the first account set the app up, then admits each later one with an unused invite", async () => {
-    const { app } = createApp(db);
-    const post = (path: string, body: object, cookie = "") =>
-      app.request("/api" + path, {
-        method: "POST",
-        headers: { cookie, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-    const call = async (cookie: string, path: string, method = "GET") => {
-      const r = await app.request("/api" + path, { method, headers: { cookie } });
-      return { status: r.status, body: await r.json() };
-    };
-    expect((await (await app.request("/api/auth/signup")).json()).invite).toBe(false);
-    const first = await post("/auth/register", { name: "admin", password: "abcdef" });
-    expect(first.status).toBe(200);
-    const admin = first.headers.get("set-cookie")!.split(";")[0];
-    expect((await (await app.request("/api/auth/signup")).json()).invite).toBe(true);
-    // Without an invite, or with one that doesn't exist, nobody else gets in.
-    expect(
-      (await post("/auth/register", { name: "a", password: "abcdef" })).status,
-    ).toBe(400);
-    expect(
-      (await post("/auth/register", { name: "a", password: "abcdef", invite: "NOPE-NOPE" }))
-        .status,
-    ).toBe(403);
-    const made = await post("/admin/invites", { count: 2 }, admin);
-    const [one, two] = (await made.json()) as { code: string }[];
-    expect(one.code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-    // A failed sign-up leaves the invite; a lowercase, undashed one still works, once.
-    expect(
-      (await post("/auth/register", { name: "admin", password: "abcdef", invite: one.code }))
-        .status,
-    ).toBe(409);
-    const typed = one.code.toLowerCase().replace("-", " ");
-    const member = await post("/auth/register", { name: "a", password: "abcdef", invite: typed });
-    expect(member.status).toBe(200);
-    const memberCookie = member.headers.get("set-cookie")!.split(";")[0];
-    expect(
-      (await post("/auth/register", { name: "b", password: "abcdef", invite: one.code }))
-        .status,
-    ).toBe(403);
-    // Only those who manage accounts see and change invites.
-    expect((await call(memberCookie, "/admin/invites")).status).toBe(403);
-    expect((await post("/admin/invites", {}, memberCookie)).status).toBe(403);
-    const list = (await call(admin, "/admin/invites")).body;
-    expect(list).toHaveLength(2);
-    expect(list.find((i: { code: string }) => i.code === one.code)).toMatchObject({
-      createdBy: "admin",
-      usedBy: { name: "a" },
+    expect(ids(await shelf(member.cookie, "mine"))).toEqual([made.id]);
+    // Managing materials alone does not tell the model, on publishing either.
+    db.saveRole({ id: "librarian", name: "Librarian", permissions: ["materials.manage"], builtin: false });
+    db.setRole(member.id, "librarian");
+    const published = await publish(member.cookie, true);
+    expect(published.status).toBe(200);
+    expect(published.body.origin).toEqual(unnamed);
+    expect((await shelf(member.cookie, "public") as { id: string; origin: object }[]).find((m) => m.id === made.id)!.origin).toEqual(unnamed);
+    // The library itself keeps where it came from.
+    expect((await client.get([made.id], { id: member.id }))[0].origin).toEqual(made.origin);
+    // A role that manages models makes its accounts able to, and to see the model.
+    const editors = await call(admin.cookie, "/admin/roles", "POST", { name: "Model editors", permissions: ["models.manage"] });
+    expect((await call(admin.cookie, "/admin/accounts/" + member.id, "PATCH", { role: editors.body.id })).body).toMatchObject({
+      role: editors.body.id,
+      permissions: ["models.manage"],
     });
-    expect(list.find((i: { code: string }) => i.code === two.code).usedBy).toBeNull();
-    // A used invite stays as a record; an unused one can be withdrawn.
-    expect((await call(admin, "/admin/invites/" + one.code, "DELETE")).status).toBe(409);
-    expect((await call(admin, "/admin/invites/" + two.code, "DELETE")).status).toBe(200);
-    expect(
-      (await post("/auth/register", { name: "b", password: "abcdef", invite: two.code }))
-        .status,
-    ).toBe(403);
-    expect((await call(admin, "/admin/invites")).body).toHaveLength(1);
+    expect((await call(member.cookie, "/admin/models")).status).toBe(200);
+    expect((await call(member.cookie, "/admin/roles")).status).toBe(403);
+    expect((await call(member.cookie, "/materials/" + made.id)).body.origin).toEqual(made.origin);
+    // Built-in roles stay; the last administrator stays one.
+    expect((await call(admin.cookie, "/admin/roles/admin", "PUT", { name: "x", permissions: [] })).status).toBe(409);
+    expect((await call(admin.cookie, "/admin/roles/member", "DELETE")).status).toBe(409);
+    expect((await call(admin.cookie, "/admin/accounts/" + admin.id, "PATCH", { role: "member" })).status).toBe(409);
+    // Removing a role makes its accounts members again.
+    await call(admin.cookie, "/admin/roles/" + editors.body.id, "DELETE");
+    expect((await call(member.cookie, "/auth/me")).body).toMatchObject({ role: "member", permissions: [] });
   });
 });
 describe("exported pages", () => {
   it("carries detail pictures inside the file, inked in the colour their address asks for", async () => {
-    const { app } = createApp(db);
-    const r = await app.request("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "exporter", password: "abcdef" }),
-    });
-    const cookie = r.headers.get("set-cookie")!.split(";")[0];
-    const store = db.scoped(((await r.json()) as { id: string }).id),
+    const call = caller(createApp(db).app);
+    const { id, cookie } = await signup(call, "exporter");
+    const store = db.scoped(id),
       work = createWork(store, "export"),
       content = fixture();
     store.commit({ ...store.work(work.id), brief: content.brief }, 1, { kind: "edit" });
@@ -867,9 +712,7 @@ describe("exported pages", () => {
           },
         ],
       }, { cause: { kind: "edit" } });
-    const page = await (
-      await app.request(`/api/works/${work.id}/scenes/root/page`, { headers: { cookie } })
-    ).text();
+    const page = (await call(cookie, `/works/${work.id}/scenes/root/page`)).body as string;
     const data = JSON.parse(page.match(/window\.drawyData=(\{.*?\});\n/)![1]);
     const sources = [...(data.work.details.icons.html as string).matchAll(/src="([^"]+)"/g)].map(
       (m) => m[1],
