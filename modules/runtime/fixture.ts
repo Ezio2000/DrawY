@@ -1,4 +1,4 @@
-import { boxOf, type Instance, type Scene, type Work, type WorkEdit } from "../contracts/index.ts";
+import { boxOf, type Instance, type Work, type WorkEdit } from "../contracts/index.ts";
 
 // A test work whose drawing method is entirely work-owned source.
 export function fixture(): Work {
