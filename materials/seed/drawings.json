@@ -50,7 +50,7 @@
         "max": 1,
         "step": 0.05,
         "default": 0,
-        "description": "curvature as a fraction of length, positive bending left of the direction of travel; for elbow, how far along the cross segment moves (-0.5 to 0.5)"
+        "description": "curvature as a fraction of length, positive bending left of the direction of travel; for elbow, where between the ends the cross segment stands (-0.5 at the start, 0.5 at the end); it is kept outside both modules, so a link leaving and arriving on the same side goes round them by itself"
       },
       "head": {
         "type": "choice",
@@ -72,7 +72,7 @@
         "type": "choice",
         "options": ["curve", "elbow", "corner"],
         "default": "curve",
-        "description": "curve follows bend; elbow runs at right angles, leaving and arriving along the sides of the modules its ends meet; corner turns exactly once"
+        "description": "curve follows bend; elbow runs at right angles, leaving and arriving along the sides of the modules its ends meet, always first moving out of a module before turning; corner turns once, or goes round when one turn would run back into a module"
       },
       "first": {
         "type": "choice",

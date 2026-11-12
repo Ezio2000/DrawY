@@ -8,6 +8,7 @@ import { fixture } from "./fixture.ts";
 import { capture, readText, render } from "../observation/capture.ts";
 import { fit, zoom } from "../contracts/geometry.ts";
 import { useOf } from "../materials/index.ts";
+import type { Side } from "../contracts/index.ts";
 import type { DrawingMaterial, Material } from "@drawy/materials/schema";
 import { boil } from "../../materials/streets.ts";
 
@@ -1410,6 +1411,113 @@ it("draws every library drawing from its example data and routes elbow arrows at
   });
   expect(result.leaves).toBeLessThan(0.01);
   expect(result.arrives).toBeLessThan(0.01);
+});
+
+it("routes elbow arrows out of their modules before turning, going round when the ends face away", async () => {
+  const drawings = seed("drawings") as DrawingMaterial[];
+  work.materials = Object.fromEntries(
+    drawings
+      .filter((m) => m.id === "node" || m.id === "arrow")
+      .map((m) => [
+        m.id,
+        useOf({
+          ...m,
+          source: readFileSync(
+            new URL(`../../materials/seed/drawings/${m.id}.js`, import.meta.url),
+            "utf8",
+          ),
+        } as Material)!,
+      ]),
+  );
+  const box = (id: string, x: number, y: number) => ({
+    id,
+    label: id,
+    drawingId: "node",
+    data: { title: id },
+    bounds: { x, y, width: 200, height: 60 },
+  });
+  const link = (
+    id: string,
+    from: [string, Side],
+    to: [string, Side],
+    data: Record<string, unknown> = {},
+  ) => ({
+    id,
+    drawingId: "arrow",
+    from: { moduleId: from[0], at: from[1] },
+    to: { moduleId: to[0], at: to[1] },
+    data: { route: "elbow", ...data },
+  });
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      // The order flowchart's out-of-stock branch: left side to left side, below and right.
+      box("lack", 0, 0),
+      box("end", 400, 600),
+      // Back to back: the right side of one to the left side of one further left.
+      box("late", 1200, 0),
+      box("early", 900, 300),
+      // Out of the bottom into the left side of one above.
+      box("low", 0, 1000),
+      box("high", 400, 800),
+    ],
+    links: [
+      link("same", ["lack", "left"], ["end", "left"], { bend: -0.5 }),
+      link("back", ["late", "right"], ["early", "left"]),
+      link("up", ["low", "bottom"], ["high", "left"]),
+    ],
+    checks: [],
+  };
+  await open();
+  const routes = await page.evaluate(() => {
+    const bounds = (id: string) => {
+      const s = document.querySelector<HTMLElement>(`[data-module-id="${id}"]`)!.style;
+      return {
+        x: parseFloat(s.left),
+        y: parseFloat(s.top),
+        right: parseFloat(s.left) + parseFloat(s.width),
+        bottom: parseFloat(s.top) + parseFloat(s.height),
+      };
+    };
+    return Object.fromEntries(
+      [
+        ["same", "lack", "end"],
+        ["back", "late", "early"],
+        ["up", "low", "high"],
+      ].map(([id, from, to]) => {
+        const host = document.querySelector<HTMLElement>(`[data-link-id="${id}"]`)!;
+        const path = host.shadowRoot!.querySelector("path")!;
+        const length = path.getTotalLength();
+        const points = Array.from({ length: 201 }, (_, i) => {
+          const p = path.getPointAtLength((length * i) / 200);
+          return { x: p.x + parseFloat(host.style.left), y: p.y + parseFloat(host.style.top) };
+        });
+        const boxes = [bounds(from), bounds(to)];
+        return [
+          id,
+          {
+            // Points of the line strictly inside either module, or on its edge.
+            inside: points.filter((p) =>
+              boxes.some((b) => p.x > b.x - 1 && p.x < b.right + 1 && p.y > b.y - 1 && p.y < b.bottom + 1),
+            ).length,
+            start: points[0],
+            first: (({ x, y }) => ({
+              x: x + parseFloat(host.style.left),
+              y: y + parseFloat(host.style.top),
+            }))(path.getPointAtLength(4)),
+          },
+        ];
+      }),
+    );
+  });
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+  for (const route of Object.values(routes)) expect(route.inside).toBe(0);
+  // Each leaves straight out of its side: left, right and down.
+  expect(routes.same.first.x).toBeLessThan(routes.same.start.x);
+  expect(Math.abs(routes.same.first.y - routes.same.start.y)).toBeLessThan(0.01);
+  expect(routes.back.first.x).toBeGreaterThan(routes.back.start.x);
+  expect(routes.up.first.y).toBeGreaterThan(routes.up.start.y);
+  expect(Math.abs(routes.up.first.x - routes.up.start.x)).toBeLessThan(0.01);
 });
 
 it("maps across the 180th meridian in one piece and names what the view shows", async () => {
