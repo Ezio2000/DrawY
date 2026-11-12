@@ -352,7 +352,18 @@ describe("user owned works", () => {
     // With nothing left to save, saving says so.
     expect((await save(alice.cookie)).status).not.toBe(200);
     // A hand edit is a step of its own: undoing it leaves the author's drawing.
-    expect(undo(store, work.id).scenes).toEqual(saved.scenes);
+    const undone = undo(store, work.id);
+    expect(undone.scenes).toEqual(saved.scenes);
+    // While the author is at work, nothing changes the drawing by hand.
+    store.saveRun({ id: "r", workId: work.id, sceneId: "root", status: "running", startedAt: 1, steps: [], observations: [] });
+    for (const [path, body] of [
+      ["edits", { ...edit, baseRevision: undone.revision }],
+      ["save", undefined],
+      ["undo", undefined],
+      ["restore", { revision: 1 }],
+    ] as const)
+      expect((await call(alice.cookie, `/works/${work.id}/${path}`, "POST", body)).status).toBe(409);
+    expect(store.work(work.id).revision).toBe(undone.revision);
   });
   it("takes named materials into the work and keeps other users' pictures out", async () => {
     // The first account administers the app and may use everyone's materials.

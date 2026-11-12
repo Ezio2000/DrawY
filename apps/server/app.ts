@@ -284,10 +284,12 @@ export function createApp(storage: Storage) {
   app.get("/api/works/:id/revisions", (c) =>
     c.json(c.get("store").revisions(c.req.param("id"))),
   );
-  /** Changing the drawing by hand waits for the author to finish or be stopped. */
-  const idle = (store: UserStore, workId: string) => {
-    if (store.busy(workId)) throw new DomainError("请先完成或取消当前任务", 409);
-  };
+  // Changing the drawing by hand waits for the author to finish or be stopped.
+  app.use("/api/works/:id/:change{restore|undo|edits|save}", async (c, next) => {
+    if (c.req.method === "POST" && c.get("store").busy(c.req.param("id")))
+      throw new DomainError("请先完成或取消当前任务", 409);
+    await next();
+  });
   app.get("/api/works/:id/revisions/:revision", async (c) => {
     const store = c.get("store");
     return c.json(
@@ -300,18 +302,14 @@ export function createApp(storage: Storage) {
   app.post("/api/works/:id/restore", async (c) => {
     const store = c.get("store"),
       workId = c.req.param("id");
-    idle(store, workId);
     const { revision } = z
       .object({ revision: z.number().int().positive() })
       .parse(await c.req.json());
     return published(c, restore(store, workId, revision));
   });
-  app.post("/api/works/:id/undo", async (c) => {
-    const store = c.get("store"),
-      workId = c.req.param("id");
-    idle(store, workId);
-    return published(c, undo(store, workId));
-  });
+  app.post("/api/works/:id/undo", (c) =>
+    published(c, undo(c.get("store"), c.req.param("id"))),
+  );
   app.get("/api/works/:id/scenes/:scene", async (c) => {
     const store = c.get("store"),
       rev = c.req.query("revision");
@@ -418,7 +416,6 @@ export function createApp(storage: Storage) {
   app.post("/api/works/:id/edits", async (c) => {
     const store = c.get("store"),
       workId = c.req.param("id");
-    idle(store, workId);
     const { baseRevision, edit } = z
       .object({ baseRevision: z.number().int(), edit: z.unknown() })
       .parse(await c.req.json());
@@ -430,12 +427,9 @@ export function createApp(storage: Storage) {
     return c.json(work);
   });
   /** The hand edits made since the latest version, saved as a version of their own. */
-  app.post("/api/works/:id/save", async (c) => {
-    const store = c.get("store"),
-      workId = c.req.param("id");
-    idle(store, workId);
-    return published(c, saveEdits(store, workId));
-  });
+  app.post("/api/works/:id/save", (c) =>
+    published(c, saveEdits(c.get("store"), c.req.param("id"))),
+  );
   app.get("/api/works/:id/runs", (c) =>
     c.json(
       c
