@@ -5,20 +5,18 @@ import { WorkDetail } from "../SceneView.tsx";
 import { Dialog } from "../ui/dialogs.tsx";
 import type { Material } from "@drawy/materials/schema";
 import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
-import type { Selection, Target } from "../../../../modules/contracts/index.ts";
-import { removeParts, replace } from "../../../../modules/editing/index.ts";
+import type { Selection } from "../../../../modules/contracts/index.ts";
 import { Retype } from "../Editor.tsx";
 import { useT } from "../i18n.tsx";
 import { Library } from "../Library.tsx";
 import { counted } from "../probe.ts";
 import { useSelect } from "../session/store.ts";
-import type { Ask } from "../session/work.ts";
 import type { ShellProps } from "../shell.ts";
 import { Title } from "../Title.tsx";
 import { cx } from "./cx.ts";
+import { useWorkPage } from "../workPage.ts";
 import {
   Actions,
-  nameIn,
   Notes,
   PhoneCanvas,
   ScenesSheet,
@@ -47,26 +45,19 @@ export default function PhoneWorkPage({ session, asking, feedback, go }: ShellPr
   const { draft } = asking;
   const [selected, setSelected] = useState<Selection[]>([]);
   const [sheet, setSheet] = useState<SheetKind>("");
-  const [detailId, setDetail] = useState<string>();
-  const [dismissed, setDismissed] = useState("");
-  const [retyping, setRetyping] = useState<Extract<Pointed, { kind: "text" }>>();
+  const page = useWorkPage({ session, asking, feedback, focus: { modules: selected } });
+  const { sceneId, putAway, dismiss, detailId, setDetail, retyping, setRetyping, retyped } = page;
+  const { restore, undo, enter, open, ask, stop, send, resume } = page;
   // A picture being chosen from the library, and what it is for.
   const [choosing, setChoosing] = useState<(m: Material) => void>();
   const [canvas, setCanvas] = useState<Canvas>();
   const stage = useRef<HTMLDivElement>(null);
   const ids = selected.map((x) => x.moduleId);
-  const { sceneId, working, waiting, locked, runId, earlier } = useSelect(session, (s) => ({
-    sceneId: s.sceneId,
+  const { working, waiting, locked } = useSelect(session, (s) => ({
     working: s.working,
     waiting: s.waiting,
     locked: s.locked,
-    runId: s.run?.id,
-    earlier: s.earlier,
   }));
-  // The latest reply shows over the composer until it is put away; one from before the
-  // work was opened stays in the studio.
-  const putAway = !runId || runId === dismissed || runId === earlier;
-  const dismiss = () => setDismissed(session.get().run?.id ?? "");
   const deselect = () => (canvas ? canvas.select([]) : setSelected([]));
   /** Opens a sheet. The versions are looked at as wholes: what was selected in the one
    * shown goes, with the actions on it. */
@@ -75,84 +66,21 @@ export default function PhoneWorkPage({ session, asking, feedback, go }: ShellPr
     setSheet(kind);
   };
 
-  // What the session tells of, in this page's words.
-  useEffect(
-    () =>
-      session.on((h) =>
-        h.kind === "saved" ? feedback.say(t.unsaved.saved(h.version)) : feedback.fail(h.error),
-      ),
-    [session, t],
-  );
   // The browser's way back closes what is open over the drawing before it leaves the work.
   useBackCloses(!!sheet, () => setSheet(""));
   useBackCloses(!!detailId, () => setDetail(undefined));
-  // What is selected and open belongs to the scene it was in.
-  useEffect(() => {
-    setSelected([]);
-    setDetail(undefined);
-    setRetyping(undefined);
-  }, [session, sceneId]);
+  // What is selected belongs to the scene it was in.
+  useEffect(() => setSelected([]), [session, sceneId]);
 
-  /** Going back, or undoing, puts the reply away. */
-  const restore = (revision: number) =>
-    void attempt(async () => {
-      await session.restore(revision);
-      dismiss();
-    });
-  const undo = () =>
-    void attempt(async () => {
-      await session.undo();
-      dismiss();
-    });
-  const enter = (id: string) => void attempt(() => session.enter(id, t.work.expand));
-  const open = (target: Target) =>
-    target.kind === "scene" ? enter(target.id) : setDetail(target.id);
-  const nameOf = (id: string) => nameIn(session.get(), id);
-  /** Hands a change to the author, written into the composer for the person to send. */
-  const ask = (text?: string, why = "") => draft.hand(text, why);
-
-  /** Swaps a picture for one from the library; what the work cannot change by itself is
-   * written up for the author to do. */
+  /** Swaps a picture for one chosen from the library. */
   const swap = (moduleId: string, material: string) =>
-    setChoosing(() => (m: Material) =>
-      void attempt(async () => {
-        const done = await session.change((w) =>
-          replace(w, sceneId, moduleId, "picture", material, m.id),
-        );
-        if (!done) {
-          draft.use(m);
-          ask(t.edit.askPicture(nameOf(moduleId)), t.edit.handedPicture);
-        }
-      }),
-    );
+    setChoosing(() => (m: Material) => page.swap(moduleId, material, m));
   /** A double tap on words changes them where they are; on a picture, swaps it. */
   function point(p: Pointed) {
     if (session.get().locked) return;
     if (p.kind === "text") return setRetyping(p);
     swap(p.moduleId, p.material);
   }
-  function retyped(text: string | null) {
-    const p = retyping!;
-    setRetyping(undefined);
-    if (text === null || text === p.text) return;
-    if (!text.trim())
-      return void attempt(() => session.change((w) => removeParts(w, sceneId, [p.moduleId])));
-    void attempt(async () => {
-      if (!(await session.change((w) => replace(w, sceneId, p.moduleId, "text", p.text, text))))
-        ask(t.edit.askText(nameOf(p.moduleId), p.text, text), t.edit.handedText);
-    });
-  }
-  /** Stopping hands what was asked back to the composer, to change and send again. */
-  const stop = () =>
-    void attempt(async () => {
-      const asked = await session.stop();
-      if (asked && !draft.get().text.trim()) draft.write(asked);
-    });
-  /** Sends the request, about what is selected. */
-  const send = (ask: Partial<Ask> = {}) =>
-    void attempt(() => asking.send({ focus: { modules: selected }, ...ask }));
-  const resume = () =>
-    send({ text: t.now.resumeMessage, scene: session.get().run?.sceneId ?? sceneId, picked: "" });
   const one = ids.length === 1 ? ids[0] : undefined;
 
   return (

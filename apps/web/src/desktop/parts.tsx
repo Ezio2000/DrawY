@@ -2,7 +2,6 @@ import { useRef } from "react";
 import { ChevronDown, X, MessagesSquare, PencilLine, History, Check, Undo2, Redo2 } from "lucide-react";
 import type { Canvas, CanvasOptions, Pointed } from "../../../../modules/canvas/index.ts";
 import { versionOf, type Selection, type Target } from "../../../../modules/contracts/index.ts";
-import { shownName } from "../../../../modules/editing/index.ts";
 import { cx } from "../cx.ts";
 import { SelectionBar } from "../EditBar.tsx";
 import { EditMenu } from "../EditMenu.tsx";
@@ -17,7 +16,7 @@ import { Rename } from "../Rail.tsx";
 import { SceneView } from "../SceneView.tsx";
 import { Seal } from "../Title.tsx";
 import { useSelect } from "../session/store.ts";
-import type { Change, Snapshot, WorkSession } from "../session/work.ts";
+import type { Change, WorkSession } from "../session/work.ts";
 import type { EditOps, useEditing } from "./editing.ts";
 
 /* The parts of the desktop work page. Each reads from the session only what it shows, so
@@ -27,13 +26,6 @@ import type { EditOps, useEditing } from "./editing.ts";
 /** Values compared by what they hold, for small lists built afresh from each work. */
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-/** A module by its name, or a link by the names of the modules it joins. */
-export function nameIn(s: Snapshot, id: string): string {
-  const l = s.scene?.links.find((x) => x.id === id);
-  if (l) return `${nameIn(s, l.from.moduleId)} → ${nameIn(s, l.to.moduleId)}`;
-  const m = s.scene?.modules.find((x) => x.id === id);
-  return m && s.work ? shownName(s.work, m) : id;
-}
 
 /** The work's title and the way down to the scene in view, and every scene to go to. */
 export function Topbar({

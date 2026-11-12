@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { nameIn } from "../workPage.ts";
 import { WorkStudio } from "../Studio.tsx";
 import { WorkDrafts } from "../Drafts.tsx";
 import {
@@ -24,14 +25,13 @@ import {
   type Target,
   type Work,
 } from "../../../../modules/contracts/index.ts";
-import { shownName } from "../../../../modules/editing/index.ts";
 import { ExportItems, useExports } from "../Export.tsx";
 import type { Feedback } from "../feedback.ts";
 import { useT } from "../i18n.tsx";
 import { counted } from "../probe.ts";
 import { SceneView } from "../SceneView.tsx";
 import { useSelect } from "../session/store.ts";
-import type { Snapshot, WorkSession } from "../session/work.ts";
+import type { WorkSession } from "../session/work.ts";
 import { Seal } from "../Title.tsx";
 import { cx } from "./cx.ts";
 
@@ -42,11 +42,6 @@ import { cx } from "./cx.ts";
 /** Values compared by what they hold, for small lists built afresh from each work. */
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-/** A module by its name, as the person sees it. */
-export function nameIn(s: Snapshot, id: string): string {
-  const m = s.scene?.modules.find((x) => x.id === id);
-  return m && s.work ? shownName(s.work, m) : id;
-}
 
 /** The pictures a module shows: the picture materials its data names. */
 export function picturesIn(work: Work, m: Instance) {

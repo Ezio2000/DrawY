@@ -7,8 +7,7 @@ import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { Dialog } from "../ui/dialogs.tsx";
 import type { Material } from "@drawy/materials/schema";
 import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
-import type { Selection, Target } from "../../../../modules/contracts/index.ts";
-import { fieldsOf, removeParts, replace, setData } from "../../../../modules/editing/index.ts";
+import type { Selection } from "../../../../modules/contracts/index.ts";
 import { cx } from "../cx.ts";
 import { useT } from "../i18n.tsx";
 import { Library } from "../Library.tsx";
@@ -17,17 +16,16 @@ import { Retype, ShortcutSheet } from "../Editor.tsx";
 import { DRAWING_TYPE, drawingById } from "../EditTray.tsx";
 import { useBoard } from "../EditView.tsx";
 import { useSelect } from "../session/store.ts";
-import type { Ask } from "../session/work.ts";
 import type { ShellProps } from "../shell.ts";
 import { Title } from "../Title.tsx";
 import { useEditing } from "./editing.ts";
+import { useWorkPage, nameIn } from "../workPage.ts";
 import { panelWidth, Resizer } from "./panels.tsx";
 import {
   Bars,
   CanvasArea,
   EditOverlay,
   EditPane,
-  nameIn,
   SideTools,
   Topbar,
   type Panel,
@@ -51,10 +49,6 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
   // What is selected: modules, or else a link, as the canvas says.
   const [selected, setSelected] = useState<Selection[]>([]);
   const [link, setLink] = useState<string | null>(null);
-  // The detail page open over the scene.
-  const [detailId, setDetail] = useState<string>();
-  // The run whose reply under the canvas was put away.
-  const [dismissed, setDismissed] = useState("");
   const [panel, setPanel] = useState<Panel>("");
   const [widths, setWidths] = useState(() => ({
     journal: panelWidth.read("journal"),
@@ -63,8 +57,6 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
   }));
   const [scenes, setScenes] = useState(false);
   const [titling, setTitling] = useState(false);
-  // Words being changed where they are drawn.
-  const [retyping, setRetyping] = useState<Extract<Pointed, { kind: "text" }>>();
   // A picture or a drawing being chosen from the library, and what it is for.
   const [choosing, setChoosing] = useState<{
     kind: "picture" | "drawing";
@@ -84,28 +76,23 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     drafting = panel === "drafts",
     editing = panel === "edit";
   const ids = selected.map((x) => x.moduleId);
-  const { sceneId, working, waiting, locked, runId, earlier, chosenLink, linkName } = useSelect(
-    session,
-    (s) => {
-      const l = !ids.length && link ? s.scene?.links.find((x) => x.id === link) : undefined;
-      return {
-        sceneId: s.sceneId,
-        working: s.working,
-        waiting: s.waiting,
-        locked: s.locked,
-        runId: s.run?.id,
-        earlier: s.earlier,
-        chosenLink: l,
-        linkName: l && nameIn(s, l.id),
-      };
-    },
-  );
+  const { working, waiting, locked, runId, chosenLink, linkName } = useSelect(session, (s) => {
+    const l = !ids.length && link ? s.scene?.links.find((x) => x.id === link) : undefined;
+    return {
+      working: s.working,
+      waiting: s.waiting,
+      locked: s.locked,
+      runId: s.run?.id,
+      chosenLink: l,
+      linkName: l && nameIn(s, l.id),
+    };
+  });
   const linkId = chosenLink ? link : null;
-  // The latest reply shows under the canvas until it is put away; one from before the
-  // work was opened stays in the studio.
-  const putAway = !runId || runId === dismissed || runId === earlier;
+  const page = useWorkPage({ session, asking, feedback, focus: { modules: selected, link: chosenLink } });
+  const { sceneId, putAway, dismiss, detailId, setDetail, retyping, setRetyping, retyped } = page;
+  const { restore, undo, enter, open, ask, swap, stop, send, resume } = page;
+  // The latest reply shows under the canvas until it is put away.
   const replying = !putAway && !working && !waiting;
-  const dismiss = () => setDismissed(session.get().run?.id ?? "");
   const deselect = () => (canvas ? canvas.select([]) : (setSelected([]), setLink(null)));
   const toggle = (p: Panel) => {
     const next = panel === p ? "" : p;
@@ -128,24 +115,11 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     retype: setRetyping,
     help: () => setHelp(true),
   });
-  /** Hands a change to the author, written into the composer for the person to send. */
-  const ask = (text?: string, why = "") => draft.hand(text, why);
-
-  // What the session tells of, in this page's words.
-  useEffect(
-    () =>
-      session.on((h) =>
-        h.kind === "saved" ? feedback.say(t.unsaved.saved(h.version)) : feedback.fail(h.error),
-      ),
-    [session, t],
-  );
   // What is selected and open belongs to the scene it was in.
   useEffect(() => {
     setSelected([]);
     setLink(null);
-    setDetail(undefined);
     setScenes(false);
-    setRetyping(undefined);
   }, [session, sceneId]);
   // While the author draws, the studio shows how it goes about it, unless the person is
   // editing by hand or the panel would cover the canvas.
@@ -199,24 +173,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     return () => removeEventListener("keydown", key);
   }, [session]);
 
-  /** Going back, or undoing, puts the reply under the canvas away. */
-  const restore = (revision: number) =>
-    void attempt(async () => {
-      await session.restore(revision);
-      dismiss();
-    });
-  const undo = () =>
-    void attempt(async () => {
-      await session.undo();
-      dismiss();
-    });
   keys.current = { replying, journal, detailId, undo, dismiss };
-  const enter = (id: string) => void attempt(() => session.enter(id, t.work.expand));
-  /** Follows a module's target: into a scene, or a detail page over this one. */
-  const open = (target: Target) =>
-    target.kind === "scene" ? enter(target.id) : setDetail(target.id);
-  const nameOf = (id: string) => nameIn(session.get(), id);
-
   /** Words or a picture pointed at on the canvas: words are changed where they are, a
    * picture is swapped for one from the library. What the work cannot change by itself is
    * written up for the author to do. */
@@ -224,60 +181,13 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     if (session.get().locked) return;
     if (!editing) edit();
     if (p.kind === "text") return setRetyping(p);
-    pick("picture", (m) =>
-      void attempt(async () => {
-        const done = await session.change((w) =>
-          replace(w, sceneId, p.moduleId, "picture", p.material, m.id),
-        );
-        if (!done) {
-          draft.use(m);
-          ask(t.edit.askPicture(nameOf(p.moduleId)), t.edit.handedPicture);
-        }
-      }),
-    );
-  }
-  function retyped(text: string | null) {
-    const p = retyping!;
-    setRetyping(undefined);
-    if (text === null || text === p.text) return;
-    // A link that said nothing is given its first words, where its drawing takes words.
-    if (p.link && !p.text)
-      return void attempt(async () => {
-        const done = await session.change((w) => {
-          const l = w.scenes[sceneId]?.links.find((x) => x.id === p.moduleId);
-          const words = l && fieldsOf(w, l).find((f) => f.type === "text");
-          return words ? setData(w, sceneId, p.moduleId, { [words.key]: text.trim() }) : null;
-        });
-        if (!done) ask(t.edit.askLabel(nameOf(p.moduleId), text.trim()), t.edit.handedText);
-      });
-    if (!text.trim())
-      return void attempt(() => session.change((w) => removeParts(w, sceneId, [p.moduleId])));
-    void attempt(async () => {
-      if (!(await session.change((w) => replace(w, sceneId, p.moduleId, "text", p.text, text))))
-        ask(t.edit.askText(nameOf(p.moduleId), p.text, text), t.edit.handedText);
-    });
+    pick("picture", (m) => swap(p.moduleId, p.material, m));
   }
   /** Takes up editing by hand. */
   function edit() {
     setTucked(!roomy());
     setPanel("edit");
   }
-  /** Stopping hands what was asked back to the composer, to change and send again. */
-  const stop = () =>
-    void attempt(async () => {
-      const asked = await session.stop();
-      if (asked && !draft.get().text.trim()) draft.write(asked);
-    });
-  /** Sends the request, about what is selected. */
-  const send = (ask: Partial<Ask> = {}) =>
-    void attempt(() => asking.send({ focus: { modules: selected, link: chosenLink }, ...ask }));
-  const resume = () =>
-    send({
-      text: t.now.resumeMessage,
-      scene: session.get().run?.sceneId ?? sceneId,
-      picked: "",
-    });
-
   return (
     <div
       className={cx("workspace")}
