@@ -123,17 +123,24 @@ async function ready(page: Page) {
     await window.drawyView.renderer.developed();
   });
 }
+/** A browser context signed in as the person whose work is shown. */
+async function signedIn(
+  browser: Browser,
+  { cookie, origin }: { cookie: string; origin: string },
+  deviceScaleFactor = 1,
+) {
+  const context = await browser.newContext({ deviceScaleFactor });
+  // The service runs under tsx, which names functions with a helper; code it sends into
+  // pages finds the same helper there.
+  await context.addInitScript({ content: "globalThis.__name = (f) => f;" });
+  await context.addCookies([{ name: "drawy_session", value: cookie, url: origin }]);
+  return context;
+}
 export async function capture(
   browser: Browser,
   request: CaptureRequest,
 ): Promise<Shot[]> {
-  const context = await browser.newContext();
-  // The service runs under tsx, which names functions with a helper; code it sends into
-  // pages finds the same helper there.
-  await context.addInitScript({ content: "globalThis.__name = (f) => f;" });
-  await context.addCookies([
-    { name: "drawy_session", value: request.cookie, url: request.origin },
-  ]);
+  const context = await signedIn(browser, request);
   const shots: Shot[] = [];
   try {
     const { width, height } = OPENING_VIEW;
@@ -344,11 +351,7 @@ export async function render(
     format?: "png" | "pdf";
   },
 ): Promise<Buffer> {
-  const context = await browser.newContext({ deviceScaleFactor: 2 });
-  await context.addInitScript({ content: "globalThis.__name = (f) => f;" });
-  await context.addCookies([
-    { name: "drawy_session", value: request.cookie, url: request.origin },
-  ]);
+  const context = await signedIn(browser, request, 2);
   try {
     const page = await context.newPage();
     await page.setViewportSize({ width: 1440, height: 900 });
