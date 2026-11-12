@@ -75,6 +75,17 @@ export const nameOf = (t: Dictionary, f: Field) =>
 export const optionOf = (t: Dictionary, value: string) =>
   (t.edit.options as Record<string, string>)[value] ?? value;
 
+/** What the controls of one module or link work on: the part in the work as shown, the
+ * canvas it is previewed on, and how its changes are kept. */
+interface PartControls {
+  work: Work;
+  sceneId: string;
+  part: Part;
+  canvas?: Canvas;
+  change: Change;
+  pickPicture: PickPicture;
+}
+
 /** The values of one module or link, each in the control its kind takes. Changes show on
  * the canvas as they are made and are kept when they are done: words when the field is
  * left, a slider when it is let go, everything else at once. The controls stay as they
@@ -87,14 +98,7 @@ export function Fields({
   canvas,
   change,
   pickPicture,
-}: {
-  work: Work;
-  sceneId: string;
-  part: Part;
-  canvas?: Canvas;
-  change: Change;
-  pickPicture: PickPicture;
-}) {
+}: PartControls) {
   const t = useT();
   const fields = fieldsOf(work, part);
   // Values changed but not yet kept, shown on the canvas meanwhile.
@@ -500,14 +504,7 @@ export function DataEditor({
   canvas,
   change,
   pickPicture,
-}: {
-  work: Work;
-  sceneId: string;
-  part: Part;
-  canvas?: Canvas;
-  change: Change;
-  pickPicture: PickPicture;
-}) {
+}: PartControls) {
   const t = useT();
   const keys = restOf(work, part);
   if (!keys.length) return null;
