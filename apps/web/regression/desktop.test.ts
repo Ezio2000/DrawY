@@ -28,13 +28,21 @@ import {
 
 setup({ viewport: { width: 1440, height: 900 } });
 
-it("paints the drawing's words as they are laid out", async () => {
+it("paints the drawing's words as laid out; shows a hand edit at once and lays the saved one over it in place; undoes, redoes, throws it away and takes that back, and saves it by keyboard; its seal opens the versions, which are looked at and gone back to in place, which can be undone", async () => {
   await open(await make());
   for (const words of ["Alpha", "Beta"]) await paintedAsLaidOut(words);
-});
-
-it("shows a hand edit at once and lays the saved one over it without drawing it again", async () => {
-  await open(await make());
+  // The seal in the title block is the version in hand; it opens the versions and closes them.
+  const seal = (name: string) => page.getByRole("button", { name, exact: true });
+  expect(await seal("Version 1").innerText()).toBe("1");
+  await seal("Version 1").click();
+  await settled();
+  const versions = page.getByRole("heading", { name: "Versions", exact: true });
+  expect(await versions.isVisible()).toBe(true);
+  expect(await seal("Version 1").getAttribute("aria-pressed")).toBe("true");
+  await seal("Version 1").click();
+  await settled();
+  expect(await versions.count()).toBe(0);
+  // A hand edit shows before the server has it, and the saved one is laid over it in place.
   await editing();
   const before = (await module("Alpha"))!;
   let release!: () => void;
@@ -45,14 +53,59 @@ it("shows a hand edit at once and lays the saved one over it without drawing it 
   });
   await drag("Alpha");
   await page.waitForTimeout(300);
-  const drafted = (await module("Alpha"))!;
-  expect(drafted.left).not.toBe(before.left);
+  const moved = (await module("Alpha"))!;
+  expect(moved.left).not.toBe(before.left);
   release();
   await settled();
-  const saved = (await module("Alpha"))!;
-  expect(saved.left).toBe(drafted.left);
-  expect(saved.mark).toBe(before.mark);
+  expect(await module("Alpha")).toMatchObject({ left: moved.left, mark: before.mark });
   expect(await statuses()).toContain("1 change not saved\nDiscard changes\nSave as version 2");
+  expect(await seal("Version 1 · unsaved changes").count()).toBe(1);
+  // Undone and redone by keyboard, in place.
+  await page.keyboard.press("Control+z");
+  await settled();
+  expect(await module("Alpha")).toMatchObject({ left: before.left, mark: before.mark });
+  expect((await statuses()).join()).not.toContain("not saved");
+  await page.keyboard.press("Control+Shift+z");
+  await settled();
+  expect(await module("Alpha")).toMatchObject({ left: moved.left, mark: before.mark });
+  // Thrown away, which can be undone.
+  await page.getByRole("button", { name: "Discard changes" }).click();
+  await settled();
+  expect(await statuses()).toContain("Changes discarded\nUndo");
+  expect((await module("Alpha"))!.left).toBe(before.left);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await settled();
+  expect((await module("Alpha"))!.left).toBe(moved.left);
+  // Saved by keyboard: the seal is the new version's.
+  await page.keyboard.press("Control+s");
+  await settled();
+  expect(await statuses()).toContain("Saved as version 2");
+  expect(await seal("Version 2").innerText()).toBe("2");
+  // The versions are looked at as wholes: what was selected is let go.
+  const alpha = await rectOf("Alpha");
+  await page.mouse.click(alpha.cx, alpha.cy);
+  expect(await outlined()).toBe(1);
+  await page.getByRole("button", { name: "Versions" }).click();
+  const rows = page.locator("[data-kind=drafts] li");
+  await expect.poll(() => rows.allInnerTexts()).toHaveLength(3);
+  expect(await outlined()).toBe(0);
+  await rows.nth(1).click();
+  await settled();
+  expect(await statuses()).toContain("Viewing version 1\nBack to current\nGo back to this version");
+  expect(await module("Alpha")).toMatchObject({ left: before.left, mark: before.mark });
+  await page.keyboard.press("Escape");
+  await settled();
+  expect(await module("Alpha")).toMatchObject({ left: moved.left });
+  await rows.nth(1).click();
+  await settled();
+  await page.getByRole("button", { name: "Go back to this version" }).click();
+  await settled();
+  expect(await statuses()).toContain("Back to version 1\nUndo");
+  expect(await module("Alpha")).toMatchObject({ left: before.left, mark: before.mark });
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await settled();
+  expect(await module("Alpha")).toMatchObject({ left: moved.left, mark: before.mark });
+  expect((await statuses()).join()).not.toContain("Back to version");
 });
 
 it("holds a request while hand edits are unsaved, until they are saved, thrown away or kept", async () => {
@@ -76,98 +129,6 @@ it("holds a request while hand edits are unsaved, until they are saved, thrown a
   // The work's second save: the one the request waited for.
   const revisions: { cause: { kind: string } }[] = await api(`/works/${page.url().split("/a/")[1]}/revisions`);
   expect(revisions.filter((r) => r.cause.kind === "save")).toHaveLength(2);
-});
-
-it("undoes and redoes by keyboard in place, and saves by keyboard", async () => {
-  await open(await make());
-  await editing();
-  const before = (await module("Alpha"))!;
-  await drag("Alpha");
-  await settled();
-  const moved = (await module("Alpha"))!;
-  await page.keyboard.press("Control+z");
-  await settled();
-  expect(await module("Alpha")).toMatchObject({ left: before.left, mark: before.mark });
-  expect((await statuses()).join()).not.toContain("not saved");
-  await page.keyboard.press("Control+Shift+z");
-  await settled();
-  expect(await module("Alpha")).toMatchObject({ left: moved.left, mark: before.mark });
-  await page.keyboard.press("Control+s");
-  await settled();
-  expect(await statuses()).toContain("Saved as version 2");
-});
-
-it("marks the version in hand with its seal in the title block, which opens the versions", async () => {
-  await open(await make());
-  const seal = (name: string) => page.getByRole("button", { name, exact: true });
-  expect(await seal("Version 1").innerText()).toBe("1");
-  // The seal opens the versions, and closes them again.
-  await seal("Version 1").click();
-  await settled();
-  const versions = page.getByRole("heading", { name: "Versions", exact: true });
-  expect(await versions.isVisible()).toBe(true);
-  expect(await seal("Version 1").getAttribute("aria-pressed")).toBe("true");
-  await seal("Version 1").click();
-  await settled();
-  expect(await versions.count()).toBe(0);
-  // Hand edits waiting to be saved are told beside it; saved, the seal is the new version's.
-  await editing();
-  await drag("Alpha");
-  await settled();
-  expect(await seal("Version 1 · unsaved changes").count()).toBe(1);
-  await page.keyboard.press("Control+s");
-  await settled();
-  expect(await seal("Version 2").innerText()).toBe("2");
-});
-
-it("looks at a version without drawing it again, and goes back to it, which can be undone", async () => {
-  await open(await make());
-  await editing();
-  const before = (await module("Alpha"))!;
-  await drag("Alpha");
-  await settled();
-  await page.keyboard.press("Control+s");
-  await settled();
-  const saved = (await module("Alpha"))!;
-  expect(await outlined()).toBe(1);
-  await page.getByRole("button", { name: "Versions" }).click();
-  const rows = page.locator("[data-kind=drafts] li");
-  await expect.poll(() => rows.allInnerTexts()).toHaveLength(3);
-  // The versions are looked at as wholes: what was selected is let go.
-  expect(await outlined()).toBe(0);
-  await rows.nth(1).click();
-  await settled();
-  expect(await statuses()).toContain("Viewing version 1\nBack to current\nGo back to this version");
-  expect(await module("Alpha")).toMatchObject({ left: before.left, mark: before.mark });
-  await page.keyboard.press("Escape");
-  await settled();
-  expect(await module("Alpha")).toMatchObject({ left: saved.left });
-  await rows.nth(1).click();
-  await settled();
-  await page.getByRole("button", { name: "Go back to this version" }).click();
-  await settled();
-  expect(await statuses()).toContain("Back to version 1\nUndo");
-  expect(await module("Alpha")).toMatchObject({ left: before.left, mark: before.mark });
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
-  await settled();
-  expect(await module("Alpha")).toMatchObject({ left: saved.left, mark: before.mark });
-  expect((await statuses()).join()).not.toContain("Back to version");
-});
-
-it("throws hand edits away, which can be undone", async () => {
-  await open(await make());
-  await editing();
-  const before = (await module("Alpha"))!;
-  await drag("Alpha");
-  await settled();
-  const moved = (await module("Alpha"))!;
-  await page.getByRole("button", { name: "Discard changes" }).click();
-  await settled();
-  expect(await statuses()).toContain("Changes discarded\nUndo");
-  expect((await module("Alpha"))!.left).toBe(before.left);
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
-  await settled();
-  expect((await module("Alpha"))!.left).toBe(moved.left);
 });
 
 it("places words ready to type on a blank canvas, and duplicates, copies and pastes them", async () => {
@@ -305,8 +266,9 @@ it("builds a figure by hand: a shape drawn to size and typed in, a side's plus g
   expect(made("Delta").data.tone).toBe("accent");
 });
 
-it("measures the drawing board: rulers, the view's scale and its settings, and the sheet of shortcuts", async () => {
-  await open(await make());
+it("measures the drawing board: rulers, the view's scale and its settings, parts moved and resized on the squares, and the sheet of shortcuts", async () => {
+  const id = await make();
+  await open(id);
   const rulers = page.locator("canvas[data-axis]");
   expect(await rulers.count()).toBe(0);
   await editing();
@@ -337,9 +299,26 @@ it("measures the drawing board: rulers, the view's scale and its settings, and t
   await scale.click();
   await page.getByRole("menuitemcheckbox", { name: "Snap to the squares" }).click();
   await page.keyboard.press("Escape");
-  // The whole drawing again, by its key; and the shortcuts, by theirs.
+  // A resize on the squares ends its free side on their lines.
+  await scale.click();
+  await page.getByRole("menuitem", { name: /^100%/ }).click();
+  await scale.click();
+  await page.getByRole("menuitemcheckbox", { name: "Snap to the squares" }).click();
+  await page.keyboard.press("Escape");
+  const h = (await page.locator('[data-handle="se"]').boundingBox())!;
+  await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(h.x + h.width / 2 + 47, h.y + h.height / 2 + 3, { steps: 8 });
+  await page.mouse.up();
+  await settled();
+  expect((await rootOf(id)).modules.find((m: { id: string }) => m.id === "a").bounds).toMatchObject({ width: 280, height: 120 });
+  // The whole drawing again, by its key; actual size by its own, on a focused canvas; and
+  // the shortcuts, by theirs.
   await page.keyboard.press("Shift+Digit1");
   await expect.poll(() => scale.innerText()).not.toBe("100%");
+  await page.locator("[data-canvas]").focus();
+  await page.keyboard.press("ControlOrMeta+0");
+  await expect.poll(() => scale.innerText()).toBe("100%");
   await page.keyboard.press("Shift+Slash");
   expect(await page.getByRole("heading", { name: "Shortcuts and gestures" }).count()).toBe(1);
 });
@@ -418,8 +397,6 @@ it("while the author draws, opens the studio, folds the composer and waits; then
   expect((await page.locator("[data-dock]").innerText())).not.toContain("Here is the map.");
 });
 
-
-
 it("draws again only what shows the author's run as it goes, and only the composer while typing", async () => {
   const id = await make();
   await open(id);
@@ -448,7 +425,6 @@ it("draws again only what shows the author's run as it goes, and only the compos
   for (const part of ["page", "topbar", "tools", "editor", "bars", "canvas", "status"])
     expect([part, changed(part)]).toEqual([part, 0]);
 });
-
 
 it("keeps a text tool's dragged bounds and turns default bold off", async () => {
   const id = await make();
@@ -490,33 +466,6 @@ it("keeps a text tool's dragged bounds and turns default bold off", async () => 
   await bar.getByRole("button", { name: "Bold", exact: true }).click();
   await settled();
   expect((await rootOf(id)).modules.find((m: any) => m.data.title === "Node").data.weight).toBe(400);
-});
-
-it("snaps an unguided resize axis to the grid and honors actual size on a focused canvas", async () => {
-  const id = await make();
-  await open(id);
-  await editing();
-  const scale = page.getByRole("button", { name: /^Shown at \d+%/ });
-  await scale.click();
-  await page.getByRole("menuitem", { name: /^100%/ }).click();
-  await scale.click();
-  await page.getByRole("menuitemcheckbox", { name: "Snap to the squares" }).click();
-  await page.keyboard.press("Escape");
-  const alpha = await rectOf("Alpha");
-  await page.mouse.click(alpha.cx, alpha.cy);
-  const handle = page.locator('[data-handle="se"]');
-  const h = (await handle.boundingBox())!;
-  await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(h.x + h.width / 2 + 47, h.y + h.height / 2 + 3, { steps: 8 });
-  await page.mouse.up();
-  await settled();
-  expect((await rootOf(id)).modules.find((m: any) => m.id === "a").bounds).toMatchObject({ width: 280, height: 120 });
-  await page.keyboard.press("Shift+Digit1");
-  await expect.poll(() => scale.innerText()).not.toBe("100%");
-  await page.locator("[data-canvas]").focus();
-  await page.keyboard.press("ControlOrMeta+0");
-  await expect.poll(() => scale.innerText()).toBe("100%");
 });
 
 it("gives a dropped image only to the canvas or composer that received it", async () => {

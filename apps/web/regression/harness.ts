@@ -287,7 +287,7 @@ export const rectOf = (text: string) =>
  * the page where things are (a hit test above all) can lay the text out again and hide
  * what the person would see. The words must be dark on a light drawing, as in `box`, and
  * not covered by the page. */
-export async function inkOf(text: string) {
+async function inkOf(text: string) {
   const png = (await page.screenshot({ scale: "css" })).toString("base64");
   const laid = await page.evaluate((text) => {
     const host = [...document.querySelectorAll("*")].find(

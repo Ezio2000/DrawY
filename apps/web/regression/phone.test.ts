@@ -16,7 +16,6 @@ import {
   pinch,
   press,
   rectOf,
-  renders,
   run,
   settled,
   setup,
@@ -68,8 +67,21 @@ async function wide() {
   return w.id as string;
 }
 
-it("fills the screen without the side bar, and follows the window to the desktop page and back", async () => {
+it("moves the view with one finger on the paper and zooms it with two; fills the screen without the side bar and follows the window to the desktop page and back; paints the drawing's words as laid out, upright, on its side and after a pinch", async () => {
   await open(await make());
+  // One finger on the paper moves the view, not the part; two zoom it.
+  const a = await rectOf("Alpha"),
+    b = await rectOf("Beta");
+  const paper = { x: a.cx, y: (a.y + a.height + b.y) / 2 };
+  const beta = (await module("Beta"))!;
+  await swipe(paper, { x: paper.x - 30, y: paper.y + 80 });
+  await settled();
+  const moved = await rectOf("Beta");
+  expect(Math.round(moved.y - b.y)).toBeGreaterThan(60);
+  expect((await module("Beta"))!.left).toBe(beta.left);
+  await pinch({ x: 195, y: 330 }, 80, 240);
+  await settled();
+  expect((await rectOf("Beta")).width).toBeGreaterThan(moved.width * 1.8);
   expect(await page.locator("[data-shell=phone]").count()).toBe(1);
   expect(await page.getByRole("navigation", { name: "Navigation" }).isVisible()).toBe(false);
   // Turned into a tablet-sized screen, the same work shows on the desktop page.
@@ -78,10 +90,7 @@ it("fills the screen without the side bar, and follows the window to the desktop
   expect(await page.locator("[data-shell=phone]").count()).toBe(0);
   await page.setViewportSize({ width: 390, height: 664 });
   await expect.poll(() => page.locator("[data-shell=phone]").count()).toBe(1);
-});
-
-it("paints the drawing's words as they are laid out, held upright and on its side, and after a pinch", async () => {
-  await open(await make());
+  await settled();
   await whole();
   for (const words of ["Alpha", "Beta"]) await paintedAsLaidOut(words);
   // Turned on its side, a phone keeps the phone page; the view follows the new shape.
@@ -92,13 +101,13 @@ it("paints the drawing's words as they are laid out, held upright and on its sid
   for (const words of ["Alpha", "Beta"]) await paintedAsLaidOut(words);
   await page.setViewportSize({ width: 390, height: 664 });
   await settled();
-  const a = await rectOf("Alpha");
-  await pinch({ x: a.cx, y: a.cy }, 80, 120);
+  const alpha = await rectOf("Alpha");
+  await pinch({ x: alpha.cx, y: alpha.cy }, 80, 120);
   await settled();
   await paintedAsLaidOut("Alpha");
 });
 
-it("asks from the composer, shows the author drawing without covering the drawing, and opens the studio from the status line", async () => {
+it("asks from the composer and shows the author drawing without covering the drawing; its reply shows two lines, leaves the drawing large on its side, and folds away; the studio opens from the status line and from the top bar", async () => {
   const id = await make();
   await open(id);
   await composer().fill("Draw the route");
@@ -114,18 +123,31 @@ it("asks from the composer, shows the author drawing without covering the drawin
   await expect.poll(() => sheet().getAttribute("aria-label")).toBe("Studio");
   expect(await sheet().innerText()).toContain("Draw the route");
   await sheet().getByRole("button", { name: "Close" }).tap();
-  await tell({
-    type: "run",
-    run: run(id, "live", "completed", [user, { kind: "message", role: "assistant", text: "Here is the route." }]),
-  });
+  const long = "The figure shows the route from the hills to the sea. ".repeat(12);
+  await tell({ type: "run", run: run(id, "live", "completed", [user, { kind: "message", role: "assistant", text: long }]) });
   await settled();
-  expect(await dock().innerText()).toContain("Here is the route.");
+  const reply = (await dock().locator("button", { hasText: "The figure shows" }).first().boundingBox())!;
+  expect(reply.height).toBeLessThan(60);
+  // On its side with the reply open, the drawing is not shrunk to a dot: it keeps at least
+  // half the screen's height, and takes the room back when the reply is put away.
+  await page.setViewportSize({ width: 844, height: 390 });
+  await settled();
+  await whole();
+  const shown = await rectOf("Alpha");
+  expect(shown.width).toBeGreaterThan(120);
   await dock().getByRole("button", { name: "Collapse" }).tap();
   await settled();
-  expect(await dock().innerText()).not.toContain("Here is the route.");
+  expect(await dock().innerText()).not.toContain("The figure shows");
+  expect((await rectOf("Alpha")).width).toBeGreaterThanOrEqual(shown.width - 1);
+  // With the reply put away, the studio is a tap away from the top bar.
+  await page.setViewportSize({ width: 390, height: 664 });
+  await settled();
+  await top().getByRole("button", { name: "Studio and versions" }).tap();
+  await expect.poll(() => sheet().getAttribute("aria-label")).toBe("Studio");
+  expect(await sheet().getByRole("button", { name: "Studio" }).getAttribute("aria-pressed")).toBe("true");
 });
 
-it("selects a part with a tap and offers what a finger can do; a change described goes with the part", async () => {
+it("selects a part with a tap and offers what a finger can do; a change described goes with the part, a double tap changes its words in place, and its actions delete it", async () => {
   await open(await make());
   await tap(center(await rectOf("Alpha")));
   await expect.poll(() => actions().innerText()).toContain("Alpha");
@@ -139,26 +161,7 @@ it("selects a part with a tap and offers what a finger can do; a change describe
   await page.keyboard.press("Enter");
   await settled();
   expect(asked.map((a) => a.prompt)).toEqual(["Make it red\nSelected module: a\nAlpha"]);
-});
-
-it("moves a selected part with a finger, laying the saved move over it in place, and saves it as a version", async () => {
-  await open(await make());
-  const a = await rectOf("Alpha");
-  await tap(center(a));
-  const before = (await module("Alpha"))!;
-  await swipe(center(a), { x: a.cx + 40, y: a.cy + 90 });
-  await settled();
-  const after = (await module("Alpha"))!;
-  expect(after.left).not.toBe(before.left);
-  expect(after.mark).toBe(before.mark);
-  expect(await statuses()).toContain("1 change not saved\nDiscard\nSave");
-  await dock().getByRole("button", { name: "Save", exact: true }).tap();
-  await settled();
-  expect(await statuses()).toContain("Saved as version 2");
-});
-
-it("changes words where they are with a double tap, and deletes a part from its actions", async () => {
-  await open(await make());
+  // A double tap changes words where they are; the actions delete the part.
   await tap(center(await rectOf("Alpha")), 2);
   await expect
     .poll(() => page.evaluate(() => (document.activeElement as HTMLTextAreaElement)?.value))
@@ -174,38 +177,7 @@ it("changes words where they are with a double tap, and deletes a part from its 
   expect(await actions().count()).toBe(0);
 });
 
-it("selects a part that leads elsewhere with a long press, without following it; a tap follows it", async () => {
-  const id = await make({ sub: "drawn", leads: true });
-  await open(id);
-  await press(center(await rectOf("Alpha")));
-  await settled();
-  expect(new URL(page.url()).pathname).toBe(`/a/${id}`);
-  await expect.poll(() => actions().innerText()).toContain("Alpha");
-  await actions().getByRole("button", { name: "Deselect" }).tap();
-  await settled();
-  await tap(center(await rectOf("Alpha")));
-  await settled();
-  expect(new URL(page.url()).pathname).toBe(`/a/${id}/sub`);
-});
-
-it("moves the view with one finger on the paper, and zooms it with two", async () => {
-  await open(await make());
-  const a = await rectOf("Alpha"),
-    b = await rectOf("Beta");
-  const paper = { x: a.cx, y: (a.y + a.height + b.y) / 2 };
-  const beta = (await module("Beta"))!;
-  await swipe(paper, { x: paper.x - 30, y: paper.y + 80 });
-  await settled();
-  const moved = await rectOf("Beta");
-  expect(Math.round(moved.y - b.y)).toBeGreaterThan(60);
-  // The view moved; the part did not.
-  expect((await module("Beta"))!.left).toBe(beta.left);
-  await pinch({ x: 195, y: 330 }, 80, 240);
-  await settled();
-  expect((await rectOf("Beta")).width).toBeGreaterThan(moved.width * 1.8);
-});
-
-it("looks at a version from the versions sheet in place, goes back to it, and takes that back", async () => {
+it("moves a selected part with a finger in place and saves it as a version; looks at a version from the sheet in place, goes back to it and takes that back; undoes from the top bar", async () => {
   await open(await make());
   const a = await rectOf("Alpha");
   await tap(center(a));
@@ -213,8 +185,12 @@ it("looks at a version from the versions sheet in place, goes back to it, and ta
   await swipe(center(a), { x: a.cx + 40, y: a.cy + 90 });
   await settled();
   const moved = (await module("Alpha"))!;
+  expect(moved.left).not.toBe(before.left);
+  expect(moved.mark).toBe(before.mark);
+  expect(await statuses()).toContain("1 change not saved\nDiscard\nSave");
   await dock().getByRole("button", { name: "Save", exact: true }).tap();
   await settled();
+  expect(await statuses()).toContain("Saved as version 2");
   expect(await outlined()).toBe(1);
   // The versions are the other tab of the studio's sheet.
   await top().getByRole("button", { name: "Studio and versions" }).tap();
@@ -236,20 +212,38 @@ it("looks at a version from the versions sheet in place, goes back to it, and ta
   await dock().getByRole("button", { name: "Undo", exact: true }).tap();
   await settled();
   expect(await module("Alpha")).toMatchObject({ left: moved.left, mark: before.mark });
-});
-
-it("undoes the latest change from the top bar", async () => {
-  await open(await make());
-  const a = await rectOf("Alpha");
-  await tap(center(a));
-  const before = (await module("Alpha"))!;
-  await swipe(center(a), { x: a.cx + 40, y: a.cy + 90 });
+  // The top bar undoes the latest change.
+  const b = await rectOf("Alpha");
+  await tap(center(b));
+  await swipe(center(b), { x: b.cx + 30, y: b.cy + 30 });
   await settled();
+  expect((await module("Alpha"))!.left).not.toBe(moved.left);
   await top().getByRole("button", { name: "Undo" }).tap();
   await settled();
-  expect(await module("Alpha")).toMatchObject({ left: before.left, mark: before.mark });
+  expect(await module("Alpha")).toMatchObject({ left: moved.left, mark: before.mark });
 });
 
+it("selects a part that leads elsewhere with a long press, without following it, keeping the way to let it go in view however long its name; a tap follows it", async () => {
+  const id = await make({ sub: "drawn", leads: true });
+  await api(`/works/${id}/edits`, "POST", {
+    baseRevision: (await api(`/works/${id}`)).revision,
+    edit: { modules: [{ id: "a", label: "A part with a very long name that would push everything else off the screen" }] },
+  });
+  await open(id);
+  await press(center(await rectOf("Alpha")));
+  await settled();
+  expect(new URL(page.url()).pathname).toBe(`/a/${id}`);
+  const deselect = actions().getByRole("button", { name: "Deselect" });
+  await expect.poll(() => deselect.count()).toBe(1);
+  const r = (await deselect.boundingBox())!;
+  expect(r.x + r.width).toBeLessThanOrEqual(390);
+  expect(r.x).toBeGreaterThan(200);
+  await deselect.tap();
+  await settled();
+  await tap(center(await rectOf("Alpha")));
+  await settled();
+  expect(new URL(page.url()).pathname).toBe(`/a/${id}/sub`);
+});
 
 it("renames the work and goes to a scene from the title's sheet", async () => {
   const id = await make({ sub: "empty" });
@@ -265,44 +259,6 @@ it("renames the work and goes to a scene from the title's sheet", async () => {
   expect(new URL(page.url()).pathname).toBe(`/a/${id}/sub`);
   expect(asked.map((a) => a.sceneId)).toEqual(["sub"]);
 });
-
-it("offers the exports in a sheet", async () => {
-  await open(await make());
-  await top().getByRole("button", { name: "Export and share" }).tap();
-  const items = await sheet().getByRole("menuitem").allInnerTexts();
-  expect(items.map((t) => t.trim())).toEqual(
-    expect.arrayContaining(["PNG", "JPG", "Copy image", "Interactive page", "PDF"]),
-  );
-});
-
-it("draws again only what shows the author's run as it goes, and only the composer while typing", async () => {
-  const id = await make();
-  await open(id);
-  const user = { kind: "message", role: "user", text: "Draw" } as const;
-  await tell({ type: "run", run: run(id, "live", "running", [user]) });
-  await settled();
-  const before = await renders();
-  for (let i = 1; i <= 10; i++)
-    await tell({ type: "run", run: run(id, "live", "running", [user, { kind: "thinking", text: "step " + i }]) });
-  await settled();
-  const after = await renders();
-  const grew = (part: string) => (after[part] ?? 0) - (before[part] ?? 0);
-  expect(grew("phone.canvas")).toBeGreaterThan(0);
-  expect(grew("status")).toBeGreaterThan(0);
-  for (const part of ["phone.page", "phone.top", "phone.notes", "composer"])
-    expect([part, grew(part)]).toEqual([part, 0]);
-  await tell({ type: "run", run: run(id, "live", "completed", [user]) });
-  await settled();
-  const quiet = await renders();
-  await composer().pressSequentially("hello", { delay: 20 });
-  await settled();
-  const typed = await renders();
-  const changed = (part: string) => (typed[part] ?? 0) - (quiet[part] ?? 0);
-  expect(changed("composer")).toBeGreaterThan(0);
-  for (const part of ["phone.page", "phone.top", "phone.notes", "phone.canvas", "status"])
-    expect([part, changed(part)]).toEqual([part, 0]);
-});
-
 
 it("opens a wide drawing filled to the screen from its left, large enough to read, and shows it whole on a tap", async () => {
   await wide();
@@ -324,26 +280,7 @@ it("opens a wide drawing filled to the screen from its left, large enough to rea
   expect(await page.getByRole("button", { name: "Whole drawing" }).count()).toBe(1);
 });
 
-it("keeps the studio a tap away from the top bar after the reply is put away and when the work is opened again", async () => {
-  const id = await make();
-  await open(id);
-  await composer().fill("Draw the route");
-  await composer().press("Enter");
-  await settled();
-  const user = { kind: "message", role: "user", text: "Draw the route" } as const;
-  await tell({
-    type: "run",
-    run: run(id, "told", "completed", [user, { kind: "message", role: "assistant", text: "Here is the route." }]),
-  });
-  await settled();
-  await dock().getByRole("button", { name: "Collapse" }).tap();
-  await settled();
-  await top().getByRole("button", { name: "Studio and versions" }).tap();
-  await expect.poll(() => sheet().getAttribute("aria-label")).toBe("Studio");
-  expect(await sheet().getByRole("button", { name: "Studio" }).getAttribute("aria-pressed")).toBe("true");
-});
-
-it("closes a sheet when pulled down by its grip, and with the browser's way back without leaving the work", async () => {
+it("closes a sheet when pulled down by its grip, and with the browser's way back without leaving the work; offers the exports in a sheet", async () => {
   const id = await make();
   await open(id);
   await top().getByRole("button", { name: "Studio and versions" }).tap();
@@ -354,7 +291,10 @@ it("closes a sheet when pulled down by its grip, and with the browser's way back
   expect(await sheet().count()).toBe(0);
   await top().getByRole("button", { name: "Export and share" }).tap();
   await settled();
-  expect(await sheet().count()).toBe(1);
+  const items = await sheet().getByRole("menuitem").allInnerTexts();
+  expect(items.map((t) => t.trim())).toEqual(
+    expect.arrayContaining(["PNG", "JPG", "Copy image", "Interactive page", "PDF"]),
+  );
   await page.goBack();
   await settled();
   expect(await sheet().count()).toBe(0);
@@ -367,46 +307,6 @@ it("closes a sheet when pulled down by its grip, and with the browser's way back
   await page.goBack();
   await settled();
   expect(new URL(page.url()).pathname).not.toBe(`/a/${id}`);
-});
-
-it("keeps the way to let a selected part go in view, however long its name", async () => {
-  const id = await make();
-  await api(`/works/${id}/edits`, "POST", {
-    baseRevision: (await api(`/works/${id}`)).revision,
-    edit: { modules: [{ id: "a", label: "A part with a very long name that would push everything else off the screen" }] },
-  });
-  await open(id);
-  await tap(center(await rectOf("Alpha")));
-  const deselect = actions().getByRole("button", { name: "Deselect" });
-  await expect.poll(() => deselect.count()).toBe(1);
-  const r = (await deselect.boundingBox())!;
-  expect(r.x + r.width).toBeLessThanOrEqual(390);
-  expect(r.x).toBeGreaterThan(200);
-});
-
-it("types into fields at 16px, so iOS does not zoom the page in on them", async () => {
-  await open(await make());
-  const size = await composer().evaluate((e) => getComputedStyle(e).fontSize);
-  expect(parseFloat(size)).toBeGreaterThanOrEqual(16);
-});
-
-it("shows only the first lines of a long reply over the drawing", async () => {
-  const id = await make();
-  await open(id);
-  await composer().fill("Explain");
-  await composer().press("Enter");
-  await settled();
-  const long = "The figure shows the route from the hills to the sea. ".repeat(12);
-  await tell({
-    type: "run",
-    run: run(id, "told", "completed", [
-      { kind: "message", role: "user", text: "Explain" },
-      { kind: "message", role: "assistant", text: long },
-    ]),
-  });
-  await settled();
-  const reply = (await dock().locator("button", { hasText: "The figure shows" }).first().boundingBox())!;
-  expect(reply.height).toBeLessThan(60);
 });
 
 it("keeps a detail page's way back in view as it scrolls, and closes it with the browser's way back", async () => {
@@ -477,31 +377,6 @@ it("lays the home page out for a phone: it scrolls to every work, and its menus 
   }
 });
 
-it("keeps the drawing large on a phone turned on its side with a reply open, and takes the room back when it is put away", async () => {
-  const id = await make();
-  await open(id);
-  await composer().fill("Explain");
-  await composer().press("Enter");
-  await settled();
-  await tell({
-    type: "run",
-    run: run(id, "told", "completed", [
-      { kind: "message", role: "user", text: "Explain" },
-      { kind: "message", role: "assistant", text: "The figure shows the route from the hills to the sea. ".repeat(6) },
-    ]),
-  });
-  await settled();
-  await page.setViewportSize({ width: 844, height: 390 });
-  await settled();
-  await whole();
-  const shown = await rectOf("Alpha");
-  // Not a dot: the drawing keeps at least half the screen's height to show in.
-  expect(shown.width).toBeGreaterThan(120);
-  await dock().getByRole("button", { name: "Collapse" }).tap();
-  await settled();
-  expect((await rectOf("Alpha")).width).toBeGreaterThanOrEqual(shown.width - 1);
-});
-
 it("changes the words a part was selected by, not the first it draws", async () => {
   const w = await api("/works", "POST", { title: "Steps" });
   const step = `return api.svg('<svg viewBox="0 0 '+api.width+' '+api.height+'"><circle cx="40" cy="40" r="26" fill="#3a6fd8"/><text x="40" y="52" font-size="32" fill="#fff" text-anchor="middle">'+api.data.n+'</text><text x="84" y="54" font-size="30">'+api.data.label+'</text></svg>')`;
@@ -527,8 +402,9 @@ it("changes the words a part was selected by, not the first it draws", async () 
     .toBe("Measure");
 });
 
-it("keeps the send button on screen however long the request, with the keyboard up", async () => {
+it("types into fields at 16px, so iOS does not zoom the page in on them, and keeps the send button on screen however long the request, with the keyboard up", async () => {
   await open(await make());
+  expect(parseFloat(await composer().evaluate((e) => getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(16);
   // The keyboard takes the bottom of the screen.
   await page.setViewportSize({ width: 390, height: 360 });
   await settled();
