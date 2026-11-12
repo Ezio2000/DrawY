@@ -58,7 +58,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 - `contracts/models.ts`（由 `contracts/index.ts` 转出）是唯一说明“谁能做什么”的地方：`channelSpecs`（`api`/`oauth` 各自的固定地址、能说的接口格式、速度档、能否内置搜索、能否固定提供商、要不要 Account ID）、`protocolSpecs`（每种接口格式的官方地址、能否内置搜索、是否有速度档）、`searchProviderSpecs`（地址、是否必须有 Key、是否由服务商读网页）。`settleWriter`/`settleProvider` 按规格改正模型（格式不被支持时退回接入方式的第一种、内置搜索不能用就不开放、可选速度只留连接和格式提供的、默认档位取可选的），`modelCatalogSchema` 和设置页都用它；`reconnect` 在供应商换接入方式时把地址换成 `endpointFor` 给的地址。`offersBuiltinSearch`、`speedsOf`、`pinnedProvider`、`searchReady`、`protocolFor`（新模型按地址猜格式）都从规格推出。`picked`/`settingsFor`/`menuFor` 是“用户选了哪个档位、落到哪个组合”的唯一实现，`UserStore.settings()` 和 `/api/models` 只调用它们；`costOf` 是费用的唯一算法，前端账单和运行记录都用它。
 - `modules/models` 每种格式一个适配器（`responses.ts`、`chat.ts`、`anthropic.ts`，接口见 `types.ts` 的 `Adapter`），在 `index.ts` 的 `adapters: Record<Protocol, Adapter>` 里登记。`generate(role, turn)` 收一个 `Turn` 对象（`instructions/input/tools/signal/onEvent/budget/cacheKey/steer/effort`），先做通用处理（凭证检查、`blind`、输出上限），再交给适配器。按格式不同的行为都问适配器：`effortControl`（`request` 每次请求带档位、`conversation` 在对话里插 `configuration_update`、`fixed` 只能改请求级强度）决定 `agent` 的 `withLessThought` 和 `holdEffort`；`narrow` 决定 `steering` 能否不改工具列表就收窄（只有 Responses 有）；`describe` 给 trace 的 `request` 补字段（Responses 的 `serviceTier`），由 `requestOf` 合成。`http.ts` 放共用的 `headers`、`post`（自动带 `pinnedProvider`）和 SSE 读取 `events`。`agent` 里不再出现按 `protocol` 分支的代码，加格式时也不要再加。
 - `modules/search` 的 `clients: Record<SearchProvider, Client>` 每个服务商一项：`search`，以及服务商自己读网页时的 `read`（没有就由 DrawY 直接读）。
-- 设置页 `apps/web/src/ModelSettings.tsx`：`WriterSection` 和 `ImageSection` 共用 `ProviderSection`（供应商列表，展开是连接字段和它的模型列表；两者的差别写成一个 `Kind`），`SearchSection` 列搜索服务并设默认联网方式。添加供应商从 `presets` 起步；默认模型不能删，它所在的供应商也不能删。`ConnectionFields` 按规格只显示适用的控件（Account ID），模型的格式、固定提供商、可选速度和缓存写入价格只在适用时出现。价格用 `NumberField`（文字输入、保存数字）。行、分组、条目这些通用部件在 `SettingsParts.tsx`。档位页（`LabelSection`）在标题行标出不可用的档位并列出原因；强度和速度用 `ChooseOrDefault`，第一项是“模型默认”，速度列出连接支持的全部档位（只开放一个时也能选），选了模型没开放的速度就同时改那个模型的 `speeds`（`offering`）；档位可上移下移（即菜单顺序）、复制、设为默认。模型条目标出用到它的档位，可复制。新的接入方式、格式或服务商要在 `i18n.tsx` 的 `settings.channels/credentials/protocols/protocolHints/providers/providerHints` 补中英文，类型检查会提示缺哪一项。
+- 设置页 `apps/web/src/ModelSettings.tsx`：`WriterSection` 和 `ImageSection` 共用 `ProviderSection`（供应商列表，展开是连接字段和它的模型列表；两者的差别写成一个 `Kind`），`SearchSection` 列搜索服务并设默认联网方式。添加供应商从 `presets` 起步；默认模型不能删，它所在的供应商也不能删。`ConnectionFields` 按规格只显示适用的控件（Account ID），模型的格式、固定提供商、可选速度和缓存写入价格只在适用时出现。价格用 `NumberField`（文字输入、保存数字）。行、分组、条目这些通用部件在 `SettingsParts.tsx`，账号、邀请和角色这类管理列表都经它的 `useLoaded`（读取、出错、`attempt` 执行修改并报告错误）和 `Loaded`（错误、加载中、内容）。档位页（`LabelSection`）在标题行标出不可用的档位并列出原因；强度和速度用 `ChooseOrDefault`，第一项是“模型默认”，速度列出连接支持的全部档位（只开放一个时也能选），选了模型没开放的速度就同时改那个模型的 `speeds`（`offering`）；档位可上移下移（即菜单顺序）、复制、设为默认。模型条目标出用到它的档位，可复制。新的接入方式、格式或服务商要在 `i18n.tsx` 的 `settings.channels/credentials/protocols/protocolHints/providers/providerHints` 补中英文，类型检查会提示缺哪一项。
 
 `ModelCatalog` 里三样东西分开配置：`writers`（绘制供应商，每个 `Provider` 是连接加 `models: WriterModel[]`）、`painters`（生图供应商，`models: ImageModel[]`）、`searches`（搜索服务）。用户只能选“档位”（`labels: ModelLabel[]`，管理员在设置的“档位”页配置）：每个档位有名称、说明，以及绘制模型、可选的强度和速度（不填用模型默认）、搜索方式 `web` 和生图模型；`modelCatalogSchema` 校验档位引用的模型和搜索都存在、ID 不重复、`defaults.label` 是其中之一。没有配置档位时 `labelsOf` 用 `defaults: { writer, image, web }` 合成一个 `default` 档位，所以 `defaults` 仍是"未配置档位时的组合"，也是新档位的起点。被档位用到的模型和它所在的供应商在设置页不能删。模型 ID 在同类里全局唯一；显示名默认是 `writerLabel`/`imageLabel` 给的 `模型[供应商]`（固定了 OpenRouter 提供商时是 `模型[供应商/提供商]`），填了 `name` 就用它。`WriterModel` 记管理员开放给用户的 `efforts`/`speeds`/`builtinSearch` 和各自的默认 `effort`/`speed`，以及价格 `prices`（每百万 token 的 `input/cached/cacheWrite/output`、内置搜索每次 `search`）和速度倍率 `speedRates`（缺省取 `speedRates` 常量）；`ImageModel.prices`（`ImagePrices`）是每张图，以及 Images API 分开计价的 `textInput`/`imageInput`/`output`/`textOutput` 每百万 token：`imageTokensOf` 按响应里的 `input_tokens_details`/`output_tokens_details` 拆开（不拆的服务商全算文字输入），`run.usage.images` 分别累计，所以带风格参考图的生图按图片输入价计算；`SearchService.prices` 是每次查询和每次读网页。存的目录读不通时 `Storage.models()` 换成 `defaultCatalog()`，不做旧格式迁移。`UserSettings` 只记 `preferences` 和 `label`（可为空）；`PUT /api/settings` 用 `settingsChangeSchema` 接收，其他字段丢弃。`picked` 落定：档位不在了用 `defaults.label`，再不在用第一个；强度取模型可选里最近的，速度不可选就用模型默认；`web` 是 `off`、`builtin` 或搜索服务 ID（服务 ID 不能叫这两个名字），经 `webFor` 落定——要内置搜索而模型没有、或服务没有 Key 时是 `off`。`UserStore.settings()`（即 `settingsFor`）合成 `Settings`：`label`（档位名）、`author`（运行时的 `Role`）/`authorName`、`search: { mode, service? }`、`image`/`imageName`，以及这次的 `prices`（`RunPrices`：按速度倍率换算后的 token 价格、按搜索方式取的每次搜索和读网页价格、生图价格）。
 
@@ -151,7 +151,7 @@ docker compose up -d --build                      # 完整部署，访问 http:/
   - `WorkPage.tsx` 管页面怎么用：选区和连线选择、详情页、收起回复、面板（画室、版本、编辑）及其宽度（`panels.tsx`）、作者开始运行时自动打开画室、场景菜单、改标题、就地改字（`Retype`）、换图时的素材对话框、画室跟着滚动、会话发出的事怎么说（`saved` 说成“已保存为第 N 版”，`failed` 交给 `feedback`），以及 ⌘Z/⇧⌘Z、⌘S 和 Esc（结束预览、收起回复）。它从会话只读运行开始或结束、换场景时才变的东西，快捷键在按下时才读会话。
   - `parts.tsx` 是读各自那片快照的部件：`Topbar`（画布左上角的标题牌：作品名、场景路径，以及当前版本的印，点它开关版本面板，有未保存的手动修改时旁边多一个蓝点；它只读版本号和未保存数，运行事件不让它重新渲染）、`CanvasArea`、`EditOverlay`、`Bars`、`SideTools`、`EditPane`。两个壳的页面共用 `workPage.ts` 的 `useWorkPage`（收起回复、详情页、就地改字、会话发出的事、回退与撤销、进入场景、发送、续画、停止，以及把作品自己改不了的修改交给作者），各页只留自己的选区、面板或底部面板；共用的部件放在各自的组件旁边：`Studio.tsx` 的 `WorkStatus`（输入框顶部的进度、提问或回复）和 `WorkStudio`、`Drafts.tsx` 的 `WorkDrafts`、`Composer.tsx` 的 `WorkComposer`（自己读请求，所以打字只重新渲染它）、`SceneView.tsx` 的 `WorkDetail`，壳只给它们套上面板或底部面板。作者运行时，只有画布、状态行和画室会跟着重新渲染。
   - `editing.ts` 的 `useEditing` 是鼠标和键盘的编辑方式：工具、右键菜单、系统剪贴板事件、编辑快捷键、方向键微调、全选和 Tab 轮选。它把会话的 `ops` 绑到当前选区上，再加上要先选素材的 `add(kind)`；桌面的剪贴板是这里的一个 `Clipboard`，所有作品共用。
-- **作品页的回归验证** `apps/web/regression/`：`harness.ts` 在临时目录里起真实的素材服务和主程序（各用一个空闲端口），用 Playwright 打开构建出的前端。它导出的 `page`、`asked` 等是活绑定，每条用例拿到的都是为它新开的页面。手指经 CDP 的 `Input.dispatchTouchEvent` 按下，也就是浏览器自己的触屏输入：`fingers`、`swipe`、`pinch`、`press`、`tap`。作者不是真的：请求被拦下，回一个已结束的运行；作者的运行事件经页面收事件的 BroadcastChannel 发给页面，和服务器推来的事件走同一条路；档位菜单显示为已接入。部件经 `probe.ts` 的 `counted` 计数，只在测试设置了 `window.__drawyRenders` 时计数。布局对不代表画出来对，所以 `paintedAsLaidOut` 看像素：先截整屏，再量文字的布局框，要求截图里模块内深色像素的范围落在布局框里、并铺满它的大部分宽度（字画大了会溢出，被裁掉会留空）；必须先截图，因为命中测试（`elementFromPoint`）会让浏览器重新排版文字，把用户看到的错误盖掉。`outlined` 数画布上选中框的个数。三个套件：
+- **作品页的回归验证** `apps/web/regression/`：`harness.ts` 在临时目录里起真实的素材服务和主程序（各用一个空闲端口），用 Playwright 打开构建出的前端。它导出的 `page`、`asked` 等是活绑定，每条用例拿到的都是为它新开的页面。手指经 CDP 的 `Input.dispatchTouchEvent` 按下，也就是浏览器自己的触屏输入：`fingers`、`swipe`、`pinch`、`press`、`tap`。作者不是真的：请求被拦下，回一个已结束的运行；作者的运行事件经页面收事件的 BroadcastChannel 发给页面，和服务器推来的事件走同一条路；档位菜单显示为已接入。部件经 `probe.ts` 的 `counted` 计数，只在测试设置了 `window.__drawyRenders` 时计数。布局对不代表画出来对，所以 `paintedAsLaidOut` 看像素：先截整屏，再量文字的布局框，要求截图里模块内深色像素的范围落在布局框里、并铺满它的大部分宽度（字画大了会溢出，被裁掉会留空）；必须先截图，因为命中测试（`elementFromPoint`）会让浏览器重新排版文字，把用户看到的错误盖掉。`outlined` 数画布上选中框的个数。用同一件作品能走完的行为写成一条连贯的长流程，不为每个断言另开页面。三个套件：
   - `desktop.test.ts`（电脑屏幕、鼠标和键盘）：
     - 画法里的 SVG 文字按布局的大小画出；
     - 手动修改先以草稿显示，保存后原地替换、模块元素不重建；
@@ -160,10 +160,11 @@ docker compose up -d --build                      # 完整部署，访问 http:/
     - 打开版本面板时放开选区，预览和回到某版都不重画，回退和放弃修改都可撤销；
     - 空白画布放文字后直接就地改字，⌘D、⌘C/⌘V、Delete；
     - 手动搭一张图：R 拖出一个方框并直接打字、靠近一边出现的加号延伸出相连的元素（落在视野外时视角跟过去）、连线工具连两个元素（两端不带边）、Alt 拖出复制品而原件不动、多选后在选区上方的条里统一配色；
-    - 图板：编辑时才有标尺，比例菜单切到 100%、开关标尺、吸附到方格后拖动落在方格线上，⇧1 看全图，`?` 打开快捷键表；
+    - 图板：编辑时才有标尺，比例菜单切到 100%、开关标尺、吸附到方格后拖动和缩放落在方格线上，⇧1 看全图，聚焦画布时 ⌘0 回到 100%，`?` 打开快捷键表；
     - 主页发请求建作品；进入空的子场景时请作者画，地址里没有的场景回到根场景；
     - 作者运行时自动打开画室、收起输入框，结束后的回复按 Esc 收起；
-    - 作者运行事件只让画布和状态行重新渲染，打字只让输入框重新渲染；
+    - 作者运行事件只让画布和状态行重新渲染，打字只让输入框重新渲染（重新渲染的计数只在这个套件里验证，手机壳共用同样的部件和 `useSelect`）；
+    - 中文输入法组词时输入框不丢字、不提前发送；
   - `phone.test.ts`（模拟 iPhone，手指）：
     - 铺满屏幕、没有侧栏，窗口变成平板大小时换成桌面页、再变回来时换回；
     - 发请求，作者作画时画布不被遮挡，从进度行拉出画室，回复可收起；
@@ -175,7 +176,6 @@ docker compose up -d --build                      # 完整部署，访问 http:/
     - 竖拿、横拿和双指缩放后，画法里的 SVG 文字按布局的大小画出、不被截断；
     - 打开版本面板时放开选中的部分，预览、回到此版并撤销；顶栏撤销；
     - 标题面板改名、进入场景；导出面板；
-    - 运行事件和打字时只重新渲染对应部件；
     - 宽图打开时从左边铺满屏幕、字够大，点“看全图”看到整幅，双指缩放后按钮再出现；
     - 回复收起后从顶栏打开画室；底部面板下拉关闭，浏览器返回关面板而不离开作品；详情页滚动后返回仍在顶部，浏览器返回关掉它；
     - 很长的模块名不挤掉取消选择；输入框至少 16px；长回复只显示前两行；
