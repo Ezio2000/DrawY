@@ -141,6 +141,18 @@ const HOLD_MS = 500,
 const fingers = () =>
   typeof matchMedia === "function" && matchMedia("(any-pointer: coarse)").matches;
 /** Distance from a point to a segment. */
+/** Where words are on screen, and the size their type shows at: an HTML element's type is
+ * scaled by how much larger it shows than it lays out; an SVG's is about its line's height. */
+function placeOf(words: Element) {
+  const rect = words.getBoundingClientRect();
+  return {
+    rect,
+    size:
+      words instanceof HTMLElement
+        ? parseFloat(getComputedStyle(words).fontSize) * (rect.width / (words.offsetWidth || rect.width))
+        : rect.height * 0.8,
+  };
+}
 function distance(p: Point, a: Point, b: Point) {
   const dx = b.x - a.x,
     dy = b.y - a.y,
@@ -1005,14 +1017,16 @@ export class Canvas {
       });
     }
     this.element.style.setProperty("--zoom", String(scale));
-    const box = (el: HTMLElement, b: Bounds) =>
+    const box = (el: HTMLElement, b: Bounds) => {
+      const on = this.shown(b);
       Object.assign(el.style, {
         display: "block",
-        left: x + b.x * scale + "px",
-        top: y + b.y * scale + "px",
-        width: b.width * scale + "px",
-        height: b.height * scale + "px",
+        left: on.x + "px",
+        top: on.y + "px",
+        width: on.width + "px",
+        height: on.height + "px",
       });
+    };
     const chosen = this.selection.flatMap((id) => {
       const m = this.renderer.instances.get(id);
       return m ? [{ ...m, bounds: this.ghost.get(id) ?? m.bounds }] : [];
@@ -1123,10 +1137,7 @@ export class Canvas {
         );
     };
     if (shown && box) {
-      const l = x + box.x * scale,
-        t = y + box.y * scale,
-        w = box.width * scale,
-        h = box.height * scale;
+      const { x: l, y: t, width: w, height: h } = this.shown(box);
       if (w >= 24 || h >= 24) {
         const out = 15,
           dot = !g || g.kind === "press" ? this.near : null;
@@ -1356,8 +1367,7 @@ export class Canvas {
   /** Where the selection is on screen: the box around the selected modules, or around
    * the selected link's lines. */
   selectionRect(): DOMRect | undefined {
-    const r = this.element.getBoundingClientRect(),
-      { x, y, scale } = this.camera;
+    const r = this.element.getBoundingClientRect();
     let b: Bounds | undefined;
     if (this.selection.length) {
       const boxes = this.selection.flatMap((id) => {
@@ -1379,7 +1389,8 @@ export class Canvas {
         };
       }
     }
-    return b && new DOMRect(r.left + x + b.x * scale, r.top + y + b.y * scale, b.width * scale, b.height * scale);
+    const on = b && this.shown(b);
+    return on && new DOMRect(r.left + on.x, r.top + on.y, on.width, on.height);
   }
   private changed() {
     cancelAnimationFrame(this.gliding);
@@ -1554,8 +1565,9 @@ export class Canvas {
       if (start >= lo && start + size <= hi) return 0;
       return start < lo || size > hi - lo ? lo - start : hi - start - size;
     };
-    const dx = shift(x + b.x * scale, b.width * scale, left, this.element.clientWidth - right),
-      dy = shift(y + b.y * scale, b.height * scale, top, this.element.clientHeight - bottom);
+    const on = this.shown(b);
+    const dx = shift(on.x, on.width, left, this.element.clientWidth - right),
+      dy = shift(on.y, on.height, top, this.element.clientHeight - bottom);
     if (!dx && !dy) return;
     const target = { scale, x: x + dx, y: y + dy };
     cancelAnimationFrame(this.gliding);
@@ -1660,13 +1672,13 @@ export class Canvas {
     const b = this.extent();
     if (!(b.width > 0 && b.height > 0)) return true;
     const { top, bottom } = this.clear();
-    const { x, y, scale } = this.camera,
+    const on = this.shown(b),
       slack = 4;
     return (
-      x + b.x * scale >= -slack &&
-      y + b.y * scale >= top - slack &&
-      x + (b.x + b.width) * scale <= this.element.clientWidth + slack &&
-      y + (b.y + b.height) * scale <= this.element.clientHeight - bottom + slack
+      on.x >= -slack &&
+      on.y >= top - slack &&
+      on.x + on.width <= this.element.clientWidth + slack &&
+      on.y + on.height <= this.element.clientHeight - bottom + slack
     );
   }
   /** The middle of the view, in scene units, clear of the controls laid over it. */
@@ -1842,18 +1854,7 @@ export class Canvas {
       kind: "text",
       moduleId,
       text,
-      place: () => {
-        const rect = words.getBoundingClientRect();
-        return {
-          rect,
-          // An HTML element's type is scaled by how much larger it shows than it lays out.
-          size:
-            words instanceof HTMLElement
-              ? parseFloat(getComputedStyle(words).fontSize) *
-                (rect.width / (words.offsetWidth || rect.width))
-              : rect.height * 0.8,
-        };
-      },
+      place: () => placeOf(words),
     });
   }
   /** The words of a module a person means, to change where they are as a double click on
@@ -1878,12 +1879,8 @@ export class Canvas {
       const words = parent.closest("text") ?? parent;
       if (seen.has(words)) continue;
       seen.add(words);
-      const rect = words.getBoundingClientRect();
+      const { rect, size } = placeOf(words);
       if (!rect.width || !rect.height) continue;
-      const size =
-        words instanceof HTMLElement
-          ? parseFloat(getComputedStyle(words).fontSize) * (rect.width / (words.offsetWidth || rect.width))
-          : rect.height * 0.8;
       found.push({ words, text: words instanceof SVGElement ? words.textContent!.trim() : own, rect, size });
     }
     if (!found.length) return undefined;
@@ -1903,16 +1900,7 @@ export class Canvas {
       kind: "text",
       moduleId,
       text,
-      place: () => {
-        const rect = words.getBoundingClientRect();
-        return {
-          rect,
-          size:
-            words instanceof HTMLElement
-              ? parseFloat(getComputedStyle(words).fontSize) * (rect.width / (words.offsetWidth || rect.width))
-              : rect.height * 0.8,
-        };
-      },
+      place: () => placeOf(words),
     };
   }
   /** Words of a link double-clicked while editing, to change where they are. */
@@ -1949,10 +1937,7 @@ export class Canvas {
       moduleId: linkId,
       link: true,
       text,
-      place: () => {
-        const rect = words.getBoundingClientRect();
-        return { rect, size: rect.height * 0.8 };
-      },
+      place: () => placeOf(words),
     });
   }
   private interactive(e: Event) {
@@ -1969,23 +1954,28 @@ export class Canvas {
     if (!this.editing && this.interactive(e)) return;
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
-      const rect = this.element.getBoundingClientRect();
-      this.camera = zoom(
-        this.camera,
-        { x: e.clientX - rect.left, y: e.clientY - rect.top },
-        Math.exp(-e.deltaY * 0.008),
-      );
+      this.camera = zoom(this.camera, this.local(e.clientX, e.clientY), Math.exp(-e.deltaY * 0.008));
     } else {
       this.camera.x -= e.deltaX;
       this.camera.y -= e.deltaY;
     }
     this.changed();
   }
+  /** A box of the scene as it shows now, measured from the canvas's corner. */
+  private shown(b: Bounds): Bounds {
+    const { x, y, scale } = this.camera;
+    return { x: x + b.x * scale, y: y + b.y * scale, width: b.width * scale, height: b.height * scale };
+  }
+  /** A point on screen measured from the canvas's corner. */
+  private local(clientX: number, clientY: number): Point {
+    const r = this.element.getBoundingClientRect();
+    return { x: clientX - r.left, y: clientY - r.top };
+  }
   /** A point on screen in scene units. */
   private toScene(clientX: number, clientY: number): Point {
-    const r = this.element.getBoundingClientRect(),
+    const p = this.local(clientX, clientY),
       { x, y, scale } = this.camera;
-    return { x: (clientX - r.left - x) / scale, y: (clientY - r.top - y) / scale };
+    return { x: (p.x - x) / scale, y: (p.y - y) / scale };
   }
   private down(e: PointerEvent) {
     if (e.button !== 0 && e.button !== 1) return;
@@ -2216,12 +2206,10 @@ export class Canvas {
   /** A dashed line from a point on screen to the pointer, or to the side of the module it
    * is over, which is marked. */
   private drawLine(from: Point, e: PointerEvent, skip: string) {
-    const r = this.element.getBoundingClientRect();
     const over = this.moduleAt(e.clientX, e.clientY);
     const target = over && over.id !== skip ? over : undefined;
     const toward = target && this.sideToward(target, e.clientX, e.clientY);
-    const ex = toward ? toward.x : e.clientX - r.left,
-      ey = toward ? toward.y : e.clientY - r.top;
+    const { x: ex, y: ey } = toward ?? this.local(e.clientX, e.clientY);
     this.line.style.display = "block";
     const [line, dot, ring] = [...this.line.children] as SVGElement[];
     line.setAttribute("x1", String(from.x));
@@ -2491,7 +2479,6 @@ export class Canvas {
   private pinched(g: Extract<NonNullable<Canvas["gesture"]>, { kind: "pinch" }>) {
     const [a, b] = [...this.touches.values()];
     if (!a || !b) return;
-    const r = this.element.getBoundingClientRect();
     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
       span = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
     const moved = {
@@ -2499,7 +2486,7 @@ export class Canvas {
       x: g.camera.x + mid.x - g.mid.x,
       y: g.camera.y + mid.y - g.mid.y,
     };
-    this.camera = zoom(moved, { x: mid.x - r.left, y: mid.y - r.top }, span / g.span);
+    this.camera = zoom(moved, this.local(mid.x, mid.y), span / g.span);
     this.changed();
   }
   /** A finger held still long enough selects what it is on and asks what to do there. What
