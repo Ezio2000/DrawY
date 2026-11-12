@@ -296,7 +296,7 @@ export class Canvas {
   /** The last tap with a finger, to tell a double tap; and when one was handled, so the
    * browser's own double click after it is not taken twice. */
   private tapped?: { at: number; x: number; y: number };
-  private doubled = 0;
+  private doubled = -Infinity;
   /** Whether the last press was a finger's. */
   private touching = false;
   /** Where the canvas was last pressed, on screen: which of a module's words a person
