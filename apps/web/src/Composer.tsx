@@ -76,7 +76,7 @@ export function Composer({
    * focus. */
   focus?: number;
   quote?: string;
-  unquote: () => void;
+  unquote?: () => void;
   /** Changes what is quoted by hand instead. */
   edit?: () => void;
   placeholder: string;
@@ -85,7 +85,7 @@ export function Composer({
   working: boolean;
   busy: boolean;
   send: () => void;
-  stop: () => void;
+  stop?: () => void;
   attach: (files: FileList | File[]) => void;
   /** Opens the library to pick materials from. */
   pick: () => void;
@@ -259,89 +259,9 @@ export function chosen(m: Models, change: SettingsChange): Models {
   return change.label ? { ...m, chosen: { label: change.label } } : m;
 }
 
-/** One pick beside the composer: what is picked, and a menu of the rest. */
-function Pick({
-  label,
-  value,
-  shown,
-  off,
-  long,
-  wide,
-  children,
-}: {
-  label: string;
-  value: string;
-  /** What the button shows, where it is more than the value's words. */
-  shown?: ReactNode;
-  /** Whether what is wanted is not what will happen (a search the model lacks). */
-  off?: boolean;
-  /** Whether its name may be long, and so give way where room is short. */
-  long?: boolean;
-  /** Whether its menu holds several settings side by side, and so is wider. */
-  wide?: boolean;
-  children: (close: () => void) => ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useDismiss(open, () => setOpen(false), ref);
-  return (
-    <div className={cx("pick")} data-long={long || undefined} ref={ref}>
-      <button
-        className={cx("pick-button")}
-        aria-label={`${label}: ${value}`}
-        data-tip={open ? undefined : label}
-        data-off={off || undefined}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        {shown ?? <span>{value}</span>}
-      </button>
-      {open && (
-        <div
-          className={cx("popover models-menu")}
-          data-wide={wide || undefined}
-          role="menu"
-        >
-          {children(() => setOpen(false))}
-        </div>
-      )}
-    </div>
-  );
-}
-/** One entry in a pick's menu. */
-function Option({
-  on,
-  disabled,
-  pick,
-  children,
-  note,
-}: {
-  on: boolean;
-  disabled?: boolean;
-  pick: () => void;
-  children: ReactNode;
-  note?: string;
-}) {
-  return (
-    <button
-      role="menuitemradio"
-      aria-checked={on}
-      disabled={disabled}
-      onClick={pick}
-    >
-      <span>
-        {children}
-        {note && <small>{note}</small>}
-      </span>
-      {on && <Check size={15} />}
-    </button>
-  );
-}
-
 /** The one pick a run is made with: a label, named by those who manage models, that stands
  * for a whole combination of models; and how many requests are left to make. */
-export function ModelBar({
+function ModelBar({
   models,
   pick,
   quota,
@@ -367,38 +287,69 @@ export function ModelBar({
         {left}
       </span>
     ) : null;
+  return <LabelPick models={models} label={label} name={name} left={left} pick={pick} />;
+}
+
+/** The label's pill, and a menu of the others. */
+function LabelPick({
+  models,
+  label,
+  name,
+  left,
+  pick,
+}: {
+  models: Models;
+  label: Models["labels"][number];
+  name: (l: { id: string; name: string }) => string;
+  left: ReactNode;
+  pick: (change: SettingsChange) => void;
+}) {
+  const w = useT().composer;
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useDismiss(open, () => setOpen(false), ref);
   return (
     <div className={cx("model-bar")}>
-      <Pick
-        label={w.labelSection}
-        value={name(label)}
-        shown={
+      <div className={cx("pick")} ref={ref}>
+        <button
+          className={cx("pick-button")}
+          aria-label={`${w.labelSection}: ${name(label)}`}
+          data-tip={open ? undefined : w.labelSection}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
           <span className={cx("pick-writer")}>
             <b>{name(label)}</b>
             {left}
           </span>
-        }
-      >
-        {(close) => (
-          <>
+        </button>
+        {open && (
+          <div className={cx("popover models-menu")} role="menu">
             <p className={cx("models-head")}>{w.labelSection}</p>
             {models.labels.map((l) => (
-              <Option
+              <button
                 key={l.id}
-                on={l.id === label.id}
+                role="menuitemradio"
+                aria-checked={l.id === label.id}
                 disabled={!l.ready}
-                note={l.ready ? l.description : w.modelUnconnected}
-                pick={() => {
-                  close();
+                onClick={() => {
+                  setOpen(false);
                   pick({ label: l.id });
                 }}
               >
-                {name(l)}
-              </Option>
+                <span>
+                  {name(l)}
+                  {(l.ready ? l.description : w.modelUnconnected) && (
+                    <small>{l.ready ? l.description : w.modelUnconnected}</small>
+                  )}
+                </span>
+                {l.id === label.id && <Check size={15} />}
+              </button>
             ))}
-          </>
+          </div>
         )}
-      </Pick>
+      </div>
     </div>
   );
 }

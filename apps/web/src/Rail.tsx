@@ -216,7 +216,7 @@ export function Rail({
                 {t.rail.traces}
               </button>
             )}
-            <LanguageSwitch label />
+            <LanguageSwitch />
             <ShellSwitch shells={shells} />
             <hr />
             <button

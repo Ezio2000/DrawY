@@ -2479,7 +2479,7 @@ export function useLanguage() {
 export const ChooseLocale = createContext<(locale: Locale) => void>(() => {});
 
 /** One press switches between Chinese and English. */
-export function LanguageSwitch({ label = false }: { label?: boolean }) {
+export function LanguageSwitch() {
   const locale = useLocale(),
     choose = useContext(ChooseLocale),
     t = useT();
@@ -2489,11 +2489,10 @@ export function LanguageSwitch({ label = false }: { label?: boolean }) {
       type="button"
       className={cx("language")}
       aria-label={t.language + " · " + t.languages[next]}
-      data-tip={label ? undefined : t.languages[next]}
       onClick={() => choose(next)}
     >
       <Languages size={16} />
-      {label ? <span>{t.languages[locale]}</span> : <b>{locale === "zh" ? "中" : "EN"}</b>}
+      <span>{t.languages[locale]}</span>
     </button>
   );
 }

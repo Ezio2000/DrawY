@@ -32,7 +32,7 @@ export function Auth({ done }: { done: (user: User) => void }) {
       <section className={cx("auth-side")}>
         <header className={cx("auth-top")}>
           <Brand size={26} />
-          <LanguageSwitch label />
+          <LanguageSwitch />
         </header>
         <div className={cx("auth-copy")}>
           <h1>{t.auth.headline}</h1>

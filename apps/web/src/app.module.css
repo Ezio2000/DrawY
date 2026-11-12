@@ -1629,11 +1629,6 @@ span.model-bar {
   flex: none;
 }
 
-.pick[data-long] {
-  flex: 0 1 auto;
-  min-width: 48px;
-}
-
 .pick:first-child {
   flex-shrink: 0.4;
 }
@@ -1694,10 +1689,6 @@ span.model-bar {
 }
 
 /* A search wanted that the model picked cannot make: the run will not search. */
-.pick-button[data-off] > span {
-  text-decoration: line-through;
-  color: var(--text-3);
-}
 
 .models-menu {
   top: auto;
@@ -1715,10 +1706,6 @@ span.model-bar {
   right: auto;
   left: 0;
   transform-origin: bottom left;
-}
-
-.models-menu[data-wide] {
-  width: 340px;
 }
 
 .models-menu > button {

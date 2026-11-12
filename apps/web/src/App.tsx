@@ -19,7 +19,7 @@ import { Home } from "./Home.tsx";
 import { listen } from "./events.ts";
 import { ChooseLocale, dictionaries, useLanguage } from "./i18n.tsx";
 import { pageOf, sceneOf, workIdOf } from "./routes.ts";
-import { useRequest, type RequestDraft } from "./session/request.ts";
+import { useRequest } from "./session/request.ts";
 import { useSelect } from "./session/store.ts";
 import {
   live,
@@ -349,7 +349,6 @@ export function App() {
                   open={(id) => go("/a/" + id)}
                   composer={
                     <HomeComposer
-                      draft={draft}
                       asking={asking}
                       starting={starting}
                       quota={user.quota}
@@ -435,7 +434,6 @@ function FloatingError({ feedback, shown }: { feedback: Feedback; shown: boolean
 
 /** The home page's composer: it reads the request itself, so typing draws only it. */
 function HomeComposer({
-  draft,
   asking,
   starting,
   quota,
@@ -444,7 +442,6 @@ function HomeComposer({
   feedback,
 }: {
   feedback: Feedback;
-  draft: RequestDraft;
   asking: Asking;
   starting: boolean;
   quota: number | null;
@@ -452,6 +449,7 @@ function HomeComposer({
   send: () => void;
 }) {
   const t = dictionaries[useLocale()];
+  const { draft } = asking;
   const request = useSelect(draft, (r) => r);
   return (
     <Composer
@@ -461,7 +459,6 @@ function HomeComposer({
       attachments={request.attachments}
       detach={draft.detach}
       uploading={request.uploading}
-      unquote={() => {}}
       placeholder={t.home.placeholder}
       status={asking.blocked === "unconnected" && <Unconnected go={go} />}
       style={request.style}
@@ -469,7 +466,6 @@ function HomeComposer({
       working={false}
       busy={starting}
       send={send}
-      stop={() => {}}
       attach={(files) => void feedback.attempt(() => draft.upload(files))}
       pick={asking.pick}
       models={asking.models}
