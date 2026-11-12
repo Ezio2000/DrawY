@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { ChevronDown, X, MessagesSquare, PencilLine, History, Check, Undo2, Redo2 } from "lucide-react";
 import type { Canvas, CanvasOptions, Pointed } from "../../../../modules/canvas/index.ts";
-import { versionOf, type Selection, type Target } from "../../../../modules/contracts/index.ts";
+import type { Selection, Target } from "../../../../modules/contracts/index.ts";
 import { cx } from "../cx.ts";
 import { SelectionBar } from "../EditBar.tsx";
 import { EditMenu } from "../EditMenu.tsx";
@@ -18,6 +18,7 @@ import { Seal } from "../Title.tsx";
 import { useSelect } from "../session/store.ts";
 import type { Change, WorkSession } from "../session/work.ts";
 import type { EditOps, useEditing } from "./editing.ts";
+import { notesOf, shownOf } from "../workPage.ts";
 
 /* The parts of the desktop work page. Each reads from the session only what it shows, so
  * the author's run, which changes many times a second while it draws, draws again only
@@ -162,13 +163,7 @@ export function CanvasArea({
   help: () => void;
 }) {
   counted("canvas");
-  const { display, sceneId, locked, run, id } = useSelect(session, (s) => ({
-    id: s.id,
-    display: s.display!,
-    sceneId: s.sceneId,
-    locked: s.locked,
-    run: s.engaged ? s.run : undefined,
-  }));
+  const { display, sceneId, locked, run, id } = useSelect(session, shownOf);
   return (
     <SceneView
       key={id}
@@ -280,17 +275,7 @@ export function Bars({
   const t = useT();
   const { attempt } = feedback;
   const { error, notice } = useSelect(feedback, (f) => f);
-  const s = useSelect(session, (s) => ({
-    preview: s.preview?.revision,
-    looked: s.preview && (versionOf(s.versions, s.preview.revision)?.number ?? 0),
-    next: (s.versions.at(-1)?.number ?? 0) + 1,
-    back: s.back,
-    holding: s.holding,
-    unsaved: s.unsaved,
-    engaged: s.engaged,
-    working: s.working,
-    locked: s.locked,
-  }));
+  const s = useSelect(session, notesOf);
   return (
     <>
       {s.preview !== undefined && (

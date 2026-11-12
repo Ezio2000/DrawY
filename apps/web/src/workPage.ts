@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Material } from "@drawy/materials/schema";
 import type { Pointed } from "../../../modules/canvas/index.ts";
-import { shownName, type Target } from "../../../modules/contracts/index.ts";
+import { shownName, versionOf, type Target } from "../../../modules/contracts/index.ts";
 import { fieldsOf, removeParts, replace, setData } from "../../../modules/editing/index.ts";
 import { useT } from "./i18n.tsx";
 import { useSelect } from "./session/store.ts";
@@ -15,6 +15,30 @@ export function nameIn(s: Snapshot, id: string): string {
   const m = s.scene?.modules.find((x) => x.id === id);
   return m && s.work ? shownName(s.work, m) : id;
 }
+
+/** What the canvas reads of the session: the work as it shows now, the scene, whether it
+ * may be edited, and the run drawing on it. */
+export const shownOf = (s: Snapshot) => ({
+  id: s.id,
+  display: s.display!,
+  sceneId: s.sceneId,
+  locked: s.locked,
+  run: s.engaged ? s.run : undefined,
+});
+
+/** What the notes over the canvas read: a preview, going back, a request held for unsaved
+ * edits, and the edits themselves. */
+export const notesOf = (s: Snapshot) => ({
+  preview: s.preview?.revision,
+  looked: s.preview && (versionOf(s.versions, s.preview.revision)?.number ?? 0),
+  next: (s.versions.at(-1)?.number ?? 0) + 1,
+  back: s.back,
+  holding: s.holding,
+  unsaved: s.unsaved,
+  engaged: s.engaged,
+  working: s.working,
+  locked: s.locked,
+});
 
 /** What every work page does the same way, whatever device it is laid out for: the reply
  * put away, the detail page open, words being retyped, what the session tells of, going

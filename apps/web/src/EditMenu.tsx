@@ -99,20 +99,25 @@ export function EditMenu({
     { label: m.copyLook, icon: <Paintbrush size={size} />, key: "Alt+Mod+C", run: ops.copyLook },
     { label: m.pasteLook, icon: <PaintRoller size={size} />, key: "Alt+Mod+V", run: ops.pasteLook, off: !brushed },
   ];
+  const paste: Item = { label: m.paste, icon: <ClipboardPaste size={size} />, key: "Mod+V", run: () => ops.paste(), off: !clipped };
+  // What is selected can always be asked about or taken out, last.
+  const last: Item[] = [
+    { label: m.ask, icon: <MessageSquareQuote size={size} />, run: ask },
+    { label: m.remove, icon: <Trash2 size={size} />, key: "Delete", run: ops.remove, danger: true },
+  ];
   const items: Item[] = link && !some
     ? [
         { label: m.reverse, icon: <ArrowRightLeft size={size} />, key: "R", run: () => ops.reverse() },
         "-",
         ...look,
         "-",
-        { label: m.ask, icon: <MessageSquareQuote size={size} />, run: ask },
-        { label: m.remove, icon: <Trash2 size={size} />, key: "Delete", run: ops.remove, danger: true },
+        ...last,
       ]
     : some
     ? [
         { label: m.cut, icon: <Scissors size={size} />, key: "Mod+X", run: ops.cut },
         { label: m.copy, icon: <Copy size={size} />, key: "Mod+C", run: () => void ops.copy() },
-        { label: m.paste, icon: <ClipboardPaste size={size} />, key: "Mod+V", run: () => ops.paste(), off: !clipped },
+        paste,
         { label: m.duplicate, icon: <CopyPlus size={size} />, key: "Mod+D", run: ops.duplicate },
         "-",
         ...look,
@@ -126,11 +131,10 @@ export function EditMenu({
         { label: m.group, icon: <Group size={size} />, key: "Mod+G", run: ops.group, off: selected.length < 2 },
         { label: m.ungroup, icon: <Ungroup size={size} />, key: "Shift+Mod+G", run: ops.ungroup, off: !grouped },
         "-",
-        { label: m.ask, icon: <MessageSquareQuote size={size} />, run: ask },
-        { label: m.remove, icon: <Trash2 size={size} />, key: "Delete", run: ops.remove, danger: true },
+        ...last,
       ]
     : [
-        { label: m.paste, icon: <ClipboardPaste size={size} />, key: "Mod+V", run: () => ops.paste(), off: !clipped },
+        paste,
         { label: m.selectAll, icon: <SquareDashedMousePointer size={size} />, key: "Mod+A", run: ops.selectAll },
         "-",
         { label: m.addText, icon: <Type size={size} />, key: "T", run: () => ops.add("text") },

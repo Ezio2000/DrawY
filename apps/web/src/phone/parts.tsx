@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { nameIn } from "../workPage.ts";
+import { nameIn, notesOf, shownOf } from "../workPage.ts";
 import { WorkStudio } from "../Studio.tsx";
 import { WorkDrafts } from "../Drafts.tsx";
 import {
@@ -19,7 +19,6 @@ import {
 import { Segmented } from "../ui/primitives.tsx";
 import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
 import {
-  versionOf,
   type Instance,
   type Selection,
   type Target,
@@ -133,13 +132,7 @@ export function PhoneCanvas({
   point: (pointed: Pointed) => void;
 }) {
   counted("phone.canvas");
-  const { display, sceneId, locked, run, id } = useSelect(session, (s) => ({
-    id: s.id,
-    display: s.display!,
-    sceneId: s.sceneId,
-    locked: s.locked,
-    run: s.engaged ? s.run : undefined,
-  }));
+  const { display, sceneId, locked, run, id } = useSelect(session, shownOf);
   return (
     <SceneView
       key={id}
@@ -203,17 +196,7 @@ export function Notes({
   const t = useT();
   const { attempt } = feedback;
   const { error, notice } = useSelect(feedback, (f) => f);
-  const s = useSelect(session, (s) => ({
-    preview: s.preview?.revision,
-    looked: s.preview && (versionOf(s.versions, s.preview.revision)?.number ?? 0),
-    next: (s.versions.at(-1)?.number ?? 0) + 1,
-    back: s.back,
-    holding: s.holding,
-    unsaved: s.unsaved,
-    engaged: s.engaged,
-    working: s.working,
-    locked: s.locked,
-  }));
+  const s = useSelect(session, notesOf);
   return (
     <>
       {error && (
