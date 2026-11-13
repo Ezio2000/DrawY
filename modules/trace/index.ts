@@ -47,12 +47,13 @@ export interface Meter {
   ms: number;
   input: number;
   cached: number;
+  cacheWrite: number;
   output: number;
   reasoning: number;
 }
 export interface TraceSummary extends Trace {
   durationMs: number;
-  tokens: { input: number; output: number; reasoning: number; cached: number };
+  tokens: { input: number; output: number; reasoning: number; cached: number; cacheWrite: number };
   counts: Record<Span["kind"] | "errors", number>;
   meters: Meter[];
 }
@@ -73,6 +74,7 @@ export function tokensOf(usage: unknown) {
   return {
     input: u.input_tokens ?? 0,
     cached: u.input_tokens_details?.cached_tokens ?? 0,
+    cacheWrite: u.input_tokens_details?.cache_write_tokens ?? 0,
     output: u.output_tokens ?? 0,
     reasoning: u.output_tokens_details?.reasoning_tokens ?? 0,
   };
@@ -326,7 +328,7 @@ export class Tracer {
     ).map((r) => JSON.parse(r.data) as Span);
   }
   private summarize(trace: Trace, spans: Span[]): TraceSummary {
-    const tokens = { input: 0, output: 0, reasoning: 0, cached: 0 };
+    const tokens = { input: 0, output: 0, reasoning: 0, cached: 0, cacheWrite: 0 };
     const counts = {
       execution: 0,
       turn: 0,
@@ -344,7 +346,7 @@ export class Tracer {
       if (s.status === "error") counts.errors++;
       const used = tokensOf(s.attrs.usage);
       if (s.kind === "turn")
-        for (const k of ["input", "output", "reasoning", "cached"] as const)
+        for (const k of ["input", "output", "reasoning", "cached", "cacheWrite"] as const)
           tokens[k] += used[k];
       const key = meterOf(s);
       if (!key) continue;
@@ -356,13 +358,14 @@ export class Tracer {
         ms: 0,
         input: 0,
         cached: 0,
+        cacheWrite: 0,
         output: 0,
         reasoning: 0,
       };
       m.calls++;
       if (s.status === "error") m.errors++;
       m.ms += (s.endedAt ?? Date.now()) - s.startedAt;
-      for (const k of ["input", "output", "reasoning", "cached"] as const)
+      for (const k of ["input", "output", "reasoning", "cached", "cacheWrite"] as const)
         m[k] += used[k];
       meters.set(key, m);
     }

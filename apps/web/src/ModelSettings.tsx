@@ -576,7 +576,6 @@ function TokenPriceRows({
   prices,
   set,
   w,
-  cacheWrite,
 }: {
   prices: { input: number; cached: number; cacheWrite: number; output: number };
   set: (
@@ -588,7 +587,6 @@ function TokenPriceRows({
     }>,
   ) => void;
   w: W;
-  cacheWrite: boolean;
 }) {
   return (
     <>
@@ -606,15 +604,13 @@ function TokenPriceRows({
           unit="$ / 1M"
         />
       </Row>
-      {cacheWrite && (
-        <Row label={w.priceCacheWrite} hint={w.priceCacheWriteHint}>
-          <NumberField
-            value={prices.cacheWrite}
-            set={(cacheWrite) => set({ cacheWrite })}
-            unit="$ / 1M"
-          />
-        </Row>
-      )}
+      <Row label={w.priceCacheWrite} hint={w.priceCacheWriteHint}>
+        <NumberField
+          value={prices.cacheWrite}
+          set={(cacheWrite) => set({ cacheWrite })}
+          unit="$ / 1M"
+        />
+      </Row>
       <Row label={w.priceOutput} hint={w.priceOutputHint}>
         <NumberField
           value={prices.output}
@@ -772,7 +768,6 @@ function writerGroups(
           prices={m.prices}
           set={(prices) => patch({ prices: { ...m.prices, ...prices } })}
           w={w}
-          cacheWrite={m.protocol === "anthropic"}
         />
         {m.builtinSearch && (
           <Row label={w.priceBuiltinSearch} hint={w.priceBuiltinSearchHint}>

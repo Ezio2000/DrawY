@@ -225,7 +225,7 @@ it("speaks Chat Completions and reports its stream as the Responses API would", 
   ]);
   expect(result.usage).toEqual({
     input_tokens: 100,
-    input_tokens_details: { cached_tokens: 60 },
+    input_tokens_details: { cached_tokens: 60, cache_write_tokens: 0 },
     output_tokens: 20,
     output_tokens_details: { reasoning_tokens: 5 },
   });

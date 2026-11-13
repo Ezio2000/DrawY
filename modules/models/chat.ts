@@ -192,6 +192,7 @@ async function generate(
     input_tokens_details: {
       cached_tokens:
         usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0,
+      cache_write_tokens: usage.prompt_tokens_details?.cache_write_tokens ?? 0,
     },
     output_tokens: usage.completion_tokens ?? 0,
     output_tokens_details: {

@@ -224,6 +224,7 @@ function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
             value={thousands(tk.input)}
             parts={[
               `${w().cached} ${thousands(tk.cached)}`,
+              tk.cacheWrite ? `${w().written} ${thousands(tk.cacheWrite)}` : "",
               tk.input ? `${w().hit} ${Math.round((tk.cached / tk.input) * 100)}%` : "",
             ]}
           />
@@ -353,10 +354,12 @@ const k = (n = 0) =>
 const usageOf = (a: Item) => {
   const u = (a.usage || {}) as Item,
     input = u.input_tokens ?? 0,
-    cached = u.input_tokens_details?.cached_tokens ?? 0;
+    cached = u.input_tokens_details?.cached_tokens ?? 0,
+    written = u.input_tokens_details?.cache_write_tokens ?? 0;
   return {
     input,
     cached,
+    written,
     hit: input ? Math.round((cached / input) * 100) : 0,
     output: u.output_tokens ?? 0,
     reasoning: u.output_tokens_details?.reasoning_tokens ?? 0,
@@ -560,7 +563,8 @@ function Attributes({
             <dt>{w().hit}</dt>
             <dd>
               {u.cached.toLocaleString()} ({u.hit}%) · {w().missed}{" "}
-              {(u.input - u.cached).toLocaleString()}
+              {(u.input - u.cached - u.written).toLocaleString()}
+              {!!u.written && ` · ${w().written} ${u.written.toLocaleString()}`}
             </dd>
             <dt>{w().output}</dt>
             <dd>
