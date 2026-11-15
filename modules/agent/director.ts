@@ -26,6 +26,7 @@ Write the direction for this request under these five headings, in this order:
 3. Pictures: the recognizable things worth showing as generated pictures, one per line, each with the state or view the concept needs. Usually three to six; none for a subject with no look of its own.
 4. The line: the one thing the viewer should remember, as the few words that will be the most prominent text in the figure.
 5. Avoid: in one sentence, the habitual figure for this subject that the author should not fall back on.
+When the request turns on facts you do not have (today's events, current figures, what a document says), neither guess them nor ask for them: the author looks them up and fills them in. Direct the form, an idea that holds however they turn out, and where the best form depends on them, say on what in a clause (a route on a map if the day involves travel, a clock face if it stays in one place).
 When the request could mean different things, say in one sentence before the headings which reading you assume. Stay under 300 words, because the author carries this note through the whole run.`;
 
 const REVIEW = `${ROLE}
