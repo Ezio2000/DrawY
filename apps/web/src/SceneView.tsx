@@ -262,6 +262,11 @@ export function SceneView({
     (s): s is Extract<ToolStep, { name: "set_brief" }> =>
       s.kind === "tool" && s.name === "set_brief",
   );
+  // With a muse, the ways of drawing it and the idea come in a step of their own first.
+  const idea = steps.findLast(
+    (s): s is Extract<ToolStep, { name: "conceive" }> =>
+      s.kind === "tool" && s.name === "conceive",
+  );
   const request = steps.find(
     (s): s is Extract<Step, { kind: "message" }> => s.kind === "message" && s.role === "user",
   )?.text;
@@ -270,11 +275,11 @@ export function SceneView({
     now = live(run) ? currentOf(run!, t, locale) : undefined;
   const brief = work.brief ?? undefined;
   const note =
-    brief || briefing?.subject
+    brief || briefing?.subject || idea?.subject
       ? {
-          subject: briefing?.subject || brief!.subject,
-          ideas: briefing?.ideas ?? [],
-          concept: briefing?.concept || brief?.concept || "",
+          subject: briefing?.subject || idea?.subject || brief!.subject,
+          ideas: briefing?.ideas ?? idea?.ideas ?? [],
+          concept: briefing?.concept || idea?.concept || brief?.concept || "",
           tags: brief
             ? [
                 brief.audience,

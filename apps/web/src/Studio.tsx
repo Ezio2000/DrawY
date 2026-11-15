@@ -68,7 +68,7 @@ export function stageOf(run: Run) {
   for (const s of run.steps) {
     if (s.kind !== "tool") continue;
     const at =
-      s.name === "set_brief"
+      s.name === "set_brief" || s.name === "conceive"
         ? 1
         : s.name === "find_materials" || s.name === "generate_images"
           ? 2
@@ -120,6 +120,8 @@ function doing(step: ToolStep, t: Words): string {
       return [w.guiding, guideNames(step, t).join(w.list)].filter(Boolean).join(" · ");
     case "set_brief":
       return [w.briefing, step.subject].filter(Boolean).join(" · ");
+    case "conceive":
+      return [w.conceiving, step.subject].filter(Boolean).join(" · ");
     case "find_materials":
       return [w.finding, step.subjects.join(w.list)].filter(Boolean).join(" · ");
     case "generate_images":
@@ -437,6 +439,7 @@ const icons = {
   read_work: BookOpen,
   draw_guide: BookMarked,
   set_brief: Compass,
+  conceive: Lightbulb,
   find_materials: Search,
   generate_images: ImagePlus,
   write_work: PenTool,
@@ -586,6 +589,8 @@ function ToolBody({
       );
     case "set_brief":
       return <Brief step={step} used={used} zoom={zoom} />;
+    case "conceive":
+      return <Idea step={step} />;
     case "find_materials":
       return (
         <>
@@ -671,6 +676,31 @@ function Brief({
       {/* Only what the library has: the rest is painted in the steps that follow. */}
       {step.found?.some((f) => f.candidates.length) && (
         <Found found={step.found.filter((f) => f.candidates.length)} used={used} zoom={zoom} />
+      )}
+    </div>
+  );
+}
+/** The visual idea as the muse settled it: the ways of drawing it weighed, the one chosen
+ * and why. */
+function Idea({ step }: { step: Tool<"conceive"> }) {
+  const t = useT();
+  return (
+    <div className={cx("brief")}>
+      <span className={cx("step-title")}>{t.steps.conceive}</span>
+      {step.subject && <h4>{step.subject}</h4>}
+      {!!step.ideas?.length && (
+        <ol className={cx("ideas")}>
+          {step.ideas.map((idea, i) => (
+            <li key={i}>{idea}</li>
+          ))}
+        </ol>
+      )}
+      {step.concept && (
+        <blockquote>
+          <small>{t.steps.concept}</small>
+          {step.concept}
+          {step.why && <small className={cx("idea-why")}>{step.why}</small>}
+        </blockquote>
       )}
     </div>
   );
@@ -784,6 +814,8 @@ export function spentBy(run: Run) {
     pages: u?.pages ?? 0,
     images: u?.images?.count ?? 0,
     imageTokens: (u?.images?.input ?? 0) + (u?.images?.output ?? 0),
+    museCalls: u?.muse?.calls ?? 0,
+    museTokens: (u?.muse?.input ?? 0) + (u?.muse?.output ?? 0),
     hosted: Object.entries(u?.hosted ?? {}).filter(([n]) => n !== "web_search"),
     failed: {
       attempts: u?.failed?.attempts ?? 0,
@@ -810,6 +842,8 @@ const total = (list: Spent[]): Spent => ({
   pages: list.map((s) => s.pages).reduce(sum, 0),
   images: list.map((s) => s.images).reduce(sum, 0),
   imageTokens: list.map((s) => s.imageTokens).reduce(sum, 0),
+  museCalls: list.map((s) => s.museCalls).reduce(sum, 0),
+  museTokens: list.map((s) => s.museTokens).reduce(sum, 0),
   hosted: list.flatMap((s) => s.hosted),
   failed: {
     attempts: list.map((s) => s.failed.attempts).reduce(sum, 0),
@@ -824,6 +858,7 @@ const total = (list: Spent[]): Spent => ({
   cost: list.some((s) => s.cost)
     ? {
         author: list.map((s) => s.cost?.author ?? 0).reduce(sum, 0),
+        muse: list.map((s) => s.cost?.muse ?? 0).reduce(sum, 0),
         search: list.map((s) => s.cost?.search ?? 0).reduce(sum, 0),
         image: list.map((s) => s.cost?.image ?? 0).reduce(sum, 0),
         failed: list.map((s) => s.cost?.failed ?? 0).reduce(sum, 0),
@@ -849,7 +884,7 @@ function Stats({
   elapsed,
 }: {
   s: Spent;
-  by?: { author?: string; search?: string; image?: string };
+  by?: { author?: string; muse?: string; search?: string; image?: string };
   /** How long it took, for one run. */
   elapsed?: number;
 }) {
@@ -864,6 +899,14 @@ function Stats({
       parts: [w.inputShort(k(s.input)), w.outputShort(k(s.output)), !!s.reasoning && w.reasoningShort(k(s.reasoning))],
       cost: s.cost?.author,
       used: s.input + s.output > 0,
+    },
+    {
+      key: "muse",
+      label: w.muse,
+      who: by?.muse,
+      parts: [w.museCalls(s.museCalls), w.tokens(k(s.museTokens))],
+      cost: s.cost?.muse,
+      used: s.museCalls > 0,
     },
     {
       key: "search",
@@ -997,6 +1040,7 @@ function WorkUsage({ runs }: { runs: Run[] }) {
           s={s}
           by={{
             author: names((r) => r.services?.author),
+            muse: names((r) => (spentBy(r).museCalls ? r.services?.muse : undefined)),
             search: names((r) =>
               r.services?.search === "off" ? undefined : searchedBy(r, t),
             ),
@@ -1243,6 +1287,7 @@ function RunView({
               ]
                 .filter(Boolean)
                 .join(" · "),
+            muse: r.services?.muse,
             search: searchedBy(r, t),
             image: r.services?.image,
           }}

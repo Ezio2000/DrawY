@@ -85,6 +85,30 @@ export const settleSchema = z.object({
     ),
   ...rest,
 });
+/** What conceive takes: the brief's subject, intent and audience as the author will state
+ * them, and no more of the work than the idea needs, since the muse decides nothing else. */
+export const conceiveSchema = z.object({
+  subject,
+  intent,
+  audience,
+  register: rest.register,
+  findings: z
+    .string()
+    .max(600)
+    .optional()
+    .describe(
+      "Only when the subject is recent or depends on what research found: one or two lines on the kinds of things found (trips, launches, remarks; a rise then a fall), not their values",
+    ),
+  rejected: z
+    .string()
+    .max(400)
+    .optional()
+    .describe("Only when asking again: the concept the facts cannot hold, and at which point"),
+});
+/** What set_brief takes when the label has a muse: the brief without the ideas and the
+ * concept, which conceive settled. */
+const { concept: _concept, ...briefed } = rest;
+export const briefedSchema = z.object({ subject, intent, audience, ...briefed });
 export const findSchema = z.object({
   subjects: z
     .array(z.string().min(1))
@@ -164,6 +188,24 @@ export const tools = [
     schema(viewSchema),
   ),
 ];
+/** The tools of a run whose label has a muse: conceive settles the visual idea, and
+ * set_brief takes it. Listed in the same order otherwise, so the rest of the prefix holds. */
+export const museTools = tools.flatMap((t) =>
+  t.name === "set_brief"
+    ? [
+        fn(
+          "conceive",
+          "Have the visual idea settled before the brief. An art director who sees only what you send here weighs two or three different ways of drawing the intent for this audience and chooses one. Call it once the subject is clear and the research is done, before set_brief, alone or beside draw_guide. It decides only the idea, so send no layout, data, materials or style. Returns the ideas weighed, the concept chosen and why; set_brief then takes that concept as the brief's. When the facts you have cannot hold it at the point it explains, call it again with rejected saying why.",
+          schema(conceiveSchema),
+        ),
+        fn(
+          "set_brief",
+          "Settle the work's brief before drawing, or change it when the user changes direction. Its concept is the one conceive returned in this request, or the brief's own when this request has not called conceive, so call conceive first for a new work or a new direction. It decides what the figure says, not where things go, so call it before working out any layout. Each basis quotes the user's own words verbatim, and the call fails on a quote it cannot find. Returns the revision, the style's tokens, guide and effects, and library pictures found for the cast, with thumbnails.",
+          schema(briefedSchema),
+        ),
+      ]
+    : [t],
+);
 export const searchSchema = z.object({
   /** Several facts are looked up together, one query each. */
   queries: z.array(z.string().min(1)).min(1).max(4),

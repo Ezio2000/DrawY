@@ -7,6 +7,7 @@ import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { Agent, steering, SEARCH_LIMIT, withLessThought } from "./index.ts";
 import { settleSchema } from "./tools.ts";
+import { AUTHOR_WITH_MUSE, MUSE } from "./prompts.ts";
 import { restore, writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { CutOff, generate } from "../models/index.ts";
@@ -843,6 +844,120 @@ it("settles a brief only on the user's own words, then applies its style and sho
       concept: brief.concept,
       found: [{ subject: "苹果" }, { subject: "种子" }],
     });
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+it("has the label's muse settle the visual idea, which the brief then takes", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    work.brief = null;
+    for (const s of Object.values(work.scenes)) s.modules = [];
+    store.commit(work, 0, { kind: "edit" });
+    const catalog = db.models();
+    const writer = catalog.writers[0].models[0];
+    catalog.writers[0].credential = "k";
+    catalog.writers[0].models.push({
+      ...structuredClone(writer),
+      id: "muse",
+      model: "muse-model",
+      prices: { input: 5, cached: 0.5, cacheWrite: 6.25, output: 25, search: 0 },
+    });
+    const image = catalog.painters[0].models[0].id;
+    catalog.labels = [
+      { id: "a", name: "A", description: "", writer: writer.id, web: "off", image, muse: "muse", museEffort: "high" },
+    ];
+    catalog.defaults.label = "a";
+    db.saveModels(modelCatalogSchema.parse(catalog));
+    const idea = {
+      ideas: [
+        { kind: "mechanism", idea: "血管壁在血流冲击下慢慢变厚、裂开" },
+        { kind: "analogy", idea: "水压常年开太大的老水管，不响也在漏" },
+      ],
+      choice: 1,
+      concept: "整张图是一套家里的老水管，读者先看到一处正在渗水的接头",
+      why: "老人修过水管，不响也在漏正对应不疼也在坏",
+    };
+    const request = { subject: "高血压", intent: "血压高了不难受也要管", audience: "老人", register: "formal" };
+    const brief = {
+      ...request,
+      style: "textbook",
+      direction: "线描",
+      cast: [],
+      basis: { subject: "高血压", intent: "高血压" },
+    };
+    const author: any[][] = [],
+      muse: any[] = [];
+    const turns: Call[] = [
+      ["set_brief", brief],
+      ["conceive", request],
+      ["set_brief", brief],
+      ["write_work", { scenes: [{ id: "root", clear: true }], modules: [{ id: "t", drawingId: "label", bounds: [0, 0, 200, 60], data: { text: "高血压" } }] }],
+      ["view_canvas", {}],
+      ["finish", { message: "done" }],
+    ];
+    let turn = 0;
+    vi.mocked(generate).mockReset();
+    vi.mocked(generate).mockImplementation(async (role, { input, instructions, tools }) => {
+      if (instructions === MUSE) {
+        muse.push({ role, input: structuredClone(input), tools });
+        // The first answer is not the JSON asked for; it is shown back once.
+        const text = muse.length === 1 ? "我想用水管来比喻。" : "```json\n" + JSON.stringify(idea) + "\n```";
+        return {
+          items: [{ type: "message", role: "assistant", content: [{ type: "output_text", text }] }],
+          usage: { input_tokens: 1000, output_tokens: 200, output_tokens_details: { reasoning_tokens: 100 } },
+          response: {},
+        };
+      }
+      author.push([structuredClone(input), instructions, tools]);
+      const [name, args] = turns[turn++];
+      return {
+        items: [
+          name === "finish"
+            ? { type: "message", role: "assistant", content: [{ type: "output_text", text: (args as any).message }] }
+            : { type: "function_call", name, arguments: JSON.stringify(args), call_id: "c" + turn },
+        ],
+        usage: {},
+        response: {},
+      };
+    });
+    const run = await new Agent(() => {}).start(store, work.id, "root", "高血压");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    // The author is told the muse settles the idea, and its brief takes no concept of its own.
+    const [, instructions, tools] = author[0];
+    expect(instructions).toContain(AUTHOR_WITH_MUSE);
+    const names = tools.map((t: any) => t.name);
+    expect(names.indexOf("conceive")).toBe(names.indexOf("set_brief") - 1);
+    const settle = tools.find((t: any) => t.name === "set_brief").parameters.properties;
+    expect(settle).not.toHaveProperty("concept");
+    expect(settle).not.toHaveProperty("ideas");
+    // A brief before any idea is refused.
+    expect(outputs(author[1][0]).at(-1)).toContain("Call conceive first");
+    // The muse sees only what the author sent, at its own effort, with no tools.
+    expect(muse[0].role).toMatchObject({ model: "muse-model", effort: "high" });
+    expect(muse[0].tools).toBeUndefined();
+    expect(muse[0].input[0].content).toContain("Audience: 老人");
+    expect(muse[1].input.at(-1).content).toContain("could not be used");
+    expect(JSON.parse(outputs(author[2][0]).at(-1)!)).toMatchObject({ concept: idea.concept, chosen: idea.ideas[1] });
+    const saved = store.work(work.id);
+    expect(saved.brief?.concept).toBe(idea.concept);
+    const done = store.run(run.id);
+    expect(done.steps.find((s) => s.kind === "tool" && s.name === "conceive")).toMatchObject({
+      status: "done",
+      subject: "高血压",
+      ideas: idea.ideas.map((i) => i.idea),
+      concept: idea.concept,
+      why: idea.why,
+    });
+    // Both of the muse's answers are paid for, at its own prices.
+    expect(done.usage?.muse).toMatchObject({ calls: 2, input: 2000, output: 400, reasoning: 200 });
+    expect(costOf(done.usage, done.prices)!.muse).toBeCloseTo((2000 * 5 + 400 * 25) / 1e6);
+    expect(done.services?.muse).toBe("muse-model[api]");
   } finally {
     db.close();
     rmSync(dir, { recursive: true });

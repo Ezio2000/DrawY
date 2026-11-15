@@ -46,7 +46,8 @@ import {
   Unavailable,
   type Reported,
 } from "../observation/index.ts";
-import { AUTHOR, catalogue } from "./prompts.ts";
+import { AUTHOR, AUTHOR_WITH_MUSE, catalogue, MUSE } from "./prompts.ts";
+import { conceive, type Conceived } from "./muse.ts";
 import { guidesRead, readGuides } from "./guides.ts";
 import {
   adapterFor,
@@ -59,6 +60,9 @@ import {
 } from "../models/index.ts";
 import {
   tools,
+  museTools,
+  conceiveSchema,
+  briefedSchema,
   askSchema,
   findSchema,
   generateSchema,
@@ -74,12 +78,14 @@ import { tracer } from "../trace/index.ts";
 import type { MessageLocale } from "../contracts/messages.ts";
 /** The tools a run offers: the drawing tools, and the one way it searches, if any. A run
  * never has both the model's own search and the search service. */
-const toolsFor = (settings: Pick<Settings, "search">): Item[] =>
-  settings.search.mode === "builtin"
-    ? [...tools, { type: "web_search", search_context_size: "low" }]
+const toolsFor = (settings: Pick<Settings, "search" | "muse">): Item[] => {
+  const drawing = settings.muse ? museTools : tools;
+  return settings.search.mode === "builtin"
+    ? [...drawing, { type: "web_search", search_context_size: "low" }]
     : settings.search.mode === "service"
-      ? [...tools, ...searchTools]
-      : tools;
+      ? [...drawing, ...searchTools]
+      : drawing;
+};
 const searching = new Set(searchTools.map((t) => t.name));
 /** Adds web searches or a page read to what a run has spent. */
 function counted(run: Run, action: string | undefined, searches = 1) {
@@ -262,6 +268,30 @@ function heldNote(held: Record<string, unknown>) {
     .map(([k, ids]) => `${k}: ${ids.join(", ")}`);
   return `Nothing was saved, and this write is held as it stands. To finish it, call write_work with amend: true and only what corrects it: a record with a held id changes only the fields you give, and remove drops a held record. Held: ${parts.join("; ") || "(no records)"}.`;
 }
+/** Several answers' usage as one, for a span that made more than one request. */
+function sumUsage(list: Item[]): Item {
+  const sum = (f: (u: Item) => number | undefined) => list.reduce((n, u) => n + (f(u) ?? 0), 0);
+  return {
+    input_tokens: sum((u) => u.input_tokens),
+    input_tokens_details: {
+      cached_tokens: sum((u) => u.input_tokens_details?.cached_tokens),
+      cache_write_tokens: sum((u) => u.input_tokens_details?.cache_write_tokens),
+    },
+    output_tokens: sum((u) => u.output_tokens),
+    output_tokens_details: { reasoning_tokens: sum((u) => u.output_tokens_details?.reasoning_tokens) },
+  };
+}
+/** Adds a muse call to what a run has spent, priced apart from the author's turns. */
+function spendMuse(run: Run, usage: Item) {
+  const m = (usageOf(run).muse ??= { calls: 0, input: 0, cached: 0, output: 0, reasoning: 0 });
+  m.calls++;
+  m.input += usage.input_tokens ?? 0;
+  m.cached += usage.input_tokens_details?.cached_tokens ?? 0;
+  const written = usage.input_tokens_details?.cache_write_tokens ?? 0;
+  if (written) m.cacheWrite = (m.cacheWrite ?? 0) + written;
+  m.output += usage.output_tokens ?? 0;
+  m.reasoning += usage.output_tokens_details?.reasoning_tokens ?? 0;
+}
 /** Adds to what a run has spent. */
 function spend(run: Run, usage: Item) {
   const u = (run.usage ??= { input: 0, cached: 0, output: 0, reasoning: 0 });
@@ -334,6 +364,8 @@ function activity(name: string, args: any, sceneId: string): ToolActivity {
         ...(args.register ? { register: args.register } : {}),
         ...(args.style ? { style: args.style } : {}),
       };
+    case "conceive":
+      return { name, subject: typeof args.subject === "string" ? args.subject : "" };
     case "find_materials":
       return {
         name,
@@ -454,6 +486,8 @@ interface Context {
   preferences?: string;
   /** A write that was refused, as it stands, waiting for `amend`. */
   held?: Record<string, unknown>;
+  /** The visual idea the muse settled in this request, for set_brief to take. */
+  conceived?: Conceived;
   format?: number;
 }
 /** The user's standing preferences as the author is told them: in the conversation rather
@@ -1062,6 +1096,7 @@ export class Agent {
       model: settings.author.model,
       effort: settings.author.effort,
       speed: settings.author.speed,
+      ...(settings.museName ? { muse: settings.museName } : {}),
       search: settings.search.mode,
       ...(settings.search.service ? { searchBy: settings.search.service.name } : {}),
       image: settings.imageName,
@@ -1086,11 +1121,12 @@ export class Agent {
               : {}),
             speed: settings.author.speed,
             imageModel: settings.image.model,
+            ...(settings.muse ? { muse: settings.muse.model, museEffort: settings.muse.effort } : {}),
           },
           async (execution) => {
             try {
               const instructions = [
-                AUTHOR,
+                settings.muse ? AUTHOR_WITH_MUSE : AUTHOR,
                 catalogue(await styleList(), await kit()),
               ].join("\n\n");
               // Where this execution starts from; each turn records what it adds.
@@ -1676,9 +1712,57 @@ export class Agent {
           this.emit(store, run);
           return { done: true, output: null, images: [] };
         }
+        case "conceive": {
+          const muse = ctx.settings.muse;
+          if (!muse) throw Error("This request has no conceive: settle the concept in set_brief yourself.");
+          const request = conceiveSchema.parse(args);
+          const { conceived } = await tracer.span(
+            "turn",
+            "muse",
+            { meter: "muse", input: request, request: { ...requestOf(muse), effort: muse.effort } },
+            async (span) => {
+              const used: Item[] = [];
+              try {
+                const r = await conceive(muse, request, {
+                  signal: abort.signal,
+                  cacheKey: store.userId,
+                  spent: (usage) => {
+                    used.push(usage);
+                    spendMuse(run, usage);
+                  },
+                });
+                span.set({ output: r.answers.flat(), usage: sumUsage(used), instructionsChars: MUSE.length });
+                return r;
+              } catch (e) {
+                span.set({ usage: sumUsage(used) });
+                throw e;
+              }
+            },
+          );
+          ctx.conceived = conceived;
+          const ideas = conceived.ideas.map((i) => i.idea);
+          Object.assign(step!, { ideas, concept: conceived.concept, why: conceived.why });
+          output = {
+            ideas: conceived.ideas,
+            chosen: conceived.ideas[conceived.choice],
+            concept: conceived.concept,
+            why: conceived.why,
+            note: "set_brief takes this concept as the brief's. Build exactly its arrangement; the facts, items, words, layout and style are yours to settle. When the facts cannot hold it, call conceive again with rejected saying why.",
+          };
+          break;
+        }
         case "set_brief": {
-          // The ideas weighed stay on the step; the work keeps the brief.
-          const { ideas: _, ...brief } = settleSchema.parse(args);
+          // The ideas weighed stay on the step; the work keeps the brief. With a muse, the
+          // concept is the one it settled in this request, or the brief's own.
+          let brief: Omit<ReturnType<typeof settleSchema.parse>, "ideas">;
+          if (ctx.settings.muse) {
+            const concept = ctx.conceived?.concept ?? store.work(run.workId).brief?.concept;
+            if (!concept) throw Error("Call conceive first: set_brief takes the concept it settles.");
+            brief = { ...briefedSchema.parse(args), concept };
+          } else {
+            const { ideas: _, ...own } = settleSchema.parse(args);
+            brief = own;
+          }
           const { work, style } = await setBrief(
             store,
             run.workId,

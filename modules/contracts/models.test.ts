@@ -225,6 +225,36 @@ it("prices a run at the speed it picked, the way it searched and the pictures it
   expect(costOf(undefined, undefined)).toBeUndefined();
 });
 
+it("settles the visual idea with a label's muse, at its own effort, priced apart", () => {
+  const c = labelled();
+  c.writers[2].credential = "o";
+  const withMuse = modelCatalogSchema.parse({
+    ...c,
+    labels: [{ ...c.labels[0], muse: "opus", museEffort: "max" }, c.labels[1]],
+  });
+  const settings = settingsFor(withMuse, emptySettings());
+  // The muse asks the nearest effort its model offers, and its own model's prices.
+  expect(settings).toMatchObject({
+    author: { model: "gpt-6.1-terra" },
+    muse: { model: "claude-opus-5-5", protocol: "chat", effort: "xhigh", credential: "o", provider: "anthropic" },
+    museName: "claude-opus-5-5[openrouter/anthropic]",
+  });
+  withMuse.writers[2].models[0].prices = { input: 5, cached: 0.5, cacheWrite: 6.25, output: 25, search: 0 };
+  const priced = settingsFor(withMuse, emptySettings()).prices;
+  expect(priced.muse).toEqual({ input: 5, cached: 0.5, cacheWrite: 6.25, output: 25 });
+  const cost = costOf(
+    { input: 0, cached: 0, output: 0, reasoning: 0, muse: { calls: 1, input: 2000, cached: 0, output: 1000, reasoning: 600 } },
+    priced,
+  )!;
+  expect(cost.muse).toBeCloseTo((2000 * 5 + 1000 * 25) / 1e6);
+  expect(cost.total).toBeCloseTo(cost.muse);
+  // A label without one draws as before, and one naming a model that is not there is refused.
+  expect(settingsFor(withMuse, { ...emptySettings(), label: "careful" })).not.toHaveProperty("muse");
+  expect(
+    modelCatalogSchema.safeParse({ ...withMuse, labels: [{ ...withMuse.labels[0], muse: "gone" }] }).success,
+  ).toBe(false);
+});
+
 it("splits a picture model's tokens as they are priced, so a style reference costs image input", () => {
   const prices = { image: 0, textInput: 5, imageInput: 8, output: 30, textOutput: 0 };
   const run = (usage: object) => {

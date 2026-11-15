@@ -8941,6 +8941,10 @@ body:has(.resizer[data-dragging]) {
   --swatch: var(--ai);
 }
 
+.spend [data-key="muse"] {
+  --swatch: var(--ai-deep);
+}
+
 .spend [data-key="search"] {
   --swatch: #6a9bcc;
 }
@@ -9235,4 +9239,11 @@ body:has(.resizer[data-dragging]) {
   .detail {
     padding: max(8px, env(safe-area-inset-top)) 20px max(48px, env(safe-area-inset-bottom));
   }
+}
+
+/* The muse's reason, under the idea it chose. */
+.idea-why {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-3);
 }

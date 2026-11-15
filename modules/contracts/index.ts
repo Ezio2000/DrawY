@@ -655,6 +655,15 @@ export type ToolActivity =
       found?: { subject: string; candidates: Candidate[] }[];
       revision?: number;
     }
+  /** The visual idea as the label's muse settled it, before the brief: the ways of drawing
+   * it weighed, the one chosen and why, for this audience. */
+  | {
+      name: "conceive";
+      subject: string;
+      ideas?: string[];
+      concept?: string;
+      why?: string;
+    }
   | {
       name: "find_materials";
       subjects: string[];
@@ -728,6 +737,8 @@ export interface RunUsage {
     imageInput?: number;
     textOutput?: number;
   };
+  /** The muse's tokens, priced apart: each call that settled a visual idea. */
+  muse?: { calls: number; input: number; cached: number; cacheWrite?: number; output: number; reasoning: number };
   /** What failed and did not count towards the above, though it was spent all the same. */
   failed?: FailedUsage;
 }
@@ -778,6 +789,8 @@ export interface RunServices {
   model: string;
   effort?: Effort;
   speed?: Speed;
+  /** The model that settled the visual idea, by name, when the label has one. */
+  muse?: string;
   search: SearchMode;
   /** The search service's name, when it searched with one. */
   searchBy?: string;

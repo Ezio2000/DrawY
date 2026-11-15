@@ -365,7 +365,7 @@ function ProviderSection<
           const holdsDefault = p.models.some(
             (m) =>
               m.id === chosen ||
-              catalog.labels.some((l) => l.writer === m.id || l.image === m.id),
+              catalog.labels.some((l) => l.writer === m.id || l.muse === m.id || l.image === m.id),
           );
           return (
             <Entry
@@ -408,7 +408,7 @@ function ProviderSection<
                         ),
                       );
                     const tiers = catalog.labels.filter(
-                      (l) => l.writer === m.id || l.image === m.id,
+                      (l) => l.writer === m.id || l.muse === m.id || l.image === m.id,
                     );
                     const labelled = !!tiers.length;
                     const kept = isDefault || total < 2 || labelled;
@@ -1273,6 +1273,7 @@ export function LabelSection({
             );
           const writer = writers.find((x) => x.m.id === l.writer);
           const painter = painters.find((x) => x.m.id === l.image);
+          const muse = l.muse ? writers.find((x) => x.m.id === l.muse) : undefined;
           const isDefault = l.id === catalog.defaults.label;
           const served = writer
             ? speedsOf({ channel: writer.p.channel, protocol: writer.m.protocol })
@@ -1286,6 +1287,7 @@ export function LabelSection({
             writer && !writer.p.credential && w.tierUnconnected(writer.p.name),
             writer && !writer.m.tools && w.tierNoTools,
             l.web === BUILTIN && !builtinOk && w.tierNoBuiltin,
+            muse && !muse.p.credential && w.tierUnconnected(muse.p.name),
           ].filter(Boolean) as string[];
           return (
             <Entry
@@ -1296,6 +1298,7 @@ export function LabelSection({
                 writer ? writerLabel(writer.p, writer.m) : l.writer,
                 l.effort && w.efforts[l.effort],
                 l.speed && w.speeds[l.speed],
+                muse && w.museShort(writerLabel(muse.p, muse.m)),
                 webName(l.web),
                 painter ? imageLabel(painter.p, painter.m) : l.image,
               ]
@@ -1390,6 +1393,39 @@ export function LabelSection({
                             : undefined,
                         )
                       }
+                    />
+                  </Row>
+                )}
+                <Row label={w.muse} hint={w.museHint}>
+                  <select
+                    value={l.muse ?? ""}
+                    onChange={(e) => patch({ muse: e.target.value || undefined, museEffort: undefined })}
+                  >
+                    <option value="">{w.museNone}</option>
+                    {catalog.writers.map((p) => (
+                      <optgroup
+                        key={p.id}
+                        label={p.name + (p.credential ? "" : ` · ${t.composer.modelUnconnected}`)}
+                      >
+                        {p.models.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {writerLabel(p, m)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </Row>
+                {muse && muse.m.efforts.length > 0 && (
+                  <Row label={w.museEffort} hint={w.tierOptionHint} wide>
+                    <ChooseOrDefault
+                      label={w.museEffort}
+                      options={muse.m.efforts}
+                      offered={muse.m.efforts}
+                      value={l.museEffort}
+                      fallback={muse.m.effort}
+                      name={(v) => w.efforts[v]}
+                      pick={(museEffort) => patch({ museEffort })}
                     />
                   </Row>
                 )}
