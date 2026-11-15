@@ -48,6 +48,7 @@ import {
 } from "../observation/index.ts";
 import { AUTHOR, catalogue } from "./prompts.ts";
 import { guidesRead, readGuides } from "./guides.ts";
+import { direct, directionMessage, reviewNote, reviewRequest, type Stage } from "./director.ts";
 import {
   adapterFor,
   generate,
@@ -284,6 +285,16 @@ const boxed = (box: unknown) => {
 };
 const records = (list: unknown): any[] =>
   Array.isArray(list) ? list.filter((r) => r?.id) : [];
+/** The art director's tokens, kept apart from the author's because they are priced apart. */
+function spendDirector(run: Run, usage: Item) {
+  const d = (usageOf(run).director ??= { calls: 0, input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0 });
+  d.calls++;
+  d.input += usage.input_tokens ?? 0;
+  d.cached += usage.input_tokens_details?.cached_tokens ?? 0;
+  d.cacheWrite += usage.input_tokens_details?.cache_write_tokens ?? 0;
+  d.output += usage.output_tokens ?? 0;
+  d.reasoning += usage.output_tokens_details?.reasoning_tokens ?? 0;
+}
 /** What a tool call is doing, as far as its arguments have arrived. Parts a write does not
  * place in a scene belong to the current one. */
 function activity(name: string, args: any, sceneId: string): ToolActivity {
@@ -454,6 +465,9 @@ interface Context {
   preferences?: string;
   /** A write that was refused, as it stands, waiting for `amend`. */
   held?: Record<string, unknown>;
+  /** Where the art director's part in this run stands: its review is due on the first
+   * whole look once it gave the direction or the brief was set, and is asked once. */
+  direction?: { review: "due" | "done" };
   format?: number;
 }
 /** The user's standing preferences as the author is told them: in the conversation rather
@@ -942,7 +956,7 @@ export class Agent {
       status: run.status,
       startedAt: run.startedAt,
     });
-    void this.execute(store, run, ctx, "request");
+    void this.execute(store, run, ctx, "request", [preferencesMessage(ctx.preferences!), message]);
     return run;
   }
   async resume(
@@ -1046,6 +1060,8 @@ export class Agent {
     run: Run,
     ctx: Context,
     trigger: "request" | "answer",
+    /** What the user asked this time, for the art director of a work without a brief. */
+    request?: Item[],
   ) {
     const abort = new AbortController();
     this.active.set(run.id, abort);
@@ -1065,6 +1081,7 @@ export class Agent {
       search: settings.search.mode,
       ...(settings.search.service ? { searchBy: settings.search.service.name } : {}),
       image: settings.imageName,
+      ...(settings.directorName ? { director: settings.directorName } : {}),
     };
     run.prices = settings.prices;
     await tracer.within(run.id, () =>
@@ -1101,6 +1118,16 @@ export class Agent {
                   "name" in t ? t.name : t.type,
                 ),
               });
+              // A work with no brief yet is about to get its idea: the director gives it
+              // first. Later requests change a work whose concept is already settled.
+              if (request && settings.director && !store.work(run.workId).brief) {
+                const direction = await this.consult(store, run, abort, "opening", request);
+                if (direction) {
+                  ctx.input.push(directionMessage(direction));
+                  ctx.direction = { review: "due" };
+                  store.context(run.id, ctx);
+                }
+              }
               await this.loop(
                 store,
                 run,
@@ -1146,6 +1173,42 @@ export class Agent {
           },
         )
         .catch(() => {}),
+    );
+  }
+  /** Asks the art director and shows what it writes as a step of the run. A director that
+   * fails leaves the run to the author alone: the work matters more than the second opinion. */
+  private async consult(store: UserStore, run: Run, abort: AbortController, stage: Stage, input: Item[]) {
+    const role = (store.context(run.id) as Context).settings.director!;
+    const step: ToolStep = { kind: "tool", id: id(), status: "running", name: "direct", stage, text: "" };
+    run.steps.push(step);
+    this.emit(store, run);
+    let shown = Date.now();
+    return tracer.span(
+      "tool",
+      "art_director",
+      { meter: "director", args: { stage }, input, request: { ...requestOf(role), effort: role.effort } },
+      async (span) => {
+        try {
+          const answer = await direct(role, stage, input, abort.signal, (text) => {
+            Object.assign(step, { text });
+            if (Date.now() - shown < 250) return;
+            shown = Date.now();
+            this.emit(store, run);
+          });
+          spendDirector(run, answer.usage);
+          Object.assign(step, { text: answer.text, status: "done" });
+          span.set({ usage: answer.usage, output: answer.text, response: answer.response });
+          this.emit(store, run);
+          return answer.text;
+        } catch (e) {
+          abort.signal.throwIfAborted();
+          const error = e instanceof Error ? e.message : String(e);
+          Object.assign(step, { status: "failed", error });
+          span.set({ error });
+          this.emit(store, run);
+          return undefined;
+        }
+      },
     );
   }
   private async loop(
@@ -1687,6 +1750,8 @@ export class Agent {
             causeOf(run),
           );
           ctx.known = work.revision;
+          // A new brief is a new idea, which the director reviews once it is drawn.
+          if (ctx.settings.director) ctx.direction ??= { review: "due" };
           this.publish(store.userId, { type: "work", work });
           const effects = await library.get(style.effects, store.userId, true);
           const cast = work.brief!.cast.length
@@ -1864,6 +1929,20 @@ export class Agent {
               ? { ...result.observation, research: searched }
               : result.observation;
             images.push(...result.content);
+            const drawn = result.content.filter((c: Item) => c.type === "input_image").slice(0, 3);
+            const brief = store.work(run.workId).brief;
+            if (
+              ctx.direction?.review === "due" &&
+              ctx.settings.director?.vision &&
+              result.observation.overview &&
+              !result.observation.errors.length &&
+              brief &&
+              drawn.length
+            ) {
+              ctx.direction.review = "done";
+              const review = await this.consult(store, run, abort, "review", reviewRequest(brief, drawn));
+              if (review) output = { ...(output as object), artDirection: reviewNote(review) };
+            }
             Object.assign(step!, {
               waiting: undefined,
               screenshots: pictures(result.observation.screenshots),

@@ -661,6 +661,9 @@ export type ToolActivity =
       found?: { subject: string; candidates: Candidate[] }[];
     }
   | { name: "generate_images"; images: Picture[] }
+  /** The art director's part, written by a second model: the direction a new work's brief
+   * is built on (`opening`) or its review of the first draft (`review`), as it streams. */
+  | { name: "direct"; stage: "opening" | "review"; text: string }
   | {
       name: "write_work";
       /** IDs of the drawing definitions whose source has fully arrived. */
@@ -728,6 +731,9 @@ export interface RunUsage {
     imageInput?: number;
     textOutput?: number;
   };
+  /** The art director's tokens, priced apart from the author's: one call for the direction
+   * a new work is built on, one for its review of the first draft. */
+  director?: { calls: number; input: number; cached: number; cacheWrite: number; output: number; reasoning: number };
   /** What failed and did not count towards the above, though it was spent all the same. */
   failed?: FailedUsage;
 }
@@ -782,5 +788,7 @@ export interface RunServices {
   /** The search service's name, when it searched with one. */
   searchBy?: string;
   image: string;
+  /** The art director's model, when the label has one. */
+  director?: string;
 }
 export const id = () => crypto.randomUUID();

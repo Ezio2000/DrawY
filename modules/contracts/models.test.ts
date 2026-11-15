@@ -245,3 +245,33 @@ it("splits a picture model's tokens as they are priced, so a style reference cos
   // A provider that does not split its input is counted as text.
   expect(imageTokensOf({ input_tokens: 50, output_tokens: 10 })).toMatchObject({ textInput: 50, imageInput: 0 });
 });
+
+it("gives a label's art director its own role and prices, and leaves it out when it cannot direct", () => {
+  const base = catalog();
+  const [first, second] = base.writers.flatMap((p) => p.models);
+  const withDirector = (director: string | undefined, c = base) =>
+    modelCatalogSchema.parse({
+      ...c,
+      labels: [{ id: "a", name: "A", description: "", writer: first.id, web: "off", image: c.painters[0].models[0].id, director }],
+      defaults: { ...c.defaults, label: "a" },
+    });
+  const directed = settingsFor(withDirector(second.id), emptySettings());
+  expect(directed.director?.model).toBe(second.model);
+  expect(directed.author.model).toBe(first.model);
+  expect(directed.prices.director).toMatchObject({ input: second.prices.input, output: second.prices.output });
+  // Its tokens are priced apart from the author's and counted in the total.
+  const cost = costOf(
+    { input: 0, cached: 0, output: 0, reasoning: 0, director: { calls: 1, input: 1e6, cached: 0, cacheWrite: 0, output: 1e6, reasoning: 0 } },
+    directed.prices,
+  )!;
+  expect(cost.director).toBeCloseTo(second.prices.input + second.prices.output);
+  expect(cost.total).toBeCloseTo(cost.director);
+  // No director, the writer itself, or one that is not connected: the writer works alone.
+  expect(settingsFor(withDirector(undefined), emptySettings()).director).toBeUndefined();
+  expect(settingsFor(withDirector(first.id), emptySettings()).director).toBeUndefined();
+  const other = base.writers.find((p) => p.models.some((m) => m.id === second.id))!;
+  const unconnected = { ...base, writers: base.writers.map((p) => (p === other ? { ...p, credential: "" } : p)) };
+  if (other.models.every((m) => m.id !== first.id))
+    expect(settingsFor(withDirector(second.id, unconnected), emptySettings()).director).toBeUndefined();
+  expect(() => withDirector("nobody")).toThrow();
+});

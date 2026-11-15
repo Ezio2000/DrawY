@@ -365,7 +365,7 @@ function ProviderSection<
           const holdsDefault = p.models.some(
             (m) =>
               m.id === chosen ||
-              catalog.labels.some((l) => l.writer === m.id || l.image === m.id),
+              catalog.labels.some((l) => l.writer === m.id || l.image === m.id || l.director === m.id),
           );
           return (
             <Entry
@@ -408,7 +408,7 @@ function ProviderSection<
                         ),
                       );
                     const tiers = catalog.labels.filter(
-                      (l) => l.writer === m.id || l.image === m.id,
+                      (l) => l.writer === m.id || l.image === m.id || l.director === m.id,
                     );
                     const labelled = !!tiers.length;
                     const kept = isDefault || total < 2 || labelled;
@@ -1273,6 +1273,7 @@ export function LabelSection({
             );
           const writer = writers.find((x) => x.m.id === l.writer);
           const painter = painters.find((x) => x.m.id === l.image);
+          const director = writers.find((x) => x.m.id === l.director);
           const isDefault = l.id === catalog.defaults.label;
           const served = writer
             ? speedsOf({ channel: writer.p.channel, protocol: writer.m.protocol })
@@ -1286,6 +1287,7 @@ export function LabelSection({
             writer && !writer.p.credential && w.tierUnconnected(writer.p.name),
             writer && !writer.m.tools && w.tierNoTools,
             l.web === BUILTIN && !builtinOk && w.tierNoBuiltin,
+            director && !director.p.credential && w.tierDirectorUnconnected(director.p.name),
           ].filter(Boolean) as string[];
           return (
             <Entry
@@ -1296,6 +1298,7 @@ export function LabelSection({
                 writer ? writerLabel(writer.p, writer.m) : l.writer,
                 l.effort && w.efforts[l.effort],
                 l.speed && w.speeds[l.speed],
+                director && w.directedBy(writerLabel(director.p, director.m)),
                 webName(l.web),
                 painter ? imageLabel(painter.p, painter.m) : l.image,
               ]
@@ -1340,7 +1343,12 @@ export function LabelSection({
                   <select
                     value={l.writer}
                     onChange={(e) =>
-                      patch({ writer: e.target.value, effort: undefined, speed: undefined })
+                      patch({
+                        writer: e.target.value,
+                        effort: undefined,
+                        speed: undefined,
+                        ...(l.director === e.target.value ? { director: undefined } : {}),
+                      })
                     }
                   >
                     {catalog.writers.map((p) => (
@@ -1393,6 +1401,28 @@ export function LabelSection({
                     />
                   </Row>
                 )}
+                <Row label={w.director} hint={w.directorHint}>
+                  <select
+                    value={l.director ?? ""}
+                    onChange={(e) => patch({ director: e.target.value || undefined })}
+                  >
+                    <option value="">{w.directorNone}</option>
+                    {catalog.writers.map((p) => (
+                      <optgroup
+                        key={p.id}
+                        label={p.name + (p.credential ? "" : ` · ${t.composer.modelUnconnected}`)}
+                      >
+                        {p.models
+                          .filter((m) => m.id !== l.writer)
+                          .map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {writerLabel(p, m)}
+                            </option>
+                          ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </Row>
                 <Row label={t.titles.search} hint={builtinOk ? undefined : w.tierBuiltinHint} wide={crowded(webs)}>
                   <Choose
                     label={t.titles.search}

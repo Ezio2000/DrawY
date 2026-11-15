@@ -126,6 +126,8 @@ function doing(step: ToolStep, t: Words): string {
       return [w.generating, step.images.map((i) => i.name).join(w.list)]
         .filter(Boolean)
         .join(" · ");
+    case "direct":
+      return step.stage === "opening" ? w.directing : w.critiquing;
     case "write_work":
       return w.writing;
     case "view_canvas":
@@ -439,6 +441,7 @@ const icons = {
   set_brief: Compass,
   find_materials: Search,
   generate_images: ImagePlus,
+  direct: Lightbulb,
   write_work: PenTool,
   view_canvas: Eye,
 } satisfies Record<ToolStep["name"], unknown>;
@@ -586,6 +589,13 @@ function ToolBody({
       );
     case "set_brief":
       return <Brief step={step} used={used} zoom={zoom} />;
+    case "direct":
+      return (
+        <div className={cx("brief")}>
+          <span className={cx("step-title")}>{step.stage === "opening" ? w.directOpening : w.directReview}</span>
+          {step.text && <Markdown text={step.text} />}
+        </div>
+      );
     case "find_materials":
       return (
         <>
@@ -785,6 +795,11 @@ export function spentBy(run: Run) {
     images: u?.images?.count ?? 0,
     imageTokens: (u?.images?.input ?? 0) + (u?.images?.output ?? 0),
     hosted: Object.entries(u?.hosted ?? {}).filter(([n]) => n !== "web_search"),
+    director: {
+      calls: u?.director?.calls ?? 0,
+      input: u?.director?.input ?? 0,
+      output: u?.director?.output ?? 0,
+    },
     failed: {
       attempts: u?.failed?.attempts ?? 0,
       ms: u?.failed?.ms ?? 0,
@@ -811,6 +826,11 @@ const total = (list: Spent[]): Spent => ({
   images: list.map((s) => s.images).reduce(sum, 0),
   imageTokens: list.map((s) => s.imageTokens).reduce(sum, 0),
   hosted: list.flatMap((s) => s.hosted),
+  director: {
+    calls: list.map((s) => s.director.calls).reduce(sum, 0),
+    input: list.map((s) => s.director.input).reduce(sum, 0),
+    output: list.map((s) => s.director.output).reduce(sum, 0),
+  },
   failed: {
     attempts: list.map((s) => s.failed.attempts).reduce(sum, 0),
     ms: list.map((s) => s.failed.ms).reduce(sum, 0),
@@ -824,6 +844,7 @@ const total = (list: Spent[]): Spent => ({
   cost: list.some((s) => s.cost)
     ? {
         author: list.map((s) => s.cost?.author ?? 0).reduce(sum, 0),
+        director: list.map((s) => s.cost?.director ?? 0).reduce(sum, 0),
         search: list.map((s) => s.cost?.search ?? 0).reduce(sum, 0),
         image: list.map((s) => s.cost?.image ?? 0).reduce(sum, 0),
         failed: list.map((s) => s.cost?.failed ?? 0).reduce(sum, 0),
@@ -849,7 +870,7 @@ function Stats({
   elapsed,
 }: {
   s: Spent;
-  by?: { author?: string; search?: string; image?: string };
+  by?: { author?: string; director?: string; search?: string; image?: string };
   /** How long it took, for one run. */
   elapsed?: number;
 }) {
@@ -864,6 +885,14 @@ function Stats({
       parts: [w.inputShort(k(s.input)), w.outputShort(k(s.output)), !!s.reasoning && w.reasoningShort(k(s.reasoning))],
       cost: s.cost?.author,
       used: s.input + s.output > 0,
+    },
+    {
+      key: "director",
+      label: w.director,
+      who: by?.director,
+      parts: [w.directorCalls(s.director.calls), w.inputShort(k(s.director.input)), w.outputShort(k(s.director.output))],
+      cost: s.cost?.director,
+      used: s.director.calls > 0,
     },
     {
       key: "search",
@@ -997,6 +1026,7 @@ function WorkUsage({ runs }: { runs: Run[] }) {
           s={s}
           by={{
             author: names((r) => r.services?.author),
+            director: names((r) => r.services?.director),
             search: names((r) =>
               r.services?.search === "off" ? undefined : searchedBy(r, t),
             ),
@@ -1243,6 +1273,7 @@ function RunView({
               ]
                 .filter(Boolean)
                 .join(" · "),
+            director: r.services?.director,
             search: searchedBy(r, t),
             image: r.services?.image,
           }}

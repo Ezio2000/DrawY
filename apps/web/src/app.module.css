@@ -8941,6 +8941,10 @@ body:has(.resizer[data-dragging]) {
   --swatch: var(--ai);
 }
 
+.spend [data-key="director"] {
+  --swatch: #c2a15a;
+}
+
 .spend [data-key="search"] {
   --swatch: #6a9bcc;
 }

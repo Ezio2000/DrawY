@@ -424,6 +424,10 @@ export interface ModelLabel {
   speed?: Speed;
   web: Web;
   image: string;
+  /** A second drawing model consulted for the idea alone: it writes the direction a new
+   * work's brief is built on and reviews the first draft, while `writer` does the work.
+   * Absent: the writer finds its own idea. */
+  director?: string;
 }
 
 const slug = z.string().regex(/^[a-z0-9][a-z0-9._-]*$/);
@@ -487,6 +491,7 @@ const labelSchema = z.object({
   speed: z.enum(speeds).optional(),
   web: z.string(),
   image: z.string(),
+  director: z.string().optional(),
 });
 const unique = (ids: string[]) => new Set(ids).size === ids.length;
 const knownWeb = (c: { searches: { id: string }[] }, web: Web) =>
@@ -514,6 +519,9 @@ export const modelCatalogSchema = z
   .refine((c) => c.labels.every((l) => modelIds(c.writers).includes(l.writer)), { message: "档位的绘制模型不存在" })
   .refine((c) => c.labels.every((l) => modelIds(c.painters).includes(l.image)), { message: "档位的生图模型不存在" })
   .refine((c) => c.labels.every((l) => knownWeb(c, l.web)), { message: "档位的搜索方式不存在" })
+  .refine((c) => c.labels.every((l) => !l.director || modelIds(c.writers).includes(l.director)), {
+    message: "档位的指导模型不存在",
+  })
   .refine((c) => !c.labels.length || c.labels.some((l) => l.id === c.defaults.label), { message: "默认档位不存在" });
 export const defaultCatalog = (): ModelCatalog => {
   const writer = defaultWriter(),
@@ -598,13 +606,17 @@ export function picked(catalog: ModelCatalog, own: Pick<UserSettings, "label">) 
   const speed = label.speed && m.speeds.includes(label.speed) ? label.speed : m.speed;
   const wanted = knownWeb(catalog, label.web) ? label.web : catalog.defaults.web;
   const search = webFor({ channel: w.provider.channel, ...m }, wanted, catalog.searches);
-  return { label, writer: w, effort, speed, search, painter: p };
+  // A director that is gone, not connected or the writer itself directs nothing.
+  const d = label.director && label.director !== m.id ? writers.find((x) => x.model.id === label.director) : undefined;
+  return { label, writer: w, effort, speed, search, painter: p, director: d?.provider.credential ? d : undefined };
 }
 
 /** What a run's spending is priced at, fixed when it starts: the drawing model's tokens at
  * the picked speed, each search and page read the way it searched, and each picture. */
 export interface RunPrices {
   author: TokenPrices;
+  /** The art director's tokens, when the label has one. */
+  director?: TokenPrices;
   search: number;
   page: number;
   image: ImagePrices;
@@ -612,6 +624,8 @@ export interface RunPrices {
 /** What a run cost, in US dollars, by service. */
 export interface RunCost {
   author: number;
+  /** The art director's direction and review. */
+  director: number;
   search: number;
   image: number;
   /** The drawing model's attempts that failed, apart from `author` and within `total`. */
@@ -622,13 +636,16 @@ export interface RunCost {
 export function costOf(usage: RunUsage | undefined, prices: RunPrices | undefined): RunCost | undefined {
   if (!prices) return undefined;
   const u = usage ?? { input: 0, cached: 0, output: 0, reasoning: 0 };
-  const a = prices.author;
-  const tokens = (t: { input: number; cached: number; cacheWrite?: number; output: number }) => {
+  const tokens = (
+    t: { input: number; cached: number; cacheWrite?: number; output: number },
+    a: TokenPrices = prices.author,
+  ) => {
     const write = t.cacheWrite ?? 0,
       fresh = Math.max(0, t.input - t.cached - write);
     return (fresh * a.input + t.cached * a.cached + write * a.cacheWrite + t.output * a.output) / 1e6;
   };
   const author = tokens(u);
+  const director = u.director && prices.director ? tokens(u.director, prices.director) : 0;
   const failed = u.failed ? tokens(u.failed) : 0;
   const search = (u.searches ?? 0) * prices.search + (u.pages ?? 0) * prices.page;
   const i = u.images;
@@ -641,7 +658,7 @@ export function costOf(usage: RunUsage | undefined, prices: RunPrices | undefine
         (i.textOutput ?? 0) * p.textOutput) /
         1e6
     : 0;
-  return { author, search, image, failed, total: author + search + image + failed };
+  return { author, director, search, image, failed, total: author + director + search + image + failed };
 }
 
 /** What one run is made with: the drawing model with the options picked, how it searches
@@ -651,36 +668,54 @@ export interface Settings {
   label: string;
   author: Role;
   authorName: string;
+  /** The art director, when the label has one that is connected. */
+  director?: Role;
+  directorName?: string;
   search: { mode: SearchMode; service?: SearchService };
   image: ImageRole;
   imageName: string;
   prices: RunPrices;
   preferences: string;
 }
-export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings {
-  const { label, writer, effort, speed, search, painter } = picked(catalog, own);
-  const { provider: p, model: m } = writer;
+const roleOf = (p: WriterProvider, m: WriterModel, effort: Effort, speed: Speed): Role => ({
+  channel: p.channel,
+  baseUrl: p.baseUrl,
+  credential: p.credential,
+  ...(p.accountId ? { accountId: p.accountId } : {}),
+  protocol: m.protocol,
+  model: m.model,
+  ...(m.provider ? { provider: m.provider } : {}),
+  effort,
+  toolLimits: m.toolLimits,
+  efforts: m.efforts,
+  speed,
+  vision: m.vision,
+  tools: m.tools,
+  maxOutput: m.maxOutput,
+});
+const tokenPricesAt = (m: WriterModel, speed: Speed): TokenPrices => {
   const rate = m.speedRates[speed] ?? speedRates[speed];
-  const scaled = (n: number) => n * rate;
+  return {
+    input: m.prices.input * rate,
+    cached: m.prices.cached * rate,
+    cacheWrite: m.prices.cacheWrite * rate,
+    output: m.prices.output * rate,
+  };
+};
+export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings {
+  const { label, writer, effort, speed, search, painter, director } = picked(catalog, own);
+  const { provider: p, model: m } = writer;
   return {
     label: label.name,
-    author: {
-      channel: p.channel,
-      baseUrl: p.baseUrl,
-      credential: p.credential,
-      ...(p.accountId ? { accountId: p.accountId } : {}),
-      protocol: m.protocol,
-      model: m.model,
-      ...(m.provider ? { provider: m.provider } : {}),
-      effort,
-      toolLimits: m.toolLimits,
-      efforts: m.efforts,
-      speed,
-      vision: m.vision,
-      tools: m.tools,
-      maxOutput: m.maxOutput,
-    },
+    author: roleOf(p, m, effort, speed),
     authorName: writerLabel(p, m),
+    // The director thinks and runs at its own model's defaults.
+    ...(director
+      ? {
+          director: roleOf(director.provider, director.model, director.model.effort, director.model.speed),
+          directorName: writerLabel(director.provider, director.model),
+        }
+      : {}),
     search,
     image: {
       channel: painter.provider.channel,
@@ -691,12 +726,8 @@ export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings 
     },
     imageName: imageLabel(painter.provider, painter.model),
     prices: {
-      author: {
-        input: scaled(m.prices.input),
-        cached: scaled(m.prices.cached),
-        cacheWrite: scaled(m.prices.cacheWrite),
-        output: scaled(m.prices.output),
-      },
+      author: tokenPricesAt(m, speed),
+      ...(director ? { director: tokenPricesAt(director.model, director.model.speed) } : {}),
       search:
         search.mode === "builtin" ? m.prices.search : search.mode === "service" ? search.service!.prices.query : 0,
       page: search.mode === "service" ? search.service!.prices.page : 0,
