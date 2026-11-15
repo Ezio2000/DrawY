@@ -2787,3 +2787,169 @@ it("draws without the art director when it fails", async () => {
     rmSync(dir, { recursive: true });
   }
 });
+
+it("lets the art director pass on a request it cannot place, and asks it again with the author's brief", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id);
+    const catalog = db.models();
+    const writer = catalog.writers[0].models[0];
+    catalog.writers[0].credential = "k";
+    catalog.writers[0].models.push({ ...structuredClone(writer), id: "director", model: "director-model" });
+    catalog.labels = [
+      { id: "a", name: "A", description: "", writer: writer.id, director: "director", web: "off", image: catalog.painters[0].models[0].id },
+    ];
+    catalog.defaults.label = "a";
+    db.saveModels(modelCatalogSchema.parse(catalog));
+    const work = fixture();
+    work.revision = 0;
+    work.brief = null;
+    work.scenes.child.modules = [];
+    work.materials = {};
+    store.commit(work, 0, { kind: "edit" });
+    const brief = {
+      subject: "如祺出行（广州的网约车平台）",
+      intent: "它怎样把乘客和司机接上",
+      audience: "普通读者",
+      ideas: [
+        { kind: "convention", idea: "下单、派单、接驾、到达的流程图" },
+        { kind: "journey", idea: "一单行程在城市地图上走过的路" },
+      ],
+      concept: "流程图从左到右",
+      register: "formal",
+      style: "textbook",
+      direction: "安静的线条",
+      cast: ["网约车"],
+      basis: { subject: "ruqi出行", intent: "ruqi出行" },
+    };
+    const turns: Call[] = [
+      ["set_brief", brief],
+      ["set_brief", { ...brief, concept: "一单行程画在广州的地图上" }],
+      ["write_work", { title: "如祺出行" }],
+      ["view_canvas", {}],
+      ["finish", { message: "done" }],
+    ];
+    const directed: { instructions: string; input: any[] }[] = [],
+      authored: any[][] = [];
+    const says = ["PASS", "2. Concept: 一单行程画在广州的地图上", "很好"];
+    let turn = 0;
+    vi.mocked(generate).mockReset();
+    vi.mocked(generate).mockImplementation(async (role, { instructions, input }) => {
+      if (role.model === "director-model") {
+        const text = says[directed.length];
+        directed.push({ instructions, input: structuredClone(input) });
+        return {
+          items: [{ type: "message", role: "assistant", content: [{ type: "output_text", text }] }],
+          usage: { input_tokens: 10, output_tokens: 1 },
+          response: {},
+        };
+      }
+      authored.push(structuredClone(input));
+      const [name, args] = turns[turn++];
+      return { items: [answer(name, args, "c" + turn)], usage: {}, response: {} };
+    });
+    const run = await new Agent(() => {}).start(store, work.id, "root", "ruqi出行");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    const done = store.run(run.id);
+
+    // The author starts without a direction and is told to find out what is meant.
+    expect(authored[0].at(-1).content).toContain("could not tell what this request is about");
+    // Its brief is what the director is asked again with, and now it has to direct.
+    expect(directed).toHaveLength(3);
+    expect(JSON.stringify(directed[1].input)).toContain("ruqi出行");
+    expect(JSON.stringify(directed[1].input)).toContain("广州的网约车平台");
+    expect(directed[1].instructions).not.toBe(directed[0].instructions);
+    expect(directed[1].instructions).not.toContain("single word PASS");
+    // The direction comes back with that brief's result, once.
+    const settled = outputs(authored.at(-1)!)
+      .map(parsed)
+      .filter((o) => o.style);
+    expect(settled[0].artDirection.direction).toContain("广州的地图");
+    expect(settled[1].artDirection).toBeUndefined();
+    expect(
+      done.steps.flatMap((s) => (s.kind === "tool" && s.name === "direct" ? [[s.stage, !!s.deferred, s.text]] : [])),
+    ).toEqual([
+      ["opening", true, ""],
+      ["opening", false, "2. Concept: 一单行程画在广州的地图上"],
+      ["review", false, "很好"],
+    ]);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("asks the art director again when the user answered a question after its direction", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id);
+    const catalog = db.models();
+    const writer = catalog.writers[0].models[0];
+    catalog.writers[0].credential = "k";
+    catalog.writers[0].models.push({ ...structuredClone(writer), id: "director", model: "director-model" });
+    catalog.labels = [
+      { id: "a", name: "A", description: "", writer: writer.id, director: "director", web: "off", image: catalog.painters[0].models[0].id },
+    ];
+    catalog.defaults.label = "a";
+    db.saveModels(modelCatalogSchema.parse(catalog));
+    const work = fixture();
+    work.revision = 0;
+    work.brief = null;
+    work.scenes.child.modules = [];
+    work.materials = {};
+    store.commit(work, 0, { kind: "edit" });
+    const brief = {
+      subject: "苹果公司",
+      intent: "苹果",
+      audience: "学生",
+      ideas: [
+        { kind: "convention", idea: "产品线的树" },
+        { kind: "change", idea: "一家公司的几个时代" },
+      ],
+      concept: "产品线的树",
+      register: "formal",
+      style: "textbook",
+      direction: "安静的线条",
+      cast: [],
+      basis: { subject: "公司", intent: "苹果" },
+    };
+    const turns: Call[] = [
+      ["ask_user", { questions: [{ id: "which", text: "水果还是公司？", options: [{ label: "水果" }, { label: "公司" }] }] }],
+      ["set_brief", brief],
+      ["view_canvas", {}],
+      ["finish", { message: "done" }],
+    ];
+    const directed: any[][] = [],
+      authored: any[][] = [];
+    let turn = 0;
+    vi.mocked(generate).mockReset();
+    vi.mocked(generate).mockImplementation(async (role, { input }) => {
+      if (role.model === "director-model") {
+        directed.push(structuredClone(input));
+        const text = ["一只切开的苹果", "几个时代的产品排成一条河", "很好"][directed.length - 1];
+        return { items: [{ type: "message", role: "assistant", content: [{ type: "output_text", text }] }], usage: {}, response: {} };
+      }
+      authored.push(structuredClone(input));
+      const [name, args] = turns[turn++];
+      return { items: [answer(name, args, "c" + turn)], usage: {}, response: {} };
+    });
+    const agent = new Agent(() => {});
+    const run = await agent.start(store, work.id, "root", "苹果");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
+    expect(directed).toHaveLength(1);
+    await agent.resume(store, run.id, "公司");
+    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
+    // The second direction is written with the answer and the brief in hand.
+    expect(JSON.stringify(directed[1])).toContain("公司");
+    expect(JSON.stringify(directed[1])).toContain("苹果公司");
+    const settled = outputs(authored.at(-1)!)
+      .map(parsed)
+      .find((o) => o.style);
+    expect(settled.artDirection.direction).toBe("几个时代的产品排成一条河");
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});

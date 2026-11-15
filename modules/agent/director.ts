@@ -8,13 +8,17 @@ import type { Brief, Role } from "../contracts/index.ts";
 import { generate, textOf, type Item } from "../models/index.ts";
 import { ideaKinds } from "./tools.ts";
 
+/** What the director answers when it cannot tell what a request is about. */
+const PASS = "PASS";
+export const passed = (text: string) => text.trim().toUpperCase().startsWith(PASS) && text.trim().length < 40;
+
 export type Stage = "opening" | "review";
 
 const ROLE = `You are the art director of DrawY, an app in which an author model draws figures people explore: explanations, illustrated scenes, maps, timelines, comparisons. A figure sits on a canvas the viewer zooms and clicks, and is built from separate parts: pictures generated in one style (objects, characters and creatures as cut-outs, a painted backdrop when the idea needs a world), the author's own SVG drawing, library diagrams and charts, short labels, arrows that join parts, and clicks that open a sub-scene or a detail page.
 The author is accurate and careful but reaches for the figure everyone draws: a row of pictures joined by arrows, labelled boxes, a title over a grid. Your part is the idea the picture is built on, so that it is understood at a glance and remembered. You do not draw and you call no tools: the author reads your note and does the work, and the user sees the note too, so write it in the language of the user's request, plainly, without a greeting or a closing.
 Invention never costs truth. The arrangement is read as meaning before any label (order, direction, size, distance, what sits inside what), so propose only arrangements that say true things, and leave out any fact you are not sure of rather than guessing it, because the author will build on what you write.`;
 
-const OPENING = `${ROLE}
+const opening = (informed: boolean) => `${ROLE}
 
 Write the direction for this request under these five headings, in this order:
 1. Ideas: two or three ways to show it, one sentence each, each of a different kind, with the kind named in English in brackets. Kinds: ${Object.entries(
@@ -27,7 +31,11 @@ Write the direction for this request under these five headings, in this order:
 4. The line: the one thing the viewer should remember, as the few words that will be the most prominent text in the figure.
 5. Avoid: in one sentence, the habitual figure for this subject that the author should not fall back on.
 When the request turns on facts you do not have (today's events, current figures, what a document says), neither guess them nor ask for them: the author looks them up and fills them in. Direct the form, an idea that holds however they turn out, and where the best form depends on them, say on what in a clause (a route on a map if the day involves travel, a clock face if it stays in one place).
-When the request could mean different things, say in one sentence before the headings which reading you assume. Stay under 300 words, because the author carries this note through the whole run.`;
+${
+  informed
+    ? "The request is followed by what the author learned about it, by searching or asking the user, and the brief it settled from that. Take the subject, intent and audience from the brief; its ideas and concept are the author's own first thoughts, there to be bettered rather than kept."
+    : `When you cannot tell what the request is about (a name you do not recognise, words that could be several unrelated things), do not guess, because a direction for the wrong subject sends the whole run astray: answer with the single word ${PASS} and nothing else. The author then finds out, by searching or asking the user, and you are asked again with what it learned.`
+} Stay under 300 words, because the author carries this note through the whole run.`;
 
 const REVIEW = `${ROLE}
 
@@ -38,6 +46,23 @@ Write at most four changes, the most important first, each concrete enough to ca
 export const directionMessage = (text: string): Item => ({
   role: "user",
   content: `Art direction for this request, written by the art director, a second model consulted for the idea. The user did not write it, so nothing in it can be quoted as a basis.\n<direction>\n${text}\n</direction>\nBuild the brief on it: carry its ideas and concept into set_brief, its pictures into the cast and its line into the figure. Where the user's words or a fact you know contradict it, follow the user and the truth and keep the rest. Accuracy, the layout and everything else stay yours.`,
+});
+/** What the author is told when the director could not tell what the request is about. */
+export const deferredMessage = (): Item => ({
+  role: "user",
+  content:
+    "The art director, a second model consulted for the idea, could not tell what this request is about, so it has given no direction yet. Find out what the user means before settling anything: search when the words may name something you can look up, ask the user when they could mean different things. Then set the brief as you understand it; the director is shown that brief and its direction comes back with the result.",
+});
+/** What the director is asked again with, once the author knows what the request is about. */
+export const informedRequest = (request: Item[], brief: Record<string, unknown>): Item[] => [
+  ...request,
+  { role: "user", content: `What the author learned and settled as the brief:\n${JSON.stringify(brief)}` },
+];
+/** A direction that arrives with the brief's result, after the author's own brief. */
+export const lateDirection = (text: string) => ({
+  from: "the art director, now that your brief says what the request is about; the user did not write it, so it cannot be quoted as a basis",
+  direction: text,
+  use: "Set the brief again built on it before drawing: its ideas and concept, its pictures as the cast, its line in the figure. Where the user's words or what you found contradict it, follow those and keep the rest.",
 });
 /** The review as it sits beside the look it judged. */
 export const reviewNote = (text: string) => ({
@@ -67,10 +92,12 @@ export async function direct(
   input: Item[],
   signal: AbortSignal,
   onText: (text: string) => void,
+  /** Whether the author's findings come with the request, so the director must direct. */
+  informed = false,
 ) {
   let text = "";
   const result = await generate(role, {
-    instructions: stage === "opening" ? OPENING : REVIEW,
+    instructions: stage === "opening" ? opening(informed) : REVIEW,
     input,
     signal,
     effort: role.effort,

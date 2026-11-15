@@ -726,6 +726,7 @@ const zh = {
     draw_guide: "查阅画法指南",
     directOpening: "美术指导的立意",
     directReview: "美术指导看初稿",
+    directDeferred: "还看不出要画什么，等内容定下后再立意",
     guideTopics: {
       pictures: "生图与摆图",
       drawing: "编写画法",
@@ -1970,6 +1971,7 @@ const en: Words = {
     draw_guide: "Read the drawing guide",
     directOpening: "The art director's idea",
     directReview: "The art director's review",
+    directDeferred: "Can't tell what this is about yet; it directs once the content is settled",
     guideTopics: {
       pictures: "Pictures",
       drawing: "Writing drawings",

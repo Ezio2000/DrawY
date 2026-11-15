@@ -48,7 +48,17 @@ import {
 } from "../observation/index.ts";
 import { AUTHOR, catalogue } from "./prompts.ts";
 import { guidesRead, readGuides } from "./guides.ts";
-import { direct, directionMessage, reviewNote, reviewRequest, type Stage } from "./director.ts";
+import {
+  deferredMessage,
+  direct,
+  directionMessage,
+  informedRequest,
+  lateDirection,
+  passed,
+  reviewNote,
+  reviewRequest,
+  type Stage,
+} from "./director.ts";
 import {
   adapterFor,
   generate,
@@ -467,7 +477,14 @@ interface Context {
   held?: Record<string, unknown>;
   /** Where the art director's part in this run stands: its review is due on the first
    * whole look once it gave the direction or the brief was set, and is asked once. */
-  direction?: { review: "due" | "done" };
+  direction?: {
+    review: "due" | "done";
+    /** What the user asked and answered, kept until the brief is set. */
+    request?: Item[];
+    /** The direction is still owed, or was written before the user answered a question:
+     * the director is asked with the brief the author settles. */
+    owed?: boolean;
+  };
   format?: number;
 }
 /** The user's standing preferences as the author is told them: in the conversation rather
@@ -984,7 +1001,14 @@ export class Agent {
       ctx.reported = undefined;
       ctx.format = CONTEXT_FORMAT;
     }
-    ctx.input.push(await userMessage(store, answer, materials, locale));
+    const answered = await userMessage(store, answer, materials, locale);
+    ctx.input.push(answered);
+    // An answer before the brief may change what the work is about, so a direction
+    // written without it is asked for again with the brief.
+    if (ctx.direction?.request) {
+      ctx.direction.request.push(answered);
+      ctx.direction.owed = true;
+    }
     run.steps.push({ kind: "message", role: "user", text: answer, materials });
     run.questions = undefined;
     run.status = "running";
@@ -1123,8 +1147,10 @@ export class Agent {
               if (request && settings.director && !store.work(run.workId).brief) {
                 const direction = await this.consult(store, run, abort, "opening", request);
                 if (direction) {
-                  ctx.input.push(directionMessage(direction));
-                  ctx.direction = { review: "due" };
+                  // A director that cannot tell what is asked directs once the author knows.
+                  const owed = passed(direction);
+                  ctx.input.push(owed ? deferredMessage() : directionMessage(direction));
+                  ctx.direction = { review: "due", request, ...(owed ? { owed } : {}) };
                   store.context(run.id, ctx);
                 }
               }
@@ -1177,7 +1203,14 @@ export class Agent {
   }
   /** Asks the art director and shows what it writes as a step of the run. A director that
    * fails leaves the run to the author alone: the work matters more than the second opinion. */
-  private async consult(store: UserStore, run: Run, abort: AbortController, stage: Stage, input: Item[]) {
+  private async consult(
+    store: UserStore,
+    run: Run,
+    abort: AbortController,
+    stage: Stage,
+    input: Item[],
+    informed = false,
+  ) {
     const role = (store.context(run.id) as Context).settings.director!;
     const step: ToolStep = { kind: "tool", id: id(), status: "running", name: "direct", stage, text: "" };
     run.steps.push(step);
@@ -1189,14 +1222,26 @@ export class Agent {
       { meter: "director", args: { stage }, input, request: { ...requestOf(role), effort: role.effort } },
       async (span) => {
         try {
-          const answer = await direct(role, stage, input, abort.signal, (text) => {
-            Object.assign(step, { text });
-            if (Date.now() - shown < 250) return;
-            shown = Date.now();
-            this.emit(store, run);
-          });
+          const answer = await direct(
+            role,
+            stage,
+            input,
+            abort.signal,
+            (text) => {
+              // The one word of a pass is not shown as a direction.
+              if ("PASS".startsWith(text.trim().toUpperCase())) return;
+              Object.assign(step, { text });
+              if (Date.now() - shown < 250) return;
+              shown = Date.now();
+              this.emit(store, run);
+            },
+            informed,
+          );
           spendDirector(run, answer.usage);
-          Object.assign(step, { text: answer.text, status: "done" });
+          if (passed(answer.text)) {
+            if (informed) throw Error("指导模型没有写出内容");
+            Object.assign(step, { text: "", deferred: true, status: "done" });
+          } else Object.assign(step, { text: answer.text, status: "done" });
           span.set({ usage: answer.usage, output: answer.text, response: answer.response });
           this.emit(store, run);
           return answer.text;
@@ -1752,6 +1797,25 @@ export class Agent {
           ctx.known = work.revision;
           // A new brief is a new idea, which the director reviews once it is drawn.
           if (ctx.settings.director) ctx.direction ??= { review: "due" };
+          const owed = ctx.direction?.owed && ctx.direction.request;
+          if (ctx.direction) ctx.direction = { review: ctx.direction.review };
+          const late = owed
+            ? await this.consult(
+                store,
+                run,
+                abort,
+                "opening",
+                informedRequest(owed, {
+                  subject: brief.subject,
+                  intent: brief.intent,
+                  audience: brief.audience,
+                  ideas: args.ideas,
+                  concept: brief.concept,
+                  cast: brief.cast,
+                }),
+                true,
+              )
+            : undefined;
           this.publish(store.userId, { type: "work", work });
           const effects = await library.get(style.effects, store.userId, true);
           const cast = work.brief!.cast.length
@@ -1775,6 +1839,7 @@ export class Agent {
               effects: effects.map((e) => ({ id: e.id, about: e.about })),
             },
             ...(cast ? { cast: cast.output } : {}),
+            ...(late ? { artDirection: lateDirection(late) } : {}),
             ...(research(run) ? { research: research(run) } : {}),
             ...(guidesRead(ctx.input, batch).topics.size
               ? {}
