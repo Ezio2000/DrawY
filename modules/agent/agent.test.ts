@@ -2626,65 +2626,72 @@ it("starts over from what was asked when the saved conversation is in an older f
   }
 });
 
-it("asks the label's art director for the idea of a new work and for one review of its first draft", async () => {
+/** A catalog whose only label draws with the first writer and is directed by a second. */
+function directed(db: Storage) {
+  const catalog = db.models();
+  const writer = catalog.writers[0].models[0];
+  catalog.writers[0].credential = "k";
+  writer.model = "drafter";
+  writer.prices = { input: 1, cached: 0.1, cacheWrite: 0, output: 4, search: 0 };
+  catalog.writers[0].models.push({
+    ...structuredClone(writer),
+    id: "director",
+    model: "director-model",
+    prices: { input: 10, cached: 1, cacheWrite: 12.5, output: 50, search: 0 },
+  });
+  catalog.labels = [
+    { id: "a", name: "A", description: "", writer: writer.id, director: "director", web: "off", image: catalog.painters[0].models[0].id },
+  ];
+  catalog.defaults.label = "a";
+  db.saveModels(modelCatalogSchema.parse(catalog));
+}
+const appleBrief = {
+  subject: "苹果",
+  intent: "苹果",
+  audience: "学生",
+  ideas: [
+    { kind: "anatomy", idea: "切开的苹果" },
+    { kind: "change", idea: "一年里的苹果树" },
+  ],
+  concept: "一棵树的四季",
+  register: "formal",
+  style: "textbook",
+  direction: "安静的线条",
+  cast: [],
+  basis: { subject: "苹果", intent: "苹果" },
+};
+
+it("gives the author an art director to consult for the idea, which also reviews the first draft once", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
   try {
     const store = db.scoped(register(db, "author", "abcdef").id);
-    const catalog = db.models();
-    const writer = catalog.writers[0].models[0];
-    catalog.writers[0].credential = "k";
-    writer.model = "drafter";
-    writer.prices = { input: 1, cached: 0.1, cacheWrite: 0, output: 4, search: 0 };
-    catalog.writers[0].models.push({
-      ...structuredClone(writer),
-      id: "director",
-      model: "director-model",
-      prices: { input: 10, cached: 1, cacheWrite: 12.5, output: 50, search: 0 },
-    });
-    catalog.labels = [
-      { id: "a", name: "A", description: "", writer: writer.id, director: "director", web: "off", image: catalog.painters[0].models[0].id },
-    ];
-    catalog.defaults.label = "a";
-    db.saveModels(modelCatalogSchema.parse(catalog));
+    directed(db);
     const work = fixture();
     work.revision = 0;
     work.brief = null;
     work.scenes.child.modules = [];
     work.materials = {};
     store.commit(work, 0, { kind: "edit" });
-    const brief = {
-      subject: "苹果",
-      intent: "苹果",
-      audience: "学生",
-      ideas: [
-        { kind: "anatomy", idea: "切开的苹果" },
-        { kind: "change", idea: "一年里的苹果树" },
-      ],
-      concept: "切开的苹果居中",
-      register: "formal",
-      style: "textbook",
-      direction: "安静的线条",
-      cast: [],
-      basis: { subject: "苹果", intent: "苹果" },
-    };
     const turns: Call[] = [
-      ["set_brief", brief],
+      // A brief set before asking is refused once, so a new work's idea is the director's.
+      ["set_brief", appleBrief],
+      ["consult_director", { subject: "苹果（水果）", intent: "让学生看懂苹果怎样长成", known: "春天开花，秋天结果" }],
+      ["set_brief", appleBrief],
       ["write_work", { title: "苹果" }],
       ["view_canvas", {}],
       ["write_work", { title: "苹果的一年" }],
       ["view_canvas", {}],
       ["finish", { message: "done" }],
     ];
-    const directed: { instructions: string; input: any[] }[] = [],
-      authored: any[][] = [];
+    const asked: { instructions: string; input: any[]; tools: unknown }[] = [],
+      authored: { input: any[]; tools: any[] }[] = [];
     let turn = 0;
     vi.mocked(generate).mockReset();
     vi.mocked(generate).mockImplementation(async (role, { instructions, input, onEvent, tools }) => {
       if (role.model === "director-model") {
-        directed.push({ instructions, input: structuredClone(input) });
-        expect(tools).toBeUndefined();
-        const text = directed.length === 1 ? "1. Ideas…\n2. Concept: 一棵树的四季" : "把树放大到占满画面";
+        asked.push({ instructions, input: structuredClone(input), tools });
+        const text = asked.length === 1 ? "1. Ideas…\n2. Concept: 一棵树的四季" : "把树放大到占满画面";
         onEvent?.({ type: "response.output_text.delta", delta: text });
         return {
           items: [{ type: "message", role: "assistant", content: [{ type: "output_text", text }] }],
@@ -2692,35 +2699,32 @@ it("asks the label's art director for the idea of a new work and for one review 
           response: {},
         };
       }
-      authored.push(structuredClone(input));
+      authored.push({ input: structuredClone(input), tools: tools as any[] });
       const [name, args] = turns[turn++];
-      return {
-        items: [answer(name, args, "c" + turn)],
-        usage: { input_tokens: 100, output_tokens: 10 },
-        response: {},
-      };
+      return { items: [answer(name, args, "c" + turn)], usage: { input_tokens: 100, output_tokens: 10 }, response: {} };
     });
     const run = await new Agent(() => {}).start(store, work.id, "root", "画苹果");
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
     const done = store.run(run.id);
 
-    // The director is asked twice, each a request of its own: the user's words first, then
-    // the brief with the first draft. The second look is the author's alone.
-    expect(directed).toHaveLength(2);
-    expect(JSON.stringify(directed[0].input)).toContain("画苹果");
-    expect(directed[0].input.some((i) => i.type === "function_call")).toBe(false);
-    expect(JSON.stringify(directed[1].input)).toContain("切开的苹果居中");
-    expect(directed[1].input[0].content.some((c: any) => c.type === "input_image")).toBe(true);
-    expect(directed[0].instructions).not.toBe(directed[1].instructions);
+    // The director is one more tool, after the others, and nothing runs before the author.
+    expect(authored[0].tools.at(-1).name).toBe("consult_director");
+    expect(authored[0].input.at(-1).content).not.toContain("art director");
+    const results = outputs(authored.at(-1)!.input).map(parsed);
+    expect(results[0].error).toContain("consult_director");
 
-    // The author reads the direction before its first turn, as a message that cannot be
-    // mistaken for the user's words, and the review beside the look it judged.
-    const first = authored[0].at(-1);
-    expect(first.content).toContain("一棵树的四季");
-    expect(first.content).toContain("The user did not write it");
-    const looks = outputs(authored.at(-1)!)
-      .map(parsed)
-      .filter((o) => o.sceneIds);
+    // It is asked with the user's words and what the author passed, without tools, and
+    // its answer is the call's result.
+    expect(asked).toHaveLength(2);
+    expect(asked[0].tools).toBeUndefined();
+    expect(JSON.stringify(asked[0].input)).toContain("画苹果");
+    expect(JSON.stringify(asked[0].input)).toContain("春天开花，秋天结果");
+    expect(results[1].direction).toContain("一棵树的四季");
+
+    // The first whole look is shown to it with the brief; the second is the author's alone.
+    expect(JSON.stringify(asked[1].input)).toContain("一棵树的四季");
+    expect(asked[1].input[0].content.some((c: any) => c.type === "input_image")).toBe(true);
+    const looks = results.filter((o) => o.sceneIds);
     expect(looks[0].artDirection.notes).toBe("把树放大到占满画面");
     expect(looks[1].artDirection).toBeUndefined();
 
@@ -2731,17 +2735,17 @@ it("asks the label's art director for the idea of a new work and for one review 
     ]);
     expect(done.services?.director).toContain("director-model");
     expect(done.usage?.director).toMatchObject({ calls: 2, input: 2000, output: 400 });
-    expect(done.usage?.input).toBe(600);
+    expect(done.usage?.input).toBe(800);
     const cost = costOf(done.usage, done.prices)!;
     expect(cost.director).toBeCloseTo((2000 * 10 + 400 * 50) / 1e6);
     expect(cost.total).toBeCloseTo(cost.author + cost.director);
 
-    // A later request changes a work whose idea is settled: the director is not asked.
+    // A later request changes a work whose idea is settled: nothing makes the author ask.
     turn = 0;
     turns.splice(0, turns.length, ["write_work", { title: "红苹果" }], ["view_canvas", {}], ["finish", { message: "done" }]);
     const next = await new Agent(() => {}).start(store, work.id, "root", "换成红色");
     await vi.waitFor(() => expect(store.run(next.id).status).toBe("completed"));
-    expect(directed).toHaveLength(2);
+    expect(asked).toHaveLength(2);
     expect(store.run(next.id).usage?.director).toBeUndefined();
   } finally {
     db.close();
@@ -2749,205 +2753,49 @@ it("asks the label's art director for the idea of a new work and for one review 
   }
 });
 
-it("draws without the art director when it fails", async () => {
+it("lets the author go on alone when the art director fails, and holds it to two consultations", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
     db = new Storage(dir);
   try {
     const store = db.scoped(register(db, "author", "abcdef").id);
-    const catalog = db.models();
-    const writer = catalog.writers[0].models[0];
-    catalog.writers[0].credential = "k";
-    catalog.writers[0].models.push({ ...structuredClone(writer), id: "director", model: "director-model" });
-    catalog.labels = [
-      { id: "a", name: "A", description: "", writer: writer.id, director: "director", web: "off", image: catalog.painters[0].models[0].id },
-    ];
-    catalog.defaults.label = "a";
-    db.saveModels(modelCatalogSchema.parse(catalog));
+    directed(db);
     const work = fixture();
     work.revision = 0;
     work.brief = null;
     work.scenes.child.modules = [];
     work.materials = {};
     store.commit(work, 0, { kind: "edit" });
-    const turns: Call[] = [["view_canvas", {}], ["finish", { message: "done" }]];
-    let turn = 0;
+    const consult: Call = ["consult_director", { subject: "苹果", intent: "看懂苹果" }];
+    const turns: Call[] = [consult, consult, consult, ["set_brief", appleBrief], ["view_canvas", {}], ["finish", { message: "done" }]];
+    const authored: any[][] = [];
+    let turn = 0,
+      asked = 0;
     vi.mocked(generate).mockReset();
-    vi.mocked(generate).mockImplementation(async (role) => {
-      if (role.model === "director-model") throw Error("模型请求 500: down");
+    vi.mocked(generate).mockImplementation(async (role, { input }) => {
+      if (role.model === "director-model") {
+        asked++;
+        throw Error("模型请求 500: down");
+      }
+      authored.push(structuredClone(input));
       const [name, args] = turns[turn++];
       return { items: [answer(name, args, "c" + turn)], usage: {}, response: {} };
     });
     const run = await new Agent(() => {}).start(store, work.id, "root", "画苹果");
     await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
     const done = store.run(run.id);
-    expect(done.steps.find((s) => s.kind === "tool" && s.name === "direct")).toMatchObject({ status: "failed" });
-    expect(done.usage?.director).toBeUndefined();
-  } finally {
-    db.close();
-    rmSync(dir, { recursive: true });
-  }
-});
-
-it("lets the art director pass on a request it cannot place, and asks it again with the author's brief", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
-    db = new Storage(dir);
-  try {
-    const store = db.scoped(register(db, "author", "abcdef").id);
-    const catalog = db.models();
-    const writer = catalog.writers[0].models[0];
-    catalog.writers[0].credential = "k";
-    catalog.writers[0].models.push({ ...structuredClone(writer), id: "director", model: "director-model" });
-    catalog.labels = [
-      { id: "a", name: "A", description: "", writer: writer.id, director: "director", web: "off", image: catalog.painters[0].models[0].id },
-    ];
-    catalog.defaults.label = "a";
-    db.saveModels(modelCatalogSchema.parse(catalog));
-    const work = fixture();
-    work.revision = 0;
-    work.brief = null;
-    work.scenes.child.modules = [];
-    work.materials = {};
-    store.commit(work, 0, { kind: "edit" });
-    const brief = {
-      subject: "如祺出行（广州的网约车平台）",
-      intent: "它怎样把乘客和司机接上",
-      audience: "普通读者",
-      ideas: [
-        { kind: "convention", idea: "下单、派单、接驾、到达的流程图" },
-        { kind: "journey", idea: "一单行程在城市地图上走过的路" },
-      ],
-      concept: "流程图从左到右",
-      register: "formal",
-      style: "textbook",
-      direction: "安静的线条",
-      cast: ["网约车"],
-      basis: { subject: "ruqi出行", intent: "ruqi出行" },
-    };
-    const turns: Call[] = [
-      ["set_brief", brief],
-      ["set_brief", { ...brief, concept: "一单行程画在广州的地图上" }],
-      ["write_work", { title: "如祺出行" }],
-      ["view_canvas", {}],
-      ["finish", { message: "done" }],
-    ];
-    const directed: { instructions: string; input: any[] }[] = [],
-      authored: any[][] = [];
-    const says = ["PASS", "2. Concept: 一单行程画在广州的地图上", "很好"];
-    let turn = 0;
-    vi.mocked(generate).mockReset();
-    vi.mocked(generate).mockImplementation(async (role, { instructions, input }) => {
-      if (role.model === "director-model") {
-        const text = says[directed.length];
-        directed.push({ instructions, input: structuredClone(input) });
-        return {
-          items: [{ type: "message", role: "assistant", content: [{ type: "output_text", text }] }],
-          usage: { input_tokens: 10, output_tokens: 1 },
-          response: {},
-        };
-      }
-      authored.push(structuredClone(input));
-      const [name, args] = turns[turn++];
-      return { items: [answer(name, args, "c" + turn)], usage: {}, response: {} };
-    });
-    const run = await new Agent(() => {}).start(store, work.id, "root", "ruqi出行");
-    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
-    const done = store.run(run.id);
-
-    // The author starts without a direction and is told to find out what is meant.
-    expect(authored[0].at(-1).content).toContain("could not tell what this request is about");
-    // Its brief is what the director is asked again with, and now it has to direct.
-    expect(directed).toHaveLength(3);
-    expect(JSON.stringify(directed[1].input)).toContain("ruqi出行");
-    expect(JSON.stringify(directed[1].input)).toContain("广州的网约车平台");
-    expect(directed[1].instructions).not.toBe(directed[0].instructions);
-    expect(directed[1].instructions).not.toContain("single word PASS");
-    // The direction comes back with that brief's result, once.
-    const settled = outputs(authored.at(-1)!)
-      .map(parsed)
-      .filter((o) => o.style);
-    expect(settled[0].artDirection.direction).toContain("广州的地图");
-    expect(settled[1].artDirection).toBeUndefined();
-    expect(
-      done.steps.flatMap((s) => (s.kind === "tool" && s.name === "direct" ? [[s.stage, !!s.deferred, s.text]] : [])),
-    ).toEqual([
-      ["opening", true, ""],
-      ["opening", false, "2. Concept: 一单行程画在广州的地图上"],
-      ["review", false, "很好"],
+    const results = outputs(authored.at(-1)!).map(parsed);
+    expect(results[0].error).toContain("unavailable");
+    expect(results[2].error).toContain("already consulted twice");
+    // The brief is no longer held back, and the failed review does not stop the look.
+    expect(results[3].style).toBeTruthy();
+    expect(asked).toBe(3);
+    expect(done.steps.filter((s) => s.kind === "tool" && s.name === "direct").map((s) => s.kind === "tool" && s.status)).toEqual([
+      "failed",
+      "failed",
+      "failed",
+      "failed",
     ]);
-  } finally {
-    db.close();
-    rmSync(dir, { recursive: true });
-  }
-});
-
-it("asks the art director again when the user answered a question after its direction", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "drawy-agent-")),
-    db = new Storage(dir);
-  try {
-    const store = db.scoped(register(db, "author", "abcdef").id);
-    const catalog = db.models();
-    const writer = catalog.writers[0].models[0];
-    catalog.writers[0].credential = "k";
-    catalog.writers[0].models.push({ ...structuredClone(writer), id: "director", model: "director-model" });
-    catalog.labels = [
-      { id: "a", name: "A", description: "", writer: writer.id, director: "director", web: "off", image: catalog.painters[0].models[0].id },
-    ];
-    catalog.defaults.label = "a";
-    db.saveModels(modelCatalogSchema.parse(catalog));
-    const work = fixture();
-    work.revision = 0;
-    work.brief = null;
-    work.scenes.child.modules = [];
-    work.materials = {};
-    store.commit(work, 0, { kind: "edit" });
-    const brief = {
-      subject: "苹果公司",
-      intent: "苹果",
-      audience: "学生",
-      ideas: [
-        { kind: "convention", idea: "产品线的树" },
-        { kind: "change", idea: "一家公司的几个时代" },
-      ],
-      concept: "产品线的树",
-      register: "formal",
-      style: "textbook",
-      direction: "安静的线条",
-      cast: [],
-      basis: { subject: "公司", intent: "苹果" },
-    };
-    const turns: Call[] = [
-      ["ask_user", { questions: [{ id: "which", text: "水果还是公司？", options: [{ label: "水果" }, { label: "公司" }] }] }],
-      ["set_brief", brief],
-      ["view_canvas", {}],
-      ["finish", { message: "done" }],
-    ];
-    const directed: any[][] = [],
-      authored: any[][] = [];
-    let turn = 0;
-    vi.mocked(generate).mockReset();
-    vi.mocked(generate).mockImplementation(async (role, { input }) => {
-      if (role.model === "director-model") {
-        directed.push(structuredClone(input));
-        const text = ["一只切开的苹果", "几个时代的产品排成一条河", "很好"][directed.length - 1];
-        return { items: [{ type: "message", role: "assistant", content: [{ type: "output_text", text }] }], usage: {}, response: {} };
-      }
-      authored.push(structuredClone(input));
-      const [name, args] = turns[turn++];
-      return { items: [answer(name, args, "c" + turn)], usage: {}, response: {} };
-    });
-    const agent = new Agent(() => {});
-    const run = await agent.start(store, work.id, "root", "苹果");
-    await vi.waitFor(() => expect(store.run(run.id).status).toBe("waiting"));
-    expect(directed).toHaveLength(1);
-    await agent.resume(store, run.id, "公司");
-    await vi.waitFor(() => expect(store.run(run.id).status).toBe("completed"));
-    // The second direction is written with the answer and the brief in hand.
-    expect(JSON.stringify(directed[1])).toContain("公司");
-    expect(JSON.stringify(directed[1])).toContain("苹果公司");
-    const settled = outputs(authored.at(-1)!)
-      .map(parsed)
-      .find((o) => o.style);
-    expect(settled.artDirection.direction).toBe("几个时代的产品排成一条河");
+    expect(done.usage?.director).toBeUndefined();
   } finally {
     db.close();
     rmSync(dir, { recursive: true });

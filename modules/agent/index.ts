@@ -48,17 +48,7 @@ import {
 } from "../observation/index.ts";
 import { AUTHOR, catalogue } from "./prompts.ts";
 import { guidesRead, readGuides } from "./guides.ts";
-import {
-  deferredMessage,
-  direct,
-  directionMessage,
-  informedRequest,
-  lateDirection,
-  passed,
-  reviewNote,
-  reviewRequest,
-  type Stage,
-} from "./director.ts";
+import { direct, openingRequest, reviewNote, reviewRequest, type Stage } from "./director.ts";
 import {
   adapterFor,
   generate,
@@ -78,6 +68,8 @@ import {
   searchTools,
   searchSchema,
   openSchema,
+  consultSchema,
+  directorTool,
 } from "./tools.ts";
 import { searchWeb, readPage } from "../search/index.ts";
 import { partialJson, completedRecords } from "./partial.ts";
@@ -85,12 +77,15 @@ import { tracer } from "../trace/index.ts";
 import type { MessageLocale } from "../contracts/messages.ts";
 /** The tools a run offers: the drawing tools, and the one way it searches, if any. A run
  * never has both the model's own search and the search service. */
-const toolsFor = (settings: Pick<Settings, "search">): Item[] =>
-  settings.search.mode === "builtin"
-    ? [...tools, { type: "web_search", search_context_size: "low" }]
+const toolsFor = (settings: Pick<Settings, "search" | "director">): Item[] => [
+  ...tools,
+  ...(settings.search.mode === "builtin"
+    ? [{ type: "web_search", search_context_size: "low" }]
     : settings.search.mode === "service"
-      ? [...tools, ...searchTools]
-      : tools;
+      ? searchTools
+      : []),
+  ...(settings.director ? [directorTool] : []),
+];
 const searching = new Set(searchTools.map((t) => t.name));
 /** Adds web searches or a page read to what a run has spent. */
 function counted(run: Run, action: string | undefined, searches = 1) {
@@ -311,6 +306,8 @@ function activity(name: string, args: any, sceneId: string): ToolActivity {
   switch (name) {
     case "read_work":
       return { name };
+    case "consult_director":
+      return { name: "direct", stage: "opening", text: "" };
     case "draw_guide":
       return {
         name,
@@ -475,16 +472,9 @@ interface Context {
   preferences?: string;
   /** A write that was refused, as it stands, waiting for `amend`. */
   held?: Record<string, unknown>;
-  /** Where the art director's part in this run stands: its review is due on the first
-   * whole look once it gave the direction or the brief was set, and is asked once. */
-  direction?: {
-    review: "due" | "done";
-    /** What the user asked and answered, kept until the brief is set. */
-    request?: Item[];
-    /** The direction is still owed, or was written before the user answered a question:
-     * the director is asked with the brief the author settles. */
-    owed?: boolean;
-  };
+  /** The art director's part in this run: how often the author consulted it, and whether
+   * its one review of the first draft is still due. */
+  direction?: { consults: number; review: "due" | "done" };
   format?: number;
 }
 /** The user's standing preferences as the author is told them: in the conversation rather
@@ -973,7 +963,7 @@ export class Agent {
       status: run.status,
       startedAt: run.startedAt,
     });
-    void this.execute(store, run, ctx, "request", [preferencesMessage(ctx.preferences!), message]);
+    void this.execute(store, run, ctx, "request");
     return run;
   }
   async resume(
@@ -1001,14 +991,7 @@ export class Agent {
       ctx.reported = undefined;
       ctx.format = CONTEXT_FORMAT;
     }
-    const answered = await userMessage(store, answer, materials, locale);
-    ctx.input.push(answered);
-    // An answer before the brief may change what the work is about, so a direction
-    // written without it is asked for again with the brief.
-    if (ctx.direction?.request) {
-      ctx.direction.request.push(answered);
-      ctx.direction.owed = true;
-    }
+    ctx.input.push(await userMessage(store, answer, materials, locale));
     run.steps.push({ kind: "message", role: "user", text: answer, materials });
     run.questions = undefined;
     run.status = "running";
@@ -1084,8 +1067,6 @@ export class Agent {
     run: Run,
     ctx: Context,
     trigger: "request" | "answer",
-    /** What the user asked this time, for the art director of a work without a brief. */
-    request?: Item[],
   ) {
     const abort = new AbortController();
     this.active.set(run.id, abort);
@@ -1142,18 +1123,6 @@ export class Agent {
                   "name" in t ? t.name : t.type,
                 ),
               });
-              // A work with no brief yet is about to get its idea: the director gives it
-              // first. Later requests change a work whose concept is already settled.
-              if (request && settings.director && !store.work(run.workId).brief) {
-                const direction = await this.consult(store, run, abort, "opening", request);
-                if (direction) {
-                  // A director that cannot tell what is asked directs once the author knows.
-                  const owed = passed(direction);
-                  ctx.input.push(owed ? deferredMessage() : directionMessage(direction));
-                  ctx.direction = { review: "due", request, ...(owed ? { owed } : {}) };
-                  store.context(run.id, ctx);
-                }
-              }
               await this.loop(
                 store,
                 run,
@@ -1201,58 +1170,34 @@ export class Agent {
         .catch(() => {}),
     );
   }
-  /** Asks the art director and shows what it writes as a step of the run. A director that
-   * fails leaves the run to the author alone: the work matters more than the second opinion. */
+  /** Asks the art director, showing what it writes on a step of the run: the author's own
+   * call when it consulted, a step of its own for the review. Throws when the director fails. */
   private async consult(
     store: UserStore,
     run: Run,
+    ctx: Context,
     abort: AbortController,
     stage: Stage,
     input: Item[],
-    informed = false,
+    step: ToolStep,
   ) {
-    const role = (store.context(run.id) as Context).settings.director!;
-    const step: ToolStep = { kind: "tool", id: id(), status: "running", name: "direct", stage, text: "" };
-    run.steps.push(step);
-    this.emit(store, run);
+    const role = ctx.settings.director!;
     let shown = Date.now();
     return tracer.span(
       "tool",
       "art_director",
       { meter: "director", args: { stage }, input, request: { ...requestOf(role), effort: role.effort } },
       async (span) => {
-        try {
-          const answer = await direct(
-            role,
-            stage,
-            input,
-            abort.signal,
-            (text) => {
-              // The one word of a pass is not shown as a direction.
-              if ("PASS".startsWith(text.trim().toUpperCase())) return;
-              Object.assign(step, { text });
-              if (Date.now() - shown < 250) return;
-              shown = Date.now();
-              this.emit(store, run);
-            },
-            informed,
-          );
-          spendDirector(run, answer.usage);
-          if (passed(answer.text)) {
-            if (informed) throw Error("指导模型没有写出内容");
-            Object.assign(step, { text: "", deferred: true, status: "done" });
-          } else Object.assign(step, { text: answer.text, status: "done" });
-          span.set({ usage: answer.usage, output: answer.text, response: answer.response });
+        const answer = await direct(role, stage, input, abort.signal, (text) => {
+          Object.assign(step, { text });
+          if (Date.now() - shown < 250) return;
+          shown = Date.now();
           this.emit(store, run);
-          return answer.text;
-        } catch (e) {
-          abort.signal.throwIfAborted();
-          const error = e instanceof Error ? e.message : String(e);
-          Object.assign(step, { status: "failed", error });
-          span.set({ error });
-          this.emit(store, run);
-          return undefined;
-        }
+        });
+        spendDirector(run, answer.usage);
+        Object.assign(step, { text: answer.text });
+        span.set({ usage: answer.usage, output: answer.text, response: answer.response });
+        return answer.text;
       },
     );
   }
@@ -1784,7 +1729,36 @@ export class Agent {
           this.emit(store, run);
           return { done: true, output: null, images: [] };
         }
+        case "consult_director": {
+          const understood = consultSchema.parse(args);
+          const state = (ctx.direction ??= { consults: 0, review: "due" });
+          // Each consultation is a request to the dearer model, and a second opinion on
+          // the same subject rarely differs.
+          if (state.consults >= 2)
+            throw Error("The art director was already consulted twice in this run. Build on what it said.");
+          state.consults++;
+          try {
+            output = {
+              direction: await this.consult(
+                store,
+                run,
+                ctx,
+                abort,
+                "opening",
+                openingRequest(said(store, run.workId, "").filter(Boolean), understood),
+                step!,
+              ),
+            };
+          } catch (e) {
+            abort.signal.throwIfAborted();
+            throw Error(`The art director is unavailable (${e instanceof Error ? e.message : e}). Find the idea yourself and go on.`);
+          }
+          break;
+        }
         case "set_brief": {
+          // A new work's idea is what the director is for, so the brief waits for it once.
+          if (ctx.settings.director && !ctx.direction && !store.work(run.workId).brief)
+            throw Error("This work has an art director: call consult_director with what you understand of the request, then set the brief built on its direction.");
           // The ideas weighed stay on the step; the work keeps the brief.
           const { ideas: _, ...brief } = settleSchema.parse(args);
           const { work, style } = await setBrief(
@@ -1796,26 +1770,7 @@ export class Agent {
           );
           ctx.known = work.revision;
           // A new brief is a new idea, which the director reviews once it is drawn.
-          if (ctx.settings.director) ctx.direction ??= { review: "due" };
-          const owed = ctx.direction?.owed && ctx.direction.request;
-          if (ctx.direction) ctx.direction = { review: ctx.direction.review };
-          const late = owed
-            ? await this.consult(
-                store,
-                run,
-                abort,
-                "opening",
-                informedRequest(owed, {
-                  subject: brief.subject,
-                  intent: brief.intent,
-                  audience: brief.audience,
-                  ideas: args.ideas,
-                  concept: brief.concept,
-                  cast: brief.cast,
-                }),
-                true,
-              )
-            : undefined;
+          if (ctx.settings.director) ctx.direction ??= { consults: 0, review: "due" };
           this.publish(store.userId, { type: "work", work });
           const effects = await library.get(style.effects, store.userId, true);
           const cast = work.brief!.cast.length
@@ -1839,7 +1794,6 @@ export class Agent {
               effects: effects.map((e) => ({ id: e.id, about: e.about })),
             },
             ...(cast ? { cast: cast.output } : {}),
-            ...(late ? { artDirection: lateDirection(late) } : {}),
             ...(research(run) ? { research: research(run) } : {}),
             ...(guidesRead(ctx.input, batch).topics.size
               ? {}
@@ -2005,8 +1959,18 @@ export class Agent {
               drawn.length
             ) {
               ctx.direction.review = "done";
-              const review = await this.consult(store, run, abort, "review", reviewRequest(brief, drawn));
-              if (review) output = { ...(output as object), artDirection: reviewNote(review) };
+              // A review that fails leaves the look to the author alone.
+              const reviewing: ToolStep = { kind: "tool", id: id(), status: "running", name: "direct", stage: "review", text: "" };
+              run.steps.push(reviewing);
+              this.emit(store, run);
+              try {
+                const review = await this.consult(store, run, ctx, abort, "review", reviewRequest(brief, drawn), reviewing);
+                reviewing.status = "done";
+                output = { ...(output as object), artDirection: reviewNote(review) };
+              } catch (e) {
+                abort.signal.throwIfAborted();
+                Object.assign(reviewing, { status: "failed", error: e instanceof Error ? e.message : String(e) });
+              }
             }
             Object.assign(step!, {
               waiting: undefined,

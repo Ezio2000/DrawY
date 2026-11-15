@@ -661,15 +661,9 @@ export type ToolActivity =
       found?: { subject: string; candidates: Candidate[] }[];
     }
   | { name: "generate_images"; images: Picture[] }
-  /** The art director's part, written by a second model: the direction a new work's brief
-   * is built on (`opening`) or its review of the first draft (`review`), as it streams. */
-  | {
-      name: "direct";
-      stage: "opening" | "review";
-      text: string;
-      /** It could not tell what the request is about, and directs once the brief says. */
-      deferred?: boolean;
-    }
+  /** The art director's part, written by a second model: the direction the author asked
+   * it for (`opening`) or its review of the first draft (`review`), as it streams. */
+  | { name: "direct"; stage: "opening" | "review"; text: string }
   | {
       name: "write_work";
       /** IDs of the drawing definitions whose source has fully arrived. */

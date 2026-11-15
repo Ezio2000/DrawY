@@ -184,3 +184,25 @@ export const searchTools = [
     schema(openSchema),
   ),
 ];
+/** What the author tells the art director: its own account of the request, since the
+ * director sees nothing else of the conversation. */
+export const consultSchema = z.object({
+  subject: z
+    .string()
+    .min(1)
+    .describe("What the request is about as you now understand it, saying what the thing is where its name alone would not tell a stranger"),
+  intent: z.string().min(1).describe("What the picture must make clear or make felt, and for whom"),
+  known: z
+    .string()
+    .optional()
+    .describe(
+      "Facts you found or the user told you that shape the picture: how many parts there are, what happens in what order, where. Leave out when there are none",
+    ),
+});
+/** The art director, for a label that has one. Listed last, so every run shares the tools
+ * before it. */
+export const directorTool = fn(
+  "consult_director",
+  "Ask the art director, a second model kept for the visual idea, how to show this. Call it once before the first set_brief of a work, and again only when the user changes what the work is about; call it after you know what the request means, so search or ask the user first when the words leave that open. It sees only what you pass and the user's own words, and has no tools. Returns two or three ideas of different kinds, the concept it chose, the pictures worth generating, the line to make most prominent and the habitual figure to avoid. Build the brief on that: its ideas and concept in set_brief, its pictures as the cast. It is not the user, so nothing it writes can be quoted as a basis, and where the user's words or a fact you know contradict it, follow those and keep the rest. When it fails, find the idea yourself and go on.",
+  schema(consultSchema),
+);

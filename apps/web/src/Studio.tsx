@@ -594,7 +594,6 @@ function ToolBody({
         <div className={cx("brief")}>
           <span className={cx("step-title")}>{step.stage === "opening" ? w.directOpening : w.directReview}</span>
           {step.text && <Markdown text={step.text} />}
-          {step.deferred && <small>{w.directDeferred}</small>}
         </div>
       );
     case "find_materials":

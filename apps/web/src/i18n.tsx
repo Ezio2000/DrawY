@@ -726,7 +726,6 @@ const zh = {
     draw_guide: "查阅画法指南",
     directOpening: "美术指导的立意",
     directReview: "美术指导看初稿",
-    directDeferred: "还看不出要画什么，等内容定下后再立意",
     guideTopics: {
       pictures: "生图与摆图",
       drawing: "编写画法",
@@ -1059,7 +1058,7 @@ const zh = {
     tierNoTools: "这个绘制模型没打开“调用工具”，不能用来绘制",
     tierNoBuiltin: "所选模型不支持内置搜索，运行时会关闭搜索",
     director: "美术指导",
-    directorHint: "只负责立意：新作品开画前给出想法，看一次初稿提修改意见；其余都由绘制模型完成",
+    directorHint: "只负责立意：绘制模型弄清请求后向它要一个想法，它再看一次初稿提修改意见；其余都由绘制模型完成",
     directorNone: "不用（绘制模型自己立意）",
     directedBy: (name: string) => `指导 ${name}`,
     tierDirectorUnconnected: (name: string) => `美术指导所在的供应商“${name}”还没接入，运行时不会请它`,
@@ -1971,7 +1970,6 @@ const en: Words = {
     draw_guide: "Read the drawing guide",
     directOpening: "The art director's idea",
     directReview: "The art director's review",
-    directDeferred: "Can't tell what this is about yet; it directs once the content is settled",
     guideTopics: {
       pictures: "Pictures",
       drawing: "Writing drawings",
@@ -2305,7 +2303,7 @@ const en: Words = {
     tierNoTools: "This drawing model can't call tools, so it can't draw",
     tierNoBuiltin: "The model can't search by itself, so searching will be off",
     director: "Art director",
-    directorHint: "Only finds the idea: it writes one before a new work is drawn and reviews the first draft once; the drawing model does everything else",
+    directorHint: "Only finds the idea: the drawing model asks it for one once it understands the request, and it reviews the first draft once; the drawing model does everything else",
     directorNone: "None (the drawing model finds its own idea)",
     directedBy: (name: string) => `directed by ${name}`,
     tierDirectorUnconnected: (name: string) => `The art director's provider "${name}" is not connected, so it will not be asked`,
