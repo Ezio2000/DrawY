@@ -2126,30 +2126,74 @@ span.model-bar {
 
 /* ---------- The blank sheet ---------- */
 
-/* A work's first scene before anything is drawn: the sheet pinned to the desk. What DrawY
-   makes is said once, in the large type of a drawing's title; under it, requests to try,
-   set as a drawing register is, one to a ruled line; beside them, the drawing the request
-   pointed at would give, pencilled in as the canvas draws: the blue pencil runs the
-   relations and the measures, the words follow in ink and the painted subjects develop
-   from grey. Nothing moves until it comes up or is pointed at. The sheet lies between the
-   title and the composer and holds the paper still under it; once the person writes a
-   request of their own, the sample steps back under the paper. */
+/* A work's first scene before anything is drawn: the drawing board, set up. The paper is
+   squared and the rulers run along it as they do while drawing by hand, with the tools in
+   their tray beside it on the desk page, so taking one up changes nothing but the hand.
+   What DrawY makes is lettered once, in the large type of a drawing's title; under it,
+   requests to try, set as a drawing register is, one to a ruled line; beside them, the
+   drawing the request pointed at would give, pencilled in as the canvas draws: the blue
+   pencil runs the relations and the measures, the words follow in ink and the painted
+   subjects develop from grey, and the rulers cast its extent as they cast a selection.
+   Nothing moves until it comes up or is pointed at. Once the person writes a request of
+   their own, the sample steps back under the paper. */
+
+/* The squared paper, laid square for square over the canvas's own. The sheet over it
+   squares its own ground in register, so the pictures on it are printed onto the paper
+   (multiplied), their white ground letting the squares through. */
+.squared,
+.opening {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--ai) 10%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--ai) 10%, transparent) 1px, transparent 1px),
+    linear-gradient(to right, color-mix(in srgb, var(--ai) 4.5%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--ai) 4.5%, transparent) 1px, transparent 1px);
+  background-size:
+    var(--coarse) var(--coarse),
+    var(--coarse) var(--coarse),
+    var(--fine) var(--fine),
+    var(--fine) var(--fine);
+}
+
+.squared {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background-color: var(--paper);
+  background-position: var(--square-x) var(--square-y);
+  pointer-events: none;
+}
+
+/* The board is there with the page, and taken up from the blank sheet, the tools are
+   already where they lie: nothing comes in. */
+.stage:has(> [data-opening]) :is(.tray, .ruler, .ruler-corner),
+.stage[data-boarded] .tray {
+  animation: none;
+}
 
 .opening {
+  --top: 64px;
   position: absolute;
   z-index: 2;
-  top: 64px;
+  top: var(--top);
   right: 0;
   bottom: calc(var(--clear, 120px) + 20px);
   left: 0;
   padding: 0 clamp(24px, 5.5vw, 88px);
   overflow: hidden;
+  background-color: var(--paper);
+  background-position: var(--square-x) calc(var(--square-y) - var(--top));
   container: opening / size;
+}
+
+/* On the desk page, under the title and clear of the tray. */
+.opening[data-place="desk"] {
+  --top: 80px;
+  padding-left: max(110px, clamp(24px, 5.5vw, 88px));
 }
 
 /* On a phone, under its top bar and clear of the screen's rounded edges. */
 .opening[data-place="phone"] {
-  top: calc(max(8px, env(safe-area-inset-top)) + 60px);
+  --top: calc(max(8px, env(safe-area-inset-top)) + 60px);
   bottom: calc(var(--clear, 120px) + 12px);
   padding: 0 max(22px, env(safe-area-inset-right)) 0 max(22px, env(safe-area-inset-left));
 }
@@ -2321,29 +2365,6 @@ span.model-bar {
   border-radius: 6px;
 }
 
-.opening-hand {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  margin: 12px 0 0 -8px;
-  padding: 0 11px 0 8px;
-  border-radius: var(--r-control);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-2);
-}
-
-.opening-hand:hover {
-  background: var(--fill);
-  color: var(--ink);
-}
-
-.opening-hand:focus-visible {
-  outline: 2px solid var(--ai);
-  outline-offset: 1px;
-}
-
 .specimen {
   position: relative;
   grid-area: specimen;
@@ -2373,6 +2394,11 @@ span.model-bar {
     height: auto;
     max-height: 100cqh;
   }
+}
+
+.specimen svg,
+.opening-subject {
+  mix-blend-mode: multiply;
 }
 
 /* The person writes their own: the sample steps back under the paper. */
@@ -4828,7 +4854,7 @@ body:has(.resizer[data-dragging]) {
   color: var(--text);
 }
 
-.stage[data-ruled] .untuck {
+.stage:has(> .ruler) .untuck {
   top: 30px;
 }
 
@@ -4874,7 +4900,7 @@ body:has(.resizer[data-dragging]) {
 }
 
 /* The title and the tray stand clear of the rulers. */
-.stage[data-ruled] .topbar {
+.stage:has(> .ruler) .topbar {
   top: 30px;
   left: 30px;
   max-width: calc(100% - 50px);
@@ -4905,7 +4931,7 @@ body:has(.resizer[data-dragging]) {
   }
 }
 
-.stage[data-ruled] .tray {
+.stage:has(> .ruler) .tray {
   top: 82px;
   left: 30px;
 }

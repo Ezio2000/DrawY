@@ -334,13 +334,25 @@ it("makes a work for a request from the home page and sends the request there", 
   expect(await page.locator("header nav").first().innerText()).toContain("A map of the tea route");
 });
 
-it("opens on a blank sheet that says what DrawY makes and pencils in the drawing each request to try would give; one picked is written into the composer, the sample steps back for a request of one's own, and the sheet leaves for the drawing board", async () => {
+it("opens on the drawing board, set up: it says what DrawY makes and pencils in the drawing each request to try would give, which the rulers cast; one picked is written into the composer, the sample steps back for a request of one's own, and a tool taken up from the tray draws by hand on the same board", async () => {
   await page.goto(base + "/");
   const title = page.getByRole("heading", { level: 1 });
   await title.waitFor();
   expect(await title.innerText()).toContain("open up");
   const sample = page.getByRole("img", { name: /^Sample:/ });
   expect(await sample.getAttribute("aria-label")).toBe("Sample: How does the solar system work?");
+  // The top ruler is drawn in the blue pencil under the middle of the drawing.
+  const cast = () =>
+    page.evaluate(() => {
+      const ruler = document.querySelector<HTMLCanvasElement>('canvas[data-axis="x"]')!;
+      const drawing = document.querySelector("[data-cast]")!.getBoundingClientRect();
+      const r = ruler.getBoundingClientRect(),
+        ratio = ruler.width / r.width;
+      const x = Math.round((drawing.left + drawing.width / 2 - r.left) * ratio);
+      const row = ruler.getContext("2d")!.getImageData(x - 3, ruler.height - 1, 7, 1).data;
+      return [0, 1, 2, 3, 4, 5, 6].some((i) => row[i * 4 + 2] > row[i * 4] + 100);
+    });
+  await expect.poll(cast).toBe(true);
   // A blank sheet has nothing to zoom.
   const scale = page.getByRole("button", { name: /^Shown at \d+%/ });
   expect(await scale.count()).toBe(0);
@@ -356,9 +368,17 @@ it("opens on a blank sheet that says what DrawY makes and pencils in the drawing
   expect(await sheet.getAttribute("data-own")).toBeNull();
   await composer().fill("A map of the tea route");
   await expect.poll(() => sheet.getAttribute("data-own")).not.toBeNull();
+  await expect.poll(cast).toBe(false);
   await composer().fill("");
-  await page.getByRole("button", { name: "Draw it yourself" }).click();
+  await expect.poll(cast).toBe(true);
+  const box = page
+    .getByRole("navigation", { name: "Editing tools" })
+    .getByRole("button", { name: "Box", exact: true });
+  expect(await box.getAttribute("aria-pressed")).toBe("false");
+  await box.click();
   await expect.poll(() => title.count()).toBe(0);
+  expect(await box.getAttribute("aria-pressed")).toBe("true");
+  expect(await page.locator('canvas[data-axis="x"]').count()).toBe(1);
   expect(await scale.count()).toBe(1);
 });
 

@@ -54,22 +54,56 @@ const INK = "rgba(22,26,34,.34)",
   FIGURE = "#6f7686",
   PENCIL = "#3366d6";
 
+type Extent = { left: number; top: number; width: number; height: number };
+
 /** Rulers along the top and the left edge of the canvas, in scene units: the figures the
  * author reads and writes. What is selected casts its extent on both in the blue pencil,
- * and a hairline follows the pointer, so a place can be read off before anything is put
- * there. */
-export function Rulers({ canvas }: { canvas: Canvas }) {
+ * and a hairline follows the pointer over the canvas and all that lies on it, so a place
+ * can be read off before anything is put there. Given `cast`, the rulers cast the element
+ * it finds on the stage instead, as the blank sheet's drawing: its extent grows out from
+ * its middle and slides to the next one as that comes up. */
+export function Rulers({ canvas, cast }: { canvas: Canvas; cast?: string }) {
   const top = useRef<HTMLCanvasElement>(null),
     left = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    const host = canvas.element;
+    const host = canvas.element,
+      stage = host.parentElement?.parentElement ?? host;
     let pointer: { x: number; y: number } | null = null,
-      frame = 0;
+      frame = 0,
+      eased: Extent | undefined;
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    /** Where the cast element is, eased a step toward from where it was last drawn. */
+    const casting = () => {
+      const r = stage.querySelector(cast!)?.getBoundingClientRect();
+      const goal: Extent | undefined =
+        r && r.width
+          ? { left: r.left, top: r.top, width: r.width, height: r.height }
+          : eased && {
+              left: eased.left + eased.width / 2,
+              top: eased.top + eased.height / 2,
+              width: 0,
+              height: 0,
+            };
+      if (!goal) return undefined;
+      if (still) return (eased = goal.width ? goal : undefined);
+      eased ??= { left: goal.left + goal.width / 2, top: goal.top + goal.height / 2, width: 0, height: 0 };
+      let moving = false;
+      for (const k of ["left", "top", "width", "height"] as const) {
+        const by = goal[k] - eased[k];
+        if (Math.abs(by) > 0.5) {
+          eased[k] += by * 0.2;
+          moving = true;
+        } else eased[k] = goal[k];
+      }
+      if (moving) ask();
+      else if (!eased.width) eased = undefined;
+      return eased;
+    };
     const draw = () => {
       frame = 0;
       const { x, y, scale } = canvas.view;
       const area = host.getBoundingClientRect();
-      const chosen = canvas.selectionRect();
+      const chosen = cast ? casting() : canvas.selectionRect();
       const ratio = devicePixelRatio || 1;
       for (const across of [true, false]) {
         const el = (across ? top : left).current;
@@ -143,19 +177,28 @@ export function Rulers({ canvas }: { canvas: Canvas }) {
       ask();
     };
     const stop = canvas.watch(ask);
-    host.addEventListener("pointermove", moved);
-    host.addEventListener("pointerleave", gone);
+    stage.addEventListener("pointermove", moved);
+    stage.addEventListener("pointerleave", gone);
     const resized = new ResizeObserver(ask);
     resized.observe(host);
+    // What is cast changes as other drawings come up, or steps back, or makes room.
+    const changed = new MutationObserver(ask);
+    if (cast)
+      changed.observe(stage, {
+        subtree: true,
+        childList: true,
+        attributeFilter: ["data-own", "data-kind", "style"],
+      });
     ask();
     return () => {
       stop();
       cancelAnimationFrame(frame);
-      host.removeEventListener("pointermove", moved);
-      host.removeEventListener("pointerleave", gone);
+      stage.removeEventListener("pointermove", moved);
+      stage.removeEventListener("pointerleave", gone);
       resized.disconnect();
+      changed.disconnect();
     };
-  }, [canvas]);
+  }, [canvas, cast]);
   return (
     <>
       <canvas ref={top} className={cx("ruler")} data-axis="x" aria-hidden />
@@ -163,6 +206,35 @@ export function Rulers({ canvas }: { canvas: Canvas }) {
       <i className={cx("ruler-corner")} aria-hidden />
     </>
   );
+}
+
+/** The drawing board's squared paper laid over the canvas, line for line as the canvas
+ * squares its own while it is edited (a line every 20 units, a heavier one every 100, five
+ * times the step while they would crowd), so taking up a tool leaves the paper as it was.
+ * The squares' step and origin are set on the stage (`--fine`, `--coarse`, `--square-x`,
+ * `--square-y`), so what lies on the paper can square its own ground in register with it. */
+export function Squared({ canvas }: { canvas: Canvas }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const stage = ref.current?.parentElement;
+    if (!stage) return;
+    const paint = () => {
+      const { x, y, scale } = canvas.view;
+      let unit = GRID;
+      while (unit * scale < 9) unit *= 5;
+      stage.style.setProperty("--fine", unit * scale + "px");
+      stage.style.setProperty("--coarse", unit * scale * 5 + "px");
+      stage.style.setProperty("--square-x", x + "px");
+      stage.style.setProperty("--square-y", y + "px");
+    };
+    paint();
+    const stop = canvas.watch(paint);
+    return () => {
+      stop();
+      for (const p of ["--fine", "--coarse", "--square-x", "--square-y"]) stage.style.removeProperty(p);
+    };
+  }, [canvas]);
+  return <div ref={ref} className={cx("squared")} aria-hidden />;
 }
 
 /** The view's controls at the foot of the canvas: closer, further and the whole drawing,

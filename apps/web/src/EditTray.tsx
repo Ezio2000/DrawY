@@ -67,7 +67,8 @@ export function EditTray({
   setTool,
   ops,
 }: {
-  tool: Tool;
+  /** The tool in hand; none while the board waits on the blank sheet. */
+  tool?: Tool;
   setTool: (t: Tool) => void;
   ops: EditOps;
 }) {
@@ -79,7 +80,7 @@ export function EditTray({
   const ref = useRef<HTMLElement>(null);
   useDismiss(!!open, () => setOpen(""), ref, "[data-flyout]");
   useEffect(() => {
-    if (!first.includes(tool as Shape) && (shapes as readonly string[]).includes(tool))
+    if (tool && !first.includes(tool as Shape) && (shapes as readonly string[]).includes(tool))
       setExtra(tool as Shape);
   }, [tool]);
   const item = (id: Tool, icon: ReactNode) => (

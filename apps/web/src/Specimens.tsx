@@ -365,7 +365,9 @@ export function Specimen({ kind, label }: { kind: SpecimenKind; label: string })
   const Drawing = drawings[kind];
   return (
     <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label} data-kind={kind}>
-      <Drawing />
+      <g data-cast>
+        <Drawing />
+      </g>
     </svg>
   );
 }

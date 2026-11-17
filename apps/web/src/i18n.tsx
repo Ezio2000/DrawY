@@ -107,7 +107,6 @@ const zh = {
     head: "把想弄懂的事，",
     tail: ["画成一张", "能点开", "的图。"] as [string, string, string],
     try: "试试这样问",
-    byHand: "自己画",
     sampleOf: (ask: string) => `样图：${ask}`,
     asks: [
       { ask: "太阳系是如何运转的？", who: "讲给小学生", text: "太阳系是如何运转的？讲给小学生听" },
@@ -1371,7 +1370,6 @@ const en: Words = {
     head: "Ask what puzzles you.",
     tail: ["Get a drawing you can ", "open up", "."],
     try: "Try asking",
-    byHand: "Draw it yourself",
     sampleOf: (ask) => `Sample: ${ask}`,
     asks: [
       { ask: "How does the solar system work?", who: "for a ten-year-old", text: "How does the solar system work? For a ten-year-old." },

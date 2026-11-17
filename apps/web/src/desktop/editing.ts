@@ -52,7 +52,7 @@ const clipboard = new Clipboard();
 /** The look last copied from a part, to give to others in any scene of this page. */
 let brush: Look | null = null;
 
-const typing = (target: EventTarget | null) =>
+export const typing = (target: EventTarget | null) =>
   !!(target as Element | null)?.closest?.("input,textarea,select,[contenteditable]");
 
 export function useEditing({
@@ -358,7 +358,7 @@ export function useEditing({
   return { ops, tool, setTool, place, menu, setMenu, clipped, brushed };
 }
 /** A tool by the letter drawing apps give it. */
-const toolKeys: Record<string, Tool> = {
+export const toolKeys: Record<string, Tool> = {
   KeyV: "select",
   KeyH: "hand",
   KeyT: "text",

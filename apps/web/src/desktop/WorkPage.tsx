@@ -14,12 +14,12 @@ import { Library } from "../Library.tsx";
 import { Opening } from "../Opening.tsx";
 import { counted } from "../probe.ts";
 import { Retype, ShortcutSheet } from "../Editor.tsx";
-import { DRAWING_TYPE, drawingById } from "../EditTray.tsx";
+import { DRAWING_TYPE, EditTray, drawingById } from "../EditTray.tsx";
 import { useBoard } from "../EditView.tsx";
 import { useSelect } from "../session/store.ts";
 import type { ShellProps } from "../shell.ts";
 import { Title } from "../Title.tsx";
-import { useEditing } from "./editing.ts";
+import { toolKeys, typing, useEditing, type EditOps, type Tool } from "./editing.ts";
 import { useWorkPage, nameIn } from "../workPage.ts";
 import { panelWidth, Resizer } from "./panels.tsx";
 import {
@@ -70,6 +70,8 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
   // The editor's panel put away, leaving the canvas and its tools: where the panel would
   // cover the canvas it starts that way, and it is a press from coming back.
   const [tucked, setTucked] = useState(false);
+  // Drawing by hand taken up from the blank sheet, whose board it goes on drawing on.
+  const [boarded, setBoarded] = useState(false);
   const stage = useRef<HTMLElement>(null);
   const conversation = useRef<HTMLElement>(null);
   const following = useRef(true);
@@ -145,6 +147,22 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
       removeEventListener("keydown", key);
     };
   }, [scenes]);
+  // Leaving the board ends drawing by hand taken up from the blank sheet; on the sheet, a
+  // tool's letter takes it up, as on the board.
+  useEffect(() => {
+    if (editing) return;
+    setBoarded(false);
+    const key = (e: KeyboardEvent) => {
+      const tool = toolKeys[e.code];
+      if (!tool || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (typing(e.target) || e.defaultPrevented || session.get().locked) return;
+      if (!stage.current?.querySelector("[data-opening]")) return;
+      e.preventDefault();
+      takeUp(tool);
+    };
+    addEventListener("keydown", key);
+    return () => removeEventListener("keydown", key);
+  }, [editing, session]);
   // Cmd/Ctrl+Z takes back the latest step and Shift+Cmd/Ctrl+Z (or Ctrl+Y) brings it back,
   // unless a field is being typed in; Cmd/Ctrl+S saves the hand edits as a version; Escape
   // ends a preview, or puts the reply away.
@@ -189,6 +207,27 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     setTucked(!roomy());
     setPanel("edit");
   }
+  /** Takes up drawing by hand from the blank sheet, with a tool from the board's tray in
+   * hand; the tray, the rulers and the paper are already where they lie while drawing. */
+  function takeUp(tool: Tool) {
+    setBoarded(true);
+    edit();
+    hand.setTool(tool);
+  }
+  /** What the tray does on the blank sheet takes up drawing by hand first. */
+  const boardOps: EditOps = {
+    ...hand.ops,
+    add: (...a) => {
+      setBoarded(true);
+      edit();
+      hand.ops.add(...a);
+    },
+    drawing: (...a) => {
+      setBoarded(true);
+      edit();
+      return hand.ops.drawing(...a);
+    },
+  };
   return (
     <div
       className={cx("workspace")}
@@ -207,7 +246,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
         className={cx("stage")}
         data-working={working || undefined}
         data-editing={(editing && !locked) || undefined}
-        data-ruled={(editing && !locked && board.rulers) || undefined}
+        data-boarded={(editing && boarded) || undefined}
         onPointerDown={(e) => {
           if (replying && (e.target as Element).closest("[data-canvas]")) dismiss();
         }}
@@ -260,7 +299,13 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           board={board}
           setBoard={setBoard}
           help={() => setHelp(true)}
-          opening={<Opening draft={draft} byHand={edit} place="desk" />}
+          opening={
+            <Opening
+              draft={draft}
+              tray={<EditTray setTool={takeUp} ops={boardOps} />}
+              place="desk"
+            />
+          }
         />
         {editing && !locked && (
           <EditOverlay

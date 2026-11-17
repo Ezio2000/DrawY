@@ -24,12 +24,15 @@ import type {
 } from "../../../modules/contracts/index.ts";
 import { cx } from "./cx.ts";
 import { styleList } from "./Composer.tsx";
-import { GRID, Rulers, ViewControls, type BoardSettings } from "./EditView.tsx";
+import { GRID, Rulers, Squared, ViewControls, type BoardSettings } from "./EditView.tsx";
 import { useT } from "./i18n.tsx";
 import { currentOf, thinkingOf } from "./Studio.tsx";
 import { live } from "./session/work.ts";
 import type { StyleMaterial } from "@drawy/materials/schema";
 type ToolStep = Extract<Step, { kind: "tool" }>;
+/** What the rulers cast over the blank sheet: the drawing it shows, until the person
+ * writes a request of their own. */
+const CAST = "[data-opening]:not([data-own]) [data-cast]";
 /** What the canvas shows of a work: its revision and which pictures have developed. */
 const drawnAs = (work: Work) =>
   work.revision +
@@ -259,7 +262,8 @@ export function SceneView({
       (!s.sceneId || s.sceneId === sceneId),
   );
   const empty = !work.scenes[sceneId].modules.length;
-  // The page's own sheet over a blank scene; while drawing by hand the board is left bare.
+  // The page's own sheet over a blank scene, on the drawing board; while drawing by hand
+  // the board is left bare.
   const opens = empty && !run && shown && !!opening && !(editing && !disabled);
   const [styles, setStyles] = useState<StyleMaterial[]>([]);
   useEffect(() => void styleList().then(setStyles, () => {}), []);
@@ -362,6 +366,7 @@ export function SceneView({
       {empty && !run && shown && !opening && (
         <p className={cx("blank")}>{t.work.blank}</p>
       )}
+      {opens && canvas && <Squared canvas={canvas} />}
       {opens && opening}
       {empty && run && (!!references.length || note) && (
         <div
@@ -424,7 +429,10 @@ export function SceneView({
           )}
         </div>
       )}
-      {canvas && editing && !disabled && board?.rulers && <Rulers canvas={canvas} />}
+      {/* The board stays as it is from the blank sheet into drawing by hand. */}
+      {canvas && board?.rulers && ((editing && !disabled) || opens) && (
+        <Rulers canvas={canvas} cast={opens ? CAST : undefined} />
+      )}
       {controls && !opens && (
         <ViewControls
           canvas={canvas}

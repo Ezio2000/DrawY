@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { CornerDownLeft, PencilLine } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { CornerDownLeft } from "lucide-react";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 import type { RequestDraft } from "./session/request.ts";
@@ -11,23 +11,25 @@ const kinds: SpecimenKind[] = ["solar", "model", "kin"];
 /** The painted subject that stands for each drawing where there is no room for it. */
 const subjects: Record<SpecimenKind, string> = { solar: "sun", model: "brain", kin: "youth" };
 
-/** The sheet a work starts on, before its first line: what DrawY makes of a request, said
- * once in large type, a few requests to try, and, pencilling itself in beside them, the
- * drawing the one pointed at would give. Nothing on it explains itself in words. A request picked is written into the composer to
- * finish and send, not sent; once the person writes their own, the sample steps back
- * under the paper. Where hands draw (the desktop page), it also offers the pencil.
+/** The sheet a work starts on, before its first line: the drawing board, squared and
+ * ruled, with what DrawY makes of a request lettered on it once in large type, a few
+ * requests to try, and, pencilling itself in beside them, the drawing the one pointed at
+ * would give, which the rulers cast. Nothing on it explains itself in words. A request
+ * picked is written into the composer to finish and send, not sent; once the person
+ * writes their own, the sample steps back under the paper. Where hands draw (the desktop
+ * page), the board's tools lie beside it, and taking one up starts drawing by hand.
  *
  * It lies over the canvas between the title and the composer, keeping clear of the
  * composer as that grows. It reads only whether the request is the person's own, so
  * typing draws it again only when that changes. */
 export function Opening({
   draft,
-  byHand,
+  tray,
   place,
 }: {
   draft: RequestDraft;
-  /** Takes up drawing by hand, where the page offers it. */
-  byHand?: () => void;
+  /** The board's tools, where the page draws by hand. */
+  tray?: ReactNode;
   place: "desk" | "phone";
 }) {
   const t = useT().opening;
@@ -40,9 +42,10 @@ export function Opening({
   });
   // The sheet keeps clear of the composer and what sits over it, as they change size.
   useLayoutEffect(() => {
-    const el = ref.current,
-      stage = el?.parentElement,
-      dock = stage?.querySelector<HTMLElement>("[data-dock]");
+    const el = ref.current;
+    let stage = el?.parentElement;
+    while (stage && !stage.querySelector("[data-dock]")) stage = stage.parentElement;
+    const dock = stage?.querySelector<HTMLElement>("[data-dock]");
     if (!el || !stage || !dock) return;
     const clear = () =>
       el.style.setProperty(
@@ -63,7 +66,15 @@ export function Opening({
     else pointing.current = setTimeout(() => setShown(i), 90);
   };
   return (
-    <div ref={ref} className={cx("opening")} data-place={place} data-own={own || undefined}>
+    <>
+      {tray}
+      <div
+        ref={ref}
+        className={cx("opening")}
+        data-opening
+        data-place={place}
+        data-own={own || undefined}
+      >
       <div className={cx("opening-layout")}>
         <header className={cx("opening-copy")}>
           <Brand size={19} />
@@ -115,14 +126,9 @@ export function Opening({
               </li>
             ))}
           </ul>
-          {byHand && (
-            <button className={cx("opening-hand")} onClick={byHand}>
-              <PencilLine size={15} />
-              {t.byHand}
-            </button>
-          )}
         </section>
       </div>
     </div>
+    </>
   );
 }
