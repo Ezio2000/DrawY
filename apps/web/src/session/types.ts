@@ -77,8 +77,8 @@ export interface SessionHost {
   /** The server's events for this user, and whether they cannot be heard. */
   listen(listener: Listener): () => void;
   /** Creates a real work on the server when the blank home canvas is first edited or
-   * renamed, or asks an unauthenticated visitor to sign in first. */
-  materialize?(title?: string, after?: (session: WorkSession) => void): Promise<WorkSession | undefined>;
+   * renamed, or asks an unauthenticated visitor to sign in first and resolves once done. */
+  materialize?(title?: string): Promise<WorkSession | undefined>;
 }
 
 /** What a request is about, when not the whole scene: the modules selected, or a link. */

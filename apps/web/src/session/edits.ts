@@ -38,14 +38,10 @@ export class Edits {
     if (this.ctx.id === "_blank" && this.ctx.host.materialize) {
       const w = revisions.work;
       if (!w || !make(w)) return Promise.resolve(undefined);
-      return this.ctx.host
-        .materialize(undefined, (next) => {
-          void next.change(make);
-        })
-        .then(async (next) => {
-          if (!next) return undefined;
-          return (await next.change(make)) ? next.get().work : undefined;
-        });
+      return this.ctx.host.materialize().then(async (next) => {
+        if (!next) return undefined;
+        return (await next.change(make)) ? next.get().work : undefined;
+      });
     }
     const base = this.drafted ?? revisions.work;
     if (base) {

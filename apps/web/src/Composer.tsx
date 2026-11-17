@@ -553,6 +553,8 @@ export function WorkComposer({
               : t.composer.continue
       }
       status={(asking.blocked === "unconnected" && <Unconnected go={go} />) || note || status}
+      style={request.style}
+      setStyle={(session.id === "_blank" && user) || request.style ? draft.setStyle : undefined}
       working={s.working}
       busy={s.busy}
       send={send}

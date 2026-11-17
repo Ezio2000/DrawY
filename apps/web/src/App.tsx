@@ -83,6 +83,7 @@ export function App() {
   const shells = useShell();
   const deleting = useRef<{ id: string; timer: ReturnType<typeof setTimeout> }>(undefined);
   const pendingAuth = useRef<(() => void) | undefined>(undefined);
+  const pendingMaterialize = useRef<((session: WorkSession | undefined) => void) | undefined>(undefined);
   const language = useRef({ t, locale });
   language.current = { t, locale };
   const draft = useRequest();
@@ -123,7 +124,7 @@ export function App() {
     user,
     whole: shells.whole,
     begin: undefined as unknown as (w: Work) => WorkSession,
-    materialize: undefined as unknown as (title?: string, after?: (s: WorkSession) => void) => Promise<WorkSession | undefined>,
+    materialize: undefined as unknown as (title?: string) => Promise<WorkSession | undefined>,
   });
   const [host] = useState<SessionHost>(() => ({
     locale: () => language.current.locale,
@@ -138,7 +139,7 @@ export function App() {
       const u = now.current.user;
       return u ? listen(u.id, listener) : () => {};
     },
-    materialize: (title, after) => now.current.materialize(title, after),
+    materialize: (title) => now.current.materialize(title),
   }));
   const { session, begin } = useWorkSession(user ? workIdOf(path) : undefined, host);
   const [blankSession] = useState(() => new WorkSession("_blank", host, makeBlankWork(t.rail.untitled)));
@@ -149,12 +150,16 @@ export function App() {
     user,
     whole: shells.whole,
     begin,
-    materialize: async (title, after) => {
+    materialize: async (title) => {
       if (!now.current.user) {
-        requireAuth("edit", () => {
-          void now.current.materialize(title, after);
+        return new Promise<WorkSession | undefined>((resolve) => {
+          pendingMaterialize.current?.(undefined);
+          pendingMaterialize.current = resolve;
+          requireAuth("edit", () => {
+            pendingMaterialize.current = undefined;
+            void now.current.materialize(title).then(resolve, () => resolve(undefined));
+          });
         });
-        return undefined;
       }
       const w = await api<Work>("/works", "POST", {
         title: title || language.current.t.rail.untitled,
@@ -162,7 +167,6 @@ export function App() {
       const made = now.current.begin(w);
       now.current.go("/a/" + w.id);
       void now.current.refreshList();
-      after?.(made);
       return made;
     },
   };
@@ -500,6 +504,8 @@ export function App() {
                 }}
                 onClose={() => {
                   pendingAuth.current = undefined;
+                  pendingMaterialize.current?.(undefined);
+                  pendingMaterialize.current = undefined;
                   setAuthPrompt(undefined);
                   if (!user && page !== "home") go("/");
                 }}
