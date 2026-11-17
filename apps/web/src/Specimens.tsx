@@ -10,9 +10,9 @@ import { useT } from "./i18n.tsx";
 
 export type SpecimenKind = "solar" | "model" | "kin";
 
-/** One frame's worth of drawing: 640 by 440, the last 40 kept for the measure under it. */
+/** One frame's worth of drawing. */
 const W = 640,
-  H = 440;
+  H = 410;
 
 const at = (seconds: number) => ({ "--d": seconds + "s" }) as CSSProperties;
 const picture = (id: string, size = 256) => `/materials/thumbs/${id}?size=${size}`;
@@ -283,13 +283,11 @@ function Model() {
           </g>
         );
       })}
-      <path d={`M${far} 136V${y - 18}`} pathLength={1} data-line data-leader style={at(1.15)} />
+      <path d={`M${far} 96V${y - 18}`} pathLength={1} data-line data-leader style={at(1.15)} />
       <circle cx={far} cy={y - 14} r={3} data-fade data-dot style={at(1.35)} />
-      {t.note.map((line, i) => (
-        <Words key={i} x={far - 24} y={62 + i * 23} anchor="start" size={14} weight={i ? 500 : 650} tone={i ? "quiet" : "ink"} d={1.2 + i * 0.08}>
-          {line}
-        </Words>
-      ))}
+      <Words x={far - 24} y={80} anchor="start" size={14} weight={650} d={1.2}>
+        {t.note}
+      </Words>
       <Opens x={brain.x + brain.w - 14} y={brain.y - 11} label={t.open} d={1.4} />
     </>
   );
@@ -362,25 +360,12 @@ function Kin() {
 
 const drawings: Record<SpecimenKind, () => ReactNode> = { solar: Solar, model: Model, kin: Kin };
 
-/** The drawing a request would give, with the measure under it that says it is a sample. */
+/** The drawing a request would give. */
 export function Specimen({ kind, label }: { kind: SpecimenKind; label: string }) {
-  const t = useT().opening;
   const Drawing = drawings[kind];
-  const mid = W / 2,
-    half = wide(t.sample, 12) / 2 + 12;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label} data-kind={kind}>
       <Drawing />
-      <g data-measure data-sample>
-        <path
-          d={`M24 ${H - 14}H${mid - half}M${mid + half} ${H - 14}H${W - 24}M20 ${H - 10}L28 ${H - 18}M${W - 28} ${H - 10}L${W - 20} ${H - 18}`}
-          data-fade
-          style={at(0.2)}
-        />
-        <Words x={mid} y={H - 9.8} size={12} tone="pencil" weight={650} d={0.25}>
-          {t.sample}
-        </Words>
-      </g>
     </svg>
   );
 }

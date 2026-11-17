@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CornerDownLeft, PencilLine } from "lucide-react";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
@@ -13,7 +13,7 @@ const subjects: Record<SpecimenKind, string> = { solar: "sun", model: "brain", k
 
 /** The sheet a work starts on, before its first line: what DrawY makes of a request, said
  * once in large type, a few requests to try, and, pencilling itself in beside them, the
- * drawing the one pointed at would give. A request picked is written into the composer to
+ * drawing the one pointed at would give. Nothing on it explains itself in words. A request picked is written into the composer to
  * finish and send, not sent; once the person writes their own, the sample steps back
  * under the paper. Where hands draw (the desktop page), it also offers the pencil.
  *
@@ -31,7 +31,6 @@ export function Opening({
   place: "desk" | "phone";
 }) {
   const t = useT().opening;
-  const heading = useId();
   const ref = useRef<HTMLDivElement>(null);
   const [shown, setShown] = useState(0);
   const pointing = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -81,13 +80,11 @@ export function Opening({
               {t.tail[2]}
             </span>
           </h1>
-          <p>{t.lede}</p>
         </header>
         <figure className={cx("specimen")}>
           <Specimen key={kinds[shown]} kind={kinds[shown]} label={t.sampleOf(t.asks[shown].ask)} />
         </figure>
-        <section className={cx("opening-asks")} aria-labelledby={heading}>
-          <h2 id={heading}>{t.try}</h2>
+        <section className={cx("opening-asks")} aria-label={t.try}>
           <ul>
             {t.asks.map((a, i) => (
               <li key={a.text}>
@@ -113,10 +110,7 @@ export function Opening({
                     <b>{a.ask}</b>
                     <small>{a.who}</small>
                   </span>
-                  <span className={cx("opening-use")} aria-hidden>
-                    <CornerDownLeft size={14} />
-                    {t.use}
-                  </span>
+                  <CornerDownLeft className={cx("opening-use")} size={15} aria-hidden />
                 </button>
               </li>
             ))}

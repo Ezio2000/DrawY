@@ -357,7 +357,7 @@ it("opens on a blank sheet that says what DrawY makes and pencils in the drawing
   await composer().fill("A map of the tea route");
   await expect.poll(() => sheet.getAttribute("data-own")).not.toBeNull();
   await composer().fill("");
-  await page.getByRole("button", { name: "Or draw it yourself" }).click();
+  await page.getByRole("button", { name: "Draw it yourself" }).click();
   await expect.poll(() => title.count()).toBe(0);
   expect(await scale.count()).toBe(1);
 });

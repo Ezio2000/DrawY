@@ -106,11 +106,8 @@ const zh = {
   opening: {
     head: "把想弄懂的事，",
     tail: ["画成一张", "能点开", "的图。"] as [string, string, string],
-    lede: "写下主题和看图的人。DrawY 定好立意、配上插画、起稿，再看着画面一遍遍改好；图上的每一处，都能点开往下看。",
     try: "试试这样问",
-    use: "用这句",
-    byHand: "或者，在纸上自己画",
-    sample: "样图",
+    byHand: "自己画",
     sampleOf: (ask: string) => `样图：${ask}`,
     asks: [
       { ask: "太阳系是如何运转的？", who: "讲给小学生", text: "太阳系是如何运转的？讲给小学生听" },
@@ -131,7 +128,7 @@ const zh = {
         ["边", 21],
         ["里", 9],
       ] as [string, number][],
-      note: ["每次只猜下一个字：", "先回头看前面的字，", "再给每个候选打分"],
+      note: "每次只猜下一个字",
       attention: "注意力",
       open: "注意力怎么算",
     },
@@ -1373,11 +1370,8 @@ const en: Words = {
   opening: {
     head: "Ask what puzzles you.",
     tail: ["Get a drawing you can ", "open up", "."],
-    lede: "Write the subject and who it’s for. DrawY settles the idea, paints what it needs, sketches, and keeps looking until it reads right — and every part opens onto more.",
     try: "Try asking",
-    use: "Use this",
-    byHand: "Or draw it yourself",
-    sample: "Sample",
+    byHand: "Draw it yourself",
     sampleOf: (ask) => `Sample: ${ask}`,
     asks: [
       { ask: "How does the solar system work?", who: "for a ten-year-old", text: "How does the solar system work? For a ten-year-old." },
@@ -1398,7 +1392,7 @@ const en: Words = {
         ["floor", 21],
         ["sofa", 9],
       ],
-      note: ["It only guesses the next word:", "it looks back at the words so far,", "then scores every candidate"],
+      note: "It only guesses the next word",
       attention: "Attention",
       open: "How attention works",
     },
