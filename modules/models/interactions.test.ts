@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { defaultRole, protocolFor, type Role } from "../contracts/index.ts";
-import { CutOff, adapterFor, forResponses, generate, interactionsTools, toSteps } from "./index.ts";
-import { endpointOf, toUsage } from "./interactions.ts";
+import { CutOff, adapterFor, citationsOf, forResponses, generate, interactionsTools, textOf, toSteps } from "./index.ts";
+import { endpointOf, toUsage, utf16Offsets } from "./interactions.ts";
 
 const role: Role = {
   ...defaultRole(),
@@ -260,3 +260,114 @@ it("reports CutOff when incomplete and narrows allowed_tools in validated mode",
   expect(err).toBeInstanceOf(CutOff);
   expect(err.thoughtOnly).toBe(true);
 });
+
+it("resumes requires_continuation hops, converts UTF-8 citation byte offsets, and emits part.added per thought step", async () => {
+  // "你好🚀世界": UTF-8 bytes = 3 + 3 + 4 + 3 + 3 = 16; JS UTF-16 length = 1 + 1 + 2 + 1 + 1 = 6.
+  const text = "你好🚀世界";
+  expect(utf16Offsets(text)[10]).toBe(4);
+  expect(utf16Offsets(text)[16]).toBe(6);
+
+  const hop1 = sse([
+    ["step.start", { event_type: "step.start", index: 0, step: { type: "thought" } }],
+    ["step.delta", { event_type: "step.delta", index: 0, delta: { type: "thought_summary", content: { type: "text", text: "First thought" } } }],
+    ["step.stop", { event_type: "step.stop", index: 0 }],
+    ["step.start", { event_type: "step.start", index: 1, step: { type: "model_output" } }],
+    ["step.delta", { event_type: "step.delta", index: 1, delta: { type: "text", text: "你好" } }],
+    ["step.stop", { event_type: "step.stop", index: 1 }],
+    [
+      "interaction.completed",
+      {
+        event_type: "interaction.completed",
+        interaction: {
+          status: "requires_continuation",
+          continuation_token: "tok_1",
+          usage: { total_input_tokens: 10, total_cached_tokens: 2, total_output_tokens: 5, total_thought_tokens: 3 },
+        },
+      },
+    ],
+  ]);
+  const hop2 = sse([
+    ["step.start", { event_type: "step.start", index: 0, step: { type: "thought" } }],
+    ["step.delta", { event_type: "step.delta", index: 0, delta: { type: "thought_summary", content: { type: "text", text: "Second thought" } } }],
+    ["step.stop", { event_type: "step.stop", index: 0 }],
+    ["step.start", { event_type: "step.start", index: 1, step: { type: "model_output" } }],
+    ["step.delta", { event_type: "step.delta", index: 1, delta: { type: "text", text: "🚀世界" } }],
+    [
+      "step.delta",
+      {
+        event_type: "step.delta",
+        index: 1,
+        // UTF-8 byte offsets within "🚀世界" (🚀 is 4 bytes -> JS index 2, 界 ends at byte 10 -> JS index 4)
+        delta: {
+          type: "text_annotation_delta",
+          annotations: [{ type: "url_citation", url: "https://example.com", title: "Ex", start_index: 4, end_index: 10 }],
+        },
+      },
+    ],
+    ["step.stop", { event_type: "step.stop", index: 1 }],
+    [
+      "interaction.completed",
+      {
+        event_type: "interaction.completed",
+        interaction: {
+          status: "completed",
+          usage: { total_input_tokens: 12, total_cached_tokens: 8, total_output_tokens: 7, total_thought_tokens: 4 },
+        },
+      },
+    ],
+  ]);
+
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(hop1))
+    .mockResolvedValueOnce(new Response(hop2));
+  vi.stubGlobal("fetch", fetchMock);
+
+  const events: string[] = [];
+  const answer = await generate(role, {
+    instructions: "Be brief",
+    input: [{ role: "user", content: "Hi" }],
+    onEvent: (e) => events.push(e.type),
+    signal: new AbortController().signal,
+  });
+
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  const hop2Body = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string);
+  expect(hop2Body.continuation_token).toBe("tok_1");
+  expect(hop2Body.input).toEqual([{ type: "user_input", content: [{ type: "text", text: "Hi" }] }]);
+
+  // Each thought step emitted its own reasoning_summary_part.added
+  expect(events.filter((t) => t === "response.reasoning_summary_part.added")).toHaveLength(2);
+  expect(textOf(answer.items)).toBe("你好🚀世界");
+  // "你好" (len 2) + citation covering "世界" (JS indices 2..4 inside hop2 -> 4..6 in combined text)
+  expect(citationsOf(answer.items)).toEqual([{ start: 4, end: 6, url: "https://example.com", title: "Ex" }]);
+  // Preserved raw byte offsets in the Interactions step
+  const secondMsg = answer.items.filter((i) => i.type === "message")[1];
+  expect(secondMsg.interactions.content[0].annotations[0]).toMatchObject({ start_index: 4, end_index: 10 });
+  // Summed usage across hops
+  expect(answer.usage).toEqual({
+    input_tokens: 22,
+    input_tokens_details: { cached_tokens: 10 },
+    output_tokens: 19,
+    output_tokens_details: { reasoning_tokens: 7 },
+  });
+
+  // Missing continuation_token throws CutOff instead of returning partial as completed
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      new Response(
+        sse([
+          ["step.start", { event_type: "step.start", index: 0, step: { type: "model_output" } }],
+          ["step.delta", { event_type: "step.delta", index: 0, delta: { type: "text", text: "partial" } }],
+          ["step.stop", { event_type: "step.stop", index: 0 }],
+          ["interaction.completed", { event_type: "interaction.completed", interaction: { status: "requires_continuation" } }],
+        ]),
+      ),
+    ),
+  );
+  await expect(
+    generate(role, { instructions: "", input: [{ role: "user", content: "hi" }], signal: new AbortController().signal }),
+  ).rejects.toBeInstanceOf(CutOff);
+});
+
