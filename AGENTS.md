@@ -299,4 +299,4 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 
 **`promo/` 是独立工程。** 它是 60 秒宣传片，有自己的 npm 依赖和 `build.sh`，不属于主程序的构建和测试；只有任务明确涉及时才去动它。
 
-Responses 服务是否接受 `max_tool_calls` 和 `tool_choice: allowed_tools` 记在绘制模型的 `toolLimits`，经 `settingsFor` 进入 `Role.toolLimits`，`responses.ts` 的 `narrow` 只读它，不按地址判断。DeepSeek 等不支持的服务由管理员关掉，请求不发送这两项，独立搜索仍在 DrawY 执行时按预算拒绝超额调用，工具列表保持不变。
+Responses 服务是否接受 `max_tool_calls` 和 `tool_choice: allowed_tools` 记在绘制模型的 `toolLimits`，经 `settingsFor` 进入 `Role.toolLimits`，`responses.ts` 的 `narrow` 只读它，不按地址判断。DeepSeek 等不支持的服务由管理员关掉，请求不发送这两项，独立搜索仍在 DrawY 执行时按预算拒绝超额调用，工具列表保持不变。OpenAI 官方 API（`channel === "api"` 且 `toolLimits` 开启）还会把非空 `instructions` 作为 `input` 首位 `developer` 消息发送（`gpt-6.2+` 顶层 `instructions` 不进缓存前缀），并在 `gpt-6+` 请求附带 `text: { verbosity: "low" }`；`oauth` 与第三方接口仍走顶层 `instructions`。

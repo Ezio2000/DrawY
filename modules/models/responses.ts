@@ -32,16 +32,23 @@ export function forResponses(input: Item[]): Item[] {
 
 export const responses: Adapter = {
   async generate(role, { instructions, input, tools, signal, onEvent, budget, cacheKey, steer }) {
+    // Pass system instructions as a leading developer item on OpenAI's API: gpt-6.2+
+    // leaves top-level `instructions` outside the cached prefix, whereas a developer
+    // message caches together with tools and conversation turns.
+    const devInput = Boolean(instructions && role.channel === "api" && role.toolLimits);
     const r = await post(
       role,
       "/responses",
       {
-        instructions,
-        input: forResponses(input),
+        ...(devInput ? {} : { instructions }),
+        input: [...(devInput ? [{ role: "developer", content: instructions }] : []), ...forResponses(input)],
         tools,
         stream: true,
         store: false,
         reasoning: { effort: effortFor(role.effort, role.efforts) ?? role.effort, summary: "auto" },
+        ...(role.channel === "api" && role.toolLimits && /^gpt-(?:[6-9]|\d{2,})/.test(role.model)
+          ? { text: { verbosity: "low" } }
+          : {}),
         service_tier: tierOf(role),
         ...(cacheKey ? { prompt_cache_key: cacheKey } : {}),
         ...(role.channel === "api" ? { max_output_tokens: budget } : {}),

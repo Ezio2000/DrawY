@@ -129,6 +129,7 @@ it.each([
     const body = JSON.parse(options.body as string);
     expect(body.service_tier).toBe(tier);
     expect(body.reasoning.effort).toBe("medium");
+    expect(body.text).toEqual(channel === "api" ? { verbosity: "low" } : undefined);
   },
 );
 it("keeps requests that extend one another on their cached prefix", async () => {
@@ -150,6 +151,9 @@ it("keeps requests that extend one another on their cached prefix", async () => 
     .mock.calls.map(([, init]) => init as RequestInit);
   for (const init of [oauth, api])
     expect(JSON.parse(init.body as string).prompt_cache_key).toBe("work-1");
+  expect(JSON.parse(oauth.body as string).instructions).toBe("test");
+  expect(JSON.parse(api.body as string).instructions).toBeUndefined();
+  expect(JSON.parse(api.body as string).input).toEqual([{ role: "developer", content: "test" }]);
   // The ChatGPT backend routes by session_id; the API by the key alone.
   expect((oauth.headers as Record<string, string>).session_id).toBe("work-1");
   expect((api.headers as Record<string, string>).session_id).toBeUndefined();
