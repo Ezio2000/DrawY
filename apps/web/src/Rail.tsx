@@ -8,7 +8,6 @@ import {
   LogOut,
   Trash2,
   ChevronsUpDown,
-  SquarePen,
   MonitorSmartphone,
 } from "lucide-react";
 import { PanelMark } from "./ui/brand/hand.tsx";
@@ -89,7 +88,6 @@ export function Rail({
   works,
   current,
   go,
-  create,
   remove,
   shells,
   logout,
@@ -102,8 +100,6 @@ export function Rail({
   works: Summary[];
   current?: string;
   go: (path: string) => void;
-  /** Starts a blank canvas and opens it. */
-  create: () => void;
   remove: (work: Summary) => void;
   /** The work pages there are for each kind of device, and the one picked. */
   shells: Shells;
@@ -151,18 +147,6 @@ export function Rail({
         </span>
       </div>
       {link("/", t.rail.home, House, page === "home")}
-      <button
-        className={cx("rail-button")}
-        aria-label={t.rail.blankCanvas}
-        data-tip={open ? undefined : t.rail.blankCanvas}
-        onClick={() => {
-          create();
-          setOpen(false);
-        }}
-      >
-        <SquarePen size={17} />
-        <span className={cx("rail-label")}>{t.rail.blankCanvas}</span>
-      </button>
       {link("/library", t.rail.library, Shapes, page === "library")}
       {user ? (
         <section className={cx("rail-recents")} inert={!open}>

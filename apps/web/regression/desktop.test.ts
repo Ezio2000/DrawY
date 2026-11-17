@@ -134,8 +134,6 @@ it("holds a request while hand edits are unsaved, until they are saved, thrown a
 
 it("places words ready to type on a blank canvas, and duplicates, copies and pastes them", async () => {
   await page.goto(base + "/");
-  await page.getByRole("button", { name: "New blank canvas" }).first().click();
-  await page.waitForURL(/\/a\//);
   await page.waitForSelector("[data-canvas]");
   await page.waitForTimeout(500);
   await editing();
