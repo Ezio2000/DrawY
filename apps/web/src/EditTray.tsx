@@ -6,6 +6,7 @@ import { api } from "./api.ts";
 import { DrawingLook } from "./Library.tsx";
 import { shapes, type EditOps, type Shape, type Tool } from "./desktop/editing.ts";
 import { cx } from "./cx.ts";
+import { useAccount } from "./account.tsx";
 import { useT } from "./i18n.tsx";
 import { useDismiss } from "./popover.ts";
 
@@ -208,9 +209,13 @@ function Shelf({
 }) {
   const t = useT(),
     locale = useLocale();
+  const user = useAccount();
   const [all, setAll] = useState<DrawingMaterial[]>();
   const [query, setQuery] = useState("");
-  useEffect(() => void shelf().then(setAll, () => setAll([])), []);
+  useEffect(() => {
+    if (!user) return setAll([]);
+    void shelf().then(setAll, () => setAll([]));
+  }, [user?.id]);
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
     const found = (all ?? []).filter(

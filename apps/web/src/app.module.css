@@ -61,8 +61,7 @@
 
 /* A work page that takes the whole screen (the phone's) leaves the side bar out; its own
    way back home leads to it. */
-.app[data-whole] > .rail,
-.app[data-whole] > .rail-scrim {
+.app[data-whole] > .rail:not([data-open="true"]) {
   display: none;
 }
 
@@ -938,6 +937,12 @@ h2:has(> .title) {
   align-items: center;
   justify-content: space-between;
   height: 44px;
+}
+
+.auth-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 /* Sign-in as a tool does it: a heading and a plain form on the page, left-aligned, not a

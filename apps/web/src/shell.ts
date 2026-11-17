@@ -16,6 +16,8 @@ export interface Asking {
   /** Sends what is written, or what is given in its place, once the app allows it;
    * the request is emptied once it has gone. */
   send(ask?: Partial<Ask>): Promise<void>;
+  /** Uploads pictures to attach to the request, prompting sign-in when unauthenticated. */
+  upload(files: FileList | File[]): Promise<void>;
   /** Opens the library to add materials to the request. */
   pick(): void;
   /** The labels to draw with and the one chosen; absent until they arrive. */

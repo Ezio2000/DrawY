@@ -3,6 +3,7 @@ import {
   api,
   asked,
   base,
+  browser,
   cdp,
   composer,
   count,
@@ -493,4 +494,37 @@ it("gives a dropped image only to the canvas or composer that received it", asyn
   await settled();
   expect((await rootOf(id)).modules).toHaveLength(3);
   await dataTransfer.dispose();
+});
+
+it("opens the blank canvas at home for guests and prompts sign-in only when sending, then continues", async () => {
+  const guest = await browser.newContext({ locale: "en-US", viewport: { width: 1440, height: 900 } });
+  const guestPage = await guest.newPage();
+  await guestPage.goto(base + "/");
+  await guestPage.waitForSelector("[data-canvas]");
+  // No login wall on arrival; the composer is ready to type in.
+  expect(await guestPage.getByRole("dialog").count()).toBe(0);
+  const box = guestPage.locator("[data-dock] textarea");
+  await box.fill("Draw a solar system");
+  await guestPage.getByRole("button", { name: "Send" }).click();
+  // Contextual login modal pops up without losing what was typed.
+  const dialog = guestPage.getByRole("dialog");
+  await dialog.waitFor({ state: "visible" });
+  expect(await dialog.innerText()).toContain("what you wrote will be kept");
+  await dialog.getByLabel("Username").fill("desk");
+  await dialog.getByLabel("Password", { exact: true }).fill("password123");
+  await guestPage.route("**/api/models", (route) =>
+    route.fulfill({
+      json: {
+        labels: [{ id: "default", name: "Default", description: "", ready: true }],
+        chosen: { label: "default" },
+      },
+    }),
+  );
+  await guestPage.route("**/api/works/*/runs", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    await route.fulfill({ json: { id: "r-guest", workId: "w", sceneId: "root", status: "done", prompt: "Draw a solar system", steps: [], createdAt: Date.now() } });
+  });
+  await dialog.getByRole("button", { name: "Log in" }).click();
+  await guestPage.waitForURL(/\/a\//);
+  await guest.close();
 });

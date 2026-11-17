@@ -125,8 +125,16 @@ export function editOps(ctx: Context) {
     }
     return known;
   };
+  /** Materializes the blank home canvas into a real work before any library or edit call. */
+  const materializeBlank = () =>
+    ctx.id === "_blank" && ctx.host.materialize
+      ? ctx.host.materialize().then((next) => {
+          if (!next) return null;
+          return new Promise<typeof next>((r) => requestAnimationFrame(() => r(next)));
+        })
+      : undefined;
   /** Adds something at a point, in the middle of the view, or filling a box drawn for it. */
-  const place = async (what: Addition, at?: Point, box?: Bounds) => {
+  const place = async (what: Addition, at?: Point, box?: Bounds): Promise<string | undefined> => {
     const w = shown(),
       view = ctx.view;
     if (!w || !view) return;
@@ -238,7 +246,13 @@ export function editOps(ctx: Context) {
     },
     /** Pastes parts: in the scene they came from, a step off each time; anywhere else, in
      * the middle of the view. The pasted parts are selected. */
-    paste(clip: Clip) {
+    async paste(clip: Clip) {
+      const pending = materializeBlank();
+      if (pending) {
+        const real = await pending;
+        if (real) await real.ops.paste(clip);
+        return;
+      }
       const w = shown(),
         sceneId = scene();
       if (!w) return;
@@ -260,18 +274,33 @@ export function editOps(ctx: Context) {
       report(made((work) => paste(work, sceneId, clip, where)));
     },
     /** New words, sized to read in the view; resolves to their module once drawn. */
-    text(text: string, at?: Point, box?: Bounds) {
+    async text(text: string, at?: Point, box?: Bounds): Promise<string | undefined> {
+      const pending = materializeBlank();
+      if (pending) {
+        const real = await pending;
+        return real ? real.ops.text(text, at, box) : undefined;
+      }
       return place({ kind: "text", text, size: textSize(scale()) }, at, box);
     },
     /** A library picture, a readable size in the view. */
-    picture(p: PictureMaterial, at?: Point) {
+    async picture(p: PictureMaterial, at?: Point): Promise<string | undefined> {
+      const pending = materializeBlank();
+      if (pending) {
+        const real = await pending;
+        return real ? real.ops.picture(p, at) : undefined;
+      }
       return place(picture(p, Math.round(240 / scale())), at);
     },
     /** A library drawing, with its example data and size. */
-    drawing(d: DrawingMaterial, at?: Point) {
+    async drawing(d: DrawingMaterial, at?: Point): Promise<string | undefined> {
       if (d.use === "link") {
         fail(new SessionError("linkDrawing"));
-        return Promise.resolve(undefined);
+        return undefined;
+      }
+      const pending = materializeBlank();
+      if (pending) {
+        const real = await pending;
+        return real ? real.ops.drawing(d, at) : undefined;
       }
       return place(
         {
@@ -287,7 +316,12 @@ export function editOps(ctx: Context) {
     /** A library drawing by its id with the data given: a shape of a figure, at a point or
      * filling the box drawn for it. It is called by its words; resolves to its module once
      * drawn. */
-    async shape(material: string, data: Record<string, unknown>, at?: Point, box?: Bounds) {
+    async shape(material: string, data: Record<string, unknown>, at?: Point, box?: Bounds): Promise<string | undefined> {
+      const pending = materializeBlank();
+      if (pending) {
+        const real = await pending;
+        return real ? real.ops.shape(material, data, at, box) : undefined;
+      }
       const sceneId = scene(), view = ctx.view;
       const centre = at ?? view?.center();
       try {
@@ -337,6 +371,12 @@ export function editOps(ctx: Context) {
       if (!view) return;
       report(
         (async () => {
+          const pending = materializeBlank();
+          if (pending) {
+            const real = await pending;
+            if (real) real.ops.pictures(files, from);
+            return;
+          }
           let at = from ?? view.center();
           for (const file of files) {
             const data = new FormData();

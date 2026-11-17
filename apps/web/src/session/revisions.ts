@@ -128,6 +128,10 @@ export class Revisions {
   }
 
   async rename(title: string) {
+    if (this.ctx.id === "_blank" && this.ctx.host.materialize) {
+      await this.ctx.host.materialize(title);
+      return;
+    }
     this.take(await api<Work>("/works/" + this.ctx.id, "PATCH", { title }));
     await this.ctx.host.listed();
   }
