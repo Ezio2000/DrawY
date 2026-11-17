@@ -66,7 +66,11 @@ export function streamError(error: unknown) {
     | { code?: string; type?: string }
     | undefined;
   const kind = `${e?.code ?? ""} ${e?.type ?? ""}`;
-  const status = /rate_limit/.test(kind) ? 429 : /server_error|overloaded|unavailable/.test(kind) ? 503 : 0;
+  const status = /rate_limit|resource_exhausted/.test(kind)
+    ? 429
+    : /server_error|internal_error|overloaded|unavailable/.test(kind)
+      ? 503
+      : 0;
   return Error(status ? `模型请求 ${status}: ${readable(error)}` : `模型服务报错：${readable(error)}`);
 }
 

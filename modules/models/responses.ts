@@ -20,12 +20,12 @@ export function forResponses(input: Item[]): Item[] {
   return input
     .filter(
       (i) =>
-        !(i.type === "reasoning" && ("reasoning_content" in i || "anthropic" in i)) &&
-        !(i.anthropic && typeof i.type === "string" && i.type.endsWith("_call") && i.type !== "function_call"),
+        !(i.type === "reasoning" && ("reasoning_content" in i || "anthropic" in i || "interactions" in i)) &&
+        !((i.anthropic || i.interactions) && typeof i.type === "string" && i.type.endsWith("_call") && i.type !== "function_call"),
     )
     .map((i) => {
-      if (!("anthropic" in i)) return i;
-      const { anthropic: _, ...rest } = i;
+      if (!("anthropic" in i) && !("interactions" in i)) return i;
+      const { anthropic: _, interactions: __, ...rest } = i;
       return rest;
     });
 }

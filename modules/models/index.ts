@@ -6,6 +6,7 @@
 import { pinnedProvider, type Protocol, type Role } from "../contracts/index.ts";
 import { anthropic } from "./anthropic.ts";
 import { chat } from "./chat.ts";
+import { interactions } from "./interactions.ts";
 import { responses } from "./responses.ts";
 import { blind } from "./text.ts";
 import type { Adapter, Answer, Item, Turn } from "./types.ts";
@@ -16,8 +17,9 @@ export { headers } from "./http.ts";
 export { textOf, citationsOf, blind } from "./text.ts";
 export { forResponses } from "./responses.ts";
 export { toMessages, chatTools } from "./chat.ts";
+export { toSteps, interactionsTools } from "./interactions.ts";
 
-const adapters: Record<Protocol, Adapter> = { responses, chat, anthropic };
+const adapters: Record<Protocol, Adapter> = { responses, chat, anthropic, interactions };
 /** The adapter for a request format. */
 export const adapterFor = (protocol: Protocol): Adapter => adapters[protocol];
 
