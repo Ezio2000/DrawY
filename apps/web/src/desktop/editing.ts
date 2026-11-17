@@ -86,6 +86,8 @@ export function useEditing({
   const t = useT();
   const clipped = useStore(clipboard);
   const base = session.ops;
+  const canvasRef = useRef(canvas);
+  canvasRef.current = canvas;
   const { locked, sceneId } = useSelect(session, (s) => ({ locked: s.locked, sceneId: s.sceneId }));
   useEffect(() => canvas?.setTool(canvasTool(tool)), [tool, canvas]);
   useEffect(() => {
@@ -97,7 +99,7 @@ export function useEditing({
   /** Changes a new module's words where they are drawn, once it is. */
   const retypeNew = (made: Promise<string | undefined>) =>
     void made.then((id) => {
-      const words = id && canvas?.wordsIn(id);
+      const words = id && canvasRef.current?.wordsIn(id);
       if (words) retype(words);
     });
   const parts = () => (selected.length ? selected : link ? [link] : []);

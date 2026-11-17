@@ -263,19 +263,6 @@ export function App() {
     }),
     [models, blocked],
   );
-  /** A blank canvas, made and opened: from the side bar. */
-  const createBlank = () => {
-    if (!user) {
-      if (page !== "home") go("/");
-      return;
-    }
-    void attempt(async () => {
-      const w = await api<Work>("/works", "POST", { title: t.rail.untitled });
-      begin(w);
-      go("/a/" + w.id);
-      await refreshList();
-    });
-  };
 
   useEffect(followViewport, []);
   useEffect(() => {
@@ -404,7 +391,6 @@ export function App() {
                 works={shownWorks}
                 current={session?.id}
                 go={go}
-                create={createBlank}
                 remove={remove}
                 shells={shells}
                 onLogin={() => requireAuth("general")}
