@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowRight, ArrowUp, Eye, EyeOff } from "lucide-react";
 import { Spinner } from "./ui/primitives.tsx";
+import { Dialog } from "./ui/dialogs.tsx";
 import { ModelSketch, KinshipSketch } from "./ui/brand/sketches.tsx";
 import { OrbitSketch } from "./ui/brand/orbit.tsx";
 import { Brand, Seal } from "./Title.tsx";
@@ -8,9 +9,8 @@ import { LanguageSwitch, useT } from "./i18n.tsx";
 import { api, type User } from "./api.ts";
 import { cx } from "./cx.ts";
 
-/** Signing in or up: a headline and a form on a sheet at the left; on the desk at the right,
- * what DrawY makes: a request as it is typed, and the drawings that came of three. */
-export function Auth({ done }: { done: (user: User) => void }) {
+/** The sign-in / sign-up form, shared between the full page and the contextual modal. */
+function AuthForm({ done }: { done: (user: User) => void }) {
   const t = useT();
   const [signup, S] = useState(false),
     [name, N] = useState(""),
@@ -28,6 +28,150 @@ export function Auth({ done }: { done: (user: User) => void }) {
     );
   }, []);
   return (
+    <form
+      className={cx("auth-card")}
+      onSubmit={async (e) => {
+        e.preventDefault();
+        B(true);
+        E("");
+        try {
+          done(
+            await api<User>(
+              "/auth/" + (signup ? "register" : "login"),
+              "POST",
+              signup && needsInvite
+                ? { name, password, invite }
+                : { name, password },
+            ),
+          );
+        } catch (e) {
+          E(e instanceof Error ? e.message : String(e));
+        } finally {
+          B(false);
+        }
+      }}
+    >
+      <p className={cx("auth-greeting")}>
+        {signup ? t.auth.join : t.auth.welcome}
+      </p>
+      <label>
+        <span>{t.auth.username}</span>
+        <input
+          autoComplete="username"
+          autoCapitalize="none"
+          value={name}
+          onChange={(e) => N(e.target.value)}
+          required
+          autoFocus
+        />
+      </label>
+      <label>
+        <span>
+          {t.auth.password}
+          {signup && <small>{t.auth.atLeast6}</small>}
+        </span>
+        <span className={cx("auth-secret")}>
+          <input
+            type={shown ? "text" : "password"}
+            autoComplete={signup ? "new-password" : "current-password"}
+            value={password}
+            onChange={(e) => P(e.target.value)}
+            required
+            minLength={6}
+          />
+          {/* What was typed can be read back before it is sent: a mistyped password
+              is otherwise found out only by being refused. */}
+          <button
+            type="button"
+            aria-label={shown ? t.auth.hidePassword : t.auth.showPassword}
+            aria-pressed={shown}
+            data-tip={shown ? t.auth.hidePassword : t.auth.showPassword}
+            onClick={() => setShown(!shown)}
+          >
+            {shown ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </span>
+      </label>
+      {signup && needsInvite && (
+        <label>
+          <span>{t.auth.invite}</span>
+          <input
+            autoComplete="off"
+            spellCheck={false}
+            value={invite}
+            onChange={(e) => I(e.target.value)}
+            aria-describedby="invite-hint"
+            required
+          />
+        </label>
+      )}
+      {signup && needsInvite && (
+        <p className={cx("auth-hint")} id="invite-hint">
+          {t.auth.inviteHint}
+        </p>
+      )}
+      {error && (
+        <p className={cx("error")} role="alert">
+          {error}
+        </p>
+      )}
+      <button className={cx("primary")} disabled={busy}>
+        {busy ? (
+          <Spinner size={16} />
+        ) : (
+          <>
+            {signup ? t.auth.signup : t.auth.login}
+            <ArrowRight size={16} />
+          </>
+        )}
+      </button>
+      <button
+        type="button"
+        className={cx("auth-switch")}
+        onClick={() => {
+          S(!signup);
+          E("");
+        }}
+      >
+        {signup ? t.auth.toLogin : t.auth.toSignup}
+      </button>
+    </form>
+  );
+}
+
+/** Contextual sign-in / sign-up modal shown when an unauthenticated user uses a feature. */
+export function AuthDialog({
+  reason,
+  done,
+  onClose,
+}: {
+  reason?: string;
+  done: (user: User) => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  return (
+    <Dialog
+      title={t.auth.login}
+      heading={
+        <span className={cx("auth-modal-head")}>
+          <Brand size={22} />
+          <LanguageSwitch />
+        </span>
+      }
+      description={reason}
+      onClose={onClose}
+    >
+      <AuthForm done={done} />
+    </Dialog>
+  );
+}
+
+/** Signing in or up: a headline and a form on a sheet at the left; on the desk at the right,
+ * what DrawY makes: a request as it is typed, and the drawings that came of three. */
+export function Auth({ done }: { done: (user: User) => void }) {
+  const t = useT();
+  return (
     <div className={cx("auth")}>
       <section className={cx("auth-side")}>
         <header className={cx("auth-top")}>
@@ -36,114 +180,7 @@ export function Auth({ done }: { done: (user: User) => void }) {
         </header>
         <div className={cx("auth-copy")}>
           <h1>{t.auth.headline}</h1>
-          <form
-            className={cx("auth-card")}
-            onSubmit={async (e) => {
-              e.preventDefault();
-              B(true);
-              E("");
-              try {
-                done(
-                  await api<User>(
-                    "/auth/" + (signup ? "register" : "login"),
-                    "POST",
-                    signup && needsInvite
-                      ? { name, password, invite }
-                      : { name, password },
-                  ),
-                );
-              } catch (e) {
-                E(e instanceof Error ? e.message : String(e));
-              } finally {
-                B(false);
-              }
-            }}
-          >
-            <p className={cx("auth-greeting")}>
-              {signup ? t.auth.join : t.auth.welcome}
-            </p>
-            <label>
-              <span>{t.auth.username}</span>
-              <input
-                autoComplete="username"
-                autoCapitalize="none"
-                value={name}
-                onChange={(e) => N(e.target.value)}
-                required
-                autoFocus
-              />
-            </label>
-            <label>
-              <span>
-                {t.auth.password}
-                {signup && <small>{t.auth.atLeast6}</small>}
-              </span>
-              <span className={cx("auth-secret")}>
-                <input
-                  type={shown ? "text" : "password"}
-                  autoComplete={signup ? "new-password" : "current-password"}
-                  value={password}
-                  onChange={(e) => P(e.target.value)}
-                  required
-                  minLength={6}
-                />
-                {/* What was typed can be read back before it is sent: a mistyped password
-                    is otherwise found out only by being refused. */}
-                <button
-                  type="button"
-                  aria-label={shown ? t.auth.hidePassword : t.auth.showPassword}
-                  aria-pressed={shown}
-                  data-tip={shown ? t.auth.hidePassword : t.auth.showPassword}
-                  onClick={() => setShown(!shown)}
-                >
-                  {shown ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </span>
-            </label>
-            {signup && needsInvite && (
-              <label>
-                <span>{t.auth.invite}</span>
-                <input
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={invite}
-                  onChange={(e) => I(e.target.value)}
-                  aria-describedby="invite-hint"
-                  required
-                />
-              </label>
-            )}
-            {signup && needsInvite && (
-              <p className={cx("auth-hint")} id="invite-hint">
-                {t.auth.inviteHint}
-              </p>
-            )}
-            {error && (
-              <p className={cx("error")} role="alert">
-                {error}
-              </p>
-            )}
-            <button className={cx("primary")} disabled={busy}>
-              {busy ? (
-                <Spinner size={16} />
-              ) : (
-                <>
-                  {signup ? t.auth.signup : t.auth.login}
-                  <ArrowRight size={16} />
-                </>
-              )}
-            </button>
-            <button
-              type="button"
-              className={cx("auth-switch")}
-              onClick={() => {
-                S(!signup);
-                E("");
-              }}
-            >
-              {signup ? t.auth.toLogin : t.auth.toSignup}
-            </button>
-          </form>
+          <AuthForm done={done} />
         </div>
       </section>
       <figure className={cx("auth-art")} role="img" aria-label={t.auth.art}>

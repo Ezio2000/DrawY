@@ -8,6 +8,7 @@ import type { Runs } from "./runs.ts";
 import type { Scenes } from "./scenes.ts";
 import type { Sending } from "./sending.ts";
 import type { Versions } from "./versions.ts";
+import type { WorkSession } from "./work.ts";
 
 /** Whether the author is at work on a run: drawing or looking at what it drew. */
 export const live = (run?: Run) => !!run && ["running", "viewing"].includes(run.status);
@@ -75,6 +76,9 @@ export interface SessionHost {
   spent(): void;
   /** The server's events for this user, and whether they cannot be heard. */
   listen(listener: Listener): () => void;
+  /** Creates a real work on the server when the blank home canvas is first edited or
+   * renamed, or asks an unauthenticated visitor to sign in first. */
+  materialize?(title?: string, after?: (session: WorkSession) => void): Promise<WorkSession | undefined>;
 }
 
 /** What a request is about, when not the whole scene: the modules selected, or a link. */

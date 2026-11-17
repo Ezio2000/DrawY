@@ -35,6 +35,18 @@ export class Edits {
    * anything that can only happen once. */
   commit(make: (work: Work) => WorkEdit | null): Promise<Work | undefined> {
     const { revisions } = this.ctx;
+    if (this.ctx.id === "_blank" && this.ctx.host.materialize) {
+      const w = revisions.work;
+      if (!w || !make(w)) return Promise.resolve(undefined);
+      return this.ctx.host
+        .materialize(undefined, (next) => {
+          void next.change(make);
+        })
+        .then(async (next) => {
+          if (!next) return undefined;
+          return (await next.change(make)) ? next.get().work : undefined;
+        });
+    }
     const base = this.drafted ?? revisions.work;
     if (base) {
       try {

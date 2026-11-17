@@ -517,7 +517,7 @@ export function WorkComposer({
 }) {
   counted("composer");
   const t = useT();
-  const user = useAccount()!;
+  const user = useAccount();
   const { draft } = asking;
   const request = useSelect(draft, (r) => r);
   const s = useSelect(session, (s) => ({
@@ -557,11 +557,11 @@ export function WorkComposer({
       busy={s.busy}
       send={send}
       stop={stop}
-      attach={(files) => void feedback.attempt(() => draft.upload(files))}
+      attach={(files) => void feedback.attempt(() => asking.upload(files))}
       pick={asking.pick}
       models={s.engaged ? undefined : asking.models}
       collapsed={s.working}
-      quota={user.quota}
+      quota={user?.quota}
       spent={asking.blocked === "spent" && !s.waiting}
       choose={asking.choose}
     />

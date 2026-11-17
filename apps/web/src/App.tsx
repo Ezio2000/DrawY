@@ -4,24 +4,24 @@ import { Spinner, Tooltips, Presence, UndoToast } from "./ui/primitives.tsx";
 import { useLocale, LocaleContext } from "./ui/locale.tsx";
 import { Dialog } from "./ui/dialogs.tsx";
 import type { Material } from "@drawy/materials/schema";
-import type { SettingsChange, Work } from "../../../modules/contracts/index.ts";
+import { blankStyle, type SettingsChange, type Work } from "../../../modules/contracts/index.ts";
 import { api, type Models, type Summary, type User } from "./api.ts";
 import { AccountContext } from "./account.tsx";
 import { cx } from "./cx.ts";
 import { Rail } from "./Rail.tsx";
-import { Auth } from "./Auth.tsx";
-import { Composer, Unconnected, chosen } from "./Composer.tsx";
+import { AuthDialog } from "./Auth.tsx";
+import { chosen } from "./Composer.tsx";
 import { Library } from "./Library.tsx";
 import { Settings, leaving } from "./Settings.tsx";
 import { TraceView } from "./TraceView.tsx";
 import { Title } from "./Title.tsx";
-import { Home } from "./Home.tsx";
 import { listen } from "./events.ts";
 import { ChooseLocale, dictionaries, useLanguage } from "./i18n.tsx";
 import { pageOf, sceneOf, workIdOf } from "./routes.ts";
 import { useRequest } from "./session/request.ts";
 import { useSelect } from "./session/store.ts";
 import {
+  WorkSession,
   live,
   useWorkSession,
   type Ask,
@@ -33,6 +33,33 @@ import type { ComponentType } from "react";
 import type { ShellProps } from "./shell.ts";
 import { useShell } from "./shells.ts";
 import { followViewport } from "./viewport.ts";
+
+type AuthReason = "send" | "upload" | "library" | "edit" | "page" | "general";
+
+function makeBlankWork(title: string): Work {
+  return {
+    id: "_blank",
+    title,
+    rootSceneId: "root",
+    drawings: {},
+    scenes: {
+      root: {
+        id: "root",
+        title,
+        parentId: null,
+        modules: [],
+        links: [],
+        checks: [],
+      },
+    },
+    details: {},
+    brief: null,
+    materials: {},
+    style: { ...blankStyle },
+    revision: 0,
+    updatedAt: Date.now(),
+  };
+}
 
 export function App() {
   const [locale, setLocale] = useLanguage();
@@ -50,18 +77,33 @@ export function App() {
     // A request from the home page on its way, making the work it is for.
     [starting, setStarting] = useState(false),
     [dragging, setDragging] = useState(false),
-    [trash, setTrash] = useState<Summary>();
+    [trash, setTrash] = useState<Summary>(),
+    [authPrompt, setAuthPrompt] = useState<AuthReason>();
   const page = pageOf(path);
   const shells = useShell();
   const deleting = useRef<{ id: string; timer: ReturnType<typeof setTimeout> }>(undefined);
+  const pendingAuth = useRef<(() => void) | undefined>(undefined);
   const language = useRef({ t, locale });
   language.current = { t, locale };
   const draft = useRequest();
   const [feedback] = useState(() => new Feedback(() => language.current.t));
   const { attempt } = feedback;
 
+  const requireAuth = (reason: AuthReason, then?: () => void) => {
+    pendingAuth.current = then;
+    setAuthPrompt(reason);
+  };
+
   const [go] = useState(() => (to: string) => {
+    if (to === "/" && location.pathname === "/" && now.current.whole) {
+      O(true);
+      return;
+    }
     if (to === location.pathname) return;
+    if (!now.current.user && to !== "/") {
+      requireAuth(to === "/library" ? "library" : "page", () => now.current.go(to));
+      return;
+    }
     if (!leaving()) return;
     // Navigation from an open layer uses its temporary step, leaving the previous
     // page exactly one Back away when the layer closes.
@@ -75,8 +117,14 @@ export function App() {
       setListed(true);
     });
   // What the open work needs from the app; the calls go to what the app is now.
-  const now = useRef({ go, refreshList, user });
-  now.current = { go, refreshList, user };
+  const now = useRef({
+    go,
+    refreshList,
+    user,
+    whole: shells.whole,
+    begin: undefined as unknown as (w: Work) => WorkSession,
+    materialize: undefined as unknown as (title?: string, after?: (s: WorkSession) => void) => Promise<WorkSession | undefined>,
+  });
   const [host] = useState<SessionHost>(() => ({
     locale: () => language.current.locale,
     go: (to, how) => {
@@ -90,8 +138,35 @@ export function App() {
       const u = now.current.user;
       return u ? listen(u.id, listener) : () => {};
     },
+    materialize: (title, after) => now.current.materialize(title, after),
   }));
   const { session, begin } = useWorkSession(user ? workIdOf(path) : undefined, host);
+  const [blankSession] = useState(() => new WorkSession("_blank", host, makeBlankWork(t.rail.untitled)));
+  useEffect(() => () => blankSession.dispose(), [blankSession]);
+  now.current = {
+    go,
+    refreshList,
+    user,
+    whole: shells.whole,
+    begin,
+    materialize: async (title, after) => {
+      if (!now.current.user) {
+        requireAuth("edit", () => {
+          void now.current.materialize(title, after);
+        });
+        return undefined;
+      }
+      const w = await api<Work>("/works", "POST", {
+        title: title || language.current.t.rail.untitled,
+      });
+      const made = now.current.begin(w);
+      now.current.go("/a/" + w.id);
+      void now.current.refreshList();
+      after?.(made);
+      return made;
+    },
+  };
+  const activeSession = page === "home" || !user ? blankSession : session;
   // The session follows the scene the address names before the page is painted.
   useLayoutEffect(() => session?.locate(sceneOf(path)), [session, path]);
 
@@ -119,6 +194,10 @@ export function App() {
     const text = ask.text ?? r.text,
       materials = ask.materials ?? r.attachments.map((a) => a.id);
     if (r.uploading || (!text.trim() && !materials.length)) return;
+    if (!user) {
+      requireAuth("send", () => void attempt(() => latest.current.send(ask)));
+      return;
+    }
     if (session) {
       if (!allowed(session.get().waiting)) return;
       return session.send({ text, materials, picked: ask.picked ?? r.choices, scene: ask.scene, focus: ask.focus, sent: ask.sent ?? draft.clear });
@@ -142,6 +221,14 @@ export function App() {
       setStarting(false);
     }
   };
+  const uploadFiles = async (files: FileList | File[]) => {
+    if (!now.current.user) {
+      const list = Array.from(files);
+      requireAuth("upload", () => void attempt(() => draft.upload(list)));
+      return;
+    }
+    await draft.upload(files);
+  };
   const choose = (change: SettingsChange) => {
     setModels((m) => m && chosen(m, change));
     // What the server settles on (a label taken away falls back) is shown next.
@@ -152,27 +239,39 @@ export function App() {
   };
   // What the work page is handed keeps its identity until the labels or what blocks a
   // request change; its functions call through to the app as it is now.
-  const latest = useRef({ send, choose });
-  latest.current = { send, choose };
+  const latest = useRef({ send, choose, uploadFiles });
+  latest.current = { send, choose, uploadFiles };
   const asking = useMemo<Asking>(
     () => ({
       draft,
       send: (ask) => latest.current.send(ask),
-      pick: () => setPicking(true),
+      upload: (files) => latest.current.uploadFiles(files),
+      pick: () => {
+        if (!now.current.user) {
+          requireAuth("library", () => setPicking(true));
+          return;
+        }
+        setPicking(true);
+      },
       models,
       choose: (change) => latest.current.choose(change),
       blocked,
     }),
     [models, blocked],
   );
-  /** A blank canvas, made and opened: from the side bar and from the home page. */
-  const createBlank = () =>
+  /** A blank canvas, made and opened: from the side bar. */
+  const createBlank = () => {
+    if (!user) {
+      if (page !== "home") go("/");
+      return;
+    }
     void attempt(async () => {
       const w = await api<Work>("/works", "POST", { title: t.rail.untitled });
       begin(w);
       go("/a/" + w.id);
       await refreshList();
     });
+  };
 
   useEffect(followViewport, []);
   useEffect(() => {
@@ -218,6 +317,15 @@ export function App() {
     void api<Models>("/models").then(setModels, () => {});
   }, [user?.id, page]);
   useEffect(() => {
+    if (!user || !pendingAuth.current) return;
+    const act = pendingAuth.current;
+    pendingAuth.current = undefined;
+    act();
+  }, [user]);
+  useEffect(() => {
+    if (user === null && page !== "home" && !authPrompt) setAuthPrompt("page");
+  }, [user, page, authPrompt]);
+  useEffect(() => {
     if (!open) return;
     const key = (e: KeyboardEvent) => e.key === "Escape" && O(false);
     addEventListener("keydown", key);
@@ -261,6 +369,14 @@ export function App() {
   }
   const shownWorks = works.filter((w) => w.id !== trash?.id);
   const droppable = page === "home" || page === "work";
+  const authReasons: Record<AuthReason, string> = {
+    send: t.auth.whySend,
+    upload: t.auth.whyUpload,
+    library: t.auth.whyLibrary,
+    edit: t.auth.whyEdit,
+    page: t.auth.whyPage,
+    general: t.auth.whyGeneral,
+  };
   const loading = (
     <div className={cx("loading")}>
       <Spinner />
@@ -273,9 +389,9 @@ export function App() {
           <Tooltips />
           <div
             className={cx("app")}
-            data-whole={(page === "work" && !!session && shells.whole) || undefined}
+            data-whole={((page === "work" || page === "home") && !!activeSession && shells.whole) || undefined}
           >
-            {user && (
+            {user !== undefined && (
               <Rail
                 user={user}
                 open={open}
@@ -287,11 +403,13 @@ export function App() {
                 create={createBlank}
                 remove={remove}
                 shells={shells}
+                onLogin={() => requireAuth("general")}
                 logout={() =>
                   void attempt(async () => {
                     await api("/auth/logout", "POST");
                     L([]);
                     setListed(false);
+                    setModels(undefined);
                     U(null);
                     go("/");
                   })
@@ -301,7 +419,6 @@ export function App() {
             {open && <div className={cx("rail-scrim")} onClick={() => O(false)} />}
             <main
               className={cx("app-main")}
-              data-bare={!user || undefined}
               onDragEnter={(e) => {
                 if (droppable && e.dataTransfer.types.includes("Files")) setDragging(true);
               }}
@@ -314,17 +431,19 @@ export function App() {
                 if (!droppable || e.defaultPrevented) return;
                 e.preventDefault();
                 if (e.dataTransfer.files.length)
-                  void attempt(() => draft.upload(e.dataTransfer.files));
+                  void attempt(() => uploadFiles(e.dataTransfer.files));
               }}
             >
               {user === undefined ? (
                 loading
-              ) : !user ? (
-                <Auth
-                  done={(u) => {
-                    U(u);
-                    setPath(location.pathname);
-                  }}
+              ) : page === "home" || !user ? (
+                <OpenWork
+                  session={blankSession}
+                  Page={shells.Page}
+                  asking={asking}
+                  feedback={feedback}
+                  go={go}
+                  loading={loading}
                 />
               ) : page === "traces" ? (
                 <TraceView />
@@ -339,25 +458,6 @@ export function App() {
                   </header>
                   <Library use={use} action={t.work.useIt} />
                 </div>
-              ) : page === "home" ? (
-                <Home
-                  works={shownWorks}
-                  start={(text) => void attempt(() => send({ text }))}
-                  blank={createBlank}
-                  listed={listed}
-                  all={() => O(true)}
-                  open={(id) => go("/a/" + id)}
-                  composer={
-                    <HomeComposer
-                      asking={asking}
-                      starting={starting}
-                      quota={user.quota}
-                      go={go}
-                      feedback={feedback}
-                      send={() => void attempt(() => send())}
-                    />
-                  }
-                />
               ) : !session ? (
                 loading
               ) : (
@@ -370,7 +470,7 @@ export function App() {
                   loading={loading}
                 />
               )}
-              <FloatingError feedback={feedback} shown={page !== "work" || !session} />
+              <FloatingError feedback={feedback} shown={(page !== "work" && page !== "home") || !activeSession} />
               {dragging && (
                 <div className={cx("dropzone")}>
                   <ImagePlus size={28} />
@@ -391,6 +491,20 @@ export function App() {
             <Presence show={!!trash}>
               <UndoToast text={t.work.deleted(trash?.title ?? "")} onUndo={keep} />
             </Presence>
+            {authPrompt && (
+              <AuthDialog
+                reason={authReasons[authPrompt]}
+                done={(u) => {
+                  U(u);
+                  setAuthPrompt(undefined);
+                }}
+                onClose={() => {
+                  pendingAuth.current = undefined;
+                  setAuthPrompt(undefined);
+                  if (!user && page !== "home") go("/");
+                }}
+              />
+            )}
           </div>
         </ChooseLocale.Provider>
       </AccountContext.Provider>
@@ -429,49 +543,5 @@ function FloatingError({ feedback, shown }: { feedback: Feedback; shown: boolean
         <X size={13} />
       </button>
     </div>
-  );
-}
-
-/** The home page's composer: it reads the request itself, so typing draws only it. */
-function HomeComposer({
-  asking,
-  starting,
-  quota,
-  go,
-  send,
-  feedback,
-}: {
-  feedback: Feedback;
-  asking: Asking;
-  starting: boolean;
-  quota: number | null;
-  go: (path: string) => void;
-  send: () => void;
-}) {
-  const t = dictionaries[useLocale()];
-  const { draft } = asking;
-  const request = useSelect(draft, (r) => r);
-  return (
-    <Composer
-      place="home"
-      value={request.text}
-      set={draft.write}
-      attachments={request.attachments}
-      detach={draft.detach}
-      uploading={request.uploading}
-      placeholder={t.home.placeholder}
-      status={asking.blocked === "unconnected" && <Unconnected go={go} />}
-      style={request.style}
-      setStyle={draft.setStyle}
-      working={false}
-      busy={starting}
-      send={send}
-      attach={(files) => void feedback.attempt(() => draft.upload(files))}
-      pick={asking.pick}
-      models={asking.models}
-      quota={quota}
-      spent={asking.blocked === "spent"}
-      choose={asking.choose}
-    />
   );
 }

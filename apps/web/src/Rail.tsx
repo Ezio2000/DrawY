@@ -4,6 +4,7 @@ import {
   Shapes,
   Settings2,
   ScrollText,
+  LogIn,
   LogOut,
   Trash2,
   ChevronsUpDown,
@@ -92,8 +93,9 @@ export function Rail({
   remove,
   shells,
   logout,
+  onLogin,
 }: {
-  user: User;
+  user: User | null;
   open: boolean;
   setOpen: (open: boolean) => void;
   page: string;
@@ -106,6 +108,7 @@ export function Rail({
   /** The work pages there are for each kind of device, and the one picked. */
   shells: Shells;
   logout: () => void;
+  onLogin: () => void;
 }) {
   const t = useT();
   const [account, setAccount] = useState(false);
@@ -161,87 +164,110 @@ export function Rail({
         <span className={cx("rail-label")}>{t.rail.blankCanvas}</span>
       </button>
       {link("/library", t.rail.library, Shapes, page === "library")}
-      <section className={cx("rail-recents")} inert={!open}>
-        <h2>{t.rail.recents}</h2>
-        <ul>
-          {works.map((w) => {
-            const state = progressOf(w, t);
-            return (
-            <li
-              className={cx("rail-work")}
-              data-current={w.id === current || undefined}
-              key={w.id}
-            >
-              <button
-                className={cx("rail-work-open")}
-                title={w.progress.prompt || undefined}
-                onClick={() => nav("/a/" + w.id)}
+      {user ? (
+        <section className={cx("rail-recents")} inert={!open}>
+          <h2>{t.rail.recents}</h2>
+          <ul>
+            {works.map((w) => {
+              const state = progressOf(w, t);
+              return (
+              <li
+                className={cx("rail-work")}
+                data-current={w.id === current || undefined}
+                key={w.id}
               >
-                <span>{w.title}</span>
-                <small data-tone={state.tone || undefined}>
-                  {state.tone && <i />}
-                  {state.text}
-                </small>
-              </button>
-              <button
-                className={cx("rail-work-remove")}
-                aria-label={t.rail.removeWork(w.title)}
-                data-tip={t.rail.remove}
-                onClick={() => remove(w)}
-              >
-                <Trash2 size={15} />
-              </button>
-            </li>
-            );
-          })}
-        </ul>
-      </section>
+                <button
+                  className={cx("rail-work-open")}
+                  title={w.progress.prompt || undefined}
+                  onClick={() => nav("/a/" + w.id)}
+                >
+                  <span>{w.title}</span>
+                  <small data-tone={state.tone || undefined}>
+                    {state.tone && <i />}
+                    {state.text}
+                  </small>
+                </button>
+                <button
+                  className={cx("rail-work-remove")}
+                  aria-label={t.rail.removeWork(w.title)}
+                  data-tip={t.rail.remove}
+                  onClick={() => remove(w)}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : (
+        <div className={cx("rail-recents")} aria-hidden />
+      )}
       <div className={cx("rail-foot")} ref={accountRef}>
-        {account && (
-          <div className={cx("popover account-menu")} role="menu">
-            <p>
-              {user.name}
-              <small>
-                {(user.builtinRole && t.settings.roleNames[user.role]) ||
-                  user.roleName}
-              </small>
-            </p>
-            <button role="menuitem" onClick={() => (setAccount(false), nav("/settings"))}>
-              <Settings2 size={15} />
-              {t.rail.settings}
-            </button>
-            {user.permissions.includes("models.manage") && (
-              <button role="menuitem" onClick={() => (setAccount(false), nav("/traces"))}>
-                <ScrollText size={15} />
-                {t.rail.traces}
-              </button>
+        {user ? (
+          <>
+            {account && (
+              <div className={cx("popover account-menu")} role="menu">
+                <p>
+                  {user.name}
+                  <small>
+                    {(user.builtinRole && t.settings.roleNames[user.role]) ||
+                      user.roleName}
+                  </small>
+                </p>
+                <button role="menuitem" onClick={() => (setAccount(false), nav("/settings"))}>
+                  <Settings2 size={15} />
+                  {t.rail.settings}
+                </button>
+                {user.permissions.includes("models.manage") && (
+                  <button role="menuitem" onClick={() => (setAccount(false), nav("/traces"))}>
+                    <ScrollText size={15} />
+                    {t.rail.traces}
+                  </button>
+                )}
+                <LanguageSwitch />
+                <ShellSwitch shells={shells} />
+                <hr />
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setAccount(false);
+                    logout();
+                  }}
+                >
+                  <LogOut size={15} />
+                  {t.rail.logout}
+                </button>
+              </div>
             )}
-            <LanguageSwitch />
-            <ShellSwitch shells={shells} />
-            <hr />
             <button
-              role="menuitem"
-              onClick={() => {
-                setAccount(false);
-                logout();
-              }}
+              className={cx("rail-button rail-account")}
+              aria-label={t.rail.account}
+              aria-expanded={account}
+              data-tip={open ? undefined : user.name}
+              onClick={() => setAccount(!account)}
             >
-              <LogOut size={15} />
-              {t.rail.logout}
+              <span className={cx("avatar")}>{[...user.name][0]?.toUpperCase()}</span>
+              <span className={cx("rail-label")}>{user.name}</span>
+              <ChevronsUpDown size={14} className={cx("rail-label")} />
             </button>
-          </div>
+          </>
+        ) : (
+          <button
+            className={cx("rail-button rail-account")}
+            aria-label={t.rail.signIn}
+            data-tip={open ? undefined : t.rail.signIn}
+            onClick={() => {
+              setOpen(false);
+              onLogin();
+            }}
+          >
+            <span className={cx("avatar")}>
+              <LogIn size={15} />
+            </span>
+            <span className={cx("rail-label")}>{t.rail.signIn}</span>
+          </button>
         )}
-        <button
-          className={cx("rail-button rail-account")}
-          aria-label={t.rail.account}
-          aria-expanded={account}
-          data-tip={open ? undefined : user.name}
-          onClick={() => setAccount(!account)}
-        >
-          <span className={cx("avatar")}>{[...user.name][0]?.toUpperCase()}</span>
-          <span className={cx("rail-label")}>{user.name}</span>
-          <ChevronsUpDown size={14} className={cx("rail-label")} />
-        </button>
       </div>
     </nav>
   );
