@@ -11,6 +11,7 @@ import type { Selection } from "../../../../modules/contracts/index.ts";
 import { cx } from "../cx.ts";
 import { useT } from "../i18n.tsx";
 import { Library } from "../Library.tsx";
+import { Opening } from "../Opening.tsx";
 import { counted } from "../probe.ts";
 import { Retype, ShortcutSheet } from "../Editor.tsx";
 import { DRAWING_TYPE, drawingById } from "../EditTray.tsx";
@@ -259,6 +260,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           board={board}
           setBoard={setBoard}
           help={() => setHelp(true)}
+          opening={<Opening draft={draft} byHand={edit} place="desk" />}
         />
         {editing && !locked && (
           <EditOverlay

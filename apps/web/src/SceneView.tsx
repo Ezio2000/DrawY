@@ -1,7 +1,7 @@
 import { detailElement } from "../../../modules/runtime/detail.ts";
 import type { WorkSession } from "./session/work.ts";
 import { useSelect } from "./session/store.ts";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Lightbulb } from "lucide-react";
 import { reducedMotion, Spinner } from "./ui/primitives.tsx";
@@ -69,8 +69,12 @@ export function SceneView({
   resizable = true,
   fill,
   hold,
+  opening,
 }: {
   work: Work;
+  /** What the page lays over the scene while nothing is drawn on it, nothing is being
+   * drawn and the person is not drawing by hand, in place of the note that it is blank. */
+  opening?: ReactNode;
   /** What tells this showing of the work from another of the same revision: a hand edit
    * shown before it is saved. */
   version?: string;
@@ -255,6 +259,8 @@ export function SceneView({
       (!s.sceneId || s.sceneId === sceneId),
   );
   const empty = !work.scenes[sceneId].modules.length;
+  // The page's own sheet over a blank scene; while drawing by hand the board is left bare.
+  const opens = empty && !run && shown && !!opening && !(editing && !disabled);
   const [styles, setStyles] = useState<StyleMaterial[]>([]);
   useEffect(() => void styleList().then(setStyles, () => {}), []);
   // A note on the paper while the canvas is still blank, so there is something to watch
@@ -353,9 +359,10 @@ export function SceneView({
           <Spinner />
         </div>
       )}
-      {empty && !run && shown && (
+      {empty && !run && shown && !opening && (
         <p className={cx("blank")}>{t.work.blank}</p>
       )}
+      {opens && opening}
       {empty && run && (!!references.length || note) && (
         <div
           className={cx("references")}
@@ -418,7 +425,7 @@ export function SceneView({
         </div>
       )}
       {canvas && editing && !disabled && board?.rulers && <Rulers canvas={canvas} />}
-      {controls && (
+      {controls && !opens && (
         <ViewControls
           canvas={canvas}
           fit={fitAll}

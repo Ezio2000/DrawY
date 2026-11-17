@@ -334,6 +334,34 @@ it("makes a work for a request from the home page and sends the request there", 
   expect(await page.locator("header nav").first().innerText()).toContain("A map of the tea route");
 });
 
+it("opens on a blank sheet that says what DrawY makes and pencils in the drawing each request to try would give; one picked is written into the composer, the sample steps back for a request of one's own, and the sheet leaves for the drawing board", async () => {
+  await page.goto(base + "/");
+  const title = page.getByRole("heading", { level: 1 });
+  await title.waitFor();
+  expect(await title.innerText()).toContain("open up");
+  const sample = page.getByRole("img", { name: /^Sample:/ });
+  expect(await sample.getAttribute("aria-label")).toBe("Sample: How does the solar system work?");
+  // A blank sheet has nothing to zoom.
+  const scale = page.getByRole("button", { name: /^Shown at \d+%/ });
+  expect(await scale.count()).toBe(0);
+  expect(await composer().getAttribute("placeholder")).toBe("What to draw, and who it is for");
+  const ask = page.getByRole("button", { name: /How do large language models work\?/ });
+  await ask.hover();
+  await expect.poll(() => sample.getAttribute("aria-label")).toBe("Sample: How do large language models work?");
+  await ask.click();
+  expect(await composer().inputValue()).toBe("How do large language models work? For someone who doesn’t code.");
+  expect(await composer().evaluate((e) => e === document.activeElement)).toBe(true);
+  expect(asked).toEqual([]);
+  const sheet = page.locator("[data-place=desk]");
+  expect(await sheet.getAttribute("data-own")).toBeNull();
+  await composer().fill("A map of the tea route");
+  await expect.poll(() => sheet.getAttribute("data-own")).not.toBeNull();
+  await composer().fill("");
+  await page.getByRole("button", { name: "Or draw it yourself" }).click();
+  await expect.poll(() => title.count()).toBe(0);
+  expect(await scale.count()).toBe(1);
+});
+
 it.each(["home", "dock"] as const)("keeps Chinese IME composition intact in the %s composer", async (place) => {
   if (place === "home") await page.goto(base + "/");
   else await open(await make());

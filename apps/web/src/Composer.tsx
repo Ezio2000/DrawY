@@ -525,6 +525,8 @@ export function WorkComposer({
     waiting: s.waiting,
     engaged: s.engaged,
     busy: s.sending || !s.loaded || !s.synced,
+    // Nothing asked and nothing drawn yet: the request is the first.
+    fresh: !s.runs.length && !!s.work && Object.values(s.work.scenes).every((x) => !x.modules.length),
   }));
   const note = request.handed && request.text && (
     <div className={cx("now")}>
@@ -550,7 +552,9 @@ export function WorkComposer({
             ? t.composer.selected
             : s.working
               ? t.composer.working
-              : t.composer.continue
+              : s.fresh
+                ? t.home.placeholder
+                : t.composer.continue
       }
       status={(asking.blocked === "unconnected" && <Unconnected go={go} />) || note || status}
       style={request.style}
