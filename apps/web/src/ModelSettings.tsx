@@ -236,6 +236,11 @@ const presets = {
     channel: "api",
     baseUrl: "https://api.anthropic.com",
   },
+  google: {
+    name: "google",
+    channel: "api",
+    baseUrl: "https://generativelanguage.googleapis.com",
+  },
   openrouter: {
     name: "openrouter",
     channel: "api",

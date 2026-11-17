@@ -48,7 +48,7 @@ export type SearchMode = (typeof searchModes)[number];
 /** The request format a drawing model speaks: the OpenAI Responses API, Chat
  * Completions, which most other providers (DeepSeek, Qwen, Kimi…) offer, or the Anthropic
  * Messages API, which Claude models speak. Each has an adapter in `modules/models`. */
-export const protocols = ["responses", "chat", "anthropic"] as const;
+export const protocols = ["responses", "chat", "anthropic", "interactions"] as const;
 export type Protocol = (typeof protocols)[number];
 export interface ProtocolSpec {
   /** Where its own provider serves it, for a provider newly set up for it. */
@@ -62,6 +62,7 @@ export const protocolSpecs: Record<Protocol, ProtocolSpec> = {
   responses: { endpoint: "https://api.openai.com/v1", builtinSearch: true, speeds: true },
   chat: { endpoint: "https://api.openai.com/v1", builtinSearch: false, speeds: false },
   anthropic: { endpoint: "https://api.anthropic.com", builtinSearch: true, speeds: false },
+  interactions: { endpoint: "https://generativelanguage.googleapis.com", builtinSearch: true, speeds: true },
 };
 
 // ---- Speeds
@@ -94,7 +95,7 @@ export interface ChannelSpec {
 }
 export const channelSpecs: Record<Channel, ChannelSpec> = {
   api: {
-    protocols: ["responses", "chat", "anthropic"],
+    protocols: ["responses", "chat", "anthropic", "interactions"],
     speeds: ["flex", "default", "fast", "ultrafast"],
     builtinSearch: true,
     pinProvider: true,
@@ -125,9 +126,11 @@ export const protocolFor = (c: Pick<Connection, "channel" | "baseUrl">): Protoco
     ? "responses"
     : /anthropic\.com/.test(c.baseUrl)
       ? "anthropic"
-      : /api\.openai\.com/.test(c.baseUrl)
-        ? "responses"
-        : "chat";
+      : /generativelanguage\.googleapis\.com/.test(c.baseUrl)
+        ? "interactions"
+        : /api\.openai\.com/.test(c.baseUrl)
+          ? "responses"
+          : "chat";
 
 /** How a provider is reached, for drawing and picture models alike. */
 export interface Connection {
