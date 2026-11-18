@@ -20,7 +20,7 @@ import { Composer, Unconnected, chosen } from "./Composer.tsx";
 import { Library } from "./Library.tsx";
 import { Settings, leaving } from "./Settings.tsx";
 import { TraceView } from "./TraceView.tsx";
-import { Title } from "./Title.tsx";
+import { Brand, Title } from "./Title.tsx";
 import { Home } from "./Home.tsx";
 import { listen } from "./events.ts";
 import { ChooseLocale, dictionaries, useLanguage } from "./i18n.tsx";
@@ -41,6 +41,8 @@ import type { ShellProps } from "./shell.ts";
 import { useShell } from "./shells.ts";
 import { browserStorage } from "./storage.ts";
 import { followViewport } from "./viewport.ts";
+
+type AfterSignIn = { kind: "send" | "blank" | "library" | "login" } | { kind: "upload"; files: File[] };
 
 export function App() {
   const [locale, setLocale] = useLanguage();
@@ -65,6 +67,14 @@ export function App() {
   const language = useRef({ t, locale });
   language.current = { t, locale };
   const draft = useRequest();
+  const [authAction, setAuthAction] = useState<AfterSignIn | null>(null);
+  const [resuming, setResuming] = useState<AfterSignIn | null>(null);
+  const authIntent = useRef(authAction);
+  authIntent.current = authAction;
+  const closeSignIn = () => {
+    authIntent.current = null;
+    setAuthAction(null);
+  };
   const [feedback] = useState(() => new Feedback(() => language.current.t));
   const { attempt } = feedback;
 
@@ -127,6 +137,14 @@ export function App() {
     const text = ask.text ?? r.text,
       materials = ask.materials ?? r.attachments.map((a) => a.id);
     if (r.uploading || (!text.trim() && !materials.length)) return;
+    if (!user) {
+      setAuthAction({ kind: "send" });
+      return;
+    }
+    if (!models) {
+      setResuming({ kind: "send" });
+      return;
+    }
     if (session) {
       if (!allowed(session.get().waiting)) return;
       return session.send({ text, materials, picked: ask.picked ?? r.choices, scene: ask.scene, focus: ask.focus, sent: ask.sent ?? draft.clear });
@@ -166,21 +184,37 @@ export function App() {
     () => ({
       draft,
       send: (ask) => latest.current.send(ask),
-      pick: () => setPicking(true),
+      pick: () => user ? setPicking(true) : setAuthAction({ kind: "library" }),
       models,
       choose: (change) => latest.current.choose(change),
       blocked,
     }),
-    [models, blocked],
+    [models, blocked, user],
   );
   /** A blank canvas, made and opened: from the side bar and from the home page. */
-  const createBlank = () =>
+  const createBlank = () => {
+    if (!user) {
+      setAuthAction({ kind: "blank" });
+      return;
+    }
     void attempt(async () => {
       const w = await api<Work>("/works", "POST", { title: t.rail.untitled });
       begin(w);
       go("/a/" + w.id);
       await refreshList();
     });
+  };
+  const upload = (files: FileList | File[]) => {
+    if (!files.length) return;
+    if (!user) setAuthAction({ kind: "upload", files: Array.from(files) });
+    else void attempt(() => draft.upload(files));
+  };
+  const signedIn = (account: User) => {
+    setModels(undefined);
+    U(account);
+    setResuming(authIntent.current);
+    closeSignIn();
+  };
 
   useEffect(followViewport, []);
   useEffect(() => {
@@ -223,8 +257,27 @@ export function App() {
   }, [user?.id]);
   useEffect(() => {
     if (!user || (page !== "home" && page !== "work")) return;
-    void api<Models>("/models").then(setModels, () => {});
+    let cancelled = false;
+    void api<Models>("/models").then(
+      (menu) => { if (!cancelled) setModels(menu); },
+      (error) => {
+        if (cancelled) return;
+        setResuming(null);
+        feedback.fail(error);
+      },
+    );
+    return () => { cancelled = true; };
   }, [user?.id, page]);
+  // Resume only after React has installed the account and, for drawing, its model menu.
+  // Clear the intent before doing work, so rerenders cannot submit the same request twice.
+  useEffect(() => {
+    if (!user || !resuming || (resuming.kind === "send" && !models)) return;
+    setResuming(null);
+    if (resuming.kind === "send") void attempt(() => send());
+    else if (resuming.kind === "blank") createBlank();
+    else if (resuming.kind === "library") setPicking(true);
+    else if (resuming.kind === "upload") upload(resuming.files);
+  }, [user, models, resuming]);
   useEffect(() => {
     if (!open) return;
     const key = (e: KeyboardEvent) => e.key === "Escape" && O(false);
@@ -300,6 +353,8 @@ export function App() {
                     await api("/auth/logout", "POST");
                     L([]);
                     setListed(false);
+                    setModels(undefined);
+                    draft.clear();
                     U(null);
                     go("/");
                   })
@@ -310,6 +365,7 @@ export function App() {
             <main
               className={cx("app-main")}
               data-bare={!user || undefined}
+              inert={!!authAction}
               onDragEnter={(e) => {
                 if (droppable && e.dataTransfer.types.includes("Files")) setDragging(true);
               }}
@@ -322,17 +378,14 @@ export function App() {
                 if (!droppable || e.defaultPrevented) return;
                 e.preventDefault();
                 if (e.dataTransfer.files.length)
-                  void attempt(() => draft.upload(e.dataTransfer.files));
+                  upload(e.dataTransfer.files);
               }}
             >
               {user === undefined ? (
                 loading
-              ) : !user ? (
+              ) : !user && page !== "home" ? (
                 <Auth
-                  done={(u) => {
-                    U(u);
-                    setPath(location.pathname);
-                  }}
+                  done={signedIn}
                 />
               ) : page === "traces" ? (
                 <TraceView />
@@ -350,7 +403,8 @@ export function App() {
               ) : page === "home" ? (
                 <Home
                   works={shownWorks}
-                  start={(text) => void attempt(() => send({ text }))}
+                  signIn={!user ? () => setAuthAction({ kind: "login" }) : undefined}
+                  prepare={(text) => draft.hand(text)}
                   blank={createBlank}
                   listed={listed}
                   all={() => O(true)}
@@ -359,10 +413,11 @@ export function App() {
                     <HomeComposer
                       draft={draft}
                       asking={asking}
-                      starting={starting}
-                      quota={user.quota}
+                      starting={starting || resuming?.kind === "send"}
+                      quota={user?.quota ?? null}
+                      attach={upload}
+                      signIn={!user ? () => setAuthAction({ kind: "login" }) : undefined}
                       go={go}
-                      feedback={feedback}
                       send={() => void attempt(() => send())}
                     />
                   }
@@ -387,6 +442,16 @@ export function App() {
                 </div>
               )}
             </main>
+            {authAction && !user && (
+              <Dialog
+                title={t.auth.continue}
+                heading={<Brand size={24} />}
+                description={authAction.kind === "send" ? t.auth.keptRequest : undefined}
+                onClose={closeSignIn}
+              >
+                <Auth compact done={signedIn} />
+              </Dialog>
+            )}
             {picking && (
               <Dialog
                 title={t.titles.library}
@@ -449,15 +514,17 @@ function HomeComposer({
   quota,
   go,
   send,
-  feedback,
+  attach,
+  signIn,
 }: {
-  feedback: Feedback;
   draft: RequestDraft;
   asking: Asking;
   starting: boolean;
   quota: number | null;
   go: (path: string) => void;
   send: () => void;
+  attach: (files: FileList | File[]) => void;
+  signIn?: () => void;
 }) {
   const t = dictionaries[useLocale()];
   const request = useSelect(draft, (r) => r);
@@ -469,6 +536,7 @@ function HomeComposer({
       attachments={request.attachments}
       detach={draft.detach}
       uploading={request.uploading}
+      focus={request.asked}
       unquote={() => {}}
       placeholder={t.home.placeholder}
       status={asking.blocked === "unconnected" && <Unconnected go={go} />}
@@ -478,7 +546,8 @@ function HomeComposer({
       busy={starting}
       send={send}
       stop={() => {}}
-      attach={(files) => void feedback.attempt(() => draft.upload(files))}
+      attach={attach}
+      signIn={signIn}
       pick={asking.pick}
       models={asking.models}
       quota={quota}

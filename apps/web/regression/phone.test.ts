@@ -481,6 +481,21 @@ it("lays the home page out for a phone: it scrolls to every work, and its menus 
   for (let i = 0; i < 5; i++) await make();
   await page.goto(base + "/");
   await settled();
+  // The editable illustration leads on mobile; the other works share its open composition.
+  const preview=page.locator('[data-home-showcase] iframe[data-preview="editable"]');
+  await preview.waitFor();
+  const picture=(await preview.boundingBox())!;
+  const input=(await page.locator('textarea').boundingBox())!;
+  expect(picture.height).toBeGreaterThan(80);
+  expect(picture.y+picture.height).toBeLessThanOrEqual(input.y);
+  const cards = page.getByRole("button", { name: /^Use example:/ });
+  expect(await cards.count()).toBe(9);
+  // Let the scroll and the lazy iframe's composited hit regions settle before a finger tap.
+  await cards.last().scrollIntoViewIfNeeded();
+  await settled();
+  await cards.last().tap();
+  expect(await page.locator("textarea").inputValue()).toBe("Draw a 14-day project plan from idea to launch with dependencies and milestones");
+  await expect.poll(() => cards.last().locator('[data-mode="tile"]').getAttribute("data-ready"), { timeout: 10000 }).toBe("true");
   const works = page.locator("ul li button", { hasText: "Check" });
   // Every work is there to scroll to (the other tests made some too).
   await expect.poll(() => works.count()).toBeGreaterThanOrEqual(5);
@@ -582,6 +597,7 @@ it("keeps a tall model menu above the keyboard after limiting its height", async
   });
   await settled();
   await page.getByRole("button", { name: "Tier: Tier 0", exact: true }).tap();
+  await settled();
   const menu = page.getByRole("menu");
   const bounds = (await menu.boundingBox())!;
   expect(bounds.y).toBeGreaterThanOrEqual(8);

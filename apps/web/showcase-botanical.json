@@ -1,0 +1,16 @@
+{
+  "title": "窗边的柑橘 · 植物手帐",
+  "request": "画一盆窗边的柑橘，陶土花盆里长着枝叶和小果子，旁边有一把浇水壶和几朵小花。用细钢笔线和淡彩画成植物手帐，叶子随风轻轻动。",
+  "productionInstructions": "这是 DrawY 首页右侧的真实作品，要和中央云上花园插画放在同一张白纸上。直接创作，不提问，不联网，不调用生图。使用真实 SVG 原生画法，白底，精美而克制的植物手帐风，浅暖灰细钢笔线、少量排线，鼠尾草绿叶片、陶土朱红#d23f2b花盆、淡橙小柑橘、奶白小花。不要深蓝色，不要大块黑，不画标题、图例、文字、数字、边框、卡片或背景矩形。请画成一件完整精致的作品，不是示意图。\n整体约600×600正方形，内容占90%，一株形态自然、枝叶疏密有致的小柑橘树，8到12枚有高光和表皮细纹的金橙果实，叶片有中脉和正反面色差，枝条弯曲生动；花盆是温暖朱红陶土，有椭圆口沿、浅土面、细小纹理和柔和侧面阴影。右下角一把小巧的奶白/浅鼠尾草绿长嘴金属浇水壶，左下几朵白花与两颗落果，底部只有很淡的几笔地面线，不画阴影矩形。高矮与比例清楚，小树占主要面积。图要在首页约240px宽也漂亮、清楚。\n模块分离：pot花盆、citrus树干枝叶果实、watering浇水壶、flowers小花。主色保留原作品的真实内容。动态仅让少量叶片和细枝在微风中缓慢摆动，使用api.animate，幅度2px左右，树干花盆和浇水壶不漂移。不要整体缩放旋转或反复显隐，不加炫光。请先完成所有绘制，再view_canvas实际看图，对形态、画面占比、色彩及精致度至少一轮精修；无运行错误且看过最终版本再结束。",
+  "workId": "58a15332-84cb-48a8-a2dd-5da4e4ef69bd",
+  "runId": "ac9b5b3d-75b7-4de1-8d15-c3d2da7f1501",
+  "revision": 5,
+  "method": "DrawY Agent.start → write_work → view_canvas → refine → HTML export",
+  "editableModules": [
+    "pot",
+    "citrus",
+    "watering",
+    "flowers"
+  ],
+  "presentation": "Unmodified real exported work, shown in the home hero and nature gallery. Leaf animation uses the shared playback bridge."
+}

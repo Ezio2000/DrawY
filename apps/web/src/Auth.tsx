@@ -10,7 +10,7 @@ import { cx } from "./cx.ts";
 
 /** Signing in or up: a headline and a form on a sheet at the left; on the desk at the right,
  * what DrawY makes: a request as it is typed, and the drawings that came of three. */
-export function Auth({ done }: { done: (user: User) => void }) {
+export function Auth({ done, compact = false }: { done: (user: User) => void; compact?: boolean }) {
   const t = useT();
   const [signup, S] = useState(false),
     [name, N] = useState(""),
@@ -28,18 +28,19 @@ export function Auth({ done }: { done: (user: User) => void }) {
     );
   }, []);
   return (
-    <div className={cx("auth")}>
+    <div className={cx("auth")} data-compact={compact || undefined}>
       <section className={cx("auth-side")}>
-        <header className={cx("auth-top")}>
+        {!compact && <header className={cx("auth-top")}>
           <Brand size={26} />
           <LanguageSwitch label />
-        </header>
+        </header>}
         <div className={cx("auth-copy")}>
-          <h1>{t.auth.headline}</h1>
+          {!compact && <h1>{t.auth.headline}</h1>}
           <form
             className={cx("auth-card")}
             onSubmit={async (e) => {
               e.preventDefault();
+              if (busy) return;
               B(true);
               E("");
               try {
@@ -146,7 +147,7 @@ export function Auth({ done }: { done: (user: User) => void }) {
           </form>
         </div>
       </section>
-      <figure className={cx("auth-art")} role="img" aria-label={t.auth.art}>
+      {!compact && <figure className={cx("auth-art")} role="img" aria-label={t.auth.art}>
         <div className={cx("auth-desk")} aria-hidden>
           <div className={cx("auth-sheet")} data-at="back">
             <KinshipSketch />
@@ -176,7 +177,7 @@ export function Auth({ done }: { done: (user: User) => void }) {
             </i>
           </div>
         </div>
-      </figure>
+      </figure>}
     </div>
   );
 }

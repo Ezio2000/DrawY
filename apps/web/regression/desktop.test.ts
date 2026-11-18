@@ -345,6 +345,214 @@ it("measures the drawing board: rulers, the view's scale and its settings, and t
   expect(await page.getByRole("heading", { name: "Shortcuts and gestures" }).count()).toBe(1);
 });
 
+it("prepares a real home example without starting a run", async () => {
+  await page.goto(base + "/");
+  const before = (await api("/works")).length;
+  await page.getByRole("button", { name: /^Use example:.*How does an answer take shape/ }).click();
+  expect(await page.locator("textarea").inputValue()).toBe("How do large language models work?");
+  expect(await page.locator("textarea").evaluate(el => el === document.activeElement)).toBe(true);
+  expect(asked).toEqual([]);
+  expect((await api("/works")).length).toBe(before);
+  await page.locator("textarea").fill("Explain language models to a beginner");
+  await page.keyboard.press("Enter");
+  await page.waitForURL(/\/a\//);
+  await expect.poll(() => asked.map(a => a.prompt)).toEqual(["Explain language models to a beginner"]);
+});
+
+it("plays the real home drawing automatically and freezes it when paused", async () => {
+  await page.goto(base + "/");
+  await page.locator("[data-journey]").scrollIntoViewIfNeeded();
+  const drawing = page.frameLocator('iframe[data-preview="journey"]');
+  await expect.poll(() => drawing.locator("html").getAttribute("data-replay-playing"), { timeout:10000 }).toBe("true");
+  await expect.poll(() => page.locator('[data-journey]').getAttribute('data-phase'), { timeout:10000 }).toBe('1');
+  const progress = () => drawing.locator("html").getAttribute("data-ink-progress");
+  const first = await progress();
+  await expect.poll(progress).not.toBe(first);
+  await page.getByRole("button",{name:"Pause demo",exact:true}).click();
+  await expect.poll(() => drawing.locator("html").getAttribute("data-replay-playing")).toBe("false");
+  const stopped=await progress();
+  await page.waitForTimeout(350);
+  expect(await progress()).toBe(stopped);
+  await page.getByRole("button",{name:"Play demo",exact:true}).click();
+  await expect.poll(progress).not.toBe(stopped);
+  expect(asked).toEqual([]);
+});
+
+it("respects reduced motion on the home page", async () => {
+  await page.emulateMedia({ reducedMotion:"reduce" });
+  await page.goto(base + "/");
+  await expect.poll(() => page.frameLocator('iframe[data-preview="editable"]').locator("html").getAttribute("data-playing"),{timeout:10000}).toBe("false");
+  expect(await page.locator('[data-journey]').getAttribute('data-phase')).toBe('2');
+  expect(await page.getByRole("button",{name:"Play demo",exact:true}).isVisible()).toBe(true);
+  const hero=page.locator('[data-home-showcase]');
+  expect(await hero.getAttribute('data-edit-phase')).toBe('0');
+  const artwork=(await hero.locator('iframe[data-preview="editable"]').boundingBox())!;
+  expect(artwork.width).toBeGreaterThan(700);
+  expect(artwork.y+artwork.height).toBeLessThan((await page.locator('textarea').boundingBox())!.y);
+  await expect.poll(()=>hero.locator('iframe').count()).toBe(3);
+  const sailboat=hero.frameLocator('iframe[src="/showcase/sailboat.html?edit-demo=sailboat"]');
+  const botanical=hero.frameLocator('iframe[src="/showcase/botanical.html?edit-demo=botanical"]');
+  await sailboat.locator('[data-module-id="hull"]').waitFor();
+  await botanical.locator('[data-module-id="pot"]').waitFor();
+  expect(await sailboat.locator('[data-module-id="sails"]').isVisible()).toBe(true);
+  expect(await hero.locator('iframe[src*="solar.html"]').count()).toBe(0);
+  expect(await botanical.locator('[data-module-id="citrus"]').isVisible()).toBe(true);
+  expect(await hero.locator('iframe[src*="time.html"]').count()).toBe(0);
+  await page.getByRole('button',{name:'Sage green roof',exact:true}).click();
+  await page.getByLabel('Move the balloon',{exact:true}).press('End');
+  const edited=page.frameLocator('iframe[data-preview="editable"]');
+  await expect.poll(()=>edited.locator('[data-module-id="balloon"]').evaluate(el=>(el as HTMLElement).style.left)).toBe('898px');
+  expect(await edited.locator('html').getAttribute('data-edit-transition')).toBe('false');
+  const heading=(await page.locator('#home-heading').boundingBox())!;
+  const roof=(await page.frameLocator('iframe[data-preview="editable"]').locator('[data-module-id="roof"]').boundingBox())!;
+  expect(heading.y+heading.height).toBeLessThan(roof.y);
+  await page.emulateMedia({ reducedMotion:"no-preference" });
+});
+
+it("plays visible home gallery works and pauses the whole page together", async () => {
+  await page.goto(base + "/");
+  await expect.poll(() => page.getByLabel("Name the studio",{exact:true}).isEnabled(),{timeout:10000}).toBe(true);
+  const boat=page.locator('[data-home-showcase]').frameLocator('iframe[src="/showcase/sailboat.html?edit-demo=sailboat"]');
+  await expect.poll(() => boat.locator("html").getAttribute("data-playing"),{timeout:10000}).toBe("true");
+  const sailing=() => boat.locator('[data-module-id="pennant"]').evaluate(el=>el.shadowRoot!.innerHTML);
+  const flag=await sailing();
+  await expect.poll(sailing).not.toBe(flag);
+  await page.getByRole("button",{name:"Pause demo",exact:true}).click();
+  await expect.poll(() => boat.locator("html").getAttribute("data-playing")).toBe("false");
+  const furled=await sailing();
+  await page.waitForTimeout(200);
+  expect(await sailing()).toBe(furled);
+  await page.getByRole("button",{name:"Play demo",exact:true}).click();
+  await expect.poll(sailing).not.toBe(furled);
+  const card=page.getByRole("button",{name:"Use example: How does an answer take shape?",exact:true});
+  await page.locator('[data-gallery]').scrollIntoViewIfNeeded();
+  await card.scrollIntoViewIfNeeded();
+  const tile=card.frameLocator('iframe[data-preview="tile"]');
+  await expect.poll(() => tile.locator("html").getAttribute("data-playing"),{timeout:10000}).toBe("true");
+  await expect.poll(() => page.frameLocator('iframe[data-preview="editable"]').locator("html").getAttribute("data-playing")).toBe("false");
+  const picture=() => tile.locator('[data-module-id]').evaluateAll(nodes=>nodes.map(n=>n.outerHTML+(n.shadowRoot?.innerHTML??'')).join(''));
+  const first=await picture();
+  await expect.poll(picture).not.toBe(first);
+  await page.getByRole("button",{name:"Pause demo",exact:true}).click();
+  await expect.poll(() => tile.locator("html").getAttribute("data-playing")).toBe("false");
+  const stopped=await picture();
+  await page.waitForTimeout(350);
+  expect(await picture()).toBe(stopped);
+  await page.getByRole("button",{name:"Play demo",exact:true}).click();
+  await expect.poll(picture).not.toBe(stopped);
+});
+
+it("replays one home creation automatically from paths to motion to a connected detail", async () => {
+  await page.goto(base + "/");
+  await page.locator("[data-journey]").scrollIntoViewIfNeeded();
+  const replay=page.locator('[data-journey]'), frame=page.locator('iframe[data-preview="journey"]');
+  const drawing=page.frameLocator('iframe[data-preview="journey"]');
+  await frame.waitFor({state:'visible'});
+  expect(await frame.count()).toBe(1);
+  await expect.poll(() => replay.getAttribute('data-phase'),{timeout:12000}).toBe('1');
+  const outline=()=>drawing.locator('[data-module-id="landscape"]').evaluate(el=>[...el.shadowRoot!.querySelectorAll('path')].map(path=>getComputedStyle(path).strokeDashoffset).join(','));
+  const line=await outline();
+  await expect.poll(outline).not.toBe(line);
+  // Dense landscapes must finish every wash and label inside the drawing phase.
+  expect(await drawing.locator('body').evaluate(()=>Math.max(...document.getAnimations().filter(a=>a.id==='drawy-journey-ink').map(a=>Number(a.effect!.getComputedTiming().endTime))))).toBeLessThanOrEqual(8000);
+  await expect.poll(() => replay.getAttribute('data-phase'),{timeout:12000}).toBe('2');
+  await expect.poll(() => drawing.locator('html').getAttribute('data-playing')).toBe('true');
+  const fullPicture=(await drawing.locator('[data-module-id="landscape"]').boundingBox())!;
+  await expect.poll(()=>drawing.locator('html').getAttribute('data-tour'),{timeout:5000}).toBe('wind-route');
+  const tour=drawing.locator('[data-journey-tour="wind-route"]');
+  expect(await tour.locator('path').getAttribute('d')).toBe(await drawing.locator('#wind-route').getAttribute('d'));
+  await page.getByRole('button',{name:'Pause demo',exact:true}).click();
+  await expect.poll(()=>drawing.locator('html').getAttribute('data-replay-playing')).toBe('false');
+  const marker=()=>tour.locator('circle').first().evaluate(el=>[el.getAttribute('cx'),el.getAttribute('cy')]);
+  const stopped=await marker();
+  await page.waitForTimeout(250);
+  expect(await marker()).toEqual(stopped);
+  await page.getByRole('button',{name:'Play demo',exact:true}).click();
+  await expect.poll(marker).not.toEqual(stopped);
+  await expect.poll(() => replay.getAttribute('data-phase'),{timeout:12000}).toBe('3');
+  const detail=drawing.locator('[data-drawy-detail="evaporation"]');
+  await expect.poll(() => detail.count()).toBe(1);
+  expect(await detail.locator('p').first().innerText()).toContain('太阳');
+  expect(await detail.locator('p').first().innerText()).toContain('液态水');
+  expect(await detail.locator('svg[aria-label]').count()).toBe(1);
+  await settled();
+  const picture=(await drawing.locator('[data-module-id="landscape"]').boundingBox())!, panel=(await detail.boundingBox())!;
+  expect(picture.width).toBeGreaterThanOrEqual(fullPicture.width*.84);
+  expect(panel.x).toBeGreaterThan(picture.x + picture.width);
+  expect(await detail.evaluate(el=>getComputedStyle(el).overflowY)).toBe('hidden');
+  expect(await drawing.locator('#journey-connector path').getAttribute('d')).toMatch(/^M/);
+  expect(await frame.getAttribute('src')).toBe('/showcase/journey.html');
+  await expect.poll(() => replay.getAttribute('data-phase'),{timeout:12000}).toBe('0');
+  await expect.poll(() => detail.count()).toBe(0);
+  expect(asked).toEqual([]);
+});
+
+it("keeps the home replay readable on a narrow screen with reduced motion", async () => {
+  await page.setViewportSize({width:390,height:844});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.goto(base + '/');
+  await page.locator("[data-journey]").scrollIntoViewIfNeeded();
+  const frame=page.locator('iframe[data-preview="journey"]'), drawing=page.frameLocator('iframe[data-preview="journey"]');
+  await expect.poll(()=>frame.getAttribute('data-shown'),{timeout:10000}).toBe('true');
+  const rect=(await frame.boundingBox())!;
+  expect(rect.x).toBeGreaterThanOrEqual(0);
+  expect(rect.x+rect.width).toBeLessThanOrEqual(390);
+  expect(rect.height).toBeGreaterThanOrEqual(280);
+  const fullPicture=(await drawing.locator('[data-module-id="landscape"]').boundingBox())!;
+  await page.getByRole('button',{name:'04 Explore',exact:true}).click();
+  const detail=drawing.locator('[data-drawy-detail]');
+  await expect.poll(()=>detail.count()).toBe(1);
+  const panel=(await detail.boundingBox())!;
+  const expanded=(await frame.boundingBox())!;
+  const picture=(await drawing.locator('[data-module-id="landscape"]').boundingBox())!;
+  expect(picture.width).toBeCloseTo(fullPicture.width,0);
+  expect(expanded.height).toBeGreaterThan(rect.height+180);
+  expect(panel.y).toBeGreaterThanOrEqual(picture.y+picture.height);
+  expect(panel.x).toBeGreaterThanOrEqual(rect.x);
+  expect(panel.x+panel.width).toBeLessThanOrEqual(rect.x+rect.width);
+  const svg=(await detail.locator('svg[aria-label]').boundingBox())!;
+  expect(svg.y+svg.height).toBeLessThanOrEqual(panel.y+panel.height);
+  expect(await detail.evaluate(el=>getComputedStyle(el).overflowY)).toBe('hidden');
+  await page.getByRole('button',{name:'03 Animate',exact:true}).click();
+  await expect.poll(()=>detail.count()).toBe(0);
+  expect(asked).toEqual([]);
+  await page.emulateMedia({reducedMotion:'no-preference'});
+});
+
+it("scrolls over the home drawing without panning it or scrolling its detail", async () => {
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.goto(base + '/');
+  await page.locator("[data-journey]").scrollIntoViewIfNeeded();
+  const frame=page.locator('iframe[data-preview="journey"]'), drawing=page.frameLocator('iframe[data-preview="journey"]');
+  await expect.poll(()=>frame.getAttribute('data-shown'),{timeout:10000}).toBe('true');
+  expect(await frame.evaluate(el=>getComputedStyle(el).pointerEvents)).toBe('none');
+  const box=(await frame.boundingBox())!;
+  const paper=()=>drawing.locator('[data-module-id="landscape"]').evaluate(el=>el.getBoundingClientRect().toJSON());
+  const before=await paper();
+  await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
+  await page.mouse.wheel(0,350);
+  await expect.poll(()=>page.locator('[data-journey]').evaluate(el=>el.parentElement!.scrollTop)).toBeGreaterThan(200);
+  expect(await paper()).toEqual(before);
+  await page.emulateMedia({reducedMotion:'no-preference'});
+});
+
+it("shows nine automatic home examples whose actions prepare the chosen request", async () => {
+  await page.goto(base + '/');
+  const before=(await api('/works')).length;
+  const cards=page.getByRole('button',{name:/^Use example:/});
+  await expect.poll(() => cards.count()).toBe(9);
+  for(let i=0;i<9;i++) {
+    await cards.nth(i).scrollIntoViewIfNeeded();
+    await expect.poll(()=>cards.nth(i).locator('[data-mode="tile"]').getAttribute('data-ready'),{timeout:10000}).toBe('true');
+    await cards.nth(i).click();
+    expect(await page.locator('textarea').inputValue()).not.toBe('');
+    await expect.poll(() => page.locator('textarea').evaluate(el=>el===document.activeElement)).toBe(true);
+    expect(await page.locator('iframe[data-preview="journey"]').getAttribute('src')).toBe('/showcase/journey.html');
+  }
+  expect(asked).toEqual([]);
+  expect((await api('/works')).length).toBe(before);
+});
+
 it("makes a work for a request from the home page and sends the request there", async () => {
   await page.goto(base + "/");
   await page.locator("textarea").first().fill("A map of the tea route");
@@ -580,3 +788,20 @@ it("gives a dropped image only to the canvas or composer that received it", asyn
   expect((await rootOf(id)).modules).toHaveLength(3);
   await dataTransfer.dispose();
 });
+
+it("edits the real sails and moves the citrus with its pot during the shared home tour", async () => {
+  await page.goto(base + "/");
+  const hero=page.locator('[data-home-showcase]');
+  const boat=hero.frameLocator('iframe[src*="sailboat.html"]');
+  const plant=hero.frameLocator('iframe[src*="botanical.html"]');
+  await boat.locator('[data-module-id="sails"]').waitFor();
+  const sails=()=>boat.locator('[data-module-id="sails"]').evaluate(el=>el.shadowRoot!.innerHTML);
+  const first=await sails();
+  const position=(id:string)=>plant.locator(`[data-module-id="${id}"]`).evaluate(el=>parseFloat((el as HTMLElement).style.left));
+  const pot=await position('pot'),tree=await position('citrus'),can=await position('watering');
+  await expect.poll(sails,{timeout:8000}).not.toBe(first);
+  await expect.poll(()=>position('pot'),{timeout:23000}).toBeCloseTo(pot-32.4,1);
+  expect(await position('citrus')).toBeCloseTo(tree-32.4,1);
+  expect(await position('watering')).toBe(can);
+  expect(asked).toEqual([]);
+},45000);

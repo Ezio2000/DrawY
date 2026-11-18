@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { Library, LibraryError } from "./library.ts";
 import { Streets, StreetsError } from "./streets.ts";
@@ -179,7 +180,7 @@ export function createServer(
 if (import.meta.main) {
   const library = new Library(
     process.env.MATERIALS_DATA || "data/materials",
-    new URL("./seed", import.meta.url).pathname,
+    fileURLToPath(new URL("./seed", import.meta.url)),
   );
   serve({
     fetch: createServer(library).fetch,

@@ -29,6 +29,15 @@ export function useInView(ref: RefObject<HTMLElement | null>, open: boolean, men
       const box = ref.current;
       const list = find();
       if (!box || !list) return;
+      // Opening transforms change getBoundingClientRect, but positioning must use the
+      // menu's final size. Sample that pose without removing or restarting its animation.
+      const moving = list.getAnimations().flatMap((animation) => {
+        const end = animation.effect?.getComputedTiming().endTime;
+        return typeof end === "number" && Number.isFinite(end)
+          ? [{ animation, time: animation.currentTime, end }]
+          : [];
+      });
+      for (const { animation, end } of moving) animation.currentTime = end;
       list.style.translate = list.style.maxHeight = list.style.maxWidth = "";
       const view = seen();
       const right = view.left + view.width - EDGE,
@@ -71,6 +80,7 @@ export function useInView(ref: RefObject<HTMLElement | null>, open: boolean, men
       const dx = left - placed.left,
         dy = top - placed.top;
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) list.style.translate = `${dx}px ${dy}px`;
+      for (const { animation, time } of moving) animation.currentTime = time;
     };
     place();
     // What the menu shows can arrive later (styles, labels) and change its size.

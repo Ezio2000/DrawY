@@ -1,0 +1,63 @@
+{
+  "generated": "2026-11-17",
+  "author": "gpt-6.1-sol",
+  "method": "DrawY Agent.start → write_work → view_canvas → revised work → HTML export",
+  "images": "The image service returned usage_limit_reached (429) during the initial examples. The works use generated vector drawings and curated materials. No further raster image requests were made.",
+  "samples": [
+    {
+      "slug": "water",
+      "title": "一滴水的奇妙旅程 · 山海水循环",
+      "workId": "8467c3c8-5cc1-4ff4-b4c9-edc2fa34c3f4",
+      "revision": 5,
+      "variants": [
+        {
+          "file": "water-detail",
+          "revision": 4,
+          "viewport": "up to 760px; compact landscape"
+        },
+        {
+          "file": "water",
+          "revision": 5,
+          "viewport": "over 760px; panoramic landscape"
+        }
+      ]
+    },
+    {
+      "slug": "language",
+      "title": "一句回答的诞生",
+      "workId": "d08b689a-57ac-4c6d-a176-3828e10c8ae3",
+      "revision": 6
+    },
+    {
+      "slug": "red-chamber",
+      "title": "一眼看懂宝黛的来处",
+      "workId": "b3d64634-41b5-4f9c-bcf8-19e1ab9ae46a",
+      "revision": 6
+    },
+    {
+      "slug": "request",
+      "title": "一次请求的旅程",
+      "workId": "7359d93c-f910-444c-81ac-0c682563642c",
+      "revision": 5
+    },
+    {
+      "slug": "time",
+      "title": "一周的时间，花在哪里",
+      "workId": "60006468-9174-4695-82e6-4c2be45a290a",
+      "revision": 4
+    },
+    {
+      "slug": "project",
+      "title": "从想法到上线的14天",
+      "workId": "03df7ff7-65f8-4c08-b264-74c719b506ed",
+      "revision": 4
+    },
+    {
+      "slug": "solar",
+      "title": "地球的一年",
+      "workId": "8e4e71dd-39c8-4bd5-b3d7-67d74d7957cc",
+      "revision": 5
+    }
+  ],
+  "packaging": "HTML retains the generated work and embedded material snapshots. Shared /runtime/runtime.js renders it; showcase/player.js adds isolated playback control and fits the viewport. PNGs are exports of those same works."
+}

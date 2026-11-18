@@ -1,0 +1,26 @@
+{
+  "generated": "2026-11-17",
+  "request": "画一张山地到海洋的水循环图，让水汽、云、雨和河流动起来。点开「蒸发」，能看到水如何变成水汽的详细解释。",
+  "productionInstructions": "你正在精修已经生成的水循环作品，使它成为 DrawY 首页主视觉。用户明确嫌之前几座三角山、几棵小树、几条云的图像占位图。这次必须有专业自然图鉴/地理杂志封面级的完整景观，精致密集但有层次，浏览者第一眼就想停下来探索。请保留现有景观代码作为起点，真正提高质量，不要退回简单图标拼贴。\n构图1200×760左右，单一连续场景，景观占主体80%以上，16px边距，不画大标题和卡片。左上雪山群是视觉锚点（有冰川裂纹、积雪亮面、岩石阴影、等高线）；近中远三层山脊不同灰蓝明度；中下方蜿蜒的深蓝河谷串起雪融瀑布、冰川湖、针叶密林、河湾、小桥及山脚房屋；右侧海岸和海面波纹；底部薄薄地下横切面，有层理、砾石和含水层，讲清地表与地下如何汇入海。地形与小物件尺寸分明，不要把每个树画成相同三角形。精细线条与成片的淡色阴影互相衬托。不要空旷大白天，也不要把画面涂黑。流动的蓝水路应该是视觉主线。\n颜色严格保持产品的白纸#ffffff、蓝黑#161a22、强调蓝#2a56c6及透明淡蓝/冷灰，移除原作的米黄/雾绿/紫色。用高质量代码生成的矢量与绘制细节，不调用生图、不联网。白纸上淡彩、细钢笔轮廓、局部排线和自然地形层次；不是低多边形方块风，也不加渐变光效。\n五个标注：蒸发、凝结、降水、地表径流、地下水；28–30px无衬线深蓝，避开线条，不加大量小字。云海之间的空白处有细蓝弧形路径，把五过程连成读得懂的循环。蒸发水汽从海面向上、风把云向山移动、雨滴落到陆地、河水回海、地下水缓慢入海，科学方向准确。保留平稳 api.animate 动画，山树房屋固定不晃，12–16秒有意义的循环。\n交互要求：独立可点模块id必须为 evaporation-label，jump到真实详情 evaporation。让蓝色蒸发标注能从主画面中识别。不要重复画两个蒸发字。详情title“水，如何成为水汽？”，提供HTML短文和精细蓝色线描SVG分子示意图（液态水→吸收能量→水蒸气），解释太阳提供能量、气态水看不见、遇冷凝结成小水滴才成云。详情HTML结构为article，第一节h2/p/figure（figure中SVG及figcaption），第一节完整说明蒸发，后面的h2/p说明凝结。主图与详情必须在同一作品中。\n这是实际产品创作，不是假截图。请保存一份完整可看的精修线稿，view_canvas看过后再加淡彩、细节和动画；再保存成稿实际截图审查构图、文字、箭头。至少一轮针对截图的精修。不要只给原则说明，不提问，直接改好作品。不要改变空白作品其他数据。结束前必须查看最新版本。",
+  "workId": "f34066c2-6a61-4365-9aef-3b05d9e5a74f",
+  "runId": "5121271a-3185-4778-a0b4-c28b44fbb7f0",
+  "title": "山海之间 · 水的循环",
+  "draftRevision": 4,
+  "finalRevision": 7,
+  "detailId": "evaporation",
+  "method": "DrawY Agent.start → refine a copy of a real generated landscape → save line draft → view_canvas → finished landscape and native detail → view_canvas",
+  "playback": "28-second condensed reenactment in one persistent iframe: recorded request, 8-second SVG path tracing/fills/labels, native animation, then the original diagram scales aside as an excerpt of its native evaporation detail opens, linked to the actual hotspot. Mobile stacks the diagram and molecular SVG. The source HTML and work data remain unchanged. Stroke timing is presentation, not model token timing. The finished PNG is the loading fallback. Pointer and wheel events stay with the home page. No generation requests on visit.",
+  "seed": {
+    "workId": "8467c3c8-5cc1-4ff4-b4c9-edc2fa34c3f4",
+    "revision": 4
+  },
+  "presentation": {
+    "bounds": {
+      "x": 8,
+      "y": 60,
+      "width": 1184,
+      "height": 692
+    },
+    "detail": "A 272–320px side panel with geometry-based fitting preserves most of the original landscape width; at parent widths up to 1100px, the detail expands below the unchanged drawing."
+  }
+}

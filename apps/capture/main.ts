@@ -4,6 +4,7 @@ import { chromium } from "playwright";
 import { capture, render } from "../../modules/observation/capture.ts";
 const app = new Hono();
 const browser = await chromium.launch({
+  executablePath: process.env.DRAWY_CHROMIUM || undefined,
   headless: true,
   args: ["--no-sandbox"],
 });

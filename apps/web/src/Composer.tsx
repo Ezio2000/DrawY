@@ -59,6 +59,7 @@ export function Composer({
   quota,
   spent,
   collapsed,
+  signIn,
 }: {
   place: "home" | "dock";
   value: string;
@@ -96,6 +97,8 @@ export function Composer({
   /** While the author draws there is nothing to write: the box folds down to what is
    * happening and the button that stops it. */
   collapsed?: boolean;
+  /** A guest can draft freely; account-backed style choices first open sign-in. */
+  signIn?: () => void;
 }) {
   const t = useT(),
     locale = useLocale();
@@ -215,7 +218,11 @@ export function Composer({
             />
             {!!models?.labels.length && <ModelBar models={models} pick={choose} quota={quota} />}
             <span className={cx("composer-gap")} />
-            {setStyle && <StylePicker style={style} pick={setStyle} />}
+            {setStyle && (signIn ? (
+              <button className={cx("composer-tool")} aria-label={t.composer.style} onClick={signIn}>
+                <Palette size={17} />
+              </button>
+            ) : <StylePicker style={style} pick={setStyle} />)}
             {working ? (
               <button
                 className={cx("composer-stop")}

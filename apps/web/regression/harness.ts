@@ -2,7 +2,8 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   chromium,
   type Browser,
@@ -27,8 +28,7 @@ import type { Run, Step } from "../../../modules/contracts/index.ts";
  * page made for it. Set DRAWY_CHROMIUM to a Chromium executable where Playwright's own is
  * not installed. */
 
-const root = new URL("../../../", import.meta.url).pathname;
-const tsx = join(root, "node_modules/.bin/tsx");
+const root = fileURLToPath(new URL("../../../", import.meta.url));
 const processes: ChildProcess[] = [];
 let data: string;
 export let base: string, browser: Browser, context: BrowserContext, userId: string;
@@ -57,7 +57,7 @@ async function until(url: string) {
   throw Error("not up: " + url);
 }
 function start(args: string[], cwd: string, env: Record<string, string>) {
-  const child = spawn(tsx, args, { cwd, env: { ...process.env, ...env }, stdio: "pipe" });
+  const child = spawn(process.execPath, ["--import", "tsx", ...args], { cwd, env: { ...process.env, ...env }, stdio: "pipe" });
   child.stderr?.on("data", () => {});
   processes.push(child);
 }
@@ -102,8 +102,21 @@ beforeAll(async () => {
 }, 120_000);
 afterAll(async () => {
   await browser?.close();
-  for (const p of processes) p.kill();
-  rmSync(data, { recursive: true, force: true });
+  await Promise.all(processes.map((p) => new Promise<void>((resolve) => {
+    if (p.exitCode !== null || p.signalCode !== null) return resolve();
+    // On Windows a tsx helper can keep inherited pipes open after the server exits.
+    // Wait for the server itself, then release its pipes instead of waiting for "close".
+    p.once("exit", () => {
+      p.stdin?.destroy();
+      p.stdout?.destroy();
+      p.stderr?.destroy();
+      resolve();
+    });
+    p.kill();
+  })));
+  if (dirname(resolvePath(data)) !== resolvePath(tmpdir()) || !basename(data).startsWith("drawy-pages-"))
+    throw new Error("Refusing to clean a directory outside the regression test workspace");
+  rmSync(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 beforeEach(async () => {
   asked = [];
