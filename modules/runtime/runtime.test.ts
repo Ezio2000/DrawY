@@ -639,7 +639,7 @@ it("captures full scenes and completed interaction states through the same runti
         url: origin + "/api/works/fixture/scenes/root?revision=1",
         checks: work.scenes.root.checks,
         overview: true,
-        regions: [work.scenes.root.modules[4].bounds],
+        regions: [{ x: 0, y: 0, width: 600, height: 100 }],
         actions: [
           { moduleId: "control", selector: '[data-action="emphasize"]' },
           { moduleId: "level-2", selector: "svg" },
@@ -658,10 +658,17 @@ it("captures full scenes and completed interaction states through the same runti
   // Only the opening view carries the scene's modules.
   expect(shots.slice(1).every((s) => !s.modules)).toBe(true);
   expect(shots[3].camera.scale).toBeGreaterThan(shots[0].camera.scale);
-  // A close-up is framed to the area it was asked for, not to the whole screen.
-  expect(shots[3].viewport.width).toBeLessThan(1440);
+  // Read the actual PNG dimensions from IHDR. Full views are scaled, close-ups keep their viewport.
+  const pngSize = (shot: (typeof shots)[number]) => {
+    const png = Buffer.from(shot.base64!, "base64");
+    return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+  };
+  expect(pngSize(shots[0])).toEqual({ width: 1024, height: 640 });
+  expect(shots[3].viewport).toEqual({ width: 1222, height: 240 });
+  expect(pngSize(shots[3])).toEqual(shots[3].viewport);
   expect(shots[4].label).toContain("操作");
   expect(shots[4].viewport.width).toBe(1440);
+  expect(pngSize(shots[4])).toEqual({ width: 1024, height: 640 });
   expect(shots.every((s) => s.errors.length === 0)).toBe(true);
   expect(shots.filter((s) => s.sceneId === "child")).toHaveLength(1);
   expect(shots[0].base64).not.toBe(shots[1].base64);

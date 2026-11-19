@@ -195,7 +195,7 @@ export async function capture(
         label: string,
         overview = false,
         size = { width, height },
-        imageSize: { width: number; height: number } | undefined = OBSERVATION_IMAGE,
+        imageSize: { width: number; height: number } | null = OBSERVATION_IMAGE,
       ) => {
         const geometry = await page.evaluate(() => {
           const camera = window.drawyView.view;
@@ -348,7 +348,7 @@ export async function capture(
           );
           await ready(page);
           const seen = page.viewportSize()!;
-          await shot(`局部 ${Math.round(region.x)},${Math.round(region.y)}`, false, seen, undefined);
+          await shot(`局部 ${Math.round(region.x)},${Math.round(region.y)}`, false, seen, null);
         }
         await page.setViewportSize({ width, height });
       }
