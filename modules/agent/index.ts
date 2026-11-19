@@ -437,7 +437,8 @@ export class Agent {
       } catch (e) {
         signal.throwIfAborted();
         const error = e instanceof Error ? e.message : String(e);
-        if (call.step) Object.assign(call.step, { status: "failed", error });
+        // A write that saved before its embedded view failed stays saved.
+        if (call.step && call.step.status !== "done") Object.assign(call.step, { status: "failed", error });
         if (e instanceof Unavailable) throw e;
         outcome = { output: e instanceof Refusal ? e.output : { error }, error };
         tracer.note("tool error", { tool: item.name }, error);

@@ -926,6 +926,16 @@ it("stops the run when the canvas cannot be looked at, instead of spending turns
   expect(run.error).toContain("画布查看服务不可用");
 }, 20000);
 
+it("keeps a saved write done when its embedded view cannot reach the canvas", async () => {
+  vi.mocked(observe).mockRejectedValue(new Unavailable("画布查看服务不可用 (500)"));
+  script([["write_work", { title: "v2", view: { claims: ["c"] } }], ["finish", { message: "never" }]]);
+  const { run } = await execute();
+  expect(run.status).toBe("failed");
+  const [write, view] = run.steps.filter((s) => s.kind === "tool");
+  expect(write).toMatchObject({ name: "write_work", status: "done", revision: 2 });
+  expect(view).toMatchObject({ name: "view_canvas", status: "failed" });
+}, 20000);
+
 it("gives guides and drawing cards on demand, once, and reminds the author of those it has not read", async () => {
   work.materials = {};
   store.commit(work, 1, { kind: "edit" });
