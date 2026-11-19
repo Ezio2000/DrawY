@@ -113,13 +113,23 @@ export const guideSchema = z
       .describe("Library drawing ids whose cards to read, from the list under # Library"),
   })
   .refine((g) => g.topics?.length || g.drawings?.length, "至少要指定一个指南或画法");
-/** What write_work takes: an edit, and whether it finishes the write refused before it. */
+/** What write_work takes: an edit, whether it finishes the write refused before it, and an
+ * optional view to inspect the saved revision in the same turn. */
 export const writeSchema = workEditSchema.extend({
   amend: z
     .boolean()
     .optional()
     .describe(
       "Finish the write just refused: send only what corrects it, and both save as one revision",
+    ),
+  view: z
+    .object({
+      sceneId: viewSchema.shape.sceneId,
+      claims: viewSchema.shape.claims,
+    })
+    .optional()
+    .describe(
+      "Inspect the saved canvas right after saving (waits for developing pictures and returns the overview screenshot, saving a turn). Use only when the saved revision is ready to judge; omit for intermediate saves, detail-only edits you are not ready to inspect, or when you need view_canvas options (regions, annotate, actions).",
     ),
 });
 export const tools = [
@@ -155,7 +165,7 @@ export const tools = [
   ),
   fn(
     "write_work",
-    "Change the work, saving one new revision that the viewer sees drawn. Send only what changes: a record with a known id keeps every field you leave out, and a new id adds the record. data, defaults and style merge key by key, null deleting a key; code and pages change whole or by edits. The revision saves whole or not at all: a refusal lists every problem and holds the write, so correct it with amend: true and only what was wrong. Write modules before drawings and each module's bounds before its data, because the layout is shown to the viewer while the rest streams.",
+    "Change the work, saving one new revision that the viewer sees drawn. Send only what changes: a record with a known id keeps every field you leave out, and a new id adds the record. data, defaults and style merge key by key, null deleting a key; code and pages change whole or by edits. The revision saves whole or not at all: a refusal lists every problem and holds the write, so correct it with amend: true and only what was wrong. Write modules before drawings and each module's bounds before its data, because the layout is shown to the viewer while the rest streams. Pass view: { claims } when this save is ready to inspect so saving and viewing take one turn; omit view for intermediate saves not yet ready to inspect.",
     schema(writeSchema),
   ),
   fn(

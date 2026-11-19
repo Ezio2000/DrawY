@@ -22,7 +22,7 @@ import { said, type Context } from "./conversation.ts";
 import { guidesRead, readGuides } from "./guides.ts";
 import { completedRecords } from "./partial.ts";
 import { counted, failedOf, research, searchesLeft, spendImages } from "./spending.ts";
-import type { ToolStep } from "./steps.ts";
+import { activity, type ToolStep } from "./steps.ts";
 import {
   askSchema,
   findSchema,
@@ -105,7 +105,7 @@ export function parsedArguments(x: Execution, call: Item) {
     const kept = call.name === "write_work" ? completedRecords(call.arguments) : undefined;
     if (kept && Object.keys(kept).length) {
       const error = `工具参数不是有效的 JSON（${why}），没有保存`;
-      const { amend, ...records } = kept;
+      const { amend, view: _view, ...records } = kept;
       x.ctx.held = amend && x.ctx.held ? composed(x.ctx.held, records) : records;
       throw new Refusal(error, { error, note: heldNote(x.ctx.held) });
     }
@@ -290,7 +290,7 @@ export const handlers: Record<
 
   async write_work(x, args, call) {
     const { store, run, ctx } = x;
-    const { amend, ...written } = args;
+    const { amend, view, ...written } = args;
     if (amend && !ctx.held)
       throw new DomainError("没有等待修正的写入：amend 只用在一次写入被拒绝之后；这次把要改的内容直接写出来");
     // A correction lays over the write it corrects, and the two save as one revision.
@@ -314,17 +314,40 @@ export const handlers: Record<
     run.firstSceneMs ??= Date.now() - x.start;
     x.showWork(work);
     Object.assign(call.step!, { revision: work.revision, materials: added, writing: undefined });
-    return {
-      output: {
-        revision: work.revision,
-        ...(added.length ? { materialsAdded: added } : {}),
-        ...(keptTitle ? { title: `Kept the user's title "${work.title}".` } : {}),
-        ...(absent.length
-          ? { notThere: `Asked to remove what the work does not have: ${absent.join(", ")}.` }
-          : {}),
-        ...cardsUnread(work, ctx.input, call.batch),
-      },
+    const output: Record<string, unknown> = {
+      revision: work.revision,
+      ...(added.length ? { materialsAdded: added } : {}),
+      ...(keptTitle ? { title: `Kept the user's title "${work.title}".` } : {}),
+      ...(absent.length
+        ? { notThere: `Asked to remove what the work does not have: ${absent.join(", ")}.` }
+        : {}),
+      ...cardsUnread(work, ctx.input, call.batch),
     };
+    if (!view || call.batch.some((c) => c.name === "view_canvas")) return { output };
+    // Mark the write step done before the embedded view step starts waiting/capturing.
+    if (call.step) call.step.status = "done";
+    const viewArgs = typeof view === "object" && view ? view : {};
+    const viewStep: ToolStep = {
+      kind: "tool",
+      id: `${call.item.call_id}:view`,
+      status: "running",
+      ...activity("view_canvas", viewArgs, run.sceneId),
+    };
+    run.steps.push(viewStep);
+    x.emit();
+    try {
+      const viewed = await performView(x, viewArgs, viewStep);
+      viewStep.status = "done";
+      x.emit();
+      return { output: { ...output, view: viewed.output }, images: viewed.images };
+    } catch (e) {
+      x.signal.throwIfAborted();
+      const error = e instanceof Error ? e.message : String(e);
+      Object.assign(viewStep, { status: "failed", error });
+      x.emit();
+      if (e instanceof Unavailable) throw e;
+      return { output: { ...output, viewError: error } };
+    }
   },
 
   async view_canvas(x, args, call) {
@@ -335,60 +358,7 @@ export const handlers: Record<
     )
       throw Error("view_canvas must be called alone or after write_work calls");
     if (call.writeError) throw Error(`view_canvas was skipped because write_work failed: ${call.writeError}`);
-    const { run, signal } = x;
-    const step = call.step!;
-    const pending = x.developments.filter((d) => !d.settled);
-    run.status = "viewing";
-    // The pictures still to come, shortened as each arrives, so the wait shows going.
-    const left = () => {
-      const names = pending.filter((d) => !d.settled).map((d) => d.name);
-      return names.length ? names : undefined;
-    };
-    if (pending.length) {
-      Object.assign(step, { waiting: left() });
-      for (const d of pending)
-        void d.done.then(() => {
-          if (!("waiting" in step) || !step.waiting) return;
-          Object.assign(step, { waiting: left() });
-          x.emit();
-        });
-    }
-    x.emit();
-    try {
-      await Promise.race([
-        Promise.all(pending.map((d) => d.done)),
-        new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason))),
-      ]);
-      const images = (await x.developed()).flatMap((m) => m.content);
-      // The service may be restarting; after a few tries the run stops instead of
-      // spending the author's turns on a look it cannot get.
-      let result: Awaited<ReturnType<typeof observe>> | undefined;
-      for (const wait of [2000, 6000, 0]) {
-        try {
-          result = await observe(x.store, run.workId, args, signal, {
-            observations: run.observations,
-            reported: (x.ctx.reported ??= {}),
-          });
-          break;
-        } catch (e) {
-          if (!(e instanceof Unavailable) || !wait) throw e;
-          await pause(wait);
-        }
-      }
-      if (!result) throw new Unavailable("画布查看服务不可用");
-      run.observations.push(result.observation);
-      Object.assign(step, {
-        waiting: undefined,
-        screenshots: result.observation.screenshots.map(({ name, url }) => ({ name, url })),
-        errors: result.observation.errors,
-      });
-      return {
-        output: { ...result.observation, ...research(run) },
-        images: [...images, ...result.content],
-      };
-    } finally {
-      run.status = "running";
-    }
+    return performView(x, args, call.step!);
   },
 
   async web_search(x, args, call) {
@@ -436,6 +406,62 @@ export const handlers: Record<
     return { output: { url, text: await readPage(x.ctx.settings.search.service!, url, x.signal) } };
   },
 };
+/** Waits for developing pictures, captures the canvas, and records the observation on `step`. */
+async function performView(x: Execution, args: any, step: ToolStep): Promise<Outcome> {
+  const { run, signal } = x;
+  const pending = x.developments.filter((d) => !d.settled);
+  run.status = "viewing";
+  // The pictures still to come, shortened as each arrives, so the wait shows going.
+  const left = () => {
+    const names = pending.filter((d) => !d.settled).map((d) => d.name);
+    return names.length ? names : undefined;
+  };
+  if (pending.length) {
+    Object.assign(step, { waiting: left() });
+    for (const d of pending)
+      void d.done.then(() => {
+        if (!("waiting" in step) || !step.waiting) return;
+        Object.assign(step, { waiting: left() });
+        x.emit();
+      });
+  }
+  x.emit();
+  try {
+    await Promise.race([
+      Promise.all(pending.map((d) => d.done)),
+      new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason))),
+    ]);
+    const images = (await x.developed()).flatMap((m) => m.content);
+    // The service may be restarting; after a few tries the run stops instead of
+    // spending the author's turns on a look it cannot get.
+    let result: Awaited<ReturnType<typeof observe>> | undefined;
+    for (const wait of [2000, 6000, 0]) {
+      try {
+        result = await observe(x.store, run.workId, args, signal, {
+          observations: run.observations,
+          reported: (x.ctx.reported ??= {}),
+        });
+        break;
+      } catch (e) {
+        if (!(e instanceof Unavailable) || !wait) throw e;
+        await pause(wait);
+      }
+    }
+    if (!result) throw new Unavailable("画布查看服务不可用");
+    run.observations.push(result.observation);
+    Object.assign(step, {
+      waiting: undefined,
+      screenshots: result.observation.screenshots.map(({ name, url }) => ({ name, url })),
+      errors: result.observation.errors,
+    });
+    return {
+      output: { ...result.observation, ...research(run) },
+      images: [...images, ...result.content],
+    };
+  } finally {
+    run.status = "running";
+  }
+}
 /** What the search budget had left before this call, which is already among the steps. */
 function takeSearch(x: Execution, call: Call) {
   if (!x.ctx.settings.search.service) throw Error("This request has no search service.");
