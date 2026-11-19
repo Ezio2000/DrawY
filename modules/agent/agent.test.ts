@@ -926,6 +926,16 @@ it("stops the run when the canvas cannot be looked at, instead of spending turns
   expect(run.error).toContain("画布查看服务不可用");
 }, 20000);
 
+it("keeps a saved write done when its embedded view cannot reach the canvas", async () => {
+  vi.mocked(observe).mockRejectedValue(new Unavailable("画布查看服务不可用 (500)"));
+  script([["write_work", { title: "v2", view: { claims: ["c"] } }], ["finish", { message: "never" }]]);
+  const { run } = await execute();
+  expect(run.status).toBe("failed");
+  const [write, view] = run.steps.filter((s) => s.kind === "tool");
+  expect(write).toMatchObject({ name: "write_work", status: "done", revision: 2 });
+  expect(view).toMatchObject({ name: "view_canvas", status: "failed" });
+}, 20000);
+
 it("gives guides and drawing cards on demand, once, and reminds the author of those it has not read", async () => {
   work.materials = {};
   store.commit(work, 1, { kind: "edit" });
@@ -1010,3 +1020,30 @@ it("keeps the instructions and tools the same for every request, with what only 
   }
   expect(AUTHOR.length + index.length).toBeLessThan(32000);
 });
+
+it("observes in the same turn when write_work carries view, skips it on write failure, and does not double-capture beside view_canvas", async () => {
+  const seen = script([
+    // Failed write: embedded view must not run.
+    ["write_work", { modules: [{ id: "bad", label: "bad", bounds: [0, 0, 10, 10], drawingId: "missing" }], view: { claims: ["skip"] } }],
+    // Valid write with view: saves and captures in one turn, passing claims through.
+    ["write_work", { modules: [{ id: "m1", label: "ok", bounds: [0, 0, 40, 40], drawingId: "plot" }], view: { claims: ["m1 sits at origin"] } }],
+    // Batch with both write_work(view) and view_canvas: captures once, not twice.
+    [
+      item("write_work", { title: "v2", view: { claims: ["ignored duplicate"] } }, "w2"),
+      item("view_canvas", { claims: ["explicit look"] }, "v2"),
+    ],
+    ["finish", { message: "all checked" }],
+  ]);
+  const { run } = await execute();
+  expect(run.status).toBe("completed");
+  expect(vi.mocked(observe)).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(observe).mock.calls[0][2]).toEqual({ claims: ["m1 sits at origin"] });
+  expect(vi.mocked(observe).mock.calls[1][2]).toEqual({ claims: ["explicit look"] });
+  const [, writtenWithView, batchWrite] = outputs(seen.at(-1)!);
+  expect(writtenWithView.view).toMatchObject({ revision: 2, overview: true });
+  expect(batchWrite.view).toBeUndefined();
+  const viewSteps = run.steps.filter((s) => s.kind === "tool" && s.name === "view_canvas");
+  expect(viewSteps).toHaveLength(2);
+  expect(viewSteps.every((s) => s.status === "done")).toBe(true);
+});
+

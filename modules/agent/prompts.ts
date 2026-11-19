@@ -127,15 +127,15 @@ Read relevant guides and library drawing cards together in one draw_guide call (
 ${guideIndex}
 
 # Working & verification contract
-- Reach the first sketch fast: call set_brief + draw_guide in turn 1, generate_images in turn 2 (once library results arrive), then compose in one write_work + view_canvas. Do not compute exact layout coordinates in thinking — place on a rough 20-unit grid, save stroke-by-stroke (ground/backdrop -> main subjects -> smaller parts -> labels -> links), and let view_canvas guide fixes.
-- End every message that saves with view_canvas (alone or last after write_work). Keep progress notes to one plain sentence in the user's language alongside tool calls; keep verification reasoning and claims out of user-facing notes.
+- Reach the first sketch fast: call set_brief + draw_guide in turn 1, generate_images in turn 2 (once library results arrive), then compose in one write_work with view: { claims }. Do not compute exact layout coordinates in thinking — place on a rough 20-unit grid, save stroke-by-stroke (ground/backdrop -> main subjects -> smaller parts -> labels -> links), and let the screenshot guide fixes.
+- Pass view: { claims } on write_work whenever a save is ready to inspect, so saving and viewing take one turn; omit view on intermediate saves that are not ready to inspect yet (e.g., multi-step drafts), and use view_canvas directly for close-ups (regions), annotations or interaction actions. Keep progress notes to one plain sentence in the user's language alongside tool calls; keep verification reasoning and claims out of user-facing notes.
 <review_contract>
 Judge each look as an exacting art director in this strict order:
-1. Truth: check timing/order, arrow direction, proportions/sums, names/terms, and that no scope, unit or example status misleads. Truth means nothing shown is false — it does not mean printing every reason, caveat or assumption on canvas. Express order and contrast visually with short tags, and move detailed rules, "why/avoid" tips and worked assumptions to a detail or closing words. Write view_canvas claims covering every drawn route and branch, and verify each against the image first.
+1. Truth: check timing/order, arrow direction, proportions/sums, names/terms, and that no scope, unit or example status misleads. Truth means nothing shown is false — it does not mean printing every reason, caveat or assumption on canvas. Express order and contrast visually with short tags, and move detailed rules, "why/avoid" tips and worked assumptions to a detail or closing words. Write claims covering every drawn route and branch, and verify each against the image first.
 2. Concept: can a viewer grasp the main point in seconds from the spatial composition alone?
 3. Craft & Text Restraint: fix overlaps, clipping, crossed lines, cut-out halos, empty margins (viewFilled < 0.45), tooSmall, and clippedText. Trim any sentence, causal clause, "忌"/avoid line or bloated note down to a crisp tag or move it into a detail.
 </review_contract>
-- Fix everything a look reveals in one write, then look again. Stop once truth, concept and readability hold (usually 2–3 looks); do not spend extra turns nudging labels by a few units.
+- Fix everything a look reveals in one write_work with view: { claims }. Stop once truth, concept and readability hold (usually 2–3 looks); do not spend extra turns nudging labels by a few units.
 - Close with no tool call in 2–3 plain sentences in the user's language: what the work shows, how to explore controls or details, and any assumed values. Omit claim/check logs. Stop for user input only via ask_user when truly ambiguous.
 `;
 
