@@ -26,6 +26,12 @@ export const pictureRequestSchema = z.object({
     .enum(["square", "landscape", "portrait"])
     .default("square")
     .describe("The shape that fits the thing; size its module to it"),
+  quality: z
+    .enum(["low", "medium", "high"])
+    .default("medium")
+    .describe(
+      "Rendering detail: medium (default) for most illustrations, high for hero scenes/backdrops or intricate subjects, low for small icons or minor accents",
+    ),
   key: z
     .string()
     .optional()
@@ -176,16 +182,17 @@ async function paint(
   prompt: string,
   size: string,
   transparent: boolean,
+  quality: "low" | "medium" | "high",
   references: Uint8Array[],
 ) {
   if (!role.credential) throw Error("请在模型设置中配置生图凭证");
-  const attempt = async (background: string) => {
+  const attempt = async (background: string, q: string) => {
     const params = {
       model: role.model,
       prompt,
       n: 1,
       size,
-      quality: "auto",
+      quality: q,
       background,
     };
     let body: BodyInit;
@@ -229,13 +236,13 @@ async function paint(
   };
   // A dropped connection, a rate limit or a server error is retried; any other answer
   // is final.
-  const send = async (background: string) => {
+  const send = async (background: string, q: string) => {
     for (const wait of [3000, 10000, 0]) {
       const began = Date.now();
-      const r = await attempt(background).catch((e) => {
+      const r = await attempt(background, q).catch((e) => {
         tracer.note(
           "request",
-          { background, ms: Date.now() - began },
+          { background, quality: q, ms: Date.now() - began },
           e instanceof Error ? e.message : String(e),
         );
         if (!wait) throw e;
@@ -244,7 +251,7 @@ async function paint(
       if (r)
         tracer.note(
           "request",
-          { background, status: r.status, ms: Date.now() - began },
+          { background, quality: q, status: r.status, ms: Date.now() - began },
           r.ok ? undefined : `HTTP ${r.status}`,
         );
       if (r && (r.ok || (r.status !== 429 && r.status < 500) || !wait))
@@ -254,12 +261,19 @@ async function paint(
     }
     throw Error("unreachable");
   };
-  let r = await send(transparent ? "transparent" : "opaque");
-  // Not every picture model can leave the background clear.
-  if (r.status === 400 && transparent) {
+  let bg = transparent ? "transparent" : "opaque";
+  let q: string = quality;
+  let r = await send(bg, q);
+  // Not every picture model can leave the background clear or accept explicit quality tiers.
+  for (let tries = 0; tries < 2 && r.status === 400; tries++) {
     const text = await r.text();
-    if (!/background/i.test(text)) throw Error(`生图失败 400: ${text}`);
-    r = await send("auto");
+    if (bg === "transparent" && /background/i.test(text)) {
+      bg = "auto";
+      r = await send(bg, q);
+    } else if (q !== "auto" && /quality/i.test(text)) {
+      q = "auto";
+      r = await send(bg, q);
+    } else throw Error(`生图失败 400: ${text}`);
   }
   if (!r.ok) throw Error(`生图失败 ${r.status}: ${await r.text()}`);
   const data = (await r.json()) as {
@@ -405,16 +419,18 @@ export async function develop(
             {
               prompt,
               size: `${width}x${height}`,
+              quality: r.quality,
               model,
               references: r.references,
               styleReferences: styled,
             },
             async (span) => {
-              const references = await Promise.all(
-                [...r.references, ...styled].map((ref) =>
-                  library.thumb(ref, store.viewer, 512),
-                ),
-              );
+              const references = await Promise.all([
+                ...r.references.map((ref) => library.thumb(ref, store.viewer, 512)),
+                // Style references only convey medium, palette and texture; 256px keeps
+                // visual consistency while cutting image input tokens by ~75%.
+                ...styled.map((ref) => library.thumb(ref, store.viewer, 256)),
+              ]);
               if (references.length)
                 span.set({
                   referenceImages: references.map(
@@ -424,7 +440,14 @@ export async function develop(
                   ),
                 });
               const painting = async () => {
-                const result = await paint(role, prompt, `${width}x${height}`, transparent, references);
+                const result = await paint(
+                  role,
+                  prompt,
+                  `${width}x${height}`,
+                  transparent,
+                  r.quality,
+                  references,
+                );
                 count++;
                 usage = added(usage, result.usage);
                 // Preserve the charge in the trace before validation or a retry can fail.
