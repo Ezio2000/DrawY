@@ -136,6 +136,35 @@ async function signedIn(
   await context.addCookies([{ name: "drawy_session", value: cookie, url: origin }]);
   return context;
 }
+/** Full-viewport observation shots are scaled to this 16:10 size after layout and text
+ * measurement at OPENING_VIEW, halving visual input tokens while preserving detail. */
+const OBSERVATION_IMAGE = { width: 1024, height: 640 };
+
+/** Scales a PNG screenshot inside Chromium's canvas so no native image dependency is needed
+ * in the capture service. */
+async function scalePng(
+  page: Page,
+  png: Buffer,
+  target: { width: number; height: number },
+): Promise<string> {
+  return page.evaluate(
+    async ({ data, width, height }) => {
+      const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(bitmap, 0, 0, width, height);
+      bitmap.close();
+      return canvas.toDataURL("image/png").slice("data:image/png;base64,".length);
+    },
+    { data: png.toString("base64"), ...target },
+  );
+}
+
 export async function capture(
   browser: Browser,
   request: CaptureRequest,
@@ -166,6 +195,7 @@ export async function capture(
         label: string,
         overview = false,
         size = { width, height },
+        imageSize: { width: number; height: number } | undefined = OBSERVATION_IMAGE,
       ) => {
         const geometry = await page.evaluate(() => {
           const camera = window.drawyView.view;
@@ -229,6 +259,11 @@ export async function capture(
             }
             document.body.append(overlay);
           }, geometry);
+        const raw = await page.screenshot();
+        const base64 =
+          imageSize && (imageSize.width < size.width || imageSize.height < size.height)
+            ? await scalePng(page, raw, imageSize)
+            : raw.toString("base64");
         shots.push({
           camera: geometry.camera,
           ...(overview
@@ -238,7 +273,7 @@ export async function capture(
           label: `${size.width}px / ${label}`,
           overview,
           viewport: size,
-          base64: (await page.screenshot()).toString("base64"),
+          base64,
           errors: [
             ...new Set([
               ...errors,
@@ -313,7 +348,7 @@ export async function capture(
           );
           await ready(page);
           const seen = page.viewportSize()!;
-          await shot(`局部 ${Math.round(region.x)},${Math.round(region.y)}`, false, seen);
+          await shot(`局部 ${Math.round(region.x)},${Math.round(region.y)}`, false, seen, undefined);
         }
         await page.setViewportSize({ width, height });
       }

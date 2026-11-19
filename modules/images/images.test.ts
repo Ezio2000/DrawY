@@ -363,3 +363,33 @@ describe("pictures that depend on each other", () => {
     expect(calls).toBe(0);
   });
 });
+
+it("defaults quality to medium, passes explicit quality, falls back to auto on HTTP 400, and thumbs style refs at 256px", async () => {
+  const { store, role } = author({ channel: "oauth" });
+  const png = await picture();
+  const seen: { quality: string; background: string }[] = [];
+  const thumbSpy = vi.spyOn(client, "thumb");
+  library.route(async (_url, init) => {
+    const body = JSON.parse(init!.body as string);
+    seen.push({ quality: body.quality, background: body.background });
+    if (body.quality === "low")
+      return new Response("unsupported quality value", { status: 400 });
+    return painted(png);
+  });
+  const made = await develop(store, role, fixture(), [
+    { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale", references: ["microscope"] },
+    { name: { zh: "星云", en: "nebula" }, role: "scene", depicts: "a nebula", quality: "high" },
+    { name: { zh: "图标", en: "badge" }, role: "icon", depicts: "a star icon", quality: "low" },
+  ]);
+  const results = await Promise.all(made.map((d) => d.done));
+  expect(results.map((r) => r.status)).toEqual(["ready", "ready", "ready"]);
+  expect(seen).toContainEqual({ quality: "medium", background: "transparent" });
+  expect(seen).toContainEqual({ quality: "high", background: "opaque" });
+  expect(seen).toContainEqual({ quality: "low", background: "transparent" });
+  expect(seen).toContainEqual({ quality: "auto", background: "transparent" });
+  // Content reference uses 512px, style references use 256px.
+  expect(thumbSpy).toHaveBeenCalledWith("microscope", store.viewer, 512);
+  expect(thumbSpy).toHaveBeenCalledWith("apple-textbook", store.viewer, 256);
+  thumbSpy.mockRestore();
+});
+
