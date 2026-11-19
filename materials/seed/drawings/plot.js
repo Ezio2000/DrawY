@@ -58,21 +58,70 @@ if (xs.label)
 if (ys.label)
   out += `<text x="${pad.l}" y="${size * 1.1}" text-anchor="start" font-size="${size}" fill="${ink}">${esc(ys.label)}</text>`;
 const palette = [t.accent || "#d97757", t.accent2 || "#4a7fa8", ink, muted];
-(d.series || []).forEach((s, i) => {
+const clampY = (y) => Y(Math.max(ys.min, Math.min(ys.max, y)));
+const computed = (d.series || []).map((s, i) => {
   const f = s.fn ? new Function("x", "return " + s.fn) : null;
-  const pts = f
-    ? Array.from({ length: 241 }, (_, k) => {
-        const x = xs.min + ((xs.max - xs.min) * k) / 240;
-        return [x, f(x)];
-      })
-    : s.points || [];
-  const color = s.color || palette[i % palette.length];
+  const pts = (
+    f
+      ? Array.from({ length: 241 }, (_, k) => {
+          const x = xs.min + ((xs.max - xs.min) * k) / 240;
+          return [x, f(x)];
+        })
+      : s.points || []
+  ).filter(([, y]) => Number.isFinite(y));
+  return { s, pts, color: s.color || palette[i % palette.length] };
+});
+if (d.fillBetween) {
+  const fb = Array.isArray(d.fillBetween)
+    ? { from: d.fillBetween[0], to: d.fillBetween[1] }
+    : d.fillBetween;
+  const a = computed[fb.from ?? 0],
+    b = computed[fb.to ?? 1];
+  if (a?.pts.length >= 2 && b?.pts.length >= 2) {
+    const sortX = (pts) => [...pts].sort((p, q) => p[0] - q[0]);
+    const clipX = (pts, lo, hi) => {
+      const s = sortX(pts);
+      const yAt = (target) => {
+        for (let k = 0; k + 1 < s.length; k++) {
+          const [x0, y0] = s[k],
+            [x1, y1] = s[k + 1];
+          if (x0 <= target && target <= x1)
+            return x1 === x0 ? y0 : y0 + ((y1 - y0) * (target - x0)) / (x1 - x0);
+        }
+        return NaN;
+      };
+      const mid = s.filter(([x]) => x > lo && x < hi);
+      const yLo = yAt(lo),
+        yHi = yAt(hi);
+      return [
+        ...(Number.isFinite(yLo) ? [[lo, yLo]] : []),
+        ...mid,
+        ...(Number.isFinite(yHi) ? [[hi, yHi]] : []),
+      ];
+    };
+    const sa = sortX(a.pts),
+      sb = sortX(b.pts);
+    const xLo = Math.max(sa[0][0], sb[0][0]),
+      xHi = Math.min(sa[sa.length - 1][0], sb[sb.length - 1][0]);
+    if (xLo < xHi) {
+      const ca = clipX(sa, xLo, xHi),
+        cb = clipX(sb, xLo, xHi);
+      if (ca.length >= 2 && cb.length >= 2) {
+        const top = ca.map(([x, y], k) => `${k ? "L" : "M"}${X(x).toFixed(1)} ${clampY(y).toFixed(1)}`).join("");
+        const bot = [...cb].reverse().map(([x, y]) => `L${X(x).toFixed(1)} ${clampY(y).toFixed(1)}`).join("");
+        out += `<path d="${top}${bot}Z" fill="${fb.color || a.color}" fill-opacity="${Number(fb.opacity ?? 0.14)}" stroke="none"/>`;
+      }
+    }
+  }
+}
+computed.forEach(({ s, pts, color }) => {
+  if (s.area && pts.length) {
+    const line = pts.map(([x, y], k) => `${k ? "L" : "M"}${X(x).toFixed(1)} ${clampY(y).toFixed(1)}`).join("");
+    const base = clampY(ys.min).toFixed(1);
+    out += `<path d="${line}L${X(pts[pts.length - 1][0]).toFixed(1)} ${base}L${X(pts[0][0]).toFixed(1)} ${base}Z" fill="${color}" fill-opacity=".12" stroke="none"/>`;
+  }
   const path = pts
-    .filter(([, y]) => Number.isFinite(y))
-    .map(
-      ([x, y], k) =>
-        `${k ? "L" : "M"}${X(x).toFixed(1)} ${Y(Math.max(ys.min, Math.min(ys.max, y))).toFixed(1)}`,
-    )
+    .map(([x, y], k) => `${k ? "L" : "M"}${X(x).toFixed(1)} ${clampY(y).toFixed(1)}`)
     .join("");
   out += `<path d="${path}" fill="none" stroke="${color}" stroke-width="${Number(s.width ?? 2.2)}" stroke-linejoin="round" stroke-linecap="round" ${s.dashed ? 'stroke-dasharray="6 5"' : ""}/>`;
   if (s.dots)
@@ -80,7 +129,7 @@ const palette = [t.accent || "#d97757", t.accent2 || "#4a7fa8", ink, muted];
       out += `<circle cx="${X(x)}" cy="${Y(y)}" r="3.2" fill="${color}"/>`;
   if (s.label && pts.length) {
     const [x, y] = pts[pts.length - 1];
-    const py = Y(Math.max(ys.min, Math.min(ys.max, y)));
+    const py = clampY(y);
     out += `<text x="${X(x) - 4}" y="${py < pad.t + size ? py + size * 1.3 : py - size * 0.8}" text-anchor="end" font-size="${size}" fill="${color}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4">${esc(s.label)}</text>`;
   }
 });

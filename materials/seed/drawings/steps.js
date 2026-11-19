@@ -73,23 +73,38 @@ const at = (i) =>
         y: n > 1 ? r + sw + ((H - 2 * r - 2 * sw) * i) / (n - 1) : H / 2,
       }
     : { x: (W * (i + 0.5)) / n, y: r + sw };
+const arrow = !!d.arrow;
+const ah = Math.max(5, sw * 3.2);
 let out = "";
 for (let i = 0; i + 1 < n; i++) {
   const a = at(i),
     b = at(i + 1);
   const done = cur >= 0 && i < cur;
-  out += down
-    ? `<path d="M${a.x} ${a.y + r + 4}V${b.y - r - 4}" stroke="${done ? color : muted}" stroke-width="${sw * 1.4}" stroke-linecap="round"${done || cur < 0 ? "" : ` stroke-dasharray="${sw * 2} ${sw * 3}"`}/>`
-    : `<path d="M${a.x + r + 4} ${a.y}H${b.x - r - 4}" stroke="${done ? color : muted}" stroke-width="${sw * 1.4}" stroke-linecap="round"${done || cur < 0 ? "" : ` stroke-dasharray="${sw * 2} ${sw * 3}"`}/>`;
+  const lc = done ? steps[i].color || color : cur < 0 ? steps[i].color || color : muted;
+  const dash = done || cur < 0 ? "" : ` stroke-dasharray="${sw * 2} ${sw * 3}"`;
+  if (down) {
+    const y0 = a.y + r + 4,
+      y1 = b.y - r - 4;
+    out += `<path d="M${a.x} ${y0}V${arrow ? y1 - ah : y1}" stroke="${lc}" stroke-width="${sw * 1.4}" stroke-linecap="round"${dash}/>`;
+    if (arrow)
+      out += `<path class="plain" d="M${a.x} ${y1}l${-ah * 0.55} ${-ah}h${ah * 1.1}z" fill="${lc}"/>`;
+  } else {
+    const x0 = a.x + r + 4,
+      x1 = b.x - r - 4;
+    out += `<path d="M${x0} ${a.y}H${arrow ? x1 - ah : x1}" stroke="${lc}" stroke-width="${sw * 1.4}" stroke-linecap="round"${dash}/>`;
+    if (arrow)
+      out += `<path class="plain" d="M${x1} ${a.y}l${-ah} ${-ah * 0.55}v${ah * 1.1}z" fill="${lc}"/>`;
+  }
 }
 steps.forEach((s, i) => {
   const p = at(i);
+  const sc = s.color || color;
   const state =
     cur < 0 ? "plain" : i < cur ? "done" : i === cur ? "current" : "todo";
-  const fill = state === "todo" ? paper : state === "plain" ? color : color;
+  const fill = state === "todo" ? paper : sc;
   if (state === "current")
-    out += `<circle cx="${p.x}" cy="${p.y}" r="${r + 5}" fill="none" stroke="${color}" stroke-opacity=".35" stroke-width="${sw * 2}"/>`;
-  out += `<circle cx="${p.x}" cy="${p.y}" r="${r}" fill="${fill}" stroke="${state === "todo" ? muted : color}" stroke-width="${sw}"/>`;
+    out += `<circle cx="${p.x}" cy="${p.y}" r="${r + 5}" fill="none" stroke="${sc}" stroke-opacity=".35" stroke-width="${sw * 2}"/>`;
+  out += `<circle cx="${p.x}" cy="${p.y}" r="${r}" fill="${fill}" stroke="${state === "todo" ? muted : sc}" stroke-width="${sw}"/>`;
   out += `<text x="${p.x}" y="${p.y}" text-anchor="middle" font-size="${r * 0.95}" font-weight="700" fill="${state === "todo" ? muted : paper}">${esc(s.number ?? i + 1)}</text>`;
   const lx = down ? p.x + r + size * 0.9 : p.x,
     ly = down ? p.y - (s.note ? size * 0.55 : 0) : p.y + r + size * 1.3;

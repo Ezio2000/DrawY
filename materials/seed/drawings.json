@@ -613,7 +613,11 @@
       },
       "series": {
         "type": "array",
-        "description": "[{fn: 'expression in x'} or {points: [[x,y]]}, label, color, width, dashed, dots}]"
+        "description": "[{fn: 'expression in x'} or {points: [[x,y]]}, label, color, width, dashed, dots, area]"
+      },
+      "fillBetween": {
+        "type": "array",
+        "description": "[i, j] or {from, to, color?, opacity?} to shade the area between two series"
       },
       "grid": {
         "type": "boolean",
@@ -701,6 +705,12 @@
       "to": {
         "type": "number",
         "description": "end of the axis; defaults to the last event"
+      },
+      "spacing": {
+        "type": "choice",
+        "options": ["linear", "even"],
+        "default": "linear",
+        "description": "linear spaces by date value; even spaces events evenly in order when dates cluster or span widely"
       },
       "size": {
         "type": "number",
@@ -2007,7 +2017,7 @@
     "params": {
       "steps": {
         "type": "array",
-        "description": "[{label, note?, number?}] or names"
+        "description": "[{label, note?, number?, color?}] or names"
       },
       "current": {
         "type": "number",
@@ -2022,6 +2032,11 @@
         "options": ["row", "column"],
         "default": "row",
         "description": "across or down"
+      },
+      "arrow": {
+        "type": "boolean",
+        "default": false,
+        "description": "draw directional arrowheads on the connectors between steps"
       },
       "color": {
         "type": "color",
