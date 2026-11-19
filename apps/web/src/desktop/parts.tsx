@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import { ChevronDown, X, MessagesSquare, PencilLine, History, Check, Undo2, Redo2 } from "lucide-react";
 import type { Canvas, CanvasOptions, Pointed } from "../../../../modules/canvas/index.ts";
 import type { Selection, Target } from "../../../../modules/contracts/index.ts";
@@ -147,6 +147,7 @@ export function CanvasArea({
   board,
   setBoard,
   help,
+  opening,
 }: {
   session: WorkSession;
   editing: boolean;
@@ -161,9 +162,11 @@ export function CanvasArea({
   setBoard: (change: Partial<BoardSettings>) => void;
   /** Shows the shortcuts and gestures. */
   help: () => void;
+  /** The sheet laid over the work's first scene while it is blank. */
+  opening?: ReactNode;
 }) {
   counted("canvas");
-  const { display, sceneId, locked, run, id } = useSelect(session, shownOf);
+  const { display, sceneId, locked, run, id, root } = useSelect(session, shownOf);
   return (
     <SceneView
       key={id}
@@ -189,6 +192,7 @@ export function CanvasArea({
       board={board}
       setBoard={setBoard}
       help={help}
+      opening={root ? opening : undefined}
     />
   );
 }

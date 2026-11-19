@@ -101,6 +101,42 @@ const zh = {
     firstSteps: "在下面写下想画的主题和看图的人，比如“给初中生讲光合作用”，DrawY 会画出一幅能点开探索的图。也可以先点输入框上方的示例试试，或新建空白画布自己画。",
     all: "查看全部",
   },
+  // The blank sheet a work starts on: what DrawY makes, requests to try and the drawing
+  // each would give.
+  opening: {
+    head: "把想弄懂的事，",
+    tail: ["画成一张", "能点开", "的图。"] as [string, string, string],
+    try: "试试这样问",
+    sampleOf: (ask: string) => `样图：${ask}`,
+    asks: [
+      { ask: "太阳系是如何运转的？", who: "讲给小学生", text: "太阳系是如何运转的？讲给小学生听" },
+      { ask: "大语言模型是怎么工作的？", who: "讲给没学过编程的人", text: "大语言模型是怎么工作的？讲给没学过编程的人" },
+      { ask: "《红楼梦》里的人物关系", who: "给第一次读的人", text: "《红楼梦》里的人物关系，给第一次读的人看" },
+    ],
+    solar: {
+      planets: ["水星", "地球", "木星", "土星"],
+      periods: ["88 天", "1 年", "12 年", "29 年"],
+      distance: "1 天文单位 ≈ 1.5 亿公里",
+      open: "四季从哪来",
+    },
+    model: {
+      tokens: ["猫", "坐", "在", "垫", "子"],
+      next: "下一个字",
+      options: [
+        ["上", 62],
+        ["边", 21],
+        ["里", 9],
+      ] as [string, number][],
+      note: "每次只猜下一个字",
+      attention: "注意力",
+      open: "注意力怎么算",
+    },
+    kin: {
+      names: ["贾母", "贾宝玉", "林黛玉", "薛宝钗", "王熙凤"],
+      ties: ["祖孙", "外孙女", "知己", "成婚", "管家"],
+      open: "宝玉这一生",
+    },
+  },
   // Composer
   composer: {
     describe: "描述你想画的内容",
@@ -1329,6 +1365,40 @@ const en: Words = {
     noWorks: "This sheet is still blank",
     firstSteps: "Write below what to draw and who it is for, such as “photosynthesis for a 13-year-old”, and DrawY draws a picture you can open up and explore. Or try one of the examples over the box, or start a blank canvas and draw it yourself.",
     all: "See all",
+  },
+  opening: {
+    head: "Ask what puzzles you.",
+    tail: ["Get a drawing you can ", "open up", "."],
+    try: "Try asking",
+    sampleOf: (ask) => `Sample: ${ask}`,
+    asks: [
+      { ask: "How does the solar system work?", who: "for a ten-year-old", text: "How does the solar system work? For a ten-year-old." },
+      { ask: "How do large language models work?", who: "for someone who doesn’t code", text: "How do large language models work? For someone who doesn’t code." },
+      { ask: "Who’s who in Dream of the Red Chamber", who: "for a first-time reader", text: "Who’s who in Dream of the Red Chamber, for a first-time reader." },
+    ],
+    solar: {
+      planets: ["Mercury", "Earth", "Jupiter", "Saturn"],
+      periods: ["88 days", "1 year", "12 years", "29 years"],
+      distance: "1 AU ≈ 150 million km",
+      open: "Why seasons",
+    },
+    model: {
+      tokens: ["The", "cat", "sat", "on", "the"],
+      next: "Next word",
+      options: [
+        ["mat", 62],
+        ["floor", 21],
+        ["sofa", 9],
+      ],
+      note: "It only guesses the next word",
+      attention: "Attention",
+      open: "How attention works",
+    },
+    kin: {
+      names: ["Grandmother Jia", "Jia Baoyu", "Lin Daiyu", "Xue Baochai", "Wang Xifeng"],
+      ties: ["grandson", "granddaughter", "soulmates", "marries", "runs the house"],
+      open: "His story",
+    },
   },
   composer: {
     describe: "Describe what you want to draw",

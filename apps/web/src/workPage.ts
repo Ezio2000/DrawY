@@ -24,6 +24,9 @@ export const shownOf = (s: Snapshot) => ({
   sceneId: s.sceneId,
   locked: s.locked,
   run: s.engaged ? s.run : undefined,
+  // The work's own first scene, not an earlier version of it: where a blank sheet is
+  // where a work starts.
+  root: !s.preview && s.sceneId === s.work?.rootSceneId,
 });
 
 /** What the notes over the canvas read: a preview, going back, a request held for unsaved

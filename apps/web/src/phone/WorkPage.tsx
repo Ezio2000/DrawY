@@ -9,6 +9,7 @@ import type { Selection } from "../../../../modules/contracts/index.ts";
 import { Retype } from "../Editor.tsx";
 import { useT } from "../i18n.tsx";
 import { Library } from "../Library.tsx";
+import { Opening } from "../Opening.tsx";
 import { counted } from "../probe.ts";
 import { useSelect } from "../session/store.ts";
 import type { ShellProps } from "../shell.ts";
@@ -95,6 +96,7 @@ export default function PhoneWorkPage({ session, asking, feedback, go }: ShellPr
           open={open}
           select={setSelected}
           point={point}
+          opening={<Opening draft={draft} place="phone" />}
         />
         <TopBar session={session} back={() => go("/")} open={show} undo={undo} />
         {retyping && stage.current && (

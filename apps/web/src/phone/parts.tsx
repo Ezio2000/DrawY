@@ -124,15 +124,18 @@ export function PhoneCanvas({
   open,
   select,
   point,
+  opening,
 }: {
   session: WorkSession;
   view: (canvas: Canvas | undefined) => void;
   open: (target: Target) => void;
   select: (selection: Selection[]) => void;
   point: (pointed: Pointed) => void;
+  /** The sheet laid over the work's first scene while it is blank. */
+  opening?: ReactNode;
 }) {
   counted("phone.canvas");
-  const { display, sceneId, locked, run, id } = useSelect(session, shownOf);
+  const { display, sceneId, locked, run, id, root } = useSelect(session, shownOf);
   return (
     <SceneView
       key={id}
@@ -152,6 +155,7 @@ export function PhoneCanvas({
       commit={session.ops.move}
       point={point}
       hold={() => navigator.vibrate?.(8)}
+      opening={root ? opening : undefined}
     />
   );
 }

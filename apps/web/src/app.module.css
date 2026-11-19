@@ -2124,6 +2124,509 @@ span.model-bar {
   pointer-events: none;
 }
 
+/* ---------- The blank sheet ---------- */
+
+/* A work's first scene before anything is drawn: the drawing board, set up. The paper is
+   squared and the rulers run along it as they do while drawing by hand, with the tools in
+   their tray beside it on the desk page, so taking one up changes nothing but the hand.
+   What DrawY makes is lettered once, in the large type of a drawing's title; under it,
+   requests to try, set as a drawing register is, one to a ruled line; beside them, the
+   drawing the request pointed at would give, pencilled in as the canvas draws: the blue
+   pencil runs the relations and the measures, the words follow in ink and the painted
+   subjects develop from grey, and the rulers cast its extent as they cast a selection.
+   Nothing moves until it comes up or is pointed at. Once the person writes a request of
+   their own, the sample steps back under the paper. */
+
+/* The squared paper, laid square for square over the canvas's own. The sheet over it
+   squares its own ground in register, so the pictures on it are printed onto the paper
+   (multiplied), their white ground letting the squares through. */
+.squared,
+.opening {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--ai) 10%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--ai) 10%, transparent) 1px, transparent 1px),
+    linear-gradient(to right, color-mix(in srgb, var(--ai) 4.5%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--ai) 4.5%, transparent) 1px, transparent 1px);
+  background-size:
+    var(--coarse) var(--coarse),
+    var(--coarse) var(--coarse),
+    var(--fine) var(--fine),
+    var(--fine) var(--fine);
+}
+
+.squared {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background-color: var(--paper);
+  background-position: var(--square-x) var(--square-y);
+  pointer-events: none;
+}
+
+/* The board is there with the page, and taken up from the blank sheet, the tools are
+   already where they lie: nothing comes in. */
+.stage:has(> [data-opening]) :is(.tray, .ruler, .ruler-corner),
+.stage[data-boarded] .tray {
+  animation: none;
+}
+
+.opening {
+  --top: 64px;
+  position: absolute;
+  z-index: 2;
+  top: var(--top);
+  right: 0;
+  bottom: calc(var(--clear, 120px) + 20px);
+  left: 0;
+  padding: 0 clamp(24px, 5.5vw, 88px);
+  overflow: hidden;
+  background-color: var(--paper);
+  background-position: var(--square-x) calc(var(--square-y) - var(--top));
+  container: opening / size;
+}
+
+/* On the desk page, under the title and clear of the tray. */
+.opening[data-place="desk"] {
+  --top: 80px;
+  padding-left: max(110px, clamp(24px, 5.5vw, 88px));
+}
+
+/* On a phone, under its top bar and clear of the screen's rounded edges. */
+.opening[data-place="phone"] {
+  --top: calc(max(8px, env(safe-area-inset-top)) + 60px);
+  bottom: calc(var(--clear, 120px) + 12px);
+  padding: 0 max(22px, env(safe-area-inset-right)) 0 max(22px, env(safe-area-inset-left));
+}
+
+.opening-layout {
+  height: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  display: grid;
+  grid-template:
+    "copy" auto
+    "specimen" minmax(0, 1fr)
+    "asks" auto / minmax(0, 1fr);
+  row-gap: 22px;
+  align-content: center;
+}
+
+/* Wide enough, the words take the left and the drawing the right, both on the middle. */
+@container opening (min-width: 860px) {
+  .opening-layout {
+    grid-template:
+      "copy specimen" auto
+      "asks specimen" auto / minmax(300px, 28.5rem) minmax(0, 1fr);
+    column-gap: clamp(36px, 5cqw, 80px);
+    row-gap: clamp(26px, 6cqh, 48px);
+  }
+}
+
+.opening-copy {
+  grid-area: copy;
+  display: grid;
+  justify-items: start;
+  gap: 16px;
+}
+
+.opening-copy h1 {
+  margin-top: 6px;
+  font-size: clamp(30px, 3cqw + 8px, 44px);
+  font-weight: 720;
+  line-height: 1.14;
+  letter-spacing: -0.024em;
+  color: var(--ink);
+}
+
+.opening-copy h1:lang(zh) {
+  letter-spacing: 0.01em;
+}
+
+.opening-copy h1 > span {
+  display: block;
+  text-wrap: balance;
+}
+
+/* The words that say what is new, underlined once in the blue pencil, by hand. */
+.opening-mark {
+  position: relative;
+  white-space: nowrap;
+}
+
+.opening-mark svg {
+  position: absolute;
+  left: -2%;
+  bottom: -0.17em;
+  width: 104%;
+  height: 0.3em;
+  overflow: visible;
+}
+
+.opening-mark path {
+  fill: none;
+  stroke: var(--ai);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  animation: pencil-in 0.7s var(--ease-in-out) 0.4s both;
+}
+
+.opening-asks {
+  grid-area: asks;
+  min-width: 0;
+}
+
+.opening-asks ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.opening-asks li {
+  border-bottom: 1px solid var(--line);
+}
+
+.opening-asks li > button {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 11px 6px 11px 0;
+  text-align: left;
+  border-radius: 0;
+}
+
+/* The lead into a request, drawn out in the blue pencil for the one whose drawing shows. */
+.opening-asks li > button > i {
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--line-strong);
+  transition:
+    width 0.35s var(--ease-out),
+    background-color 0.2s var(--ease);
+}
+
+.opening-asks li > button:hover > i,
+.opening-asks li > button[data-shown] > i {
+  width: 20px;
+  background: var(--ai);
+}
+
+.opening-subject {
+  display: none;
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+}
+
+.opening-asks b {
+  display: block;
+  font-size: 15.5px;
+  font-weight: 640;
+  line-height: 1.38;
+  color: var(--ink);
+}
+
+.opening-asks small {
+  display: block;
+  margin-top: 1px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-3);
+}
+
+/* Where a request picked goes: down into the composer. */
+.opening-use {
+  margin-left: 12px;
+  color: var(--ai-deep);
+  opacity: 0;
+  translate: -4px 0;
+  transition:
+    opacity 0.2s var(--ease),
+    translate 0.3s var(--ease-out);
+}
+
+.opening-asks li > button:hover .opening-use,
+.opening-asks li > button:focus-visible .opening-use {
+  opacity: 1;
+  translate: 0 0;
+}
+
+.opening-asks li > button:active {
+  background: var(--fill);
+}
+
+.opening-asks li > button:focus-visible {
+  outline: 2px solid var(--ai);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+.specimen {
+  position: relative;
+  grid-area: specimen;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  transition:
+    opacity 0.6s var(--ease),
+    filter 0.6s var(--ease);
+}
+
+/* Under the words, the drawing takes the room left and keeps its shape inside it. */
+.specimen svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+@container opening (min-width: 860px) {
+  .specimen svg {
+    position: static;
+    height: auto;
+    max-height: 100cqh;
+  }
+}
+
+.specimen svg,
+.opening-subject {
+  mix-blend-mode: multiply;
+}
+
+/* The person writes their own: the sample steps back under the paper. */
+.opening[data-own] .specimen {
+  opacity: 0.14;
+  filter: grayscale(1);
+}
+
+.specimen text {
+  font-family: var(--font);
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.specimen [data-tone="ink"] {
+  fill: var(--ink);
+}
+
+.specimen [data-tone="quiet"] {
+  fill: var(--text-3);
+}
+
+.specimen [data-tone="pencil"] {
+  fill: var(--ai-deep);
+}
+
+.specimen path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.specimen [data-orbit] {
+  stroke: var(--ai);
+  stroke-opacity: 0.5;
+  stroke-width: 1.2;
+}
+
+.specimen [data-axis] {
+  stroke: var(--ai);
+  stroke-opacity: 0.32;
+  stroke-dasharray: 1 6;
+}
+
+.specimen [data-measure] path,
+.specimen [data-extension] {
+  stroke: var(--ai);
+  stroke-width: 1;
+}
+
+.specimen [data-extension] {
+  stroke-opacity: 0.45;
+}
+
+/* The canvas's own mark for a part that opens onto more, as it shows when pointed at. */
+.specimen [data-mark] rect {
+  fill: var(--paper);
+  stroke: var(--ai);
+  stroke-opacity: 0.55;
+}
+
+.specimen [data-mark] path {
+  stroke: var(--ai-deep);
+  stroke-width: 1.7;
+}
+
+.specimen [data-mark] text {
+  fill: var(--ai-deep);
+  font-size: 11.5px;
+  font-weight: 550;
+  stroke: none;
+}
+
+.specimen [data-tile],
+.specimen [data-card] {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 1.3;
+}
+
+.specimen [data-ghost] {
+  fill: var(--blue-soft);
+  stroke: var(--ai);
+  stroke-width: 1.3;
+  stroke-dasharray: 4 4;
+}
+
+.specimen [data-attends] {
+  stroke: var(--ai);
+}
+
+.specimen [data-flow],
+.specimen [data-leader] {
+  stroke: var(--ink);
+  stroke-opacity: 0.5;
+  stroke-width: 1.2;
+}
+
+.specimen [data-dot] {
+  fill: var(--ink);
+  fill-opacity: 0.6;
+}
+
+.specimen [data-bar] {
+  fill: var(--line-strong);
+}
+
+.specimen [data-bar="top"] {
+  fill: var(--ai);
+}
+
+.specimen [data-tie="ink"] {
+  stroke: var(--ink);
+  stroke-opacity: 0.5;
+  stroke-width: 1.3;
+}
+
+.specimen [data-tie="pencil"] {
+  stroke: var(--ai);
+  stroke-width: 2.2;
+}
+
+.specimen [data-dashed] {
+  stroke-dasharray: 5 5;
+}
+
+/* Too short to show the drawing under the words, as on a phone: the words and the
+   requests. */
+@container opening (max-width: 859px) and (max-height: 639px) {
+  .opening-layout {
+    grid-template:
+      "copy" auto
+      "asks" auto / minmax(0, 1fr);
+    row-gap: 28px;
+  }
+
+  .opening-layout > .specimen {
+    display: none;
+  }
+
+  /* Each request leads with the painted subject of its drawing instead. */
+  .opening-asks li > button {
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+  }
+
+  .opening-asks li > button > i {
+    display: none;
+  }
+
+  .opening-asks .opening-subject {
+    display: block;
+  }
+}
+
+/* Barely any room, as on a phone held on its side: the requests alone, a line each. */
+@container opening (max-height: 300px) {
+  .opening-copy {
+    display: none;
+  }
+
+  .opening-asks li > button {
+    min-height: 44px;
+    padding-block: 4px;
+  }
+
+  .opening-asks small {
+    display: none;
+  }
+
+  .opening-subject {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+/* Pencilled in: lines run along their length, words and marks come after, the painted
+   subjects develop from grey and the scores grow from their start. */
+.specimen [data-line] {
+  animation: pencil-in 0.8s var(--ease-in-out) var(--d, 0s) both;
+}
+
+.specimen [data-fade] {
+  animation: ink-in 0.45s var(--ease) var(--d, 0s) both;
+}
+
+/* Developed as the canvas develops a picture, like a print in the tray. */
+.specimen [data-develop] {
+  animation: develop 1.1s var(--ease-out) var(--d, 0s) both;
+}
+
+.specimen [data-grow] {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: grow-out 0.6s var(--ease-out) var(--d, 0s) both;
+}
+
+@keyframes pencil-in {
+  from {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes ink-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes grow-out {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .specimen *,
+  .opening-mark path {
+    animation: none !important;
+  }
+}
+
 
 /* ---------- The author on the canvas ---------- */
 
@@ -4351,7 +4854,7 @@ body:has(.resizer[data-dragging]) {
   color: var(--text);
 }
 
-.stage[data-ruled] .untuck {
+.stage:has(> .ruler) .untuck {
   top: 30px;
 }
 
@@ -4397,7 +4900,7 @@ body:has(.resizer[data-dragging]) {
 }
 
 /* The title and the tray stand clear of the rulers. */
-.stage[data-ruled] .topbar {
+.stage:has(> .ruler) .topbar {
   top: 30px;
   left: 30px;
   max-width: calc(100% - 50px);
@@ -4428,7 +4931,7 @@ body:has(.resizer[data-dragging]) {
   }
 }
 
-.stage[data-ruled] .tray {
+.stage:has(> .ruler) .tray {
   top: 82px;
   left: 30px;
 }

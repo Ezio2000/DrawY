@@ -353,20 +353,23 @@ it("catches up on what changed while the page was hidden, as a phone does with a
   await expect.poll(() => top().innerText(), { timeout: 10_000 }).toContain("Renamed elsewhere");
 });
 
-it("lays the home page out for a phone: it scrolls to every work, and its menus open inside the screen", async () => {
-  for (let i = 0; i < 5; i++) await make();
+it("lays the blank sheet out for a phone: its requests to try lead with their pictures over the composer, one tapped is written into it, and its menus open inside the screen", async () => {
   await page.goto(base + "/");
   await settled();
-  const works = page.locator("ul li button", { hasText: "Check" });
-  // Every work is there to scroll to (the other tests made some too).
-  await expect.poll(() => works.count()).toBeGreaterThanOrEqual(5);
-  const last = works.last();
-  await last.scrollIntoViewIfNeeded();
-  const r = (await last.boundingBox())!;
-  expect(r.y + r.height).toBeLessThanOrEqual(664);
-  // The composer stays at the foot, over the works.
-  const field = (await page.locator("textarea").boundingBox())!;
-  expect(field.y + field.height).toBeLessThanOrEqual(664);
+  const ask = page.getByRole("button", { name: /How does the solar system work\?/ });
+  const r = (await ask.boundingBox())!;
+  const field = (await composer().boundingBox())!;
+  // The requests are on screen, between the top bar and the composer.
+  expect(r.y).toBeGreaterThan(60);
+  expect(r.y + r.height).toBeLessThanOrEqual(field.y);
+  // There is no room for the drawing each would give: each leads with its picture.
+  expect(await page.getByRole("img", { name: /^Sample:/ }).count()).toBe(0);
+  expect(await ask.locator("img").isVisible()).toBe(true);
+  // A request tapped is written into the composer to finish, not sent.
+  await ask.tap();
+  expect(await composer().inputValue()).toBe("How does the solar system work? For a ten-year-old.");
+  expect(asked).toEqual([]);
+  await composer().fill("");
   for (const name of ["Add", "Style"]) {
     await page.getByRole("button", { name, exact: true }).tap();
     await settled();

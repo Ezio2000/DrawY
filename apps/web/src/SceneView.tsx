@@ -1,7 +1,7 @@
 import { detailElement } from "../../../modules/runtime/detail.ts";
 import type { WorkSession } from "./session/work.ts";
 import { useSelect } from "./session/store.ts";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Lightbulb } from "lucide-react";
 import { reducedMotion, Spinner } from "./ui/primitives.tsx";
@@ -24,12 +24,15 @@ import type {
 } from "../../../modules/contracts/index.ts";
 import { cx } from "./cx.ts";
 import { styleList } from "./Composer.tsx";
-import { GRID, Rulers, ViewControls, type BoardSettings } from "./EditView.tsx";
+import { GRID, Rulers, Squared, ViewControls, type BoardSettings } from "./EditView.tsx";
 import { useT } from "./i18n.tsx";
 import { currentOf, thinkingOf } from "./Studio.tsx";
 import { live } from "./session/work.ts";
 import type { StyleMaterial } from "@drawy/materials/schema";
 type ToolStep = Extract<Step, { kind: "tool" }>;
+/** What the rulers cast over the blank sheet: the drawing it shows, until the person
+ * writes a request of their own. */
+const CAST = "[data-opening]:not([data-own]) [data-cast]";
 /** What the canvas shows of a work: its revision and which pictures have developed. */
 const drawnAs = (work: Work) =>
   work.revision +
@@ -69,8 +72,12 @@ export function SceneView({
   resizable = true,
   fill,
   hold,
+  opening,
 }: {
   work: Work;
+  /** What the page lays over the scene while nothing is drawn on it, nothing is being
+   * drawn and the person is not drawing by hand, in place of the note that it is blank. */
+  opening?: ReactNode;
   /** What tells this showing of the work from another of the same revision: a hand edit
    * shown before it is saved. */
   version?: string;
@@ -255,6 +262,9 @@ export function SceneView({
       (!s.sceneId || s.sceneId === sceneId),
   );
   const empty = !work.scenes[sceneId].modules.length;
+  // The page's own sheet over a blank scene, on the drawing board; while drawing by hand
+  // the board is left bare.
+  const opens = empty && !run && shown && !!opening && !(editing && !disabled);
   const [styles, setStyles] = useState<StyleMaterial[]>([]);
   useEffect(() => void styleList().then(setStyles, () => {}), []);
   // A note on the paper while the canvas is still blank, so there is something to watch
@@ -353,9 +363,11 @@ export function SceneView({
           <Spinner />
         </div>
       )}
-      {empty && !run && shown && (
+      {empty && !run && shown && !opening && (
         <p className={cx("blank")}>{t.work.blank}</p>
       )}
+      {opens && canvas && <Squared canvas={canvas} />}
+      {opens && opening}
       {empty && run && (!!references.length || note) && (
         <div
           className={cx("references")}
@@ -417,8 +429,11 @@ export function SceneView({
           )}
         </div>
       )}
-      {canvas && editing && !disabled && board?.rulers && <Rulers canvas={canvas} />}
-      {controls && (
+      {/* The board stays as it is from the blank sheet into drawing by hand. */}
+      {canvas && board?.rulers && ((editing && !disabled) || opens) && (
+        <Rulers canvas={canvas} cast={opens ? CAST : undefined} />
+      )}
+      {controls && !opens && (
         <ViewControls
           canvas={canvas}
           fit={fitAll}
