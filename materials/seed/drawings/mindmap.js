@@ -42,7 +42,29 @@ const sides = [
     .map((b, i) => ({ b, i: rightCount + i, dir: -1 }))
     .reverse(),
 ];
+const pad = size * 0.5;
+const avail = cx - pad;
 for (const side of sides) {
+  const maxBranchW = Math.max(
+    0,
+    ...side.map(({ b }) => measure(b.label, size, 700) + size * 1.6),
+  );
+  const maxKidW = Math.max(
+    0,
+    ...side.flatMap(({ b }) =>
+      (b.children || []).map((kid) => measure(String(kid), size * 0.92) + size * 0.4),
+    ),
+  );
+  const slack = avail - (cw / 2 + maxBranchW + maxKidW);
+  const gap1 =
+    slack > 0
+      ? Math.min(W * 0.14, maxKidW ? slack * 0.65 : slack)
+      : size * 0.9;
+  const gap2 = maxKidW
+    ? slack > 0
+      ? Math.min(W * 0.055, slack * 0.35)
+      : size * 0.6
+    : 0;
   const weight = side.map(({ b }) => Math.max(1, (b.children || []).length));
   const total = weight.reduce((s, w) => s + w, 0) || 1;
   let acc = 0;
@@ -54,7 +76,7 @@ for (const side of sides) {
     const by = (top + bottom) / 2;
     const bw = measure(b.label, size, 700) + size * 1.6,
       bh = size * 2.2;
-    const bx = cx + dir * (W * 0.2 + bw / 2);
+    const bx = cx + dir * (cw / 2 + gap1 + bw / 2);
     const sx = cx + (dir * cw) / 2 - dir * 4;
     const ex = bx - (dir * bw) / 2;
     lines += `<path d="M${sx} ${cy}C${(sx + ex) / 2} ${cy} ${(sx + ex) / 2} ${by} ${ex} ${by}" stroke="${col}" stroke-width="${sw * 1.8}"/>`;
@@ -68,7 +90,7 @@ for (const side of sides) {
     kids.forEach((kid, j) => {
       const ky = by + (j - (kids.length - 1) / 2) * rowH;
       const kx0 = bx + (dir * bw) / 2,
-        kx1 = kx0 + dir * W * 0.06;
+        kx1 = kx0 + dir * gap2;
       const tw = measure(kid, size * 0.92);
       const under = ky + size * 0.55;
       lines += `<path d="M${kx0} ${by}C${(kx0 + kx1) / 2} ${by} ${(kx0 + kx1) / 2} ${under} ${kx1} ${under}H${kx1 + dir * (tw + size * 0.4)}" stroke="${col}" stroke-width="${sw}" stroke-opacity=".8"/>`;

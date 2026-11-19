@@ -446,6 +446,7 @@ const zh = {
     params: {
       text: "文字",
       label: "文字",
+      arrow: "箭头",
       title: "标题",
       subtitle: "副标题",
       sub: "副标题",
@@ -1670,6 +1671,7 @@ const en: Words = {
     params: {
       text: "Text",
       label: "Text",
+      arrow: "Arrow",
       title: "Title",
       subtitle: "Subtitle",
       sub: "Subtitle",

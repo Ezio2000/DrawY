@@ -58,21 +58,39 @@ if (xs.label)
 if (ys.label)
   out += `<text x="${pad.l}" y="${size * 1.1}" text-anchor="start" font-size="${size}" fill="${ink}">${esc(ys.label)}</text>`;
 const palette = [t.accent || "#d97757", t.accent2 || "#4a7fa8", ink, muted];
-(d.series || []).forEach((s, i) => {
+const clampY = (y) => Y(Math.max(ys.min, Math.min(ys.max, y)));
+const computed = (d.series || []).map((s, i) => {
   const f = s.fn ? new Function("x", "return " + s.fn) : null;
-  const pts = f
-    ? Array.from({ length: 241 }, (_, k) => {
-        const x = xs.min + ((xs.max - xs.min) * k) / 240;
-        return [x, f(x)];
-      })
-    : s.points || [];
-  const color = s.color || palette[i % palette.length];
+  const pts = (
+    f
+      ? Array.from({ length: 241 }, (_, k) => {
+          const x = xs.min + ((xs.max - xs.min) * k) / 240;
+          return [x, f(x)];
+        })
+      : s.points || []
+  ).filter(([, y]) => Number.isFinite(y));
+  return { s, pts, color: s.color || palette[i % palette.length] };
+});
+if (d.fillBetween) {
+  const fb = Array.isArray(d.fillBetween)
+    ? { from: d.fillBetween[0], to: d.fillBetween[1] }
+    : d.fillBetween;
+  const a = computed[fb.from ?? 0],
+    b = computed[fb.to ?? 1];
+  if (a?.pts.length && b?.pts.length) {
+    const top = a.pts.map(([x, y], k) => `${k ? "L" : "M"}${X(x).toFixed(1)} ${clampY(y).toFixed(1)}`).join("");
+    const bot = [...b.pts].reverse().map(([x, y]) => `L${X(x).toFixed(1)} ${clampY(y).toFixed(1)}`).join("");
+    out += `<path d="${top}${bot}Z" fill="${fb.color || a.color}" fill-opacity="${Number(fb.opacity ?? 0.14)}" stroke="none"/>`;
+  }
+}
+computed.forEach(({ s, pts, color }) => {
+  if (s.area && pts.length) {
+    const line = pts.map(([x, y], k) => `${k ? "L" : "M"}${X(x).toFixed(1)} ${clampY(y).toFixed(1)}`).join("");
+    const base = clampY(ys.min).toFixed(1);
+    out += `<path d="${line}L${X(pts[pts.length - 1][0]).toFixed(1)} ${base}L${X(pts[0][0]).toFixed(1)} ${base}Z" fill="${color}" fill-opacity=".12" stroke="none"/>`;
+  }
   const path = pts
-    .filter(([, y]) => Number.isFinite(y))
-    .map(
-      ([x, y], k) =>
-        `${k ? "L" : "M"}${X(x).toFixed(1)} ${Y(Math.max(ys.min, Math.min(ys.max, y))).toFixed(1)}`,
-    )
+    .map(([x, y], k) => `${k ? "L" : "M"}${X(x).toFixed(1)} ${clampY(y).toFixed(1)}`)
     .join("");
   out += `<path d="${path}" fill="none" stroke="${color}" stroke-width="${Number(s.width ?? 2.2)}" stroke-linejoin="round" stroke-linecap="round" ${s.dashed ? 'stroke-dasharray="6 5"' : ""}/>`;
   if (s.dots)
@@ -80,7 +98,7 @@ const palette = [t.accent || "#d97757", t.accent2 || "#4a7fa8", ink, muted];
       out += `<circle cx="${X(x)}" cy="${Y(y)}" r="3.2" fill="${color}"/>`;
   if (s.label && pts.length) {
     const [x, y] = pts[pts.length - 1];
-    const py = Y(Math.max(ys.min, Math.min(ys.max, y)));
+    const py = clampY(y);
     out += `<text x="${X(x) - 4}" y="${py < pad.t + size ? py + size * 1.3 : py - size * 0.8}" text-anchor="end" font-size="${size}" fill="${color}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4">${esc(s.label)}</text>`;
   }
 });
