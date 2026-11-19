@@ -12,7 +12,7 @@ const measure = (s, px, weight = 400) => {
   return ctx.measureText(String(s ?? "")).width;
 };
 const events = (d.events || []).map((e) => ({ ...e, at: Number(e.at) }));
-const even = d.scale === "even";
+const even = d.spacing === "even";
 const lo = Number(d.from ?? Math.min(...events.map((e) => e.at)));
 const hi = Number(d.to ?? Math.max(...events.map((e) => e.at)));
 const span = hi - lo || 1;
@@ -35,13 +35,26 @@ const esc = (s) =>
   );
 let out = `<path d="M${x0 - size} ${y}H${x1 + size * 1.2}" stroke="${ink}" stroke-width="${Number(t.stroke ?? 1.6)}" stroke-linecap="round"/>`;
 out += `<path d="M${x1 + size * 1.9} ${y}l${-size * 0.9} ${-size * 0.4}v${size * 0.8}z" fill="${ink}"/>`;
-// Track occupied horizontal ranges per side and tier so clustered events stagger cleanly.
-const used = { up: [-Infinity, -Infinity], down: [-Infinity, -Infinity] };
+// Pass 1: lay out dates and record any horizontal spans where a date shifted outward.
 const dateUsed = { up: -Infinity, down: -Infinity };
-events.forEach((e, i) => {
+const shiftedDates = { up: [], down: [] };
+const laid = events.map((e, i) => {
   const x = X(e, i),
     up = i % 2 === 0,
-    side = up ? "up" : "down",
+    dSide = up ? "down" : "up";
+  const dateStr = String(e.date ?? e.at);
+  const dw = measure(dateStr, size * 0.85);
+  const dLeft = x - dw / 2 - size * 0.25,
+    dRight = x + dw / 2 + size * 0.25;
+  const dShift = dLeft < dateUsed[dSide] ? size * 1.05 : 0;
+  dateUsed[dSide] = Math.max(dateUsed[dSide], dRight);
+  if (dShift > 0) shiftedDates[dSide].push([dLeft, dRight]);
+  return { e, x, up, dateStr, dShift };
+});
+// Pass 2: place event labels, clearing both shifted dates on the same side and sibling labels.
+const used = { up: [-Infinity, -Infinity], down: [-Infinity, -Infinity] };
+laid.forEach(({ e, x, up, dateStr, dShift }) => {
+  const side = up ? "up" : "down",
     c = e.accent ? accent : ink;
   const tw = Math.max(
     measure(e.label ?? "", size, 600),
@@ -49,18 +62,14 @@ events.forEach((e, i) => {
   );
   const left = x - tw / 2 - size * 0.4,
     right = x + tw / 2 + size * 0.4;
+  const hitsShiftedDate = shiftedDates[side].some(([a, b]) => left < b && right > a);
   const tier = left < used[side][0] ? 1 : 0;
   used[side][tier] = Math.max(used[side][tier], right);
-  const baseStem = size * (2.2 + (e.note ? 0.6 : 0));
+  const baseStem = size * ((hitsShiftedDate ? 3.5 : 2.2) + (e.note ? 0.6 : 0));
   const stem = baseStem + tier * size * (e.note ? 2.8 : 1.9);
   const ty = up ? y - stem : y + stem;
   out += `<line x1="${x}" x2="${x}" y1="${y}" y2="${up ? ty + size * 0.6 : ty - size * 0.9}" stroke="${muted}" stroke-width="1"/>`;
   out += `<circle cx="${x}" cy="${y}" r="${e.accent ? 5 : 3.6}" fill="${e.accent ? accent : t.paper || "#fff"}" stroke="${c}" stroke-width="1.6"/>`;
-  const dateStr = String(e.date ?? e.at);
-  const dw = measure(dateStr, size * 0.85);
-  const dSide = up ? "down" : "up";
-  const dShift = x - dw / 2 - size * 0.25 < dateUsed[dSide] ? size * 1.05 : 0;
-  dateUsed[dSide] = Math.max(dateUsed[dSide], x + dw / 2 + size * 0.25);
   out += `<text x="${x}" y="${up ? y + size * 1.5 + dShift : y - size * 0.8 - dShift}" text-anchor="middle" font-size="${size * 0.85}" fill="${muted}">${esc(dateStr)}</text>`;
   out += `<text x="${x}" y="${up ? ty : ty + size * 0.2}" text-anchor="middle" font-size="${size}" font-weight="600" fill="${c}">${esc(e.label ?? "")}</text>`;
   if (e.note)

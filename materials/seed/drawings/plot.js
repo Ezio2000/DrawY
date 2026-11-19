@@ -77,10 +77,41 @@ if (d.fillBetween) {
     : d.fillBetween;
   const a = computed[fb.from ?? 0],
     b = computed[fb.to ?? 1];
-  if (a?.pts.length && b?.pts.length) {
-    const top = a.pts.map(([x, y], k) => `${k ? "L" : "M"}${X(x).toFixed(1)} ${clampY(y).toFixed(1)}`).join("");
-    const bot = [...b.pts].reverse().map(([x, y]) => `L${X(x).toFixed(1)} ${clampY(y).toFixed(1)}`).join("");
-    out += `<path d="${top}${bot}Z" fill="${fb.color || a.color}" fill-opacity="${Number(fb.opacity ?? 0.14)}" stroke="none"/>`;
+  if (a?.pts.length >= 2 && b?.pts.length >= 2) {
+    const sortX = (pts) => [...pts].sort((p, q) => p[0] - q[0]);
+    const clipX = (pts, lo, hi) => {
+      const s = sortX(pts);
+      const yAt = (target) => {
+        for (let k = 0; k + 1 < s.length; k++) {
+          const [x0, y0] = s[k],
+            [x1, y1] = s[k + 1];
+          if (x0 <= target && target <= x1)
+            return x1 === x0 ? y0 : y0 + ((y1 - y0) * (target - x0)) / (x1 - x0);
+        }
+        return NaN;
+      };
+      const mid = s.filter(([x]) => x > lo && x < hi);
+      const yLo = yAt(lo),
+        yHi = yAt(hi);
+      return [
+        ...(Number.isFinite(yLo) ? [[lo, yLo]] : []),
+        ...mid,
+        ...(Number.isFinite(yHi) ? [[hi, yHi]] : []),
+      ];
+    };
+    const sa = sortX(a.pts),
+      sb = sortX(b.pts);
+    const xLo = Math.max(sa[0][0], sb[0][0]),
+      xHi = Math.min(sa[sa.length - 1][0], sb[sb.length - 1][0]);
+    if (xLo < xHi) {
+      const ca = clipX(sa, xLo, xHi),
+        cb = clipX(sb, xLo, xHi);
+      if (ca.length >= 2 && cb.length >= 2) {
+        const top = ca.map(([x, y], k) => `${k ? "L" : "M"}${X(x).toFixed(1)} ${clampY(y).toFixed(1)}`).join("");
+        const bot = [...cb].reverse().map(([x, y]) => `L${X(x).toFixed(1)} ${clampY(y).toFixed(1)}`).join("");
+        out += `<path d="${top}${bot}Z" fill="${fb.color || a.color}" fill-opacity="${Number(fb.opacity ?? 0.14)}" stroke="none"/>`;
+      }
+    }
   }
 }
 computed.forEach(({ s, pts, color }) => {

@@ -706,7 +706,7 @@
         "type": "number",
         "description": "end of the axis; defaults to the last event"
       },
-      "scale": {
+      "spacing": {
         "type": "choice",
         "options": ["linear", "even"],
         "default": "linear",
