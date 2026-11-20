@@ -7,7 +7,6 @@ import {
   type Settings,
   type Work,
 } from "../contracts/index.ts";
-import type { MessageLocale } from "../contracts/messages.ts";
 import { changesBetween } from "../editing/index.ts";
 import { attached } from "../materials/index.ts";
 import { adapterFor, generate, textOf, type Item } from "../models/index.ts";
@@ -53,20 +52,14 @@ export async function userMessage(
   store: UserStore,
   text: string,
   materials: string[],
-  locale: MessageLocale = "zh",
 ): Promise<Item> {
+  const parts = [
+    ...(text.trim() ? [{ type: "input_text" as const, text }] : []),
+    ...(await attached(materials, store.viewer)),
+  ];
   return {
     role: "user",
-    content: [
-      {
-        type: "input_text",
-        // Pictures sent without words give no language to answer in; the page's does.
-        text: text.trim()
-          ? text
-          : `(Pictures only, no words. The user reads ${locale === "zh" ? "Chinese" : "English"}.)`,
-      },
-      ...(await attached(materials, store.viewer)),
-    ],
+    content: parts.length ? parts : [{ type: "input_text", text }],
   };
 }
 export const workMessage = (sceneId: string, work: Work, changes = ""): Item => ({
@@ -373,10 +366,10 @@ export const userMessages = (store: UserStore, workId: string) =>
   store
     .runs(workId)
     .flatMap((r) => r.steps.flatMap((s) => (s.kind === "message" && s.role === "user" ? [s] : [])));
-/** Everything the user has said about this work, for checking a brief's quotes. */
+/** Everything the user has said (or attached) about this work, for checking a brief's quotes. */
 export const said = (store: UserStore, workId: string, preferences: string) => [
   preferences,
-  ...userMessages(store, workId).map((s) => s.text),
+  ...userMessages(store, workId).flatMap((s) => [s.text, ...(s.materials ?? [])]),
 ];
 /** Where a conversation starts when the one before it cannot be continued: what the user has
  * asked of this work so far. The whole work follows it. */

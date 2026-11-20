@@ -412,7 +412,7 @@
       },
       "color": {
         "type": "color",
-        "description": "caption colour"
+        "description": "ink colour for recolourable icons, and caption colour"
       }
     }
   },

@@ -116,8 +116,14 @@ export const briefSchema = z.object({
     .max(12)
     .describe("Recognizable things that will appear, one per entry"),
   basis: z.object({
-    subject: z.string().min(1).describe("The user's words, verbatim, that say which thing"),
-    intent: z.string().min(1).describe("The user's words, verbatim, that say what to show or why; the topic itself when they leave the aspect to you"),
+    subject: z
+      .string()
+      .min(1)
+      .describe("The user's words, verbatim, that say which thing (or the attached picture id when the request is a picture)"),
+    intent: z
+      .string()
+      .min(1)
+      .describe("The user's words, verbatim, that say what to show or why (or the attached picture id when the request is a picture); the topic itself when they leave the aspect to you"),
     register: z
       .string()
       .min(1)

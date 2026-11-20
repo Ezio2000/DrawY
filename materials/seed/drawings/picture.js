@@ -31,6 +31,7 @@ const picture = api.material(d.material, {
   width: pw,
   height: ph,
   fit: d.fit ?? "contain",
+  ...(d.color ? { color: d.color } : {}),
 });
 picture.style.position = "absolute";
 picture.style.left = (W - pw) / 2 + "px";

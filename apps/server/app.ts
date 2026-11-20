@@ -458,7 +458,6 @@ export function createApp(storage: Storage) {
         args.sceneId,
         args.prompt,
         args.materials,
-        localeOf(c),
       );
       return c.json(showRun(run, c.get("user")));
     } catch (e) {
@@ -481,7 +480,6 @@ export function createApp(storage: Storage) {
           c.req.param("id"),
           answer,
           materials,
-          localeOf(c),
         ),
         c.get("user"),
       ),

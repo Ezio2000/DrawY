@@ -105,6 +105,7 @@ const ID = /^[a-z0-9]+(?:-+[a-z0-9]+)*$/;
 const QUOTED = /["'`]([a-z0-9]+(?:-+[a-z0-9]+)*)["'`]/g;
 function named(work: Work) {
   const called = new Set<string>(),
+    drawings = new Set<string>(),
     mentioned = new Set<string>(),
     quoted = new Set<string>();
   for (const source of [
@@ -124,11 +125,11 @@ function named(work: Work) {
     for (const x of [...scene.modules, ...scene.links]) {
       // A module or link may be drawn by a library drawing as it is; one that is in
       // neither is reported by the work's validation.
-      if (!work.drawings[x.drawingId]) mentioned.add(x.drawingId);
+      if (!work.drawings[x.drawingId]) drawings.add(x.drawingId);
       scan(x.data);
     }
   for (const d of Object.values(work.drawings)) scan(d.defaults);
-  return { called, mentioned, quoted };
+  return { called, drawings, mentioned, quoted };
 }
 
 /** The materials a module is drawn with; none means it is drawn by hand. */
@@ -143,13 +144,18 @@ export function drawnWith(work: Work, sceneId: string, moduleId: string) {
  * library does not have. `keep` leaves in place what nothing names yet, for a drawing copied
  * from the library in the same write. */
 export async function take(work: Work, explicit: string[], user: Viewer, keep = false) {
-  const { called, mentioned, quoted } = named(work);
+  const { called, drawings, mentioned, quoted } = named(work);
+  const drawingIds = new Set([...explicit, ...called, ...drawings]);
   // A material nothing in the work names any more leaves it, such as a picture an edit
   // replaced; one named only in code (an interaction switching pictures) stays.
   if (!keep)
-    for (const id of Object.keys(work.materials))
-      if (![explicit, called, mentioned, quoted].some((s) => [...s].includes(id)))
-        delete work.materials[id];
+    for (const [id, m] of Object.entries(work.materials)) {
+      const kept =
+        m.kind === "drawing"
+          ? drawingIds.has(id)
+          : [explicit, called, mentioned, quoted].some((s) => [...s].includes(id));
+      if (!kept) delete work.materials[id];
+    }
   const strict = [...new Set([...explicit, ...called])];
   // Library code (drawings and effects) is taken again each time the work is written, so
   // it is the version the author's catalog describes; a work left alone keeps rendering
@@ -162,12 +168,15 @@ export async function take(work: Work, explicit: string[], user: Viewer, keep = 
         m.kind === "effect",
     )
     .map((m) => m.id);
-  const wanted = [...new Set([...strict, ...mentioned, ...refresh])].filter(
+  const wanted = [...new Set([...strict, ...drawings, ...mentioned, ...refresh])].filter(
     (id) => !work.materials[id] || refresh.includes(id),
   );
   const found = wanted.length ? await library.get(wanted, user, true) : [];
   const added: string[] = [];
   for (const m of found) {
+    // Module data values like { glyph: "gauge" } can collide with a library drawing id;
+    // only a module/link drawingId or an explicit reference takes a library drawing.
+    if (m.kind === "drawing" && !drawingIds.has(m.id)) continue;
     const use = useOf(m);
     if (!use) continue;
     if (!work.materials[m.id]) added.push(m.id);
