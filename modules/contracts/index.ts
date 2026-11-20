@@ -576,6 +576,9 @@ export interface Observation {
   errors: string[];
   /** The smallest text of each scene seen whole, in screenshot pixels. */
   smallestText?: Record<string, number>;
+  /** Render fingerprint of each scene at the time of this observation, so unchanged
+   * scenes in a multi-scene work need not be re-captured after another scene changes. */
+  sceneHashes?: Record<string, string>;
 }
 export interface Picture {
   name: string;

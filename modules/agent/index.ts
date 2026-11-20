@@ -3,7 +3,7 @@ import type { MessageLocale } from "../contracts/messages.ts";
 import { MIN_TEXT } from "../contracts/geometry.ts";
 import type { UserStore } from "../storage/index.ts";
 import { kit, library, look, styleList, useOf } from "../materials/index.ts";
-import { requireObserved, Unavailable } from "../observation/index.ts";
+import { requireObserved, sceneObservations, Unavailable } from "../observation/index.ts";
 import {
   citationsOf,
   CutOff,
@@ -463,18 +463,18 @@ export class Agent {
     } catch (e) {
       return e instanceof Error ? e.message : String(e);
     }
-    const looked = Math.max(
-      ...run.observations.filter((o) => o.revision === work.revision).map((o) => o.at),
-    );
+    const populated = Object.values(work.scenes).filter((s) => s.modules.length);
+    const matching = populated.flatMap((s) => sceneObservations(work, s.id, run.observations));
+    const looked = matching.length ? Math.max(...matching.map((o) => o.at)) : 0;
     const unseen = developments.filter((d) => work.materials[d.id] && d.settled!.at > looked);
     if (unseen.length)
       return `图片 ${unseen.map((d) => d.id).join(", ")} 在最后一次查看之后才显影，请再看一次画布`;
     // Text too small to read holds the end once: some of it, such as the names a map
     // draws, is not the author's to change, and it can say so and end.
     if (this.heldForText.has(run.id)) return undefined;
-    const small = Object.values(work.scenes).flatMap((scene) => {
-      const px = run.observations
-        .filter((o) => o.revision === work.revision && o.overview && o.smallestText?.[scene.id] !== undefined)
+    const small = populated.flatMap((scene) => {
+      const px = sceneObservations(work, scene.id, run.observations)
+        .filter((o) => o.overview && o.smallestText?.[scene.id] !== undefined)
         .at(-1)?.smallestText?.[scene.id];
       return px !== undefined && px < MIN_TEXT ? [`${scene.id} ${px}px`] : [];
     });

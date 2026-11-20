@@ -202,3 +202,81 @@ it("needs a scene named for a close-up when several are drawn, and an action's e
     rmSync(dir, { recursive: true });
   }
 });
+
+it("skips unchanged scenes in multi-scene observe() and allows finishing once only changed scenes are re-observed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-observe-")),
+    db = new Storage(dir);
+  try {
+    const store = db.scoped(register(db, "author", "abcdef").id),
+      work = fixture();
+    work.revision = 0;
+    store.commit(work, 0, { kind: "edit" });
+    const image = Buffer.from("image").toString("base64");
+    const makeShot = (sceneId: string) => ({
+      sceneId,
+      label: "1440px / 全图",
+      overview: true,
+      viewport: { width: 1440, height: 900 },
+      base64: image,
+      errors: [],
+      camera: { x: 0, y: 0, scale: 1 },
+      modules: [],
+    });
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const req = JSON.parse(init!.body as string);
+      return Response.json({ shots: req.scenes.map((s: { id: string }) => makeShot(s.id)) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const signal = new AbortController().signal;
+    const earlier = { observations: [] as Observation[], reported: {} };
+    const look = async (input: object) => {
+      const r = await observe(store, work.id, input, signal, earlier);
+      earlier.observations.push(r.observation);
+      return r;
+    };
+
+    // Initial look captures both populated scenes (root and child).
+    await look({});
+    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string).scenes.map((s: { id: string }) => s.id)).toEqual([
+      "root",
+      "child",
+    ]);
+    expect(() => requireObserved(store.work(work.id), earlier.observations)).not.toThrow();
+
+    // Edit only child scene -> rev 2.
+    const rev2 = structuredClone(store.work(work.id));
+    rev2.scenes.child.modules[0].bounds.x += 20;
+    store.commit(rev2, rev2.revision, { kind: "edit" });
+    // Before observing child, only child is missing (root is unchanged).
+    expect(() => requireObserved(store.work(work.id), earlier.observations)).toThrow("child");
+    try {
+      requireObserved(store.work(work.id), earlier.observations);
+    } catch (e) {
+      expect(String(e)).not.toContain("root");
+    }
+
+    // Default observe({}) captures ONLY child and reports root as unchanged.
+    const second = await look({});
+    expect(JSON.parse(fetchMock.mock.calls[1][1]!.body as string).scenes.map((s: { id: string }) => s.id)).toEqual([
+      "child",
+    ]);
+    expect(second.content.some((c) => c.text?.includes('"unchangedScenes":["root"]'))).toBe(true);
+    expect(() => requireObserved(store.work(work.id), earlier.observations)).not.toThrow();
+
+    // Editing a detail page leaves all scenes unchanged, so requireObserved still passes.
+    const rev3 = structuredClone(store.work(work.id));
+    rev3.details["note-1"] = { id: "note-1", title: "说明", html: "<p>详情</p>" };
+    store.commit(rev3, rev3.revision, { kind: "edit" });
+    expect(() => requireObserved(store.work(work.id), earlier.observations)).not.toThrow();
+
+    // Editing shared work.style invalidates both root and child.
+    const rev4 = structuredClone(store.work(work.id));
+    rev4.style.accent = "#0055aa";
+    store.commit(rev4, rev4.revision, { kind: "edit" });
+    expect(() => requireObserved(store.work(work.id), earlier.observations)).toThrow("root, child");
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+

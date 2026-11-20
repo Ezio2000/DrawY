@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   boundsOf,
@@ -41,6 +42,82 @@ export class Unavailable extends Error {}
 /** What each module looked like when the author was last told, by scene and module: a look
  * repeats only what has changed since, as the rest is still above in the conversation. */
 export type Reported = Record<string, Record<string, string>>;
+/** A deterministic fingerprint of everything that affects how one scene renders: its own
+ * modules, links, interaction and checks, the work's style tokens, and the custom drawings
+ * and materials referenced by it. */
+export function sceneHash(work: Work, sceneId: string): string {
+  const scene = work.scenes[sceneId];
+  if (!scene) return "";
+  const drawingIds = new Set<string>([
+    ...scene.modules.map((m) => m.drawingId),
+    ...scene.links.map((l) => l.drawingId),
+  ]);
+  const allDrawingIds = Object.keys(work.drawings);
+  let blob = JSON.stringify([scene.modules, scene.links, scene.interaction ?? "", scene.checks]);
+  // Transitively include any custom drawing referenced inside another drawing or script.
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const id of allDrawingIds) {
+      if (drawingIds.has(id)) continue;
+      if (blob.includes(id)) {
+        drawingIds.add(id);
+        grew = true;
+      }
+    }
+    for (const id of drawingIds) {
+      const d = work.drawings[id];
+      if (!d) continue;
+      const piece = JSON.stringify(d);
+      if (!blob.includes(piece)) {
+        blob += piece;
+        grew = true;
+      }
+    }
+  }
+  const usedDrawings = [...drawingIds]
+    .filter((id) => id in work.drawings)
+    .sort()
+    .map((id) => [id, work.drawings[id]]);
+  const usedMaterials = Object.keys(work.materials)
+    .filter((id) => blob.includes(id))
+    .sort()
+    .map((id) => [id, work.materials[id]]);
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        modules: scene.modules,
+        links: scene.links,
+        interaction: scene.interaction ?? "",
+        checks: scene.checks,
+        style: work.style,
+        drawings: usedDrawings,
+        materials: usedMaterials,
+      }),
+    )
+    .digest("hex")
+    .slice(0, 16);
+}
+/** Observations matching a scene at its current rendered state (by fingerprint when recorded,
+ * falling back to work.revision for older records). */
+export function sceneObservations(
+  work: Work,
+  sceneId: string,
+  observations: Observation[],
+): Observation[] {
+  const hash = sceneHash(work, sceneId);
+  return observations.filter(
+    (o) =>
+      o.sceneIds.includes(sceneId) &&
+      (o.sceneHashes?.[sceneId] !== undefined
+        ? o.sceneHashes[sceneId] === hash
+        : o.revision === work.revision),
+  );
+}
+const sceneCleanlyObserved = (work: Work, sceneId: string, observations: Observation[]) => {
+  const looks = sceneObservations(work, sceneId, observations);
+  return looks.some((o) => o.overview) && !looks.at(-1)!.errors.length;
+};
 /** A look's modules as the author reads them, leaving out what it was already told. */
 function moduleReport(work: Work, shot: Shot, reported: Reported) {
   const known = (reported[shot.sceneId] ??= {});
@@ -83,9 +160,20 @@ export async function observe(
   const sceneId =
     options.sceneId ?? (focused && populated.length === 1 ? populated[0].id : undefined);
   if (focused && !sceneId) throw new DomainError("局部查看和交互操作需要指定 sceneId");
-  const scenes = sceneId ? [work.scenes[sceneId]] : populated;
-  if (!scenes.length || scenes.some((s) => !s))
+  const allRequested = sceneId ? [work.scenes[sceneId]] : populated;
+  if (!allRequested.length || allRequested.some((s) => !s))
     throw new DomainError("没有可查看的场景");
+  // When viewing all scenes after an edit, skip scenes whose rendered inputs have not
+  // changed since an earlier clean overview look in this run.
+  const unchangedScenes =
+    !sceneId && !options.annotate && !focused
+      ? allRequested.filter((s) => sceneCleanlyObserved(work, s.id, earlier.observations))
+      : [];
+  const scenes =
+    unchangedScenes.length && unchangedScenes.length < allRequested.length
+      ? allRequested.filter((s) => !unchangedScenes.includes(s))
+      : allRequested;
+  const skippedIds = scenes.length < allRequested.length ? unchangedScenes.map((s) => s.id) : [];
   // A close-up of a revision already seen whole, without errors, is only that close-up.
   const closeUpOnly =
     !!focused &&
@@ -97,6 +185,7 @@ export async function observe(
         o.sceneIds.includes(scenes[0].id) &&
         !o.errors.length,
     );
+  const hashes = Object.fromEntries(scenes.map((s) => [s.id, sceneHash(work, s.id)]));
   return tracer.span(
     "capture",
     "view_canvas",
@@ -141,6 +230,7 @@ export async function observe(
           overview: !closeUpOnly,
           screenshots,
           errors: [...new Set(shots.flatMap((s) => s.errors))],
+          sceneHashes: hashes,
           ...(shots.some((s) => s.overview && s.text?.smallest)
             ? {
                 smallestText: Object.fromEntries(
@@ -164,6 +254,17 @@ export async function observe(
                       ? `Before anything about how it looks, check in your reasoning whether the picture holds each claim, and fix the ones it does not; the user never reads these verdicts, so they stay out of your notes and closing words: ${options.claims.join(" | ")}`
                       : "Before anything about how it looks, check what the figure states about time, direction, proportion, cause and each number's conditions.",
                   ].join("\n"),
+                },
+              ]
+            : []),
+          ...(skippedIds.length
+            ? [
+                {
+                  type: "input_text",
+                  text: JSON.stringify({
+                    unchangedScenes: skippedIds,
+                    note: "Unchanged since an earlier clean overview look above; omitted to avoid duplicate screenshots.",
+                  }),
                 },
               ]
             : []),
@@ -305,12 +406,9 @@ export function requireObserved(work: Work, observations: Observation[]) {
   const scenes = Object.values(work.scenes).filter((s) => s.modules.length);
   if (!work.scenes[work.rootSceneId].modules.length)
     throw new DomainError("请先完成根场景");
-  const missing = scenes.filter((s) => {
-    const looks = observations.filter(
-      (o) => o.revision === work.revision && o.sceneIds.includes(s.id),
-    );
-    return !looks.some((o) => o.overview) || looks.at(-1)!.errors.length;
-  });
+  const missing = scenes.filter(
+    (s) => !sceneCleanlyObserved(work, s.id, observations),
+  );
   if (missing.length)
     throw new DomainError(
       "完成前需要查看最新版本并修复运行错误: " +
