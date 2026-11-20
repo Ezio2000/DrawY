@@ -152,7 +152,7 @@ export async function take(work: Work, explicit: string[], user: Viewer, keep = 
     for (const [id, m] of Object.entries(work.materials)) {
       const kept =
         m.kind === "drawing"
-          ? drawingIds.has(id)
+          ? drawingIds.has(id) || quoted.has(id)
           : [explicit, called, mentioned, quoted].some((s) => [...s].includes(id));
       if (!kept) delete work.materials[id];
     }
@@ -175,8 +175,9 @@ export async function take(work: Work, explicit: string[], user: Viewer, keep = 
   const added: string[] = [];
   for (const m of found) {
     // Module data values like { glyph: "gauge" } can collide with a library drawing id;
-    // only a module/link drawingId or an explicit reference takes a library drawing.
-    if (m.kind === "drawing" && !drawingIds.has(m.id)) continue;
+    // only a module/link drawingId, literal code call, explicit reference, or an already-held
+    // drawing kept via code quotes takes a library drawing.
+    if (m.kind === "drawing" && !drawingIds.has(m.id) && !work.materials[m.id]) continue;
     const use = useOf(m);
     if (!use) continue;
     if (!work.materials[m.id]) added.push(m.id);

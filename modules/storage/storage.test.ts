@@ -155,6 +155,19 @@ describe("user owned works", () => {
     expect(sourceOf(store.revision(work.id, 4)).source).toBe(
       "return api.svg('<svg/>')",
     );
+    // An already-held library drawing referenced indirectly through a variable stays across
+    // unrelated edits, while an arbitrary module data string never auto-imports a library drawing.
+    const { work: indirect } = await writeWork(
+      store,
+      work.id,
+      {
+        drawings: [{ id: "x", name: "x", source: 'const kind = "steps"; return api.draw(kind)' }],
+        modules: [{ id: "m1", label: "m1", bounds: [0, 0, 40, 40], drawingId: "x", data: { glyph: "gauge" } }],
+      },
+      { cause: { kind: "edit" } },
+    );
+    expect(indirect.materials.steps?.kind).toBe("drawing");
+    expect(indirect.materials.gauge).toBeUndefined();
   });
   it("undoes a whole request, then a hand edit, walking back through restores", async () => {
     const store = db.scoped(register(db, "a", "abcdef").id);

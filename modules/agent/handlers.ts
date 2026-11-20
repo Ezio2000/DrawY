@@ -435,7 +435,7 @@ async function performView(x: Execution, args: any, step: ToolStep): Promise<Out
     // The service may be restarting; after a few tries the run stops instead of
     // spending the author's turns on a look it cannot get.
     let result: Awaited<ReturnType<typeof observe>> | undefined;
-    for (const wait of [2000, 6000, 0]) {
+    for (const wait of process.env.VITEST ? [1, 1, 0] : [2000, 6000, 0]) {
       try {
         result = await observe(x.store, run.workId, args, signal, {
           observations: run.observations,
