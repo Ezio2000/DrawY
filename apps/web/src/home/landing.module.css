@@ -13,6 +13,16 @@
   --l-night-quiet: #9aa2b2;
   --l-dots: radial-gradient(var(--canvas-dots) 1px, transparent 1px);
   --l-rule: repeating-linear-gradient(90deg, var(--line-strong) 0 3px, transparent 3px 7px);
+  /* Drawing paper: a fine tooth of grain and long faint fibres, laid over whatever is drawn
+     on it, and the sheets of a pad seen edge-on under the top one. */
+  --l-paper: #fdfdfb;
+  --l-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .38 0 0 0 0 .38 0 0 0 0 .36 0 0 0 .11 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  --l-fibre: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.012 .06' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 .46 0 0 0 0 .45 0 0 0 0 .42 0 0 0 .06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
+  --l-stack:
+    0 2px 0 -0.5px #ebe7de,
+    0 4px 0 -1px #dcd7cc,
+    0 6px 0 -1.5px #cdc8bc,
+    0 8px 0 -2px #bfb9ac;
   position: absolute;
   inset: 0;
   overflow-x: hidden;
@@ -273,8 +283,12 @@
   padding: 0 var(--l-side);
 }
 
-.l-showpiece .l-board {
+.l-showpiece .l-sheet {
   aspect-ratio: 16 / 9.4;
+  box-shadow:
+    var(--l-stack),
+    0 2px 3px rgba(60, 50, 30, 0.08),
+    0 36px 70px -36px rgba(40, 34, 22, 0.45);
 }
 
 .l-showpiece figcaption {
@@ -306,193 +320,91 @@
   }
 }
 
-/* ---------------------------------------------------------------- the board */
+/* ---------------------------------------------------------------- the sheet */
 
-/* The work page in small: the desk around a sheet, the title card on it, and the
-   composer's strip over its foot. */
-.l-board {
+/* A work on a sheet of drawing paper and nothing else. Over the drawing lies the paper itself:
+   grain, fibres, a little light from the top left and a darkening towards the edges, so what
+   is drawn looks drawn on it. The canvas's own dots are left off. */
+.l-sheet {
   position: relative;
-  border-radius: 16px;
-  background: var(--desk);
-  box-shadow:
-    0 0 0 1px rgba(22, 26, 34, 0.06),
-    0 2px 4px rgba(22, 26, 34, 0.04),
-    0 40px 80px -40px rgba(22, 26, 34, 0.35);
+  height: 100%;
+  border-radius: 3px;
+  background: var(--l-paper);
   text-align: left;
+  --paper: var(--l-paper);
 }
 
-.l-board-body {
+.l-sheet-paper {
   position: absolute;
-  inset: 8px;
-  display: flex;
+  inset: 0;
   overflow: hidden;
-  border-radius: 11px;
-  background: var(--paper);
-  box-shadow: var(--shadow-sheet);
+  border-radius: inherit;
 }
 
-.l-board-paper {
-  position: relative;
-  flex: 1;
-  min-width: 0;
+.l-sheet-paper .l-live-canvas > * {
+  background-image: none !important;
 }
 
-.l-board-card {
+.l-sheet::after {
+  content: "";
   position: absolute;
-  top: 18px;
-  left: 18px;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  background:
+    var(--l-grain) 0 0 / 180px 180px,
+    var(--l-fibre) 0 0 / 420px 420px,
+    radial-gradient(ellipse 80% 70% at 22% 12%, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 70%),
+    radial-gradient(ellipse 120% 110% at 50% 45%, rgba(90, 90, 84, 0) 60%, rgba(90, 90, 84, 0.08));
+  box-shadow:
+    inset 0 0 0 1px rgba(90, 76, 52, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+/* Inside a scene, the way back out: a slip of paper along the top. */
+.l-sheet-back {
+  position: absolute;
+  top: 14px;
+  left: 14px;
   z-index: 4;
   display: flex;
   align-items: center;
-  gap: 10px;
-  max-width: calc(100% - 36px);
-  padding: 7px 12px;
-  border-radius: 8px;
-  background: var(--paper);
-  box-shadow: var(--shadow-float);
-  font-size: 13.5px;
+  gap: 8px;
+  max-width: calc(100% - 28px);
+  padding: 5px 12px 5px 6px;
+  border-radius: 6px;
+  background: rgba(252, 251, 247, 0.92);
+  box-shadow: 0 0 0 1px rgba(90, 76, 52, 0.12), 0 4px 10px -6px rgba(40, 34, 22, 0.3);
+  font-size: 13px;
   white-space: nowrap;
+  animation: l-rise 0.25s var(--ease-out) both;
 }
 
-.l-board-card nav {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.l-board-card nav > span {
+.l-sheet-back button {
   display: inline-flex;
   align-items: center;
-  min-width: 0;
-}
-
-.l-board-card nav svg {
-  flex: none;
-  margin: 0 3px;
-  color: var(--text-3);
-}
-
-.l-board-card nav b {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 650;
-  color: var(--ink);
-}
-
-.l-board-card nav button {
-  padding: 0;
+  gap: 2px;
+  padding: 2px 6px 2px 2px;
   border: 0;
+  border-radius: 4px;
   background: none;
   color: var(--text-2);
   font: inherit;
   cursor: pointer;
 }
 
-.l-board-card nav button:hover {
+.l-sheet-back button:hover {
+  background: rgba(90, 76, 52, 0.08);
   color: var(--blue);
 }
 
-.l-dock {
-  position: absolute;
-  bottom: 22px;
-  left: 50%;
-  z-index: 4;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: min(520px, calc(100% - 120px));
-  padding: 8px 8px 8px 16px;
-  border-radius: 12px;
-  background: var(--paper);
-  box-shadow:
-    0 0 0 1px var(--line-strong),
-    0 12px 28px -14px rgba(22, 26, 34, 0.24);
-  translate: -50% 0;
-  font-size: 14.5px;
-  color: var(--text);
-}
-
-.l-dock span {
-  flex: 1;
+.l-sheet-back b {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* A strip one can press: it lights up and says it will put the request in the box above. */
-button.l-dock {
-  border: 0;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: box-shadow 0.15s var(--ease);
-}
-
-.l-dock em {
-  flex: none;
-  max-width: 0;
-  overflow: hidden;
-  font-size: 13px;
-  font-style: normal;
-  font-weight: 600;
-  white-space: nowrap;
-  color: var(--blue);
-  opacity: 0;
-  transition:
-    max-width 0.25s var(--ease-out),
-    opacity 0.2s var(--ease);
-}
-
-button.l-dock:hover,
-button.l-dock:focus-visible {
-  box-shadow:
-    0 0 0 1.5px var(--blue),
-    0 12px 28px -14px rgba(22, 26, 34, 0.24);
-}
-
-button.l-dock:hover em,
-button.l-dock:focus-visible em {
-  max-width: 12em;
-  opacity: 1;
-}
-
-button.l-dock:hover i,
-button.l-dock:focus-visible i {
-  background: var(--blue);
-}
-
-.l-dock i {
-  transition: background-color 0.15s var(--ease);
-}
-
-/* While a request is being typed, a caret follows it. */
-.l-dock[data-typing] span::after {
-  content: "";
-  display: inline-block;
-  width: 1.5px;
-  height: 1.05em;
-  margin-left: 2px;
-  vertical-align: -0.15em;
-  background: var(--blue);
-  animation: l-caret 0.9s steps(1) infinite;
-}
-
-@keyframes l-caret {
-  50% {
-    opacity: 0;
-  }
-}
-
-.l-dock i {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: var(--ink);
-  color: #fff;
+  font-weight: 650;
+  color: var(--ink);
 }
 
 /* A live drawing fills its sheet, hatched in pencil until it has been drawn. */
@@ -776,22 +688,19 @@ button.l-dock:focus-visible i {
   height: min(660px, calc(100vh - 120px));
 }
 
-/* The boards are leaves of a pad bound along the top. The script turns the leaf in view up
-   over the binding (rotateX about its top edge) and shades the one beneath with --back; the
-   frame gives the depth, so the leaf comes out towards the reader as it turns. */
+/* The pad: sheets of drawing paper on a coil along the top, the sheets below showing at the
+   foot. The script turns the top sheet up by its corner: it clips away what has lifted
+   (clip-path on the slot), lays the paper's back over the face (.l-story-curl, reflected
+   about the fold) and darkens the sheet beneath along the fold (.l-story-shade). */
 .l-story-boards {
   position: relative;
   height: calc(100% - 26px);
-  border-radius: 16px;
+  border-radius: 3px;
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 40px 80px -30px rgba(0, 0, 0, 0.6);
-  perspective: 2600px;
-  perspective-origin: 50% 20%;
+    var(--l-stack),
+    0 40px 80px -30px rgba(0, 0, 0, 0.7);
 }
 
-/* The pad's binding: a coil of wire along the top edge, over every leaf, which the leaves
-   turn about. */
 .l-story-boards::before {
   content: "";
   position: absolute;
@@ -800,68 +709,67 @@ button.l-dock:focus-visible i {
   right: 28px;
   z-index: 5;
   height: 24px;
-  background:
-    linear-gradient(90deg, transparent 7px, #6d727d 7px, #eef0f3 9.5px, #b9bdc5 11px, #5d626c 13px, transparent 13px) 0 0 / 24px 100% repeat-x;
-  -webkit-mask: linear-gradient(#000, #000) 0 0 / 100% 100%;
-  border-radius: 3px;
+  background: linear-gradient(90deg, transparent 7px, #6d727d 7px, #eef0f3 9.5px, #b9bdc5 11px, #5d626c 13px, transparent 13px) 0 0 /
+    24px 100% repeat-x;
   filter: drop-shadow(0 2px 1.5px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+}
+
+/* Where the coil goes through, each sheet is punched. */
+.l-story-slot .l-sheet::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 28px;
+  right: 28px;
+  z-index: 4;
+  height: 6px;
+  background: radial-gradient(circle at 10px 3px, #1d2029 2.2px, rgba(0, 0, 0, 0.18) 2.6px, transparent 3.2px) 0 0 / 24px 6px repeat-x;
   pointer-events: none;
 }
 
 .l-story-slot {
   position: absolute;
   inset: 0;
-  border-radius: 16px;
-  transform-origin: 50% 0;
-  transform-style: preserve-3d;
-  will-change: transform;
-}
-
-/* Each face shows only from its own side: the board in front, the paper's back behind. */
-.l-story-slot > .l-board,
-.l-story-slot::after {
-  backface-visibility: hidden;
-}
-
-.l-story-slot > .l-board,
-.l-story-leaf-back {
-  opacity: var(--fade, 1);
-}
-
-.l-story-slot::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  border-radius: inherit;
-  background: #0b0d12;
-  opacity: var(--back, 0);
-  pointer-events: none;
-}
-
-.l-story-leaf-back {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0) 22%, rgba(255, 255, 255, 0.35) 70%, rgba(0, 0, 0, 0.1)),
-    radial-gradient(rgba(22, 26, 34, 0.05) 1px, transparent 1px) 0 0 / 20px 20px,
-    #e9e7e1;
-  box-shadow: inset 0 0 0 8px #d9d6ce;
-  transform: rotateX(180deg) translateZ(1px);
-  backface-visibility: hidden;
-  pointer-events: none;
 }
 
 .l-story-slot + .l-story-slot {
   visibility: hidden;
 }
 
-.l-story-stage .l-board {
-  height: 100%;
-  background: #2a2f3b;
-  box-shadow: none;
+.l-story-shade {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: 3px;
+  pointer-events: none;
 }
+
+/* The back of the turning sheet: plain paper, a shade warmer, with the light of the curl laid
+   on it (--curl). Its box clips it to the pad, so it is gone once over the top. */
+.l-story-curl {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  border-radius: 3px;
+  filter: drop-shadow(-2px 4px 6px rgba(20, 16, 10, 0.35));
+  pointer-events: none;
+}
+
+.l-story-curl i {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  border-radius: 3px;
+  background:
+    var(--curl, none),
+    var(--l-grain) 0 0 / 180px 180px,
+    var(--l-fibre) 0 0 / 420px 420px,
+    #f1f0ec;
+  transform-origin: 0 0;
+}
+
 
 /* Where the picture in view stands: a tick per chapter, and the four kinds under them. */
 .l-spectrum {
@@ -1347,21 +1255,8 @@ button.l-dock:focus-visible i {
   .l-intro {
     border-radius: 20px 20px 0 0;
   }
-  .l-showpiece .l-board {
+  .l-showpiece .l-sheet {
     aspect-ratio: 4 / 4.4;
-  }
-  .l-board-body {
-    inset: 6px;
-  }
-  .l-board-card {
-    top: 12px;
-    left: 12px;
-    max-width: calc(100% - 24px);
-  }
-  .l-dock {
-    left: 50%;
-    bottom: 14px;
-    width: calc(100% - 40px);
   }
   .l-recent ul {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1392,9 +1287,9 @@ button.l-dock:focus-visible i {
   .l-story-boards {
     height: calc(100% - 30px);
   }
-  /* The board stays at the top of the screen here, under the button that opens the side
-     bar, so its title card keeps clear of it. */
-  .l-story-stage .l-board-card {
+  /* The pad stays at the top of the screen here, under the button that opens the side bar,
+     so the way out of a scene keeps clear of it. */
+  .l-story-stage .l-sheet-back {
     left: 60px;
     max-width: calc(100% - 72px);
   }

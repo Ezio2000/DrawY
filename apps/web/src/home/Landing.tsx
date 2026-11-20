@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } 
 import {
   ArrowUp,
   ChevronDown,
-  ChevronRight,
+  ChevronLeft,
   CodeXml,
   Download,
   MousePointerClick,
@@ -25,7 +25,7 @@ import { useLocale } from "../ui/locale.tsx";
 import { reducedMotion } from "../ui/primitives.tsx";
 import { cx } from "./cx.ts";
 import { LiveWork } from "./LiveWork.tsx";
-import { scroller, useCycledTyping, useTypedOnce } from "./motion.ts";
+import { scroller, turnedUp, useCycledTyping } from "./motion.ts";
 import { loadShowcase, useShowcase, type ShowcaseId } from "./showcase.ts";
 
 /* The home page, told the way a drawing tool's site tells it: the box to ask in first,
@@ -35,9 +35,9 @@ import { loadShowcase, useShowcase, type ShowcaseId } from "./showcase.ts";
  * the product does. */
 
 type Words = ReturnType<typeof useT>["landing"];
-/** Room the drawing leaves for what lies over its sheet: the title card above, and the
- * composer's strip below where there is one. */
-const docked = { top: 64, bottom: 84 };
+/** Room the drawing leaves at the edges of its sheet; inside a scene, more at the top for
+ * the way back. */
+const margins = (inScene: boolean) => ({ top: inScene ? 52 : 20, bottom: 20 });
 
 export function Landing({
   asking,
@@ -78,7 +78,7 @@ export function Landing({
       <div className={cx("l-intro")} ref={intro}>
         <Showpiece solar={solar} />
         <Ticker words={l} ask={ask} />
-        <Story ask={ask} />
+        <Story />
         <Process words={l} />
         <People words={l} />
         <Belief words={l} />
@@ -197,14 +197,15 @@ function Showpiece({ solar }: { solar: Work[] }) {
         <p className={cx("l-lead")}>{l.introLead}</p>
       </header>
       <figure>
-        <Board
-          work={latest}
-          scene={scene}
-          setScene={setScene}
-          foot={<Dock text={l.followUp} />}
-        >
-          <LiveWork work={latest} scene={scene} open={setScene} label={latest?.title} insets={docked} />
-        </Board>
+        <Sheet work={latest} scene={scene} setScene={setScene}>
+          <LiveWork
+            work={latest}
+            scene={scene}
+            open={setScene}
+            label={latest?.title}
+            insets={margins(!!latest && !!scene && scene !== latest.rootSceneId)}
+          />
+        </Sheet>
         <figcaption>
           <i aria-hidden />
           {l.live}
@@ -214,21 +215,19 @@ function Showpiece({ solar }: { solar: Work[] }) {
   );
 }
 
-/* ---------------------------------------------------------------- the board */
+/* ---------------------------------------------------------------- the sheet */
 
-/** A work as the work page frames it, in small: the title card with the scene path, and
- * the composer's strip along the foot holding what was asked. */
-function Board({
+/** A work on a sheet of paper and nothing else: only once one has gone into one of its
+ * scenes does a small way back appear along the top. */
+function Sheet({
   work,
   scene,
   setScene,
-  foot,
   children,
 }: {
   work?: Work;
   scene?: string;
-  setScene?: (id: string) => void;
-  foot?: ReactNode;
+  setScene: (id: string) => void;
   children: ReactNode;
 }) {
   const l = useT().landing;
@@ -242,58 +241,19 @@ function Board({
     }
     return chain;
   }, [work, scene]);
+  const up = path.at(-2);
   return (
-    <div className={cx("l-board")}>
-      <div className={cx("l-board-card")}>
-        <nav aria-label={l.path}>
-          {path.map((s, i) => (
-            <span key={s.id}>
-              {i > 0 && <ChevronRight size={13} aria-hidden />}
-              {i < path.length - 1 && setScene ? (
-                <button onClick={() => setScene(s.id)}>{i ? s.title : work!.title}</button>
-              ) : (
-                <b>{i ? s.title : work!.title}</b>
-              )}
-            </span>
-          ))}
+    <div className={cx("l-sheet")}>
+      <div className={cx("l-sheet-paper")}>{children}</div>
+      {up && (
+        <nav className={cx("l-sheet-back")} aria-label={l.path}>
+          <button onClick={() => setScene(up.id)}>
+            <ChevronLeft size={14} aria-hidden />
+            {path.length > 2 ? up.title : work!.title}
+          </button>
+          <b>{path.at(-1)!.title}</b>
         </nav>
-      </div>
-      <div className={cx("l-board-body")}>
-        <div className={cx("l-board-paper")}>{children}</div>
-      </div>
-      {foot}
-    </div>
-  );
-}
-
-/** The composer's strip under a work, holding what was asked. Given `typing`, the request
- * is typed out afresh each time it turns true, as if being asked now; given `ask`, pressing it
- * puts the request in the box at the top, to be asked for real. */
-function Dock({ text, typing, ask }: { text: string; typing?: boolean; ask?: (text: string) => void }) {
-  const l = useT().landing;
-  const typed = useTypedOnce(text, typing ?? true);
-  const shown = typing === undefined ? { text, typing: false } : typed;
-  const inside = (
-    <>
-      <span>{shown.text}</span>
-      {ask && <em>{l.tryThis}</em>}
-      <i>
-        <ArrowUp size={14} />
-      </i>
-    </>
-  );
-  return ask ? (
-    <button
-      className={cx("l-dock")}
-      data-typing={shown.typing || undefined}
-      aria-label={`${l.tryThis}: ${text}`}
-      onClick={() => ask(text)}
-    >
-      {inside}
-    </button>
-  ) : (
-    <div className={cx("l-dock")} aria-hidden data-typing={shown.typing || undefined}>
-      {inside}
+      )}
     </div>
   );
 }
@@ -368,18 +328,20 @@ const chapters: { id: ShowcaseId; scene?: string; band: number }[] = [
 ];
 
 /** The range told along a dark drafting band: the chapters scroll past on one side while a
- * board on the other stays put and shows each chapter's work. The boards are the leaves of a
- * pad bound along the top: as the next chapter comes up to the middle of the screen, the leaf
- * in view lifts from its foot and turns up over the binding, showing the back of the paper,
- * and the next lies beneath, in its shadow until the leaf has gone. The turn follows the
- * scrolling rather than a timer, so scrolling back lays the leaf down again. The band's grid
- * drifts by a little slower than the page. */
-function Story({ ask }: { ask: (text: string) => void }) {
+ * pad on the other stays put, a chapter's work to each sheet. As the next chapter comes up to
+ * the middle of the screen, the sheet in view is turned up by its bottom right corner, the
+ * paper's back curling over with the light on it, and the next lies beneath in its shadow
+ * until the sheet has gone over the top. The turn follows the scrolling rather than a timer,
+ * so scrolling back lays the sheet down again. The band's grid drifts by a little slower than
+ * the page. */
+function Story() {
   const l = useT().landing;
   const locale = useLocale();
   const band = useRef<HTMLElement>(null);
   const items = useRef<(HTMLElement | null)[]>([]);
   const slots = useRef<(HTMLDivElement | null)[]>([]);
+  const shades = useRef<(HTMLElement | null)[]>([]);
+  const flap = useRef<HTMLElement>(null);
   const track = useRef<HTMLDivElement>(null);
   /** The chapter shown whole when nothing is handing over; the next waits in the other slot. */
   const [from, setFrom] = useState(0);
@@ -401,17 +363,16 @@ function Story({ ask }: { ask: (text: string) => void }) {
     const el = band.current!;
     const page = scroller(el);
     let frame = 0;
-    /** Lays a leaf on the pad: turned `turn` degrees up over the binding, with `shade`
-     * darkening it (0 to 1), `over` whether it lies on top. */
-    const place = (slot: HTMLDivElement | null | undefined, turn: number, shade: number, over: boolean, shown: boolean) => {
+    /** Lays a sheet on the pad: what of it is left lying flat (`keep`, all of it when not
+     * given), the shadow on it (`shade`), whether it lies on top, and whether it shows. */
+    const place = (s: number, keep: string, shade: string, over: boolean, shown: boolean) => {
+      const slot = slots.current[s];
       if (!slot) return;
-      slot.style.transform = turn ? `rotateX(${turn}deg)` : "";
-      // Past upright the leaf goes on over the binding and drops behind the pad. The fade is
-      // laid on each face (--fade), as opacity on the leaf itself would flatten it.
-      slot.style.setProperty("--fade", String(turn <= 115 ? 1 : Math.max(0, 1 - (turn - 115) / 55)));
-      slot.style.setProperty("--back", String(shade));
+      slot.style.clipPath = keep;
       slot.style.zIndex = over ? "2" : "1";
       slot.style.visibility = shown ? "visible" : "hidden";
+      const dim = shades.current[s];
+      if (dim) dim.style.backgroundImage = shade;
     };
     const measure = () => {
       frame = 0;
@@ -422,11 +383,19 @@ function Story({ ask }: { ask: (text: string) => void }) {
       let p = a + 1 < tops.length ? Math.min(1, Math.max(0, 0.5 + (line - tops[a + 1]) / span)) : 0;
       if (reducedMotion()) p = p < 0.5 ? 0 : 1;
       const eased = p * p * (3 - 2 * p);
-      const turn = eased * 180;
-      // The leaf darkens a little as it tilts from the light; the one under it lies in its
-      // shadow until it has turned away.
-      place(slots.current[a % 2], turn, 0.28 * Math.sin((turn * Math.PI) / 180), true, turn < 170);
-      place(slots.current[(a + 1) % 2], 0, 0.55 * (1 - eased), false, p > 0 && a + 1 < tops.length);
+      const pad = slots.current[0]?.parentElement;
+      const sheet = eased > 0.001 && eased < 1 && pad ? turnedUp(eased, pad.clientWidth, pad.clientHeight) : undefined;
+      place(a % 2, sheet?.keep ?? "", "", true, eased < 1);
+      place((a + 1) % 2, "", sheet?.cast ?? "", false, eased > 0.001 && a + 1 < tops.length);
+      const back = flap.current;
+      if (back) {
+        back.style.visibility = sheet ? "visible" : "hidden";
+        if (sheet) {
+          back.style.clipPath = sheet.fold;
+          back.style.transform = sheet.flip;
+          back.style.setProperty("--curl", sheet.back);
+        }
+      }
       track.current?.style.setProperty("--sp", String((a + p) / (chapters.length - 1)));
       if (!reducedMotion())
         el.style.setProperty("--drift", `${-(el.getBoundingClientRect().top - page.getBoundingClientRect().top) * 0.2}px`);
@@ -520,19 +489,30 @@ function Story({ ask }: { ask: (text: string) => void }) {
                   }}
                   inert={k !== at}
                 >
-                  <Board
-                    work={work}
-                    scene={scene}
-                    setScene={go}
-                    foot={<Dock text={l.chapters[k].ask} typing={k === at} ask={ask} />}
-                  >
-                    <LiveWork work={work} scene={scene} open={go} label={work?.title} insets={docked} />
-                  </Board>
-                  {/* The back of the leaf, seen once it has turned past upright. */}
-                  <i className={cx("l-story-leaf-back")} aria-hidden />
+                  <Sheet work={work} scene={scene} setScene={go}>
+                    <LiveWork
+                      work={work}
+                      scene={scene}
+                      open={go}
+                      label={work?.title}
+                      insets={margins(!!work && !!scene && scene !== work.rootSceneId)}
+                    />
+                  </Sheet>
+                  {/* The shadow of the sheet being turned, on the one beneath. */}
+                  <i
+                    className={cx("l-story-shade")}
+                    aria-hidden
+                    ref={(el) => {
+                      shades.current[s] = el;
+                    }}
+                  />
                 </div>
               );
             })}
+            {/* The back of the sheet being turned, folded over its face. */}
+            <span className={cx("l-story-curl")} aria-hidden>
+              <i ref={flap} />
+            </span>
           </div>
           <Spectrum band={chapters[at].band} at={at} jump={jump} track={track} />
         </div>

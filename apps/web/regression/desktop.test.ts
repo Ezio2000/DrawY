@@ -508,11 +508,13 @@ it("shows guests the home page with its works drawn live, and no sign-in wall", 
   // An example goes into the box to send.
   await guestPage.getByRole("button", { name: "How does the solar system work?" }).first().click();
   expect(await guestPage.locator("textarea").first().inputValue()).toBe("How does the solar system work?");
-  // A chapter's board along the range hands its request to the box too; the footer's kinds
-  // take the reader to their chapter.
+  // The footer's kinds take the reader to their chapter along the range, whose sheet shows
+  // that work and nothing else.
   await guestPage.getByRole("navigation", { name: "What it draws" }).getByRole("button", { name: "Map" }).click();
-  await guestPage.getByRole("button", { name: "Ask this yourself: Where did the Silk Road run?" }).click();
-  await expect.poll(() => guestPage.locator("textarea").first().inputValue()).toBe("Where did the Silk Road run?");
+  await expect
+    .poll(() => guestPage.locator("#l-chapter-silk").getAttribute("data-on"), { timeout: 8000 })
+    .toBe("true");
+  expect(await guestPage.getByRole("button", { name: /^Ask this yourself/ }).count()).toBe(0);
   await guest.close();
 });
 

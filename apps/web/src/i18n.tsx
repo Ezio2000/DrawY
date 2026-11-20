@@ -113,7 +113,6 @@ const zh = {
     blank: "新建空白画布",
     live: "这不是截图，是一件正在运行的作品。点地球，钻进去看看。",
     path: "场景路径",
-    followUp: "让我调调一年有多快。",
     asked: "人们在 DrawY 上问",
     questions: [
       "太阳系是如何运转的？",
@@ -134,7 +133,6 @@ const zh = {
     storyLead: "同一个输入框，画得出一步一步的流程，也画得出一整幅海报。往下滚，沿着这条光谱看 DrawY 画过的图——每一张都在运行，都能点、能拖。",
     spectrum: ["结构化", "半结构化", "非结构化", "纯图"],
     spectrumNav: "沿着图的光谱跳转",
-    tryThis: "用这个问题试试",
     chapters: [
       {
         kind: "流程图",
@@ -1502,7 +1500,6 @@ const en: Words = {
     blank: "New blank canvas",
     live: "This isn't a screenshot — it's a work, running. Click Earth and step inside.",
     path: "Scene path",
-    followUp: "Let me change how fast a year goes.",
     asked: "People ask DrawY",
     questions: [
       "How does the solar system work?",
@@ -1523,7 +1520,6 @@ const en: Words = {
     storyLead: "The same box draws a step-by-step flow and a whole poster. Scroll along the spectrum through pictures DrawY has drawn — every one is running, and every one can be clicked and dragged.",
     spectrum: ["Structured", "Semi-structured", "Unstructured", "Pure picture"],
     spectrumNav: "Jump along the range",
-    tryThis: "Ask this yourself",
     chapters: [
       {
         kind: "Flowchart",
