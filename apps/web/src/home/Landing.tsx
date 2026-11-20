@@ -78,7 +78,7 @@ export function Landing({
       <div className={cx("l-intro")} ref={intro}>
         <Showpiece solar={solar} />
         <Ticker words={l} ask={ask} />
-        <Story />
+        <Story ask={ask} />
         <Process words={l} />
         <People words={l} />
         <Belief words={l} />
@@ -267,16 +267,33 @@ function Board({
 }
 
 /** The composer's strip under a work, holding what was asked. Given `typing`, the request
- * is typed out afresh each time it turns true, as if being asked now. */
-function Dock({ text, typing }: { text: string; typing?: boolean }) {
+ * is typed out afresh each time it turns true, as if being asked now; given `ask`, pressing it
+ * puts the request in the box at the top, to be asked for real. */
+function Dock({ text, typing, ask }: { text: string; typing?: boolean; ask?: (text: string) => void }) {
+  const l = useT().landing;
   const typed = useTypedOnce(text, typing ?? true);
   const shown = typing === undefined ? { text, typing: false } : typed;
-  return (
-    <div className={cx("l-dock")} aria-hidden data-typing={shown.typing || undefined}>
+  const inside = (
+    <>
       <span>{shown.text}</span>
+      {ask && <em>{l.tryThis}</em>}
       <i>
         <ArrowUp size={14} />
       </i>
+    </>
+  );
+  return ask ? (
+    <button
+      className={cx("l-dock")}
+      data-typing={shown.typing || undefined}
+      aria-label={`${l.tryThis}: ${text}`}
+      onClick={() => ask(text)}
+    >
+      {inside}
+    </button>
+  ) : (
+    <div className={cx("l-dock")} aria-hidden data-typing={shown.typing || undefined}>
+      {inside}
     </div>
   );
 }
@@ -350,16 +367,13 @@ const chapters: { id: ShowcaseId; scene?: string; band: number }[] = [
   { id: "apple", band: 3 },
 ];
 
-/** How far the boards travel as one hands over to the next, in pixels: less on a phone,
- * where the board sits over the chapters rather than beside them. */
-const handover = (narrow: boolean) => (narrow ? 36 : 90);
-
 /** The range told along a dark drafting band: the chapters scroll past on one side while a
- * board on the other stays put and shows each chapter's work. Two boards take turns: as the
- * next chapter comes up to the middle of the screen, the board in view rises and fades while
- * the next one comes up from below, in step with the scrolling rather than on a timer, and
- * the band's grid drifts by a little slower than the page. */
-function Story() {
+ * board on the other stays put and shows each chapter's work. Two boards take turns, like
+ * sheets on a pile: as the next chapter comes up to the middle of the screen, its board slides
+ * up from the foot of the frame over the one in view, which sinks back and darkens, in step
+ * with the scrolling rather than on a timer. Wherever the reader stops, both stay legible.
+ * The band's grid drifts by a little slower than the page. */
+function Story({ ask }: { ask: (text: string) => void }) {
   const l = useT().landing;
   const locale = useLocale();
   const band = useRef<HTMLElement>(null);
@@ -378,8 +392,7 @@ function Story() {
     const narrow = matchMedia("(max-width: 820px)").matches;
     return {
       line: page.getBoundingClientRect().top + h * (narrow ? 0.8 : 0.5),
-      span: Math.min(260, h * 0.3),
-      shift: handover(narrow),
+      span: Math.min(420, h * 0.45),
     };
   };
 
@@ -387,23 +400,27 @@ function Story() {
     const el = band.current!;
     const page = scroller(el);
     let frame = 0;
-    const place = (slot: HTMLDivElement | null | undefined, shown: number, y: number) => {
+    /** Lays a board in the frame: `y` down from its place, `back` how far it has sunk
+     * behind the one coming over it (0 to 1), `over` whether it lies on top. */
+    const place = (slot: HTMLDivElement | null | undefined, y: number, back: number, over: boolean, shown: boolean) => {
       if (!slot) return;
-      slot.style.opacity = String(shown);
-      slot.style.transform = `translateY(${y}px) scale(${1 - 0.035 * (1 - shown)})`;
-      slot.style.visibility = shown === 0 ? "hidden" : "visible";
-      slot.style.pointerEvents = shown > 0.5 ? "" : "none";
+      slot.style.transform = `translateY(${y}px) scale(${1 - 0.06 * back})`;
+      slot.style.setProperty("--back", String(0.6 * back));
+      slot.style.zIndex = over ? "2" : "1";
+      slot.style.visibility = shown ? "visible" : "hidden";
     };
     const measure = () => {
       frame = 0;
-      const { line, span, shift } = reading(page);
+      const { line, span } = reading(page);
       const tops = items.current.map((c) => c?.getBoundingClientRect().top ?? Infinity);
       let a = 0;
       for (let k = 1; k < tops.length; k++) if (tops[k] <= line - span / 2) a = k;
       let p = a + 1 < tops.length ? Math.min(1, Math.max(0, 0.5 + (line - tops[a + 1]) / span)) : 0;
       if (reducedMotion()) p = p < 0.5 ? 0 : 1;
-      place(slots.current[a % 2], 1 - p, -p * shift);
-      place(slots.current[(a + 1) % 2], a + 1 < tops.length ? p : 0, (1 - p) * shift);
+      const eased = p * p * (3 - 2 * p);
+      const tall = slots.current[0]?.parentElement?.clientHeight ?? 600;
+      place(slots.current[a % 2], 0, eased, false, p < 1);
+      place(slots.current[(a + 1) % 2], (1 - eased) * (tall + 24), 0, true, p > 0 && a + 1 < tops.length);
       track.current?.style.setProperty("--sp", String((a + p) / (chapters.length - 1)));
       if (!reducedMotion())
         el.style.setProperty("--drift", `${-(el.getBoundingClientRect().top - page.getBoundingClientRect().top) * 0.2}px`);
@@ -469,6 +486,7 @@ function Story() {
               ref={(el) => {
                 items.current[i] = el;
               }}
+              id={`l-chapter-${chapters[i].id}`}
               data-on={i === at || undefined}
               onClick={() => i !== at && jump(i)}
             >
@@ -495,7 +513,12 @@ function Story() {
                   }}
                   inert={k !== at}
                 >
-                  <Board work={work} scene={scene} setScene={go} foot={<Dock text={l.chapters[k].ask} typing={k === at} />}>
+                  <Board
+                    work={work}
+                    scene={scene}
+                    setScene={go}
+                    foot={<Dock text={l.chapters[k].ask} typing={k === at} ask={ask} />}
+                  >
                     <LiveWork work={work} scene={scene} open={go} label={work?.title} insets={docked} />
                   </Board>
                 </div>
@@ -671,7 +694,6 @@ function Questions({ words }: { words: Words }) {
 }
 
 function Footer({ words, go }: { words: Words; go: (path: string) => void }) {
-  const t = useT();
   return (
     <footer className={cx("l-footer")}>
       <div className={cx("l-footer-brand")}>
@@ -683,10 +705,19 @@ function Footer({ words, go }: { words: Words; go: (path: string) => void }) {
         <button onClick={() => go("/new")}>{words.blank}</button>
         <button onClick={() => go("/library")}>{words.footerLibrary}</button>
       </nav>
-      <nav aria-label={words.footerWorks}>
+      <nav aria-label={words.footerWorks} className={cx("l-footer-kinds")}>
         <b>{words.footerWorks}</b>
-        {t.home.examples.map((e) => (
-          <span key={e}>{e}</span>
+        {chapters.map((c, i) => (
+          <button
+            key={c.id}
+            onClick={() =>
+              document
+                .getElementById(`l-chapter-${c.id}`)
+                ?.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" })
+            }
+          >
+            {words.chapters[i].kind.split(" · ")[0]}
+          </button>
         ))}
       </nav>
       <p className={cx("l-footer-line")}>© 2026 DrawY · {words.footer}</p>

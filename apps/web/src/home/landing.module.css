@@ -420,6 +420,52 @@
   white-space: nowrap;
 }
 
+/* A strip one can press: it lights up and says it will put the request in the box above. */
+button.l-dock {
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.15s var(--ease);
+}
+
+.l-dock em {
+  flex: none;
+  max-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--blue);
+  opacity: 0;
+  transition:
+    max-width 0.25s var(--ease-out),
+    opacity 0.2s var(--ease);
+}
+
+button.l-dock:hover,
+button.l-dock:focus-visible {
+  box-shadow:
+    0 0 0 1.5px var(--blue),
+    0 12px 28px -14px rgba(22, 26, 34, 0.24);
+}
+
+button.l-dock:hover em,
+button.l-dock:focus-visible em {
+  max-width: 12em;
+  opacity: 1;
+}
+
+button.l-dock:hover i,
+button.l-dock:focus-visible i {
+  background: var(--blue);
+}
+
+.l-dock i {
+  transition: background-color 0.15s var(--ease);
+}
+
 /* While a request is being typed, a caret follows it. */
 .l-dock[data-typing] span::after {
   content: "";
@@ -725,29 +771,46 @@
   height: min(660px, calc(100vh - 120px));
 }
 
-/* The two boards lie one over the other; the script moves them as the chapters pass. */
+/* The two boards lie in one frame like sheets on a pile; the script slides the next up over
+   the one in view (--back darkens the one going under) as the chapters pass. The frame clips
+   them and casts the shadow, so a board on its way in is never seen outside it. */
 .l-story-boards {
   position: relative;
   height: calc(100% - 26px);
+  overflow: hidden;
+  border-radius: 16px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 40px 80px -30px rgba(0, 0, 0, 0.6);
 }
 
 .l-story-slot {
   position: absolute;
   inset: 0;
-  will-change: transform, opacity;
+  border-radius: 16px;
+  box-shadow: 0 -20px 44px -14px rgba(0, 0, 0, 0.6);
+  will-change: transform;
+}
+
+.l-story-slot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  border-radius: inherit;
+  background: #0b0d12;
+  opacity: var(--back, 0);
+  pointer-events: none;
 }
 
 .l-story-slot + .l-story-slot {
-  opacity: 0;
   visibility: hidden;
 }
 
 .l-story-stage .l-board {
   height: 100%;
   background: #2a2f3b;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 40px 80px -30px rgba(0, 0, 0, 0.6);
+  box-shadow: none;
 }
 
 /* Where the picture in view stands: a tick per chapter, and the four kinds under them. */
@@ -1143,7 +1206,7 @@
 
 .l-footer {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.6fr);
   gap: 32px;
   padding: 64px var(--l-side) 32px;
   background: var(--l-night);
@@ -1190,9 +1253,14 @@
   text-underline-offset: 3px;
 }
 
-.l-footer nav span {
-  color: var(--l-night-text);
-  font-size: 15px;
+/* The nine kinds of picture, two to a row; each takes the reader to its chapter. */
+.l-footer-kinds {
+  grid-template-columns: repeat(2, max-content);
+  column-gap: 32px;
+}
+
+.l-footer-kinds b {
+  grid-column: 1 / -1;
 }
 
 .l-footer-line {
@@ -1273,6 +1341,12 @@
   }
   .l-story-boards {
     height: calc(100% - 30px);
+  }
+  /* The board stays at the top of the screen here, under the button that opens the side
+     bar, so its title card keeps clear of it. */
+  .l-story-stage .l-board-card {
+    left: 60px;
+    max-width: calc(100% - 72px);
   }
   .l-process-grid {
     grid-template-columns: minmax(0, 1fr);

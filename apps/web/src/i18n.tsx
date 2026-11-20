@@ -134,6 +134,7 @@ const zh = {
     storyLead: "同一个输入框，画得出一步一步的流程，也画得出一整幅海报。往下滚，沿着这条光谱看 DrawY 画过的图——每一张都在运行，都能点、能拖。",
     spectrum: ["结构化", "半结构化", "非结构化", "纯图"],
     spectrumNav: "沿着图的光谱跳转",
+    tryThis: "用这个问题试试",
     chapters: [
       {
         kind: "流程图",
@@ -255,7 +256,7 @@ const zh = {
     footer: "每个想法，都值得探索。",
     footerProduct: "产品",
     footerLibrary: "素材库",
-    footerWorks: "示范作品",
+    footerWorks: "能画的图",
   },
   // Composer
   composer: {
@@ -1522,6 +1523,7 @@ const en: Words = {
     storyLead: "The same box draws a step-by-step flow and a whole poster. Scroll along the spectrum through pictures DrawY has drawn — every one is running, and every one can be clicked and dragged.",
     spectrum: ["Structured", "Semi-structured", "Unstructured", "Pure picture"],
     spectrumNav: "Jump along the range",
+    tryThis: "Ask this yourself",
     chapters: [
       {
         kind: "Flowchart",
@@ -1643,7 +1645,7 @@ const en: Words = {
     footer: "Every idea is worth exploring.",
     footerProduct: "Product",
     footerLibrary: "Library",
-    footerWorks: "Example works",
+    footerWorks: "What it draws",
   },
   composer: {
     describe: "Describe what you want to draw",
