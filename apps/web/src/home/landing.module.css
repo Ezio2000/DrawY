@@ -420,6 +420,24 @@
   white-space: nowrap;
 }
 
+/* While a request is being typed, a caret follows it. */
+.l-dock[data-typing] span::after {
+  content: "";
+  display: inline-block;
+  width: 1.5px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--blue);
+  animation: l-caret 0.9s steps(1) infinite;
+}
+
+@keyframes l-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
 .l-dock i {
   display: grid;
   place-items: center;
@@ -538,6 +556,8 @@
 /* ---------------------------------------------------------------- what people ask */
 
 .l-ticker {
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
   margin-top: clamp(72px, 10vh, 112px);
   padding: 22px 0 26px;
   background:
@@ -558,7 +578,6 @@
 .l-ticker-track {
   display: flex;
   width: max-content;
-  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
   animation: l-scroll 70s linear infinite;
 }
 
@@ -605,11 +624,15 @@
 
 /* ---------------------------------------------------------------- the story band */
 
+/* A drafting band: a fine grid of dots and a coarse one of lines, both drifting by a little
+   slower than the page (--drift, set as it scrolls), so the boards seem to float over it. */
 .l-story {
   margin-top: clamp(80px, 12vh, 140px);
   padding: clamp(80px, 12vh, 136px) 0 clamp(64px, 10vh, 120px);
   background:
-    radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px) 0 0 / 24px 24px,
+    radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px) 0 var(--drift, 0) / 24px 24px,
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px) 0 calc(var(--drift, 0) * 2) / 100% 192px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px) 0 0 / 192px 100%,
     var(--l-night);
   color: var(--l-night-text);
 }
@@ -656,6 +679,14 @@
   padding-top: 12vh;
 }
 
+.l-chapters li:not([data-on]) {
+  cursor: pointer;
+}
+
+.l-chapters li:not([data-on]):hover {
+  opacity: 0.55;
+}
+
 .l-chapters li[data-on] {
   opacity: 1;
 }
@@ -694,8 +725,25 @@
   height: min(660px, calc(100vh - 120px));
 }
 
-.l-story-stage .l-board {
+/* The two boards lie one over the other; the script moves them as the chapters pass. */
+.l-story-boards {
+  position: relative;
   height: calc(100% - 26px);
+}
+
+.l-story-slot {
+  position: absolute;
+  inset: 0;
+  will-change: transform, opacity;
+}
+
+.l-story-slot + .l-story-slot {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.l-story-stage .l-board {
+  height: 100%;
   background: #2a2f3b;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.06),
@@ -718,19 +766,51 @@
   position: relative;
   justify-items: center;
   align-items: center;
-  height: 12px;
+  height: 24px;
 }
 
-/* The line runs from the first chapter's tick to the last's. */
-.l-spectrum-track::before {
+/* The line runs from the first chapter's tick to the last's, faint, and lit as far as one
+   has read (--sp, from 0 to 1, set as the page scrolls). */
+.l-spectrum-track::before,
+.l-spectrum-track::after {
   content: "";
   position: absolute;
   top: 50%;
   left: calc(100% / 18);
-  right: calc(100% / 18);
+  width: calc(100% * 8 / 9);
   height: 1px;
   background: linear-gradient(90deg, #8fb0ff, var(--lamp) 70%, var(--seal));
-  opacity: 0.55;
+  opacity: 0.22;
+}
+
+.l-spectrum-track::after {
+  height: 2px;
+  margin-top: -0.5px;
+  opacity: 1;
+  clip-path: inset(0 calc((1 - var(--sp, 0)) * 100%) 0 0);
+}
+
+.l-spectrum-track button,
+.l-spectrum-names button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.l-spectrum-track button {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+}
+
+.l-spectrum-track button:hover i {
+  background: #9aa2b2;
 }
 
 .l-spectrum-track i {
@@ -764,20 +844,24 @@
   color: #6f7686;
 }
 
-.l-spectrum-names span {
+.l-spectrum-names button {
   transition: color 0.3s var(--ease);
 }
 
-.l-spectrum-names span:nth-child(1),
-.l-spectrum-names span:nth-child(3) {
+.l-spectrum-names button:hover {
+  color: var(--l-night-text);
+}
+
+.l-spectrum-names button:nth-child(1),
+.l-spectrum-names button:nth-child(3) {
   grid-column: span 3;
 }
 
-.l-spectrum-names span:nth-child(4) {
+.l-spectrum-names button:nth-child(4) {
   grid-column: span 2;
 }
 
-.l-spectrum-names span[data-on] {
+.l-spectrum-names button[data-on] {
   color: var(--lamp);
   font-weight: 650;
 }
@@ -996,6 +1080,23 @@
 
 .l-faq details {
   background: var(--l-rule) top / 100% 1px no-repeat;
+  interpolate-size: allow-keywords;
+}
+
+/* Where the browser can, an answer slides open and shut instead of appearing. */
+.l-faq details::details-content {
+  height: 0;
+  overflow: clip;
+  opacity: 0;
+  transition:
+    height 0.32s var(--ease-out),
+    opacity 0.32s var(--ease),
+    content-visibility 0.32s allow-discrete;
+}
+
+.l-faq details[open]::details-content {
+  height: auto;
+  opacity: 1;
 }
 
 .l-faq details:last-child {
@@ -1152,11 +1253,17 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
   }
+  /* The chapters pass under the board here, so it keeps the band's own dark behind it
+     while two boards hand over. */
   .l-story-stage {
     order: -1;
     top: 8px;
     z-index: 2;
     height: 54vh;
+    background: var(--l-night);
+    box-shadow:
+      0 -8px 0 var(--l-night),
+      0 18px 18px -2px var(--l-night);
   }
   .l-chapters li,
   .l-chapters li:first-child {
@@ -1164,8 +1271,8 @@
     justify-content: flex-start;
     padding-top: 36px;
   }
-  .l-story-stage .l-board {
-    height: 100%;
+  .l-story-boards {
+    height: calc(100% - 30px);
   }
   .l-process-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -1199,5 +1306,8 @@
   }
   .l-showpiece figcaption i {
     animation: none;
+  }
+  .l-faq details::details-content {
+    transition: none;
   }
 }

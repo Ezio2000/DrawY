@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
   ArrowUp,
   ChevronDown,
@@ -25,6 +25,7 @@ import { useLocale } from "../ui/locale.tsx";
 import { reducedMotion } from "../ui/primitives.tsx";
 import { cx } from "./cx.ts";
 import { LiveWork } from "./LiveWork.tsx";
+import { scroller, useCycledTyping, useTypedOnce } from "./motion.ts";
 import { loadShowcase, useShowcase, type ShowcaseId } from "./showcase.ts";
 
 /* The home page, told the way a drawing tool's site tells it: the box to ask in first,
@@ -114,6 +115,10 @@ function Hero({
     l = t.landing;
   const user = useAccount();
   const request = useSelect(asking.draft, (r) => r);
+  // An empty box types out, one after another, what the works further down were asked.
+  const [inBox, setInBox] = useState(false);
+  const asks = useMemo(() => l.chapters.map((c) => c.ask), [l]);
+  const typed = useCycledTyping(asks, inBox || request.text !== "");
   return (
     <section className={cx("l-hero")} aria-labelledby="l-hero-title">
       <p className={cx("l-eyebrow")}>
@@ -125,7 +130,13 @@ function Hero({
         ))}
       </h1>
       <p className={cx("l-lead")}>{l.lead}</p>
-      <div className={cx("l-ask")}>
+      <div
+        className={cx("l-ask")}
+        // Focus alone, which the box may take by itself, does not stop it: a press or a key does.
+        onPointerDown={() => setInBox(true)}
+        onKeyDown={() => setInBox(true)}
+        onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setInBox(false)}
+      >
         <Composer
           place="home"
           value={request.text}
@@ -134,7 +145,7 @@ function Hero({
           detach={asking.draft.detach}
           uploading={request.uploading}
           focus={request.asked}
-          placeholder={t.home.placeholder}
+          placeholder={inBox ? t.home.placeholder : typed}
           style={request.style}
           setStyle={user ? asking.draft.setStyle : undefined}
           working={false}
@@ -255,11 +266,14 @@ function Board({
   );
 }
 
-/** The composer's strip under a work, holding what was asked. */
-function Dock({ text }: { text: string }) {
+/** The composer's strip under a work, holding what was asked. Given `typing`, the request
+ * is typed out afresh each time it turns true, as if being asked now. */
+function Dock({ text, typing }: { text: string; typing?: boolean }) {
+  const typed = useTypedOnce(text, typing ?? true);
+  const shown = typing === undefined ? { text, typing: false } : typed;
   return (
-    <div className={cx("l-dock")} aria-hidden>
-      <span>{text}</span>
+    <div className={cx("l-dock")} aria-hidden data-typing={shown.typing || undefined}>
+      <span>{shown.text}</span>
       <i>
         <ArrowUp size={14} />
       </i>
@@ -336,48 +350,110 @@ const chapters: { id: ShowcaseId; scene?: string; band: number }[] = [
   { id: "apple", band: 3 },
 ];
 
+/** How far the boards travel as one hands over to the next, in pixels: less on a phone,
+ * where the board sits over the chapters rather than beside them. */
+const handover = (narrow: boolean) => (narrow ? 36 : 90);
+
+/** The range told along a dark drafting band: the chapters scroll past on one side while a
+ * board on the other stays put and shows each chapter's work. Two boards take turns: as the
+ * next chapter comes up to the middle of the screen, the board in view rises and fades while
+ * the next one comes up from below, in step with the scrolling rather than on a timer, and
+ * the band's grid drifts by a little slower than the page. */
 function Story() {
   const l = useT().landing;
   const locale = useLocale();
-  const [at, setAt] = useState(0);
+  const band = useRef<HTMLElement>(null);
   const items = useRef<(HTMLElement | null)[]>([]);
-  const near = useRef<HTMLElement>(null);
+  const slots = useRef<(HTMLDivElement | null)[]>([]);
+  const track = useRef<HTMLDivElement>(null);
+  /** The chapter shown whole when nothing is handing over; the next waits in the other slot. */
+  const [from, setFrom] = useState(0);
+  /** The chapter being read: whichever of the two is more than half in. */
+  const [at, setAt] = useState(0);
   const [wanted, setWanted] = useState(false);
+
+  /** Where the reading line falls, and how much scrolling one handover takes. */
+  const reading = (page: HTMLElement) => {
+    const h = page.clientHeight;
+    const narrow = matchMedia("(max-width: 820px)").matches;
+    return {
+      line: page.getBoundingClientRect().top + h * (narrow ? 0.8 : 0.5),
+      span: Math.min(260, h * 0.3),
+      shift: handover(narrow),
+    };
+  };
+
   useEffect(() => {
-    const seen = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries)
-          if (e.isIntersecting) setAt(items.current.indexOf(e.target as HTMLElement));
-      },
-      { rootMargin: "-48% 0px -48% 0px" },
-    );
-    items.current.forEach((c) => c && seen.observe(c));
+    const el = band.current!;
+    const page = scroller(el);
+    let frame = 0;
+    const place = (slot: HTMLDivElement | null | undefined, shown: number, y: number) => {
+      if (!slot) return;
+      slot.style.opacity = String(shown);
+      slot.style.transform = `translateY(${y}px) scale(${1 - 0.035 * (1 - shown)})`;
+      slot.style.visibility = shown === 0 ? "hidden" : "visible";
+      slot.style.pointerEvents = shown > 0.5 ? "" : "none";
+    };
+    const measure = () => {
+      frame = 0;
+      const { line, span, shift } = reading(page);
+      const tops = items.current.map((c) => c?.getBoundingClientRect().top ?? Infinity);
+      let a = 0;
+      for (let k = 1; k < tops.length; k++) if (tops[k] <= line - span / 2) a = k;
+      let p = a + 1 < tops.length ? Math.min(1, Math.max(0, 0.5 + (line - tops[a + 1]) / span)) : 0;
+      if (reducedMotion()) p = p < 0.5 ? 0 : 1;
+      place(slots.current[a % 2], 1 - p, -p * shift);
+      place(slots.current[(a + 1) % 2], a + 1 < tops.length ? p : 0, (1 - p) * shift);
+      track.current?.style.setProperty("--sp", String((a + p) / (chapters.length - 1)));
+      if (!reducedMotion())
+        el.style.setProperty("--drift", `${-(el.getBoundingClientRect().top - page.getBoundingClientRect().top) * 0.2}px`);
+      setFrom(a);
+      setAt(p < 0.5 ? a : a + 1);
+    };
+    const schedule = () => {
+      frame ||= requestAnimationFrame(measure);
+    };
+    measure();
+    page.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
     const coming = new IntersectionObserver(([e]) => e.isIntersecting && setWanted(true), {
       rootMargin: "800px 0px",
     });
-    if (near.current) coming.observe(near.current);
+    coming.observe(el);
     return () => {
-      seen.disconnect();
+      cancelAnimationFrame(frame);
+      page.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
       coming.disconnect();
     };
   }, []);
-  // The work in view, and the next, are loaded before the reader gets there.
+
+  /** Scrolls the page until chapter `k` is the one in view. */
+  const jump = (k: number) => {
+    const page = scroller(band.current!);
+    const { line, span } = reading(page);
+    const top = items.current[k]!.getBoundingClientRect().top;
+    page.scrollBy({ top: top - (line - span / 2 - 16), behavior: reducedMotion() ? "auto" : "smooth" });
+  };
+
+  // The two works on the boards, and the one after, are loaded before the reader gets there.
   const [loaded, setLoaded] = useState<Partial<Record<ShowcaseId, Work>>>({});
   useEffect(() => {
     if (!wanted) return;
     let live = true;
-    for (const c of chapters.slice(0, Math.min(chapters.length, at + 2)))
+    for (const c of chapters.slice(Math.max(0, from - 1), from + 3))
       void loadShowcase(c.id, locale).then((v) => live && setLoaded((m) => ({ ...m, [c.id]: v.at(-1) })));
     return () => {
       live = false;
     };
-  }, [wanted, at, locale]);
-  const chapter = chapters[at];
-  const [scene, setScene] = useState<string>();
-  useEffect(() => setScene(chapter.scene), [at]);
-  const work = loaded[chapter.id];
+  }, [wanted, from, locale]);
+  // A scene one went into is left again once its board moves on to another chapter.
+  const [scenes, setScenes] = useState<Record<number, string>>({});
+  useEffect(() => setScenes((m) => Object.fromEntries(Object.entries(m).filter(([k]) => +k === from || +k === from + 1))), [from]);
+  /** Which chapter each board holds: `from` in one, the chapter after it in the other. */
+  const held = [0, 1].map((s) => (s === from % 2 ? from : from + 1 < chapters.length ? from + 1 : from - 1));
   return (
-    <section className={cx("l-story")} aria-labelledby="l-story-title" ref={near}>
+    <section className={cx("l-story")} aria-labelledby="l-story-title" ref={band}>
       <header className={cx("l-section-head")}>
         <p className={cx("l-kicker")}>{l.storyKicker}</p>
         <h2 id="l-story-title" className={cx("l-display")} data-size="section">
@@ -394,6 +470,7 @@ function Story() {
                 items.current[i] = el;
               }}
               data-on={i === at || undefined}
+              onClick={() => i !== at && jump(i)}
             >
               <span className={cx("l-chapter-n")}>
                 {String(i + 1).padStart(2, "0")} · {l.spectrum[chapters[i].band]} · {c.kind}
@@ -404,39 +481,73 @@ function Story() {
           ))}
         </ol>
         <div className={cx("l-story-stage")}>
-          <Board
-            work={work}
-            scene={scene}
-            setScene={setScene}
-            foot={<Dock text={l.chapters[at].ask} />}
-          >
-            <LiveWork work={work} scene={scene} open={setScene} label={work?.title} insets={docked} />
-          </Board>
-          <Spectrum band={chapter.band} at={at} />
+          <div className={cx("l-story-boards")}>
+            {held.map((k, s) => {
+              const work = loaded[chapters[k].id];
+              const scene = scenes[k] ?? chapters[k].scene;
+              const go = (id: string) => setScenes((m) => ({ ...m, [k]: id }));
+              return (
+                <div
+                  key={s}
+                  className={cx("l-story-slot")}
+                  ref={(el) => {
+                    slots.current[s] = el;
+                  }}
+                  inert={k !== at}
+                >
+                  <Board work={work} scene={scene} setScene={go} foot={<Dock text={l.chapters[k].ask} typing={k === at} />}>
+                    <LiveWork work={work} scene={scene} open={go} label={work?.title} insets={docked} />
+                  </Board>
+                </div>
+              );
+            })}
+          </div>
+          <Spectrum band={chapters[at].band} at={at} jump={jump} track={track} />
         </div>
       </div>
     </section>
   );
 }
 
-/** Where the picture in view stands, from the most orderly to the freest. */
-function Spectrum({ band, at }: { band: number; at: number }) {
+/** Where the picture in view stands, from the most orderly to the freest: a dot per chapter
+ * along a line that fills as one reads, and the four kinds under them. Any of them takes the
+ * reader there. */
+function Spectrum({
+  band,
+  at,
+  jump,
+  track,
+}: {
+  band: number;
+  at: number;
+  jump: (k: number) => void;
+  track: RefObject<HTMLDivElement | null>;
+}) {
   const l = useT().landing;
   return (
-    <div className={cx("l-spectrum")} aria-hidden>
-      <div className={cx("l-spectrum-track")}>
+    <nav className={cx("l-spectrum")} aria-label={l.spectrumNav}>
+      <div className={cx("l-spectrum-track")} ref={track}>
         {chapters.map((c, i) => (
-          <i key={i} data-on={i === at || undefined} data-past={i < at || undefined} />
+          <button
+            key={c.id}
+            aria-label={l.chapters[i].title}
+            aria-current={i === at || undefined}
+            data-on={i === at || undefined}
+            data-past={i < at || undefined}
+            onClick={() => jump(i)}
+          >
+            <i />
+          </button>
         ))}
       </div>
       <div className={cx("l-spectrum-names")}>
         {l.spectrum.map((name, i) => (
-          <span key={name} data-on={i === band || undefined}>
+          <button key={name} data-on={i === band || undefined} onClick={() => jump(chapters.findIndex((c) => c.band === i))}>
             {name}
-          </span>
+          </button>
         ))}
       </div>
-    </div>
+    </nav>
   );
 }
 

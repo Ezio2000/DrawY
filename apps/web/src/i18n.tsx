@@ -133,6 +133,7 @@ const zh = {
     storyTitle: "从最规整的图，到最自由的画",
     storyLead: "同一个输入框，画得出一步一步的流程，也画得出一整幅海报。往下滚，沿着这条光谱看 DrawY 画过的图——每一张都在运行，都能点、能拖。",
     spectrum: ["结构化", "半结构化", "非结构化", "纯图"],
+    spectrumNav: "沿着图的光谱跳转",
     chapters: [
       {
         kind: "流程图",
@@ -1520,6 +1521,7 @@ const en: Words = {
     storyTitle: "From the most orderly diagram to the freest picture",
     storyLead: "The same box draws a step-by-step flow and a whole poster. Scroll along the spectrum through pictures DrawY has drawn — every one is running, and every one can be clicked and dragged.",
     spectrum: ["Structured", "Semi-structured", "Unstructured", "Pure picture"],
+    spectrumNav: "Jump along the range",
     chapters: [
       {
         kind: "Flowchart",
