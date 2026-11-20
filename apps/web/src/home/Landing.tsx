@@ -453,17 +453,18 @@ function Story({ ask }: { ask: (text: string) => void }) {
     page.scrollBy({ top: top - (line - span / 2 - 16), behavior: reducedMotion() ? "auto" : "smooth" });
   };
 
-  // The two works on the boards, and the one after, are loaded before the reader gets there.
+  // Every chapter's work is loaded as the band comes near, all at once (they are small), so a
+  // jump along the range never waits on one halfway.
   const [loaded, setLoaded] = useState<Partial<Record<ShowcaseId, Work>>>({});
   useEffect(() => {
     if (!wanted) return;
     let live = true;
-    for (const c of chapters.slice(Math.max(0, from - 1), from + 3))
+    for (const c of chapters)
       void loadShowcase(c.id, locale).then((v) => live && setLoaded((m) => ({ ...m, [c.id]: v.at(-1) })));
     return () => {
       live = false;
     };
-  }, [wanted, from, locale]);
+  }, [wanted, locale]);
   // A scene one went into is left again once its board moves on to another chapter.
   const [scenes, setScenes] = useState<Record<number, string>>({});
   useEffect(() => setScenes((m) => Object.fromEntries(Object.entries(m).filter(([k]) => +k === from || +k === from + 1))), [from]);

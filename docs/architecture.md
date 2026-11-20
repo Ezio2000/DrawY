@@ -160,7 +160,7 @@
 
 `/` 是 `home/Landing.tsx`，分两段：第一屏（`Hero`）只放提问，`min-height: 100cqh` 撑满滚动容器（`.l-page` 设了 `container-type: size`），登录后最近的作品也在这里；介绍 DrawY 的内容都在 `.l-intro` 里，是叠在桌面上的一张纸，第一屏底部的按钮滚到它。空白画布挪到了 `/new`（`routes.ts` 的 `new` 页，App 对它的处理和原来的首页相同：`blankSession`、可拖入文件、访客不弹登录）。首页里的输入框是 `Composer` 的 `home` 形态，发送仍走 `asking.send`：没有打开的作品时先建作品再发出。
 
-首页上的图都是真正的作品，用作品页同一个 `Canvas` 绘制（`home/LiveWork.tsx`）：靠近屏幕时才创建；滚轮交给页面滚动，只有捏合或按住 Ctrl 才缩放画面；`touch-action: pan-y` 让手指上下滑动时页面照常滚动；指向场景的模块在原地切换场景，指向详情的打开详情页；`insets` 给标题牌和下方输入条留出位置。这些作品的源码在 `apps/showcase/works/*.ts`，按作者的方式写：一份简报加一串 `WorkEdit`（每一项是一版）。`apps/showcase/build.ts` 把它们发给一台正在运行的 DrawY（`POST /api/works` 再逐版 `POST /api/works/:id/edits`，由服务端像对待作者的 `write_work` 一样收进素材），把每版取回的作品连同简报存成 `apps/web/src/home/showcase/<id>.<zh|en>.json`（同一作品各版共用的素材只存一份）；`home/showcase.ts` 按需动态加载。改了示范作品后：
+首页上的图都是真正的作品，用作品页同一个 `Canvas` 绘制（`home/LiveWork.tsx`）：靠近屏幕时才创建；滚轮交给页面滚动，只有捏合或按住 Ctrl 才缩放画面；`touch-action: pan-y` 让手指上下滑动时页面照常滚动；指向场景的模块在原地切换场景，指向详情的打开详情页；换上另一件作品时，画布上的旧作品立刻藏起，直到 `Canvas` 的 `shown` 回调说新作品画好了才淡入（在渲染里比较“画好的是哪件”，同一帧生效，不会出现新标题配旧画面）；`insets` 给标题牌和下方输入条留出位置。这些作品的源码在 `apps/showcase/works/*.ts`，按作者的方式写：一份简报加一串 `WorkEdit`（每一项是一版）。`apps/showcase/build.ts` 把它们发给一台正在运行的 DrawY（`POST /api/works` 再逐版 `POST /api/works/:id/edits`，由服务端像对待作者的 `write_work` 一样收进素材），把每版取回的作品连同简报存成 `apps/web/src/home/showcase/<id>.<zh|en>.json`（同一作品各版共用的素材只存一份）；`home/showcase.ts` 按需动态加载。改了示范作品后：
 
 ```sh
 DRAWY_URL=http://127.0.0.1:8080 DRAWY_ADMIN_USER=… DRAWY_ADMIN_PASS=… pnpm exec tsx apps/showcase/build.ts [id…]
@@ -168,6 +168,7 @@ DRAWY_URL=http://127.0.0.1:8080 DRAWY_ADMIN_USER=… DRAWY_ADMIN_PASS=… pnpm e
 
 首页的动效都跟着内容走，不为装饰而动，`prefers-reduced-motion` 时全部换成直接切换（`home/motion.ts`）：
 - 第一屏输入框空着时，`useCycledTyping` 逐字打出故事各章的 `ask`（也就是下面那些作品的提问），打完停一会儿、清空、换下一句；点进输入框或按键后停下并换回普通的占位提示。只有聚焦不算，因为输入框可能自己拿到焦点。
+- 故事段的九件作品在它进入视口 800px 内时一次全部加载（合计约 250KB 未压缩），沿光谱长距离跳转时不用中途等。
 - 故事段（`Story`）有两块叠放的画板（`.l-story-slot`），章节 `k` 总在第 `k % 2` 块上：`from` 是完整显示的一章，另一块预先放着下一章。滚动时在 rAF 里量各章到阅读线（桌面是视口中线，手机是 80% 处）的距离，下一章顶边越过阅读线前后各半个 `span`内是交接区，交接区是视口高的 45%（最多 420px），进度 `p` 从 0 到 1（再做一次 smoothstep）：新画板从画框底下滑上来盖住旧的，旧画板缩小 6%、经 `--back` 盖上一层暗色。画框 `.l-story-boards` 自己 `overflow: hidden` 并投阴影，所以滑进来的画板在框外看不到；两块都不透明，停在交接区里任何位置都看得清。这些直接写在两块画板的 style 上，不经 React；React 只在 `from`、`at`（过半的那一章）变化时重绘，所以换下去的画板是在看不见时才换上新作品。看不见的一块 `inert`，也不接收指针。同一帧里还写 `--sp`（光谱线点亮到哪里）和 `--drift`（深色段背景网格的偏移，让它以页面 0.8 倍的速度移动）。
 - 光谱上的圆点、分类名和左侧章节都能点，`jump` 把那一章滚到交接区之后。
 - 画板下方的输入条（`Dock`）在它那一章成为当前章时用 `useTypedOnce` 重新打一遍提问，带闪烁光标；故事段里它是一个按钮，按下调用 `ask`，把提问交给第一屏的输入框并滚回顶部。

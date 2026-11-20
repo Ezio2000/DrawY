@@ -507,6 +507,11 @@ button.l-dock:focus-visible i {
   transition: opacity 0.6s var(--ease);
 }
 
+/* Hidden at once while another work is being drawn on it, then brought in gently. */
+.l-live:not([data-shown]) .l-live-canvas {
+  transition-duration: 0s;
+}
+
 .l-live[data-shown] {
   background: none;
 }

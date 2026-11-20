@@ -36,6 +36,11 @@ export function LiveWork({
   room.current = insets;
   const [near, setNear] = useState(false);
   const [shown, setShown] = useState(false);
+  /** The work the canvas has drawn. While another has been laid on it and is not yet drawn,
+   * the last one is hidden rather than left showing under the new one's title. */
+  const [drawnId, setDrawnId] = useState<string>();
+  const asked = useRef<string>(undefined);
+  asked.current = work?.id;
   const [detail, setDetail] = useState<string>();
   const sceneId = work && (scene && work.scenes[scene] ? scene : work.rootSceneId);
 
@@ -70,6 +75,7 @@ export function LiveWork({
         if (t.kind === "scene") opener.current?.(t.id);
         else setDetail(t.id);
       },
+      shown: () => setDrawnId(asked.current),
       select: () => {},
       commit: () => {},
       error: (message) => console.warn("showcase:", message),
@@ -78,7 +84,11 @@ export function LiveWork({
     canvas.element.style.touchAction = "pan-y";
     view.current = canvas;
     let live = true;
-    void canvas.ready.finally(() => live && setShown(true));
+    void canvas.ready.finally(() => {
+      if (!live) return;
+      setShown(true);
+      setDrawnId(asked.current);
+    });
     const resized = new ResizeObserver(() => canvas.refit());
     resized.observe(host.current!);
     return () => {
@@ -108,7 +118,7 @@ export function LiveWork({
   useEffect(() => view.current?.refit(), [insets?.top, insets?.bottom]);
 
   return (
-    <div className={cx("l-live")} data-shown={shown || undefined} aria-label={label} role="group">
+    <div className={cx("l-live")} data-shown={(shown && drawnId === work?.id) || undefined} aria-label={label} role="group">
       <div className={cx("canvas", "l-live-canvas")} ref={host} />
       {detail && work?.details[detail] && <Detail work={work} id={detail} close={() => setDetail(undefined)} />}
     </div>
