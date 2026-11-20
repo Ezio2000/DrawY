@@ -52,25 +52,32 @@ export function sceneHash(work: Work, sceneId: string): string {
     ...scene.modules.map((m) => m.drawingId),
     ...scene.links.map((l) => l.drawingId),
   ]);
-  const allDrawingIds = Object.keys(work.drawings);
+  const allDrawingIds = [
+    ...new Set([
+      ...Object.keys(work.drawings),
+      ...Object.values(work.materials)
+        .filter((m) => m.kind === "drawing")
+        .map((m) => m.id),
+    ]),
+  ];
+  const expanded = new Set<string>();
   let blob = JSON.stringify([scene.modules, scene.links, scene.interaction ?? "", scene.checks]);
-  // Transitively include any custom drawing referenced inside another drawing or script.
+  // Transitively include any work-owned or library drawing referenced inside another drawing or script.
   let grew = true;
   while (grew) {
     grew = false;
+    for (const id of drawingIds) {
+      if (expanded.has(id)) continue;
+      expanded.add(id);
+      const d = drawingOf(work, id);
+      if (!d) continue;
+      blob += JSON.stringify(d);
+      grew = true;
+    }
     for (const id of allDrawingIds) {
       if (drawingIds.has(id)) continue;
       if (blob.includes(id)) {
         drawingIds.add(id);
-        grew = true;
-      }
-    }
-    for (const id of drawingIds) {
-      const d = work.drawings[id];
-      if (!d) continue;
-      const piece = JSON.stringify(d);
-      if (!blob.includes(piece)) {
-        blob += piece;
         grew = true;
       }
     }
@@ -80,7 +87,7 @@ export function sceneHash(work: Work, sceneId: string): string {
     .sort()
     .map((id) => [id, work.drawings[id]]);
   const usedMaterials = Object.keys(work.materials)
-    .filter((id) => blob.includes(id))
+    .filter((id) => drawingIds.has(id) || blob.includes(id))
     .sort()
     .map((id) => [id, work.materials[id]]);
   return createHash("sha256")

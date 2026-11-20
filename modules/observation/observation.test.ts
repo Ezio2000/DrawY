@@ -6,7 +6,7 @@ import { Storage } from "../storage/index.ts";
 import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { observe, requireObserved } from "./index.ts";
-import type { Observation } from "../contracts/index.ts";
+import type { Observation, Work } from "../contracts/index.ts";
 afterEach(() => vi.unstubAllGlobals());
 it("requires latest revision and all populated scenes; runtime errors invalidate observation", () => {
   const work = fixture();
@@ -274,6 +274,32 @@ it("skips unchanged scenes in multi-scene observe() and allows finishing once on
     rev4.style.accent = "#0055aa";
     store.commit(rev4, rev4.revision, { kind: "edit" });
     expect(() => requireObserved(store.work(work.id), earlier.observations)).toThrow("root, child");
+
+    // A library drawing calling a work-owned drawing via api.draw invalidates the scene when the inner drawing changes.
+    const rev5 = structuredClone(store.work(work.id));
+    rev5.drawings["inner-part"] = {
+      id: "inner-part",
+      name: "inner",
+      defaults: {},
+      source: 'return api.svg("<svg/>");',
+    };
+    rev5.materials["lib-wrapper"] = {
+      id: "lib-wrapper",
+      kind: "drawing",
+      name: "wrapper",
+      defaults: {},
+      params: {},
+      source: 'return api.draw("inner-part", {});',
+    };
+    rev5.scenes.child.modules[0].drawingId = "lib-wrapper";
+    store.commit(rev5, rev5.revision, { kind: "edit" });
+    await look({});
+    expect(() => requireObserved(store.work(work.id), earlier.observations)).not.toThrow();
+
+    const rev6 = structuredClone(store.work(work.id));
+    rev6.drawings["inner-part"].source = 'throw Error("boom");';
+    store.commit(rev6, rev6.revision, { kind: "edit" });
+    expect(() => requireObserved(store.work(work.id), earlier.observations)).toThrow("child");
   } finally {
     db.close();
     rmSync(dir, { recursive: true });
