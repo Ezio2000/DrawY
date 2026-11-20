@@ -25,7 +25,7 @@ import { useT } from "../i18n.tsx";
 import { progressOf } from "../Rail.tsx";
 import type { Asking } from "../shell.ts";
 import { useSelect } from "../session/store.ts";
-import { Brand, Seal } from "../Title.tsx";
+import { Brand } from "../Title.tsx";
 import { useLocale } from "../ui/locale.tsx";
 import { reducedMotion } from "../ui/primitives.tsx";
 import { cx } from "./cx.ts";
@@ -121,10 +121,8 @@ function Hero({
   const request = useSelect(asking.draft, (r) => r);
   return (
     <section className={cx("l-hero")} aria-labelledby="l-hero-title">
-      <Scatter />
       <p className={cx("l-eyebrow")}>
-        <Brand size={18} />
-        <span>{l.eyebrow}</span>
+        <Brand size={17} />
       </p>
       <h1 id="l-hero-title" className={cx("l-display")}>
         {l.title.map((line) => (
@@ -163,7 +161,8 @@ function Hero({
             {text}
           </button>
         ))}
-        <button className={cx("l-chip")} data-plain onClick={() => go("/new")}>
+        <i aria-hidden />
+        <button className={cx("l-blank")} onClick={() => go("/new")}>
           <Plus size={14} />
           {l.blank}
         </button>
@@ -196,7 +195,6 @@ function Showpiece({ solar }: { solar: Work[] }) {
           work={latest}
           scene={scene}
           setScene={setScene}
-          version={latest ? solar.length - 1 : undefined}
           foot={<Dock text={l.followUp} />}
         >
           <LiveWork work={latest} scene={scene} open={setScene} label={latest?.title} insets={docked} />
@@ -210,36 +208,20 @@ function Showpiece({ solar }: { solar: Work[] }) {
   );
 }
 
-/** A few of the library's drawings lying about the hero, as sketches lie about a desk. */
-function Scatter() {
-  return (
-    <div className={cx("l-scatter")} aria-hidden>
-      {["sun", "saturn", "leaf", "apple", "heart", "lantern"].map((id) => (
-        <img key={id} data-at={id} src={`/materials/files/${id}`} alt="" loading="lazy" decoding="async" />
-      ))}
-    </div>
-  );
-}
-
 /* ---------------------------------------------------------------- the board */
 
-/** A work as the work page frames it, in small: the title card with the scene path and the
- * seal of its version, the tools down the side, and the composer's strip along the foot. */
+/** A work as the work page frames it, in small: the title card with the scene path, the
+ * tools down the side, and the composer's strip along the foot. */
 function Board({
   work,
   scene,
   setScene,
-  version,
-  versionLabel,
   foot,
   children,
 }: {
   work?: Work;
   scene?: string;
   setScene?: (id: string) => void;
-  /** The version shown, sealed as the work page seals it. */
-  version?: number;
-  versionLabel?: string;
   foot?: ReactNode;
   children: ReactNode;
 }) {
@@ -269,12 +251,6 @@ function Board({
             </span>
           ))}
         </nav>
-        {!!version && (
-          <span className={cx("l-board-seal")}>
-            <Seal version={version} />
-            {versionLabel ?? l.version(version)}
-          </span>
-        )}
       </div>
       <div className={cx("l-board-tools")} aria-hidden>
         <Undo2 size={15} />
@@ -321,7 +297,6 @@ function Recent({ works, open }: { works: Summary[]; open: (id: string) => void 
               <button onClick={() => open(w.id)}>
                 <span className={cx("l-recent-cover")}>
                   {w.cover && !w.progress.blank ? <img src={w.cover} alt="" loading="lazy" /> : <i aria-hidden />}
-                  {!w.progress.blank && w.progress.version > 0 && <Seal version={w.progress.version} />}
                 </span>
                 <b>{w.title}</b>
                 <span>{state.text}</span>
@@ -447,7 +422,6 @@ function Story() {
             work={work}
             scene={scene}
             setScene={setScene}
-            version={work ? 1 : undefined}
             foot={<Dock text={l.chapters[at].ask} />}
           >
             <LiveWork work={work} scene={scene} open={setScene} label={work?.title} insets={docked} />

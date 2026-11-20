@@ -30,10 +30,10 @@
 .l-display {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(36px, 5.2vw, 72px);
+  font-size: clamp(34px, 4.6vw, 64px);
   font-weight: 650;
-  line-height: 1.04;
-  letter-spacing: -0.035em;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
   color: var(--ink);
   text-wrap: balance;
 }
@@ -163,136 +163,104 @@
 }
 
 .l-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0 0 28px;
-  padding: 6px 14px 6px 10px;
-  border-radius: 8px;
-  background: var(--paper);
-  box-shadow: var(--shadow-1);
-  font-size: 13.5px;
-  color: var(--text-2);
-}
-
-.l-eyebrow > span:last-child {
-  padding-left: 12px;
-  border-left: 1px solid var(--line);
+  margin: 0 0 22px;
+  opacity: 0.9;
 }
 
 .l-ask {
   width: 100%;
-  max-width: 720px;
-  margin: 36px auto 0;
+  max-width: 760px;
+  margin: 40px auto 0;
   text-align: left;
 }
 
-/* The composer (drawn by the app's sheet), lifted off the paper a little more here. */
-.l-ask > div > div {
+/* The composer (drawn by the app's sheet) made the page's centrepiece: roomier, three lines
+   tall before anything is typed, and lifted off the desk. The doubled class outranks the
+   app's own rules for the home composer. */
+.l-ask.l-ask > div > div {
+  padding: 18px 14px 14px 22px;
+  border-radius: 18px;
   box-shadow:
     0 0 0 1px var(--line-strong),
-    0 2px 3px rgba(22, 26, 34, 0.04),
-    0 24px 48px -24px rgba(22, 26, 34, 0.28);
+    0 2px 4px rgba(22, 26, 34, 0.04),
+    0 28px 56px -28px rgba(22, 26, 34, 0.3);
 }
 
+.l-ask.l-ask > div > div:focus-within {
+  box-shadow:
+    0 0 0 1.5px var(--ai),
+    0 2px 4px rgba(22, 26, 34, 0.04),
+    0 28px 56px -28px rgba(22, 26, 34, 0.3);
+}
+
+.l-ask.l-ask textarea[aria-label] {
+  min-height: 78px;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+/* Questions to start from, quiet beside the box: plain words on a faint ground, and the
+   blank canvas apart at the end. */
 .l-tries {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  max-width: 820px;
+  max-width: 760px;
   margin: 18px auto 0;
   font-size: 13.5px;
   color: var(--text-3);
 }
 
 .l-tries > span {
-  margin-right: 2px;
+  margin-right: 4px;
+}
+
+.l-tries > i {
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--line-strong);
 }
 
 .l-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   min-height: 32px;
   padding: 5px 12px;
-  border: 1px solid var(--line-strong);
+  border: 0;
   border-radius: var(--r-control);
-  background: var(--paper);
+  background: rgba(22, 26, 34, 0.05);
   color: var(--text-2);
+  font: inherit;
   font-size: 13.5px;
   cursor: pointer;
   transition:
-    border-color 0.15s var(--ease),
     color 0.15s var(--ease),
     background-color 0.15s var(--ease);
 }
 
 .l-chip:hover {
-  border-color: var(--blue);
+  background: var(--blue-soft);
   color: var(--blue);
 }
 
-.l-chip[data-plain] {
-  border-style: dashed;
+.l-blank {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 4px;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
 }
 
-/* Sketches from the library lying about the desk, at its edges. */
-.l-scatter {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-}
-
-.l-scatter img {
-  position: absolute;
-  width: clamp(72px, 9vw, 132px);
-  height: auto;
-  opacity: 0.92;
-  filter: saturate(0.92);
-}
-
-.l-scatter [data-at="sun"] {
-  top: 9%;
-  left: 6%;
-  rotate: -8deg;
-}
-
-.l-scatter [data-at="saturn"] {
-  top: 12%;
-  right: 7%;
-  width: clamp(96px, 11vw, 164px);
-  rotate: 9deg;
-}
-
-.l-scatter [data-at="leaf"] {
-  top: 60%;
-  left: 3%;
-  rotate: -18deg;
-}
-
-.l-scatter [data-at="apple"] {
-  top: 62%;
-  right: 5%;
-  rotate: 7deg;
-}
-
-.l-scatter [data-at="heart"] {
-  top: 36%;
-  left: 13%;
-  width: clamp(44px, 4.6vw, 66px);
-  rotate: 12deg;
-  opacity: 0.8;
-}
-
-.l-scatter [data-at="lantern"] {
-  top: 37%;
-  right: 15%;
-  width: clamp(44px, 4.4vw, 64px);
-  rotate: -6deg;
-  opacity: 0.85;
+.l-blank:hover {
+  color: var(--blue);
 }
 
 .l-showpiece {
@@ -423,32 +391,6 @@
 
 .l-board-card nav button:hover {
   color: var(--blue);
-}
-
-.l-board-seal {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding-left: 10px;
-  border-left: 1px solid var(--line);
-  font-size: 12.5px;
-  color: var(--text-3);
-}
-
-.l-board-seal[data-draft] {
-  font-style: normal;
-  color: var(--text-3);
-}
-
-.l-board-seal > span:first-child {
-  animation: l-stamp 0.5s var(--spring) both;
-}
-
-@keyframes l-stamp {
-  from {
-    scale: 1.8;
-    opacity: 0;
-  }
 }
 
 .l-board-tools {
@@ -597,12 +539,6 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.l-recent-cover > span {
-  position: absolute;
-  top: 8px;
-  right: 8px;
 }
 
 .l-recent b {
@@ -1195,10 +1131,6 @@
 /* ---------------------------------------------------------------- narrow screens */
 
 @media (max-width: 1080px) {
-  .l-scatter [data-at="heart"],
-  .l-scatter [data-at="lantern"] {
-    display: none;
-  }
   .l-process-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1212,8 +1144,12 @@
 }
 
 @media (max-width: 820px) {
-  .l-scatter {
+  .l-tries > i {
     display: none;
+  }
+  .l-blank {
+    flex-basis: 100%;
+    justify-content: center;
   }
   .l-intro {
     border-radius: 20px 20px 0 0;

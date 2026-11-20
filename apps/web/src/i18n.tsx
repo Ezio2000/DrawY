@@ -103,7 +103,6 @@ const zh = {
   },
   // The home page: the range of what DrawY draws, told through works it made
   landing: {
-    eyebrow: "每个想法，都值得探索",
     title: ["想要什么样的图，", "说一句，就画出来。"],
     lead: "说一句话，DrawY 就画出一张能点开、能拖动、能接着改的图。",
     more: "看看 DrawY 能画什么",
@@ -114,7 +113,6 @@ const zh = {
     blank: "新建空白画布",
     live: "这不是截图，是一件正在运行的作品。点地球，钻进去看看。",
     path: "场景路径",
-    version: (n: number) => `第 ${n} 版`,
     followUp: "让我调调一年有多快。",
     asked: "人们在 DrawY 上问",
     questions: [
@@ -1492,7 +1490,6 @@ const en: Words = {
     all: "See all",
   },
   landing: {
-    eyebrow: "Every idea is worth exploring",
     title: ["Whatever picture you need,", "say it and it's drawn."],
     lead: "Say one sentence and DrawY draws a picture you can open up, drag about and keep changing.",
     more: "See what DrawY can draw",
@@ -1503,7 +1500,6 @@ const en: Words = {
     blank: "New blank canvas",
     live: "This isn't a screenshot — it's a work, running. Click Earth and step inside.",
     path: "Scene path",
-    version: (n) => `Version ${n}`,
     followUp: "Let me change how fast a year goes.",
     asked: "People ask DrawY",
     questions: [
