@@ -1,5 +1,4 @@
 import { DomainError, id, type Run, type Settings, type Step } from "../contracts/index.ts";
-import type { MessageLocale } from "../contracts/messages.ts";
 import { MIN_TEXT } from "../contracts/geometry.ts";
 import type { UserStore } from "../storage/index.ts";
 import { kit, library, look, styleList, useOf } from "../materials/index.ts";
@@ -66,13 +65,12 @@ export class Agent {
     sceneId: string,
     prompt: string,
     materials: string[] = [],
-    locale: MessageLocale = "zh",
   ) {
     const work = store.work(workId);
     if (store.busy(workId)) throw new DomainError("请先完成或取消当前任务", 409);
     if (!work.scenes[sceneId]) throw new DomainError("场景不存在", 404);
     const settings = store.settings();
-    const message = await userMessage(store, prompt, materials, locale);
+    const message = await userMessage(store, prompt, materials);
     const run: Run = {
       id: id(),
       workId,
@@ -102,12 +100,11 @@ export class Agent {
     runId: string,
     answer: string,
     materials: string[] = [],
-    locale: MessageLocale = "zh",
   ) {
     const run = store.run(runId);
     if (run.status !== "waiting") throw new DomainError("当前任务没有等待回答");
     const ctx = reopened(store, run, store.context(runId) as Context);
-    ctx.input.push(await userMessage(store, answer, materials, locale));
+    ctx.input.push(await userMessage(store, answer, materials));
     run.steps.push({ kind: "message", role: "user", text: answer, materials });
     run.questions = undefined;
     run.status = "running";
@@ -458,8 +455,12 @@ export class Agent {
     const pending = developments.filter((d) => !d.settled);
     if (pending.length)
       return `图片仍在生成：${pending.map((d) => d.id).join(", ")}。用 view_canvas 等它们显影后再看一次`;
+    const observed = [
+      ...store.runs(run.workId).flatMap((r) => (r.id === run.id ? [] : r.observations)),
+      ...run.observations,
+    ];
     try {
-      requireObserved(work, run.observations);
+      requireObserved(work, observed);
     } catch (e) {
       return e instanceof Error ? e.message : String(e);
     }

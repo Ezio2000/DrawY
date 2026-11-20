@@ -1343,3 +1343,43 @@ it("draws links from ends they hold, following their modules, and every drawing 
   expect(after.auto).toEqual({ from: { x: 50, y: 60, side: "bottom" }, to: { x: 50, y: 500, side: "top" } });
   expect(after.point).toEqual({ from: { x: 25, y: 60, side: "bottom" }, to: { x: 50, y: 560, side: "bottom" } });
 });
+
+it("tints recolourable picture icons with the picture drawing's color parameter", async () => {
+  const pictureSource = readFileSync(new URL("../../materials/seed/drawings/picture.js", import.meta.url), "utf8");
+  work.drawings.picture = { id: "picture", name: "图片", defaults: {}, source: pictureSource };
+  work.materials["line-apple"] = {
+    id: "line-apple",
+    kind: "picture",
+    name: "苹果图标",
+    role: "icon",
+    style: "line-icon",
+    url: "/materials/files/line-apple",
+    width: 24,
+    height: 24,
+    content: { x: 0, y: 0, width: 1, height: 1 },
+    anchors: {},
+    opaque: false,
+    recolor: true,
+    status: "ready",
+  };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      {
+        id: "icon",
+        label: "图标",
+        drawingId: "picture",
+        data: { material: "line-apple", color: "#275DAD" },
+        bounds: { x: 40, y: 40, width: 64, height: 64 },
+      },
+    ],
+    links: [],
+    checks: [],
+  };
+  delete work.scenes.root.interaction;
+  await open();
+  const src = await page.evaluate(() =>
+    document.querySelector('[data-module-id="icon"]')?.shadowRoot?.querySelector("img")?.getAttribute("src"),
+  );
+  expect(src).toBe("/materials/files/line-apple?color=%23275DAD");
+});

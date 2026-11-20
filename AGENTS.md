@@ -12,14 +12,15 @@ DrawY 是一个让 AI 画可探索、可修改的图的 Web 应用。用户提�
 pnpm install
 pnpm typecheck                                    # tsc --noEmit；项目没有 linter
 pnpm build                                        # dist/web（前端）与 dist/runtime/runtime.js（运行时 IIFE）
-pnpm test                                         # 先 build 再 vitest run
-pnpm test:desktop                                 # 先 build 再只跑作品页（电脑、手机、平板）的回归验证
+pnpm test                                         # 只跑核心单测（不 build、不跑浏览器回归，默认验证只跑这个即可）
+pnpm test:runtime                                 # 先打 runtime bundle 再跑 modules/runtime/runtime.test.ts
+pnpm test:desktop                                 # 先 build 再只跑作品页（电脑、手机、平板）的回归验证（按需手动跑）
 pnpm exec vitest run modules/agent/agent.test.ts  # 单个文件
 pnpm exec vitest run -t "用例名片段"               # 单个用例
 docker compose up -d --build                      # 完整部署，访问 http://localhost:8088
 ```
 
-`modules/runtime/runtime.test.ts` 会加载 `dist/runtime/runtime.js`，并在 Playwright Chromium 里执行。所以只要改了 `modules/runtime`、`modules/observation/capture.ts` 或它们依赖的协议代码，就要先 `pnpm build`，否则测到的是旧的 bundle。`apps/web/regression/` 下的作品页回归验证测的是构建出的 `dist/web`，改了前端也要先 build。其他测试不依赖构建产物。Playwright 自带的浏览器没装时，作品页的回归验证可以用 `DRAWY_CHROMIUM` 指定一个 Chromium 可执行文件。
+默认验证只跑核心单测（`pnpm test`）即可，不依赖构建产物。`modules/runtime/runtime.test.ts` 会加载 `dist/runtime/runtime.js` 并在 Playwright Chromium 里执行（改了 `modules/runtime`、`modules/observation/capture.ts` 或相关协议需要验证时跑 `pnpm test:runtime`）。`apps/web/regression/` 下的作品页回归验证测的是构建出的 `dist/web`，耗时较长，仅在需要时手动跑 `pnpm test:desktop`。Playwright 自带的浏览器没装时，可用 `DRAWY_CHROMIUM` 指定一个 Chromium 可执行文件。
 
 本地开发要同时起几个进程：
 - `pnpm --dir materials start`：素材服务，端口 8090，数据在 `data/materials`。

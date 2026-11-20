@@ -1047,3 +1047,46 @@ it("observes in the same turn when write_work carries view, skips it on write fa
   expect(viewSteps.every((s) => s.status === "done")).toBe(true);
 });
 
+it("sends image-only requests without synthetic no-words or language prompts, lets set_brief cite the picture, ignores drawing-id collisions in module data, and skips redundant view_canvas on read-only turns", async () => {
+  const reference = await client.ingest(
+    await picture(),
+    "image/png",
+    { role: "object", name: { zh: "评审表", en: "review" }, style: null, origin: { kind: "upload" } },
+    store.userId,
+  );
+  // First run: image-only request (no typed text).
+  const firstSeen = script([
+    ["set_brief", { ...brief, cast: [], basis: { subject: reference.id, intent: reference.id } }],
+    [
+      "write_work",
+      {
+        drawings: [{ id: "glyph-box", name: "Glyph", source: "return api.html(`<div>${api.data.glyph}</div>`)" }],
+        scenes: [{ id: "root", clear: true }],
+        modules: [{ id: "g1", label: "g1", bounds: [0, 0, 40, 40], drawingId: "glyph-box", data: { glyph: "gauge" } }],
+        view: { claims: ["g1 shown"] },
+      },
+    ],
+    ["finish", { message: "drawn" }],
+  ]);
+  const agent = new Agent(() => {});
+  const run1 = await agent.start(store, work.id, "root", "", [reference.id]);
+  await waitFor(run1.id, "completed");
+  const userTurn = firstSeen[0].find((i: Item) => Array.isArray(i.content))!;
+  const texts = (userTurn.content as { type: string; text?: string }[]).filter((p) => p.type === "input_text").map((p) => p.text ?? "");
+  expect(texts.join("\n")).not.toMatch(/Pictures only|no words|The user reads/i);
+  expect(texts.join("\n")).toContain(reference.id);
+  const [, written] = outputs(firstSeen.at(-1)!);
+  // Module data { glyph: "gauge" } must not pull the library "gauge" drawing into work.materials.
+  expect(written.materialsAdded).toBeUndefined();
+  expect(written.cardsUnread).toBeUndefined();
+  expect(store.work(work.id).materials.gauge).toBeUndefined();
+
+  // Second run: pure Q&A turn without edits completes without forcing view_canvas again.
+  vi.mocked(observe).mockClear();
+  script([["finish", { message: "这是面向客户的概览图。" }]]);
+  const run2 = await agent.start(store, work.id, "root", "这是专业级别的架构图？");
+  await waitFor(run2.id, "completed");
+  expect(vi.mocked(observe)).not.toHaveBeenCalled();
+  expect(store.run(run2.id).steps.filter((s) => s.kind === "tool")).toEqual([]);
+});
+
