@@ -5,16 +5,11 @@ import {
   ChevronRight,
   CodeXml,
   Download,
-  History,
-  MessagesSquare,
   MousePointerClick,
   NotebookPen,
-  PencilLine,
   Plus,
-  Redo2,
   ScanEye,
   SlidersHorizontal,
-  Undo2,
 } from "lucide-react";
 import type { Work } from "../../../../modules/contracts/index.ts";
 import { Composer, Unconnected } from "../Composer.tsx";
@@ -210,8 +205,8 @@ function Showpiece({ solar }: { solar: Work[] }) {
 
 /* ---------------------------------------------------------------- the board */
 
-/** A work as the work page frames it, in small: the title card with the scene path, the
- * tools down the side, and the composer's strip along the foot. */
+/** A work as the work page frames it, in small: the title card with the scene path, and
+ * the composer's strip along the foot holding what was asked. */
 function Board({
   work,
   scene,
@@ -251,15 +246,6 @@ function Board({
             </span>
           ))}
         </nav>
-      </div>
-      <div className={cx("l-board-tools")} aria-hidden>
-        <Undo2 size={15} />
-        <Redo2 size={15} />
-        <i />
-        <PencilLine size={15} />
-        <MessagesSquare size={15} />
-        <History size={15} />
-        <Download size={15} />
       </div>
       <div className={cx("l-board-body")}>
         <div className={cx("l-board-paper")}>{children}</div>

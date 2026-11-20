@@ -308,8 +308,8 @@
 
 /* ---------------------------------------------------------------- the board */
 
-/* The work page in small: the desk around a sheet, the title card on it, the tools down the
-   right edge, and the composer's strip over its foot. */
+/* The work page in small: the desk around a sheet, the title card on it, and the
+   composer's strip over its foot. */
 .l-board {
   position: relative;
   border-radius: 16px;
@@ -323,7 +323,7 @@
 
 .l-board-body {
   position: absolute;
-  inset: 8px 44px 8px 8px;
+  inset: 8px;
   display: flex;
   overflow: hidden;
   border-radius: 11px;
@@ -345,7 +345,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  max-width: calc(100% - 90px);
+  max-width: calc(100% - 36px);
   padding: 7px 12px;
   border-radius: 8px;
   background: var(--paper);
@@ -393,28 +393,10 @@
   color: var(--blue);
 }
 
-.l-board-tools {
-  position: absolute;
-  top: 16px;
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  width: 44px;
-  color: var(--text-3);
-}
-
-.l-board-tools i {
-  width: 14px;
-  height: 1px;
-  background: var(--line-strong);
-}
-
 .l-dock {
   position: absolute;
   bottom: 22px;
-  left: calc(50% - 18px);
+  left: 50%;
   z-index: 4;
   display: flex;
   align-items: center;
@@ -718,14 +700,6 @@
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.06),
     0 40px 80px -30px rgba(0, 0, 0, 0.6);
-}
-
-.l-story-stage .l-board-tools {
-  color: #7d8597;
-}
-
-.l-story-stage .l-board-tools i {
-  background: #4a5162;
 }
 
 /* Where the picture in view stands: a tick per chapter, and the four kinds under them. */
@@ -1156,9 +1130,6 @@
   }
   .l-showpiece .l-board {
     aspect-ratio: 4 / 4.4;
-  }
-  .l-board-tools {
-    display: none;
   }
   .l-board-body {
     inset: 6px;
