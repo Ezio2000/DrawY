@@ -133,7 +133,7 @@ it("holds a request while hand edits are unsaved, until they are saved, thrown a
 });
 
 it("places words ready to type on a blank canvas, and duplicates, copies and pastes them", async () => {
-  await page.goto(base + "/");
+  await page.goto(base + "/new");
   await page.waitForSelector("[data-canvas]");
   await page.waitForTimeout(500);
   await editing();
@@ -494,10 +494,24 @@ it("gives a dropped image only to the canvas or composer that received it", asyn
   await dataTransfer.dispose();
 });
 
-it("opens the blank canvas at home for guests and prompts sign-in only when sending, then continues", async () => {
+it("shows guests the home page with its works drawn live, and no sign-in wall", async () => {
   const guest = await browser.newContext({ locale: "en-US", viewport: { width: 1440, height: 900 } });
   const guestPage = await guest.newPage();
   await guestPage.goto(base + "/");
+  expect(await guestPage.getByRole("heading", { level: 1 }).innerText()).toContain("say it and it's drawn");
+  // The showpiece is a work drawn by the canvas, not a picture of one.
+  await guestPage.waitForSelector("[data-canvas]");
+  expect(await guestPage.getByRole("dialog").count()).toBe(0);
+  // An example goes into the box to send.
+  await guestPage.getByRole("button", { name: "How does the solar system work?" }).first().click();
+  expect(await guestPage.locator("textarea").first().inputValue()).toBe("How does the solar system work?");
+  await guest.close();
+});
+
+it("opens the blank canvas for guests and prompts sign-in only when sending, then continues", async () => {
+  const guest = await browser.newContext({ locale: "en-US", viewport: { width: 1440, height: 900 } });
+  const guestPage = await guest.newPage();
+  await guestPage.goto(base + "/new");
   await guestPage.waitForSelector("[data-canvas]");
   // No login wall on arrival; the composer is ready to type in.
   expect(await guestPage.getByRole("dialog").count()).toBe(0);

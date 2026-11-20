@@ -32,6 +32,7 @@ import type { Asking } from "./shell.ts";
 import type { ComponentType } from "react";
 import type { ShellProps } from "./shell.ts";
 import { useShell } from "./shells.ts";
+import { Landing } from "./home/Landing.tsx";
 import { followViewport } from "./viewport.ts";
 
 type AuthReason = "send" | "upload" | "library" | "edit" | "page" | "general";
@@ -101,7 +102,7 @@ export function App() {
       return;
     }
     if (to === location.pathname) return;
-    if (!now.current.user && to !== "/") {
+    if (!now.current.user && to !== "/" && to !== "/new") {
       requireAuth(to === "/library" ? "library" : "page", () => now.current.go(to));
       return;
     }
@@ -170,7 +171,9 @@ export function App() {
       return made;
     },
   };
-  const activeSession = page === "home" || !user ? blankSession : session;
+  // The blank canvas stands behind the home page too: a request sent from there makes its
+  // own work, and the canvas is what a visitor sees behind the sign-in on other pages.
+  const activeSession = page === "home" || page === "new" || !user ? blankSession : session;
   // The session follows the scene the address names before the page is painted.
   useLayoutEffect(() => session?.locate(sceneOf(path)), [session, path]);
 
@@ -304,7 +307,7 @@ export function App() {
     });
   }, [user?.id]);
   useEffect(() => {
-    if (!user || (page !== "home" && page !== "work")) return;
+    if (!user || (page !== "home" && page !== "new" && page !== "work")) return;
     void api<Models>("/models").then(setModels, () => {});
   }, [user?.id, page]);
   useEffect(() => {
@@ -314,7 +317,7 @@ export function App() {
     act();
   }, [user]);
   useEffect(() => {
-    if (user === null && page !== "home" && !authPrompt) setAuthPrompt("page");
+    if (user === null && page !== "home" && page !== "new" && !authPrompt) setAuthPrompt("page");
   }, [user, page, authPrompt]);
   useEffect(() => {
     if (!open) return;
@@ -356,10 +359,10 @@ export function App() {
   function use(m: Material) {
     draft.use(m);
     setPicking(false);
-    if (page !== "work" && page !== "home") go("/");
+    if (page !== "work" && page !== "home" && page !== "new") go("/");
   }
   const shownWorks = works.filter((w) => w.id !== trash?.id);
-  const droppable = page === "home" || page === "work";
+  const droppable = page === "home" || page === "new" || page === "work";
   const authReasons: Record<AuthReason, string> = {
     send: t.auth.whySend,
     upload: t.auth.whyUpload,
@@ -380,7 +383,7 @@ export function App() {
           <Tooltips />
           <div
             className={cx("app")}
-            data-whole={((page === "work" || page === "home") && !!activeSession && shells.whole) || undefined}
+            data-whole={((page === "work" || page === "new") && !!activeSession && shells.whole) || undefined}
           >
             {user !== undefined && (
               <Rail
@@ -426,7 +429,15 @@ export function App() {
             >
               {user === undefined ? (
                 loading
-              ) : page === "home" || !user ? (
+              ) : page === "home" ? (
+                <Landing
+                  asking={asking}
+                  feedback={feedback}
+                  go={go}
+                  works={user ? shownWorks : []}
+                  open={(id) => go("/a/" + id)}
+                />
+              ) : page === "new" || !user ? (
                 <OpenWork
                   session={blankSession}
                   Page={shells.Page}
@@ -460,7 +471,7 @@ export function App() {
                   loading={loading}
                 />
               )}
-              <FloatingError feedback={feedback} shown={(page !== "work" && page !== "home") || !activeSession} />
+              <FloatingError feedback={feedback} shown={(page !== "work" && page !== "new") || !activeSession} />
               {dragging && (
                 <div className={cx("dropzone")}>
                   <ImagePlus size={28} />
@@ -493,7 +504,7 @@ export function App() {
                   pendingMaterialize.current?.(undefined);
                   pendingMaterialize.current = undefined;
                   setAuthPrompt(undefined);
-                  if (!user && page !== "home") go("/");
+                  if (!user && page !== "home" && page !== "new") go("/");
                 }}
               />
             )}

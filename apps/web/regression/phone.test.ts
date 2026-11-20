@@ -353,20 +353,16 @@ it("catches up on what changed while the page was hidden, as a phone does with a
   await expect.poll(() => top().innerText(), { timeout: 10_000 }).toContain("Renamed elsewhere");
 });
 
-it("lays the home page out for a phone: it scrolls to every work, and its menus open inside the screen", async () => {
+it("lays the home page out for a phone: the latest works, and the box's menus inside the screen", async () => {
   for (let i = 0; i < 5; i++) await make();
   await page.goto(base + "/");
   await settled();
-  const works = page.locator("ul li button", { hasText: "Check" });
-  // Every work is there to scroll to (the other tests made some too).
-  await expect.poll(() => works.count()).toBeGreaterThanOrEqual(5);
-  const last = works.last();
-  await last.scrollIntoViewIfNeeded();
-  const r = (await last.boundingBox())!;
-  expect(r.y + r.height).toBeLessThanOrEqual(664);
-  // The composer stays at the foot, over the works.
-  const field = (await page.locator("textarea").boundingBox())!;
-  expect(field.y + field.height).toBeLessThanOrEqual(664);
+  // The latest few works, under the box to ask in.
+  const works = page.getByRole("region", { name: "Recent work" }).locator("li button", { hasText: "Check" });
+  await expect.poll(() => works.count()).toBeGreaterThanOrEqual(1);
+  expect(await works.count()).toBeLessThanOrEqual(4);
+  const field = (await page.locator("textarea").first().boundingBox())!;
+  expect(field.x >= 0 && field.x + field.width <= 390).toBe(true);
   for (const name of ["Add", "Style"]) {
     await page.getByRole("button", { name, exact: true }).tap();
     await settled();

@@ -1,13 +1,16 @@
 import type { Work } from "../../../modules/contracts/index.ts";
 
-/* The app's addresses: the home page, a work (with a subscene under it, so the browser goes
- * back up a level), the library, the settings and the run records. */
+/* The app's addresses: the home page, a blank canvas to start on, a work (with a subscene
+ * under it, so the browser goes back up a level), the library, the settings and the run
+ * records. */
 
-export type Page = "home" | "work" | "library" | "settings" | "traces";
+export type Page = "home" | "new" | "work" | "library" | "settings" | "traces";
 export const pageOf = (path: string): Page =>
   path.startsWith("/a/")
     ? "work"
-    : path === "/library"
+    : path === "/new"
+      ? "new"
+      : path === "/library"
       ? "library"
       : path === "/settings"
         ? "settings"

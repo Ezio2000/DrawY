@@ -156,6 +156,18 @@
 
 新的会话行为写进对应的部分并在 `work.test.ts` 里测，不要放回组件的 ref 和 effect 里；界面怎么呈现的状态和文案放在壳里。
 
+### 首页与示范作品
+
+`/` 是 `home/Landing.tsx`，空白画布挪到了 `/new`（`routes.ts` 的 `new` 页，App 对它的处理和原来的首页相同：`blankSession`、可拖入文件、访客不弹登录）。首页里的输入框是 `Composer` 的 `home` 形态，发送仍走 `asking.send`：没有打开的作品时先建作品再发出。
+
+首页上的图都是真正的作品，用作品页同一个 `Canvas` 绘制（`home/LiveWork.tsx`）：靠近屏幕时才创建；滚轮交给页面滚动，只有捏合或按住 Ctrl 才缩放画面；`touch-action: pan-y` 让手指上下滑动时页面照常滚动；指向场景的模块在原地切换场景，指向详情的打开详情页；`insets` 给标题牌和下方输入条留出位置。这些作品的源码在 `apps/showcase/works/*.ts`，按作者的方式写：一份简报加一串 `WorkEdit`（每一项是一版）。`apps/showcase/build.ts` 把它们发给一台正在运行的 DrawY（`POST /api/works` 再逐版 `POST /api/works/:id/edits`，由服务端像对待作者的 `write_work` 一样收进素材），把每版取回的作品连同简报存成 `apps/web/src/home/showcase/<id>.<zh|en>.json`（同一作品各版共用的素材只存一份）；`home/showcase.ts` 按需动态加载。改了示范作品后：
+
+```sh
+DRAWY_URL=http://127.0.0.1:8080 DRAWY_ADMIN_USER=… DRAWY_ADMIN_PASS=… pnpm exec tsx apps/showcase/build.ts [id…]
+```
+
+示范作品里的图片引用 `/materials/files/…`，所以页面需要素材服务在主程序后面。首页的样式在 `home/landing.module.css`，类名都以 `l-` 开头，`home/cx.ts` 还会解析到 app 的样式表（共享输入框和画布上的目标标记）；由别的组件画出来的元素（输入框、印、品牌）用结构选择器定位，不在本表里重定义它们的类名。
+
 ## 手动编辑如何流动
 
 原则：手动编辑的能力等于作者 `write_work` 的能力，不多也不少。每个手动操作都算出一份只含变化的 `WorkEdit`，经 `POST /api/works/:id/edits`（`{baseRevision, edit}`）交给 `writeWork`，和作者的写入是同一种写法、同一套校验，落到作品上是同一个 `layOn`。所以协议里没有的东西（旋转、透明度、锁定之类）手动编辑也不能有；要加这类能力，得先改协议，让作者同时拥有。反过来，作者能写的（模块的名字、位置、编组、跳转目标和数据，连线及其两端，场景及其脚本，详情，作品画法的代码、默认值与参数，共享样式，取用素材），手动编辑都有入口。`set_brief`、`generate_images` 和 `view_canvas` 是作者的创作工具，不是对作品的修改，不进编辑器。
