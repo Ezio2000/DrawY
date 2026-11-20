@@ -158,7 +158,7 @@
 
 ### 首页与示范作品
 
-`/` 是 `home/Landing.tsx`，空白画布挪到了 `/new`（`routes.ts` 的 `new` 页，App 对它的处理和原来的首页相同：`blankSession`、可拖入文件、访客不弹登录）。首页里的输入框是 `Composer` 的 `home` 形态，发送仍走 `asking.send`：没有打开的作品时先建作品再发出。
+`/` 是 `home/Landing.tsx`，分两段：第一屏（`Hero`）只放提问，`min-height: 100cqh` 撑满滚动容器（`.l-page` 设了 `container-type: size`），登录后最近的作品也在这里；介绍 DrawY 的内容都在 `.l-intro` 里，是叠在桌面上的一张纸，第一屏底部的按钮滚到它。空白画布挪到了 `/new`（`routes.ts` 的 `new` 页，App 对它的处理和原来的首页相同：`blankSession`、可拖入文件、访客不弹登录）。首页里的输入框是 `Composer` 的 `home` 形态，发送仍走 `asking.send`：没有打开的作品时先建作品再发出。
 
 首页上的图都是真正的作品，用作品页同一个 `Canvas` 绘制（`home/LiveWork.tsx`）：靠近屏幕时才创建；滚轮交给页面滚动，只有捏合或按住 Ctrl 才缩放画面；`touch-action: pan-y` 让手指上下滑动时页面照常滚动；指向场景的模块在原地切换场景，指向详情的打开详情页；`insets` 给标题牌和下方输入条留出位置。这些作品的源码在 `apps/showcase/works/*.ts`，按作者的方式写：一份简报加一串 `WorkEdit`（每一项是一版）。`apps/showcase/build.ts` 把它们发给一台正在运行的 DrawY（`POST /api/works` 再逐版 `POST /api/works/:id/edits`，由服务端像对待作者的 `write_work` 一样收进素材），把每版取回的作品连同简报存成 `apps/web/src/home/showcase/<id>.<zh|en>.json`（同一作品各版共用的素材只存一份）；`home/showcase.ts` 按需动态加载。改了示范作品后：
 

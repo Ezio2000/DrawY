@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowUp,
+  ChevronDown,
   ChevronRight,
   CodeXml,
   Download,
@@ -66,43 +67,58 @@ export function Landing({
     asking.draft.hand(text);
     page.current?.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
   };
+  const intro = useRef<HTMLDivElement>(null);
   return (
     <div className={cx("l-page")} ref={page}>
-      <Hero asking={asking} feedback={feedback} go={go} solar={solar} ask={ask} />
-      {works.length > 0 && <Recent works={works} open={open} />}
-      <Ticker words={l} ask={ask} />
-      <Story />
-      <Process words={l} />
-      <People words={l} />
-      <Belief words={l} />
-      <Closing words={l} ask={() => ask(asking.draft.get().text)} blank={() => go("/new")} />
-      <Questions words={l} />
-      <Footer words={l} go={go} />
+      <Hero
+        asking={asking}
+        feedback={feedback}
+        go={go}
+        ask={ask}
+        recent={works.length > 0 && <Recent works={works} open={open} />}
+        more={() => intro.current?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth" })}
+      />
+      {/* What DrawY is, apart from where one asks it: a sheet laid over the desk below. */}
+      <div className={cx("l-intro")} ref={intro}>
+        <Showpiece solar={solar} />
+        <Ticker words={l} ask={ask} />
+        <Story />
+        <Process words={l} />
+        <People words={l} />
+        <Belief words={l} />
+        <Closing words={l} ask={() => ask(asking.draft.get().text)} blank={() => go("/new")} />
+        <Questions words={l} />
+        <Footer words={l} go={go} />
+      </div>
     </div>
   );
 }
 
 /* ---------------------------------------------------------------- hero */
 
+/** Where one asks: the whole first screen, a desk with nothing on it but the box to write
+ * in, a few questions to start from and, for someone signed in, their latest works. What
+ * DrawY is waits below, a scroll away. */
 function Hero({
   asking,
   feedback,
   go,
-  solar,
   ask,
+  recent,
+  more,
 }: {
   asking: Asking;
   feedback: Feedback;
   go: (path: string) => void;
-  solar: Work[];
   ask: (text: string) => void;
+  recent: ReactNode;
+  /** Takes the reader down to what DrawY is. */
+  more: () => void;
 }) {
   const t = useT(),
     l = t.landing;
   const user = useAccount();
   const request = useSelect(asking.draft, (r) => r);
-  const [scene, setScene] = useState<string>();
-  const latest = solar.at(-1);
   return (
     <section className={cx("l-hero")} aria-labelledby="l-hero-title">
       <Scatter />
@@ -152,7 +168,30 @@ function Hero({
           {l.blank}
         </button>
       </div>
-      <figure className={cx("l-showpiece")}>
+      {recent}
+      <button className={cx("l-more")} onClick={more}>
+        {l.more}
+        <ChevronDown size={16} aria-hidden />
+      </button>
+    </section>
+  );
+}
+
+/** The first thing below the fold: what DrawY is, and one of its works running. */
+function Showpiece({ solar }: { solar: Work[] }) {
+  const l = useT().landing;
+  const [scene, setScene] = useState<string>();
+  const latest = solar.at(-1);
+  return (
+    <section className={cx("l-showpiece")} aria-labelledby="l-intro-title">
+      <header className={cx("l-section-head")}>
+        <p className={cx("l-kicker")}>{l.introKicker}</p>
+        <h2 id="l-intro-title" className={cx("l-display")} data-size="section">
+          {l.introTitle}
+        </h2>
+        <p className={cx("l-lead")}>{l.introLead}</p>
+      </header>
+      <figure>
         <Board
           work={latest}
           scene={scene}

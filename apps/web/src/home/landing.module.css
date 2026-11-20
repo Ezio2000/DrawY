@@ -18,8 +18,11 @@
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: var(--paper);
+  /* The desk one asks at; what DrawY is lies over it on a sheet of its own (.l-intro). */
+  background: #f6f7f9;
   scroll-padding-top: 24px;
+  /* The first screen is as tall as the page shows. */
+  container-type: size;
 }
 
 /* ---------------------------------------------------------------- type */
@@ -90,22 +93,73 @@
 
 /* ---------------------------------------------------------------- hero */
 
+/* The first screen is only for asking: it fills the page, its words and box in the middle,
+   and the way on to what DrawY is sits at its foot. */
 .l-hero {
   position: relative;
-  padding: clamp(48px, 9vh, 104px) var(--l-side) 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100cqh;
+  padding: 56px var(--l-side) 96px;
   text-align: center;
   isolation: isolate;
 }
 
-/* The desk's dot grid under the hero, fading out before the drawing below it. */
+/* The desk's dot grid, strongest round the box. */
 .l-hero::before {
   content: "";
   position: absolute;
-  inset: 0 0 30%;
+  inset: 0;
   z-index: -1;
   background: var(--l-dots) 0 0 / 22px 22px;
-  mask-image: radial-gradient(ellipse 70% 80% at 50% 20%, #000 30%, transparent 75%);
-  opacity: 0.75;
+  mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, #000 35%, transparent 80%);
+  opacity: 0.8;
+}
+
+.l-more {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 13.5px;
+  translate: -50% 0;
+  cursor: pointer;
+  transition: color 0.2s var(--ease);
+}
+
+.l-more:hover {
+  color: var(--blue);
+}
+
+.l-more svg {
+  animation: l-nudge 2.4s var(--ease) infinite;
+}
+
+@keyframes l-nudge {
+  50% {
+    translate: 0 4px;
+  }
+}
+
+/* What DrawY is: a sheet laid over the desk, its rounded top edge and soft shadow saying it
+   is apart from where one asks, without a wall between them. */
+.l-intro {
+  position: relative;
+  border-radius: 28px 28px 0 0;
+  background: var(--paper);
+  box-shadow:
+    0 -1px 0 var(--line),
+    0 -36px 64px -48px rgba(22, 26, 34, 0.3);
 }
 
 .l-eyebrow {
@@ -127,6 +181,7 @@
 }
 
 .l-ask {
+  width: 100%;
   max-width: 720px;
   margin: 36px auto 0;
   text-align: left;
@@ -200,32 +255,32 @@
 }
 
 .l-scatter [data-at="sun"] {
-  top: 64px;
+  top: 9%;
   left: 6%;
   rotate: -8deg;
 }
 
 .l-scatter [data-at="saturn"] {
-  top: 92px;
+  top: 12%;
   right: 7%;
   width: clamp(96px, 11vw, 164px);
   rotate: 9deg;
 }
 
 .l-scatter [data-at="leaf"] {
-  top: 360px;
+  top: 60%;
   left: 3%;
   rotate: -18deg;
 }
 
 .l-scatter [data-at="apple"] {
-  top: 380px;
+  top: 62%;
   right: 5%;
   rotate: 7deg;
 }
 
 .l-scatter [data-at="heart"] {
-  top: 250px;
+  top: 36%;
   left: 13%;
   width: clamp(44px, 4.6vw, 66px);
   rotate: 12deg;
@@ -233,7 +288,7 @@
 }
 
 .l-scatter [data-at="lantern"] {
-  top: 250px;
+  top: 37%;
   right: 15%;
   width: clamp(44px, 4.4vw, 64px);
   rotate: -6deg;
@@ -241,8 +296,13 @@
 }
 
 .l-showpiece {
+  padding: clamp(72px, 11vh, 120px) 0 0;
+}
+
+.l-showpiece figure {
   max-width: var(--l-max);
-  margin: clamp(48px, 7vh, 80px) auto 0;
+  margin: clamp(40px, 6vh, 64px) auto 0;
+  padding: 0 var(--l-side);
 }
 
 .l-showpiece .l-board {
@@ -486,16 +546,19 @@
 
 /* ---------------------------------------------------------------- recent work */
 
+/* Someone signed in finds their latest works under the box, still on the desk. */
 .l-recent {
-  max-width: var(--l-max);
-  margin: 56px auto 0;
-  padding: 0 var(--l-side);
+  width: 100%;
+  max-width: 880px;
+  margin: 40px auto 0;
+  text-align: left;
 }
 
 .l-recent h2 {
-  margin: 0 0 14px;
-  font-size: 15px;
+  margin: 0 0 12px;
+  font-size: 13px;
   font-weight: 650;
+  color: var(--text-3);
 }
 
 .l-recent ul {
@@ -522,7 +585,7 @@
 .l-recent-cover {
   position: relative;
   display: block;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 9;
   margin-bottom: 6px;
   overflow: hidden;
   border-radius: var(--r-card);
@@ -1152,6 +1215,9 @@
   .l-scatter {
     display: none;
   }
+  .l-intro {
+    border-radius: 20px 20px 0 0;
+  }
   .l-showpiece .l-board {
     aspect-ratio: 4 / 4.4;
   }
@@ -1218,6 +1284,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .l-more svg {
+    animation: none;
+  }
   .l-ticker-track {
     animation: none;
   }

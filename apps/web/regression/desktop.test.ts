@@ -499,9 +499,12 @@ it("shows guests the home page with its works drawn live, and no sign-in wall", 
   const guestPage = await guest.newPage();
   await guestPage.goto(base + "/");
   expect(await guestPage.getByRole("heading", { level: 1 }).innerText()).toContain("say it and it's drawn");
-  // The showpiece is a work drawn by the canvas, not a picture of one.
-  await guestPage.waitForSelector("[data-canvas]");
   expect(await guestPage.getByRole("dialog").count()).toBe(0);
+  // The first screen is only for asking; what DrawY is waits below, and its showpiece is a
+  // work drawn by the canvas, not a picture of one.
+  expect(await guestPage.locator("[data-canvas]").count()).toBe(0);
+  await guestPage.getByRole("button", { name: "See what DrawY can draw" }).click();
+  await guestPage.waitForSelector("[data-canvas]");
   // An example goes into the box to send.
   await guestPage.getByRole("button", { name: "How does the solar system work?" }).first().click();
   expect(await guestPage.locator("textarea").first().inputValue()).toBe("How does the solar system work?");
