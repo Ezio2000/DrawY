@@ -776,25 +776,56 @@ button.l-dock:focus-visible i {
   height: min(660px, calc(100vh - 120px));
 }
 
-/* The two boards lie in one frame like sheets on a pile; the script slides the next up over
-   the one in view (--back darkens the one going under) as the chapters pass. The frame clips
-   them and casts the shadow, so a board on its way in is never seen outside it. */
+/* The boards are leaves of a pad bound along the top. The script turns the leaf in view up
+   over the binding (rotateX about its top edge) and shades the one beneath with --back; the
+   frame gives the depth, so the leaf comes out towards the reader as it turns. */
 .l-story-boards {
   position: relative;
   height: calc(100% - 26px);
-  overflow: hidden;
   border-radius: 16px;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.06),
     0 40px 80px -30px rgba(0, 0, 0, 0.6);
+  perspective: 2600px;
+  perspective-origin: 50% 20%;
+}
+
+/* The pad's binding: a coil of wire along the top edge, over every leaf, which the leaves
+   turn about. */
+.l-story-boards::before {
+  content: "";
+  position: absolute;
+  top: -11px;
+  left: 28px;
+  right: 28px;
+  z-index: 5;
+  height: 24px;
+  background:
+    linear-gradient(90deg, transparent 7px, #6d727d 7px, #eef0f3 9.5px, #b9bdc5 11px, #5d626c 13px, transparent 13px) 0 0 / 24px 100% repeat-x;
+  -webkit-mask: linear-gradient(#000, #000) 0 0 / 100% 100%;
+  border-radius: 3px;
+  filter: drop-shadow(0 2px 1.5px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
 }
 
 .l-story-slot {
   position: absolute;
   inset: 0;
   border-radius: 16px;
-  box-shadow: 0 -20px 44px -14px rgba(0, 0, 0, 0.6);
+  transform-origin: 50% 0;
+  transform-style: preserve-3d;
   will-change: transform;
+}
+
+/* Each face shows only from its own side: the board in front, the paper's back behind. */
+.l-story-slot > .l-board,
+.l-story-slot::after {
+  backface-visibility: hidden;
+}
+
+.l-story-slot > .l-board,
+.l-story-leaf-back {
+  opacity: var(--fade, 1);
 }
 
 .l-story-slot::after {
@@ -805,6 +836,20 @@ button.l-dock:focus-visible i {
   border-radius: inherit;
   background: #0b0d12;
   opacity: var(--back, 0);
+  pointer-events: none;
+}
+
+.l-story-leaf-back {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0) 22%, rgba(255, 255, 255, 0.35) 70%, rgba(0, 0, 0, 0.1)),
+    radial-gradient(rgba(22, 26, 34, 0.05) 1px, transparent 1px) 0 0 / 20px 20px,
+    #e9e7e1;
+  box-shadow: inset 0 0 0 8px #d9d6ce;
+  transform: rotateX(180deg) translateZ(1px);
+  backface-visibility: hidden;
   pointer-events: none;
 }
 
@@ -1330,12 +1375,12 @@ button.l-dock:focus-visible i {
      while two boards hand over. */
   .l-story-stage {
     order: -1;
-    top: 8px;
+    top: 20px;
     z-index: 2;
     height: 54vh;
     background: var(--l-night);
     box-shadow:
-      0 -8px 0 var(--l-night),
+      0 -20px 0 var(--l-night),
       0 18px 18px -2px var(--l-night);
   }
   .l-chapters li,

@@ -368,11 +368,12 @@ const chapters: { id: ShowcaseId; scene?: string; band: number }[] = [
 ];
 
 /** The range told along a dark drafting band: the chapters scroll past on one side while a
- * board on the other stays put and shows each chapter's work. Two boards take turns, like
- * sheets on a pile: as the next chapter comes up to the middle of the screen, its board slides
- * up from the foot of the frame over the one in view, which sinks back and darkens, in step
- * with the scrolling rather than on a timer. Wherever the reader stops, both stay legible.
- * The band's grid drifts by a little slower than the page. */
+ * board on the other stays put and shows each chapter's work. The boards are the leaves of a
+ * pad bound along the top: as the next chapter comes up to the middle of the screen, the leaf
+ * in view lifts from its foot and turns up over the binding, showing the back of the paper,
+ * and the next lies beneath, in its shadow until the leaf has gone. The turn follows the
+ * scrolling rather than a timer, so scrolling back lays the leaf down again. The band's grid
+ * drifts by a little slower than the page. */
 function Story({ ask }: { ask: (text: string) => void }) {
   const l = useT().landing;
   const locale = useLocale();
@@ -400,12 +401,15 @@ function Story({ ask }: { ask: (text: string) => void }) {
     const el = band.current!;
     const page = scroller(el);
     let frame = 0;
-    /** Lays a board in the frame: `y` down from its place, `back` how far it has sunk
-     * behind the one coming over it (0 to 1), `over` whether it lies on top. */
-    const place = (slot: HTMLDivElement | null | undefined, y: number, back: number, over: boolean, shown: boolean) => {
+    /** Lays a leaf on the pad: turned `turn` degrees up over the binding, with `shade`
+     * darkening it (0 to 1), `over` whether it lies on top. */
+    const place = (slot: HTMLDivElement | null | undefined, turn: number, shade: number, over: boolean, shown: boolean) => {
       if (!slot) return;
-      slot.style.transform = `translateY(${y}px) scale(${1 - 0.06 * back})`;
-      slot.style.setProperty("--back", String(0.6 * back));
+      slot.style.transform = turn ? `rotateX(${turn}deg)` : "";
+      // Past upright the leaf goes on over the binding and drops behind the pad. The fade is
+      // laid on each face (--fade), as opacity on the leaf itself would flatten it.
+      slot.style.setProperty("--fade", String(turn <= 115 ? 1 : Math.max(0, 1 - (turn - 115) / 55)));
+      slot.style.setProperty("--back", String(shade));
       slot.style.zIndex = over ? "2" : "1";
       slot.style.visibility = shown ? "visible" : "hidden";
     };
@@ -418,9 +422,11 @@ function Story({ ask }: { ask: (text: string) => void }) {
       let p = a + 1 < tops.length ? Math.min(1, Math.max(0, 0.5 + (line - tops[a + 1]) / span)) : 0;
       if (reducedMotion()) p = p < 0.5 ? 0 : 1;
       const eased = p * p * (3 - 2 * p);
-      const tall = slots.current[0]?.parentElement?.clientHeight ?? 600;
-      place(slots.current[a % 2], 0, eased, false, p < 1);
-      place(slots.current[(a + 1) % 2], (1 - eased) * (tall + 24), 0, true, p > 0 && a + 1 < tops.length);
+      const turn = eased * 180;
+      // The leaf darkens a little as it tilts from the light; the one under it lies in its
+      // shadow until it has turned away.
+      place(slots.current[a % 2], turn, 0.28 * Math.sin((turn * Math.PI) / 180), true, turn < 170);
+      place(slots.current[(a + 1) % 2], 0, 0.55 * (1 - eased), false, p > 0 && a + 1 < tops.length);
       track.current?.style.setProperty("--sp", String((a + p) / (chapters.length - 1)));
       if (!reducedMotion())
         el.style.setProperty("--drift", `${-(el.getBoundingClientRect().top - page.getBoundingClientRect().top) * 0.2}px`);
@@ -522,6 +528,8 @@ function Story({ ask }: { ask: (text: string) => void }) {
                   >
                     <LiveWork work={work} scene={scene} open={go} label={work?.title} insets={docked} />
                   </Board>
+                  {/* The back of the leaf, seen once it has turned past upright. */}
+                  <i className={cx("l-story-leaf-back")} aria-hidden />
                 </div>
               );
             })}
