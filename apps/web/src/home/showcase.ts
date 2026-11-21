@@ -8,14 +8,16 @@ import type { Locale } from "../ui/locale.tsx";
 
 export type ShowcaseId =
   | "solar"
-  | "apple"
-  | "heart"
-  | "silk"
-  | "mansion"
-  | "model"
-  | "water"
-  | "space"
-  | "poster";
+  | "night"
+  | "styles"
+  | "inside"
+  | "lens"
+  | "rhythm"
+  | "range"
+  | "coast"
+  | "navigate"
+  | "history"
+  | "family";
 
 const files = import.meta.glob<ShowcaseFile>("./showcase/*.json", { import: "default" });
 const loaded = new Map<string, Promise<Work[]>>();

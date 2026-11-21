@@ -512,7 +512,7 @@ it("shows guests the home page with its works drawn live, and no sign-in wall", 
   // that work and nothing else.
   await guestPage.getByRole("navigation", { name: "What it draws" }).getByRole("button", { name: "Map" }).click();
   await expect
-    .poll(() => guestPage.locator("#l-chapter-silk").getAttribute("data-on"), { timeout: 8000 })
+    .poll(() => guestPage.locator("#l-chapter-coast").getAttribute("data-on"), { timeout: 8000 })
     .toBe("true");
   expect(await guestPage.getByRole("button", { name: /^Ask this yourself/ }).count()).toBe(0);
   await guest.close();

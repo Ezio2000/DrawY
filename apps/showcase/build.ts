@@ -2,14 +2,16 @@ import { mkdir, writeFile } from "node:fs/promises";
 import type { Work } from "../../modules/contracts/index.ts";
 import { sayIn, type Lang, type ShowcaseFile, type ShowcaseSource } from "./kit.ts";
 import { solar } from "./works/solar.ts";
-import { apple } from "./works/apple.ts";
-import { heart } from "./works/heart.ts";
-import { silk } from "./works/silk.ts";
-import { mansion } from "./works/mansion.ts";
-import { model } from "./works/model.ts";
-import { water } from "./works/water.ts";
-import { space } from "./works/space.ts";
-import { poster } from "./works/poster.ts";
+import { night } from "./works/night.ts";
+import { styled } from "./works/styles.ts";
+import { inside } from "./works/inside.ts";
+import { lens } from "./works/lens.ts";
+import { rhythm } from "./works/rhythm.ts";
+import { range } from "./works/range.ts";
+import { coast } from "./works/coast.ts";
+import { navigate } from "./works/navigate.ts";
+import { history } from "./works/history.ts";
+import { family } from "./works/family.ts";
 
 /* Makes the home page's works on a running DrawY, the way any work is made: a new work,
  * then each version's edits laid on it by the server, which takes in the library drawings
@@ -20,7 +22,7 @@ import { poster } from "./works/poster.ts";
  *     pnpm exec tsx apps/showcase/build.ts [id…]
  */
 
-export const sources: ShowcaseSource[] = [solar, apple, heart, silk, mansion, model, water, space, poster];
+export const sources: ShowcaseSource[] = [solar, night, styled, inside, lens, rhythm, range, coast, navigate, history, family];
 const base = process.env.DRAWY_URL || "http://127.0.0.1:8080";
 const out = new URL("../web/src/home/showcase/", import.meta.url);
 

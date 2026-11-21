@@ -29,10 +29,10 @@ import { scroller, turnedUp, useCycledTyping } from "./motion.ts";
 import { loadShowcase, useShowcase, type ShowcaseId } from "./showcase.ts";
 
 /* The home page, told the way a drawing tool's site tells it: the box to ask in first,
- * then the range of pictures that one box draws, from a flowchart to a poster, then how
- * each is drawn, who it is for and what people ask. Every picture on it is a work DrawY
- * made (apps/showcase), drawn live by the work page's own canvas, so what it shows is what
- * the product does. */
+ * then the range of pictures that one box draws — one lighthouse, asked about from a
+ * painting of it to the family who built it — then how each is drawn, who it is for and
+ * what people ask. Every picture on it is a work DrawY made (apps/showcase), drawn live by
+ * the work page's own canvas, so what it shows is what the product does. */
 
 type Words = ReturnType<typeof useT>["landing"];
 /** Room the drawing leaves at the edges of its sheet; inside a scene, more at the top for
@@ -313,18 +313,20 @@ function Ticker({ words, ask }: { words: Words; ask: (text: string) => void }) {
 
 /* ---------------------------------------------------------------- the range of pictures */
 
-/** The story's chapters, from the most orderly picture to the freest: which work each
- * shows, the scene it opens on, and where it stands on the spectrum. */
+/** The story's chapters: one lighthouse, asked about further and further, from a painting
+ * of it to the family who built it — the freest picture first, the most orderly last. Which
+ * work each shows, the scene it opens on, and where it stands on the spectrum. */
 const chapters: { id: ShowcaseId; scene?: string; band: number }[] = [
-  { id: "model", band: 0 },
-  { id: "water", band: 0 },
-  { id: "space", band: 0 },
-  { id: "mansion", band: 1 },
-  { id: "heart", band: 2 },
-  { id: "solar", scene: "earth", band: 2 },
-  { id: "silk", band: 2 },
-  { id: "poster", band: 3 },
-  { id: "apple", band: 3 },
+  { id: "night", band: 0 },
+  { id: "styles", band: 0 },
+  { id: "inside", band: 1 },
+  { id: "lens", band: 1 },
+  { id: "rhythm", band: 2 },
+  { id: "range", band: 2 },
+  { id: "coast", band: 2 },
+  { id: "navigate", band: 3 },
+  { id: "history", band: 3 },
+  { id: "family", band: 3 },
 ];
 
 /** The range told along a dark drafting band: the chapters scroll past on one side while a

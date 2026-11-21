@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { Brief, MaterialUse, Work, WorkEdit } from "../../modules/contracts/index.ts";
 
 /* The works the home page shows. Each is written the way the author writes one: a brief,
@@ -18,6 +19,9 @@ export interface ShowcaseSource {
    * page keeps every one, so it can show the work as it grew. */
   versions: (say: Say) => WorkEdit[];
 }
+
+/** A drawing's code, kept as a file of its own in ./drawings so it reads as the code it is. */
+export const code = (name: string) => readFileSync(new URL(`./drawings/${name}.js`, import.meta.url), "utf8");
 
 export const sayIn =
   (lang: Lang): Say =>

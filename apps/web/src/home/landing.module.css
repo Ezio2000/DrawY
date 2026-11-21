@@ -614,7 +614,7 @@
 
 .l-story-grid {
   display: grid;
-  grid-template-columns: minmax(0, 4.4fr) minmax(0, 7.6fr);
+  grid-template-columns: minmax(0, 3.8fr) minmax(0, 8.2fr);
   gap: clamp(32px, 5vw, 72px);
   max-width: 1320px;
   margin: clamp(48px, 8vh, 88px) auto 0;
@@ -696,11 +696,12 @@
   text-wrap: pretty;
 }
 
+/* The works are drawn wide, so the pad is a landscape sheet, held in the middle of the
+   screen. */
 .l-story-stage {
   position: sticky;
-  top: max(24px, calc(50vh - 330px));
+  top: max(24px, calc(50vh - 290px));
   align-self: start;
-  height: min(660px, calc(100vh - 120px));
 }
 
 /* The pad: sheets of drawing paper on a coil along the top, the sheets below showing at the
@@ -709,7 +710,8 @@
    about the fold) and darkens the sheet beneath along the fold (.l-story-shade). */
 .l-story-boards {
   position: relative;
-  height: calc(100% - 26px);
+  aspect-ratio: 16 / 10;
+  max-height: calc(100vh - 150px);
   border-radius: 3px;
   box-shadow:
     var(--l-stack),
@@ -1287,7 +1289,6 @@
     order: -1;
     top: 20px;
     z-index: 2;
-    height: 54vh;
     background: var(--l-night);
     box-shadow:
       0 -20px 0 var(--l-night),
@@ -1295,12 +1296,12 @@
   }
   .l-chapters li,
   .l-chapters li:first-child {
-    min-height: 58vh;
+    min-height: 48vh;
     justify-content: flex-start;
     padding-top: 36px;
   }
   .l-story-boards {
-    height: calc(100% - 30px);
+    aspect-ratio: 16 / 10.4;
   }
   /* The pad stays at the top of the screen here, under the button that opens the side bar,
      so the way out of a scene keeps clear of it. */
