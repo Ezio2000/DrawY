@@ -673,6 +673,49 @@ it("captures full scenes and completed interaction states through the same runti
   expect(shots.filter((s) => s.sceneId === "child")).toHaveLength(1);
   expect(shots[0].base64).not.toBe(shots[1].base64);
 }, 30000);
+it("moves a midpoint-initialized range slider when checking it via capture", async () => {
+  work.materials.slider = libraryDrawing("slider");
+  work.materials.label = libraryDrawing("label");
+  work.scenes.root = {
+    id: "root",
+    title: "滑块检查",
+    parentId: null,
+    modules: [
+      {
+        id: "load",
+        drawingId: "slider",
+        bounds: { x: 40, y: 40, width: 320, height: 64 },
+        data: { label: "荷载", min: 0, max: 30, step: 1, value: 15, unit: "kN/m" },
+      },
+      {
+        id: "readout",
+        drawingId: "label",
+        bounds: { x: 40, y: 130, width: 320, height: 48 },
+        data: { text: "推力 125 kN", size: 22 },
+      },
+    ],
+    links: [],
+    interaction: `api.on("load", "change", (v) => {
+      api.set("readout", { text: "推力 " + Math.round(v * 10) + " kN" });
+    });`,
+    checks: [{ moduleId: "load", selector: 'input[type="range"]' }],
+  };
+  const shots = await capture(browser, {
+    origin,
+    cookie: "fixture",
+    scenes: [
+      {
+        id: "root",
+        url: origin + "/api/works/fixture/scenes/root?revision=1",
+        checks: work.scenes.root.checks,
+        overview: true,
+      },
+    ],
+  });
+  expect(shots).toHaveLength(2);
+  expect(shots.every((s) => s.errors.length === 0)).toBe(true);
+  expect(shots[0].base64).not.toBe(shots[1].base64);
+}, 30000);
 it("draws every library drawing from its example with words uncut at large sizes, and reports what is cut", async () => {
   const drawings = seed("drawings") as DrawingMaterial[];
   work.materials = Object.fromEntries(

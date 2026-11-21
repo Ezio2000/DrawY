@@ -1090,3 +1090,109 @@ it("sends image-only requests without synthetic no-words or language prompts, le
   expect(store.run(run2.id).steps.filter((s) => s.kind === "tool")).toEqual([]);
 });
 
+it("keeps top-level request effort pinned across runs on conversation-effort models and switches via configuration_update", async () => {
+  const catalog = db.models();
+  catalog.writers[0].models[0].model = "gpt-6.2-sol";
+  catalog.writers[0].models[0].efforts = ["low", "medium", "high"];
+  catalog.writers[0].models[0].effort = "medium";
+  db.saveModels(modelCatalogSchema.parse(catalog));
+  const seen: { roleEffort: string; turnEffort?: string; updates: string[] }[] = [];
+  vi.mocked(generate).mockImplementation(async (role, turn) => {
+    seen.push({
+      roleEffort: role.effort,
+      turnEffort: turn.effort,
+      updates: turn.input
+        .filter((i) => i.type === "configuration_update")
+        .map((i) => i.reasoning.effort),
+    });
+    return { items: [item("view_canvas", {})], usage: {}, response: {} };
+  });
+  const agent = new Agent(() => {});
+  // Run 1 at medium: opens conversation at baseEffort = medium, no configuration_update.
+  vi.mocked(generate)
+    .mockImplementationOnce(async (role, turn) => {
+      seen.push({
+        roleEffort: role.effort,
+        turnEffort: turn.effort,
+        updates: turn.input.filter((i) => i.type === "configuration_update").map((i) => i.reasoning.effort),
+      });
+      return { items: [item("view_canvas", {})], usage: {}, response: {} };
+    })
+    .mockImplementationOnce(async (role, turn) => {
+      seen.push({
+        roleEffort: role.effort,
+        turnEffort: turn.effort,
+        updates: turn.input.filter((i) => i.type === "configuration_update").map((i) => i.reasoning.effort),
+      });
+      return { items: [item("finish", { message: "done 1" })], usage: {}, response: {} };
+    });
+  const run1 = await agent.start(store, work.id, "root", "第一稿");
+  await waitFor(run1.id, "completed");
+  expect(seen).toEqual([
+    { roleEffort: "medium", turnEffort: "medium", updates: [] },
+    { roleEffort: "medium", turnEffort: "medium", updates: [] },
+  ]);
+
+  // Run 2 switches effort to high: top-level role.effort stays pinned at medium, input appends configuration_update(high).
+  catalog.writers[0].models[0].effort = "high";
+  db.saveModels(modelCatalogSchema.parse(catalog));
+  seen.length = 0;
+  vi.mocked(generate).mockImplementationOnce(async (role, turn) => {
+    seen.push({
+      roleEffort: role.effort,
+      turnEffort: turn.effort,
+      updates: turn.input.filter((i) => i.type === "configuration_update").map((i) => i.reasoning.effort),
+    });
+    return { items: [item("finish", { message: "done 2" })], usage: {}, response: {} };
+  });
+  const run2 = await agent.start(store, work.id, "root", "第二轮用 high");
+  await waitFor(run2.id, "completed");
+  expect(seen).toEqual([{ roleEffort: "medium", turnEffort: "high", updates: ["high"] }]);
+
+  // Run 3 switches back to medium: top-level role.effort stays medium, input appends configuration_update(medium).
+  catalog.writers[0].models[0].effort = "medium";
+  db.saveModels(modelCatalogSchema.parse(catalog));
+  seen.length = 0;
+  vi.mocked(generate).mockImplementationOnce(async (role, turn) => {
+    seen.push({
+      roleEffort: role.effort,
+      turnEffort: turn.effort,
+      updates: turn.input.filter((i) => i.type === "configuration_update").map((i) => i.reasoning.effort),
+    });
+    return { items: [item("finish", { message: "done 3" })], usage: {}, response: {} };
+  });
+  const run3 = await agent.start(store, work.id, "root", "第三轮切回 medium");
+  await waitFor(run3.id, "completed");
+  expect(seen).toEqual([{ roleEffort: "medium", turnEffort: "medium", updates: ["high", "medium"] }]);
+});
+
+it("exempts basic primitives (picture, label, arrow) from cardsUnread and treats drawing cards as read guides in set_brief", async () => {
+  work.materials = {};
+  store.commit(work, 1, { kind: "edit" });
+  const seen = script([
+    [
+      item("set_brief", { ...brief, cast: [], basis: { subject: "苹果", intent: "苹果" } }, "s1"),
+      item("draw_guide", { drawings: ["bars"] }, "d1"),
+    ],
+    [
+      "write_work",
+      {
+        scenes: [{ id: "root", clear: true }],
+        modules: [
+          { id: "p1", label: "p1", bounds: [0, 0, 100, 100], drawingId: "picture", data: { material: "apple-textbook" } },
+          { id: "l1", bounds: [0, 110, 100, 30], drawingId: "label", data: { text: "苹果" } },
+        ],
+        links: [{ id: "k1", from: "p1", to: "l1", drawingId: "arrow" }],
+        view: { claims: ["p1 and l1 linked"] },
+      },
+    ],
+    ["finish", { message: "done" }],
+  ]);
+  const run = await new Agent(() => {}).start(store, work.id, "root", "画苹果");
+  await waitFor(run.id, "completed");
+  const [settled, , written] = outputs(seen.at(-1)!);
+  expect(settled.guides).toBeUndefined();
+  expect(written.cardsUnread).toBeUndefined();
+});
+
+

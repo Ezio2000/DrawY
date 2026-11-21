@@ -112,6 +112,8 @@ export function parsedArguments(x: Execution, call: Item) {
     throw Error(`工具参数不是有效的 JSON（${why}），没有保存。请改正后把完整参数重发`);
   }
 }
+/** Basic primitives whose parameters are already self-explanatory in # Library. */
+const BASIC_DRAWINGS = new Set(["picture", "label", "arrow"]);
 /** Library drawings the work uses whose cards the author has not read: parameters it
  * guessed draw something other than it meant, or nothing. */
 function cardsUnread(work: Work, input: Item[], batch: Item[] = []) {
@@ -129,7 +131,7 @@ function cardsUnread(work: Work, input: Item[], batch: Item[] = []) {
     }),
   );
   const unread = Object.values(work.materials)
-    .filter((m) => m.kind === "drawing" && !drawings.has(m.id) && !told.has(m.id))
+    .filter((m) => m.kind === "drawing" && !BASIC_DRAWINGS.has(m.id) && !drawings.has(m.id) && !told.has(m.id))
     .map((m) => m.id);
   return unread.length
     ? {
@@ -219,6 +221,7 @@ export const handlers: Record<
       ? await find({ subjects: work.brief!.cast, style: style.id, kinds: ["picture"] }, store.userId)
       : undefined;
     Object.assign(call.step!, { revision: work.revision, ...(cast ? { found: cast.found } : {}) });
+    const read = guidesRead(ctx.input, call.batch);
     return {
       output: {
         revision: work.revision,
@@ -232,7 +235,7 @@ export const handlers: Record<
         },
         ...(cast ? { cast: cast.output } : {}),
         ...research(run),
-        ...(guidesRead(ctx.input, call.batch).topics.size
+        ...(read.topics.size || read.drawings.size
           ? {}
           : { guides: "Read what this work needs with draw_guide before drawing: see # Guides." }),
       },
@@ -276,7 +279,7 @@ export const handlers: Record<
     return {
       output: {
         developing: made.map((d, i) => ({ id: d.id, name: d.name, aspect: requests[i].aspect ?? "square" })),
-        note: "Use these ids now. view_canvas waits for them; each is shown to you when it arrives.",
+        note: "Use these ids now. write_work with view (or view_canvas) waits for them; each is shown to you when it arrives.",
       },
     };
   },

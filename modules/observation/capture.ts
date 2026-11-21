@@ -315,6 +315,35 @@ export async function capture(
           ],
         });
       };
+      /** Performs a check or action click. Clicking a range slider's center leaves a
+       * midpoint thumb unmoved, so click away from its current value along the track. */
+      const trigger = async (target: ReturnType<Page["locator"]>) => {
+        const range = await target.evaluate(
+          (el) => {
+            const input =
+              el instanceof HTMLInputElement && el.type === "range"
+                ? el
+                : el.querySelector<HTMLInputElement>('input[type="range"]');
+            if (!input) return null;
+            const min = Number(input.min || 0),
+              max = Number(input.max || 100),
+              val = Number(input.value);
+            const ratio = max > min ? (val - min) / (max - min) : 0.5;
+            return { next: ratio > 0.6 ? 0.15 : 0.85, isSelf: input === el };
+          },
+          undefined,
+          { timeout: 5000 },
+        );
+        if (range) {
+          const slider = range.isSelf ? target : target.locator('input[type="range"]').first();
+          const box = await slider.boundingBox({ timeout: 5000 });
+          if (box && box.width > 0 && box.height > 0) {
+            await page.mouse.click(box.x + box.width * range.next, box.y + box.height / 2);
+            return;
+          }
+        }
+        await target.click({ timeout: 5000 });
+      };
       await load();
       if (scene.overview) {
         await shot("全图", true);
@@ -324,7 +353,7 @@ export async function capture(
             const host = page.locator(
               `[data-module-id=${JSON.stringify(check.moduleId)}]`,
             );
-            await host.locator(check.selector).click({ timeout: 5000 });
+            await trigger(host.locator(check.selector));
             await ready(page);
           } catch (e) {
             errors.push(String(e));
@@ -356,10 +385,11 @@ export async function capture(
         await load();
         for (const action of scene.actions) {
           try {
-            await page
-              .locator(`[data-module-id=${JSON.stringify(action.moduleId)}]`)
-              .locator(action.selector)
-              .click({ timeout: 5000 });
+            await trigger(
+              page
+                .locator(`[data-module-id=${JSON.stringify(action.moduleId)}]`)
+                .locator(action.selector),
+            );
             await ready(page);
           } catch (e) {
             errors.push(String(e));
