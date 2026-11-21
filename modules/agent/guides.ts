@@ -11,7 +11,7 @@ import { guideSchema } from "./tools.ts";
 export const guides: Record<GuideTopic, { when: string; cards?: string[]; text: string }> = {
   drawing: {
     when: "before writing a drawing or link drawing of your own, including one that composes library drawings with api.draw",
-    text: `A drawing definition is reusable JavaScript function-body source. It receives api and returns an Element (or awaits one), because the runtime places what is returned and reports anything else as an error. Leave out HTML documents, body or head, app chrome and viewport sizing. Use the local module width and height; all positions outside a drawing are scene units. Drawing code is async, so await initial data before returning. Keep the source readable, and reuse one definition across instances with different data.
+    text: `A drawing definition is reusable JavaScript function-body source. It receives api and returns an Element (or awaits one), because the runtime places what is returned and reports anything else as an error. Leave out HTML documents, body or head, app chrome and viewport sizing. Use the local module width and height; all positions outside a drawing are scene units. Drawing code is async, so await initial data before returning. Format drawing source and interaction scripts as clean, multi-line JavaScript and SVG with line breaks and readable variable names — never minified or dense one-liners — so users can inspect them in the code panel and later edits can target individual lines cleanly. Reuse one definition across instances with different data.
 
 Drawing API:
 - api.data: instance parameters. api.width, api.height: module size. api.theme: the work's style tokens (ink, muted, accent, accent2, paper, stroke, font).
@@ -32,7 +32,7 @@ Looks. Use the style's tokens for ink, colours, stroke and font, and its effects
   diagrams: {
     when: "when the figure is or contains a flowchart, system diagram, hierarchy, matrix, table, chart or other conventional structured form",
     text: `Build a conventional form from the library's drawing for it (# Library lists them: hierarchy, layers, quadrant, compare, pyramid, venn, mindmap, steps, swimlanes, fishbone, sequence, concentric, gantt, bars, donut, gauge, stat, radar, plot, timeline, checklist, callout). They already have balanced spacing, a type scale and the style's colours, which boxes placed by hand rarely reach. Ask for the cards of the ones you use in the same draw_guide call as this guide when you can. They can also be one part of a larger idea, such as a gauge on a drawn machine or a sequence beside the two machines it connects.
-Whenever the figure uses one of these forms (as the main diagram or as a part), use the library drawing and add surrounding labels, arrows, pictures or callouts to make it specific, rather than reimplementing the same chart, matrix, venn, fishbone, gauge, layers, mindmap, compare, steps, timeline, plot or radar in custom SVG.
+Whenever the figure uses one of these forms (as the main diagram or as a part), use the library drawing and add surrounding labels, arrows, pictures or callouts to make it specific, rather than reimplementing it in custom SVG.
 Draw a flowchart or system diagram as one node module per block, joined by arrow links with route elbow, with blocks of one kind the same size and aligned on shared rows and columns, so the user can move a block and its connections follow. A node's outline is notation the reader expects, so it is the one box the visual language allows.
 Keep api.mermaid for UML class or state diagrams the library does not provide, since its generic look ignores the style. Structure drawings take one of the style's effects as their effect parameter, which gives them the style's texture.`,
   },
@@ -48,17 +48,17 @@ Today's borders and roads on a historical map are anachronisms, so leave borders
 A map's edge is where the ground was cut. When the map is the figure's ground and fills most of the view, keep the default edge: "frame", which says where the land stops. edge: "fade" hides the outer part of the map and leaves land dissolving into paper, which suits only a small map set among other pictures as a vignette.`,
   },
   exploration: {
-    when: "before adding controls, animation, click behaviour, subscenes or detail pages",
-    text: `Exploration keeps the opening canvas clean and lets interested readers dig deeper. Give a module a detail target whenever a part has useful depth that would clutter the canvas — step-by-step how-tos, reasons, "avoid"/caveat tips, worked examples, code or comparisons — instead of writing sentences in canvas labels or notes; give it a scene target only when that part deserves its own diagram. Skip a detail target when a label already says enough, and never use a detail to restate a label. Detail content is separately opened HTML prose, never the main diagram. Empty subscenes can be created for later expansion.
+    when: "before adding interactive controls, animation, click behaviour, scene interaction scripts or subscenes",
+    text: `Exploration keeps the opening canvas clean and lets interested readers dig deeper. Give a module a scene target only when that part deserves its own diagram (empty subscenes can be created for later expansion); use a detail target for HTML prose depth instead of writing sentences on the canvas.
 
-A scene's script is its interaction field, a JavaScript function body receiving api:
+A scene's script is its interaction field, a multi-line JavaScript function body receiving api:
 - api.on(moduleId, event, callback) subscribes to module events; drawings send them with api.emit, and the slider and choice library drawings send "change".
 - api.set(moduleId, dataPatch) changes instance data. api.move(moduleId, x, y) moves a module and the links on it.
 - api.animate(seconds => ...) coordinates animation. api.cleanup(fn) disposes resources.
 - api.openScene(id) and api.openDetail(id) navigate. A module target navigates without code.
 
 These states are transient, since the saved work is what reopens, so the default state belongs in instance data. When a control changes values, keep the scales they are read against (axes, reference lines, maxima) fixed over the control's range, so a change shows as a change, with ticks on round numbers. Register async handlers as async functions so preview waits for them.
-Give the scene checks [{moduleId, selector}] for the important buttons its script or a drawing answers: view_canvas then shows them pressed. Test a sequence with view_canvas actions in a specified scene, because an interaction you have not seen run is unverified. A module's target needs no check, as the app opens it without your code: view_canvas already shows every subscene, and a detail page is laid out by the app, so a click that opens one is reported in words, not pictured.`,
+Give the scene checks [{moduleId, selector}] for the important controls its script or a drawing answers — including buttons, choice items, or a slider's input[type="range"] (which capture clicks away from its current thumb position, so no extra min/max test buttons are needed): view_canvas then shows the changed state. Test a sequence with view_canvas actions in a specified scene, because an interaction you have not seen run is unverified. A module's target needs no check, as the app opens it without your code: view_canvas already shows every subscene, and a detail page is laid out by the app, so a click that opens one is reported in words, not pictured.`,
   },
   formats: {
     when: "when the user names a medium that carries its own words and shape: a poster, flyer, social-media card, cover or slide",
