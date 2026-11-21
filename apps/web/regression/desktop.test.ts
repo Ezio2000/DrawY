@@ -133,7 +133,7 @@ it("holds a request while hand edits are unsaved, until they are saved, thrown a
 });
 
 it("places words ready to type on a blank canvas, and duplicates, copies and pastes them", async () => {
-  await page.goto(base + "/");
+  await page.goto(base + "/new");
   await page.waitForSelector("[data-canvas]");
   await page.waitForTimeout(500);
   await editing();
@@ -494,10 +494,48 @@ it("gives a dropped image only to the canvas or composer that received it", asyn
   await dataTransfer.dispose();
 });
 
-it("opens the blank canvas at home for guests and prompts sign-in only when sending, then continues", async () => {
+it("shows guests the home page with its works drawn live, and no sign-in wall", async () => {
   const guest = await browser.newContext({ locale: "en-US", viewport: { width: 1440, height: 900 } });
   const guestPage = await guest.newPage();
   await guestPage.goto(base + "/");
+  expect(await guestPage.getByRole("heading", { level: 1 }).innerText()).toContain("say it and it's drawn");
+  expect(await guestPage.getByRole("dialog").count()).toBe(0);
+  // The first screen is only for asking; what DrawY is waits below, and its showpiece is a
+  // work drawn by the canvas, not a picture of one.
+  expect(await guestPage.locator("[data-canvas]").count()).toBe(0);
+  await guestPage.getByRole("button", { name: "See what DrawY can draw" }).click();
+  await guestPage.waitForSelector("[data-canvas]");
+  // An example goes into the box to send.
+  await guestPage.getByRole("button", { name: "How does the solar system work?" }).first().click();
+  expect(await guestPage.locator("textarea").first().inputValue()).toBe("How does the solar system work?");
+  // The footer's kinds take the reader to their chapter along the range, whose sheet shows
+  // that work and nothing else.
+  await guestPage.getByRole("navigation", { name: "What it draws" }).getByRole("button", { name: "Map" }).click();
+  await expect
+    .poll(() => guestPage.locator("#l-chapter-coast").getAttribute("data-on"), { timeout: 8000 })
+    .toBe("true");
+  expect(await guestPage.getByRole("button", { name: /^Ask this yourself/ }).count()).toBe(0);
+  const range = guestPage.getByRole("navigation", { name: "Jump along the range" });
+  const ticks = range.locator("div").first().getByRole("button");
+  const rows = await ticks.evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().top));
+  expect(rows).toHaveLength(10);
+  expect(new Set(rows).size).toBe(1);
+  await ticks.last().click();
+  const board = guestPage.locator('[class*="l-story-slot"]:not([inert]) [data-shown]');
+  await board.getByText("The Lighthouse Stevensons", { exact: true }).first().waitFor();
+  await guestPage.getByRole("button", { name: "Sign in", exact: true }).click();
+  await guestPage.getByRole("button", { name: "Language · 中文" }).click();
+  await guestPage.keyboard.press("Escape");
+  await board.getByText("造灯塔的一家人", { exact: true }).first().waitFor();
+  await guestPage.getByRole("navigation", { name: "沿着图的光谱跳转" }).getByRole("button").first().click();
+  await guestPage.waitForSelector("#l-chapter-night[data-on]");
+  await guest.close();
+});
+
+it("opens the blank canvas for guests and prompts sign-in only when sending, then continues", async () => {
+  const guest = await browser.newContext({ locale: "en-US", viewport: { width: 1440, height: 900 } });
+  const guestPage = await guest.newPage();
+  await guestPage.goto(base + "/new");
   await guestPage.waitForSelector("[data-canvas]");
   // No login wall on arrival; the composer is ready to type in.
   expect(await guestPage.getByRole("dialog").count()).toBe(0);
