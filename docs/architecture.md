@@ -229,7 +229,7 @@
 **修改作者提示词和工具说明时，遵循 `prompts.ts` 文件头引用的 Opus 5.5 与 GPT-6 Astra 官方指南。** 用英文写，平实直接，每条要求附上原因，不用大写或 MUST 之类的强调，规则要写具体，不写泛泛的告诫。作者的行为契约也写在这些提示词里：
 - 主题说不清时用 `ask_user` 一次问清；
 - 简报的依据要逐字引用用户说过的话（`setBrief` 会校验）；
-- 简报里的立意（`concept`）是作者自己定的视觉想法，不引用用户的话；`set_brief` 的参数（`tools.ts` 的 `settleSchema`）在立意前先要两三种画法（`ideas`），每种标明种类（`ideaKinds`）且种类互不相同，只记在运行步骤里不进作品。创作模型在工具循环里几乎不做隐式推理，每一轮都使用用户设置的强度；`agent/conversation.ts` 的 `holdEffort` 在对话里留有别的档位时（`withLessThought` 或更早的运行留下的）追加 `configuration_update` 换回设置值。要它发散、评判，得让它写成显式输出：想法写进参数，看图后的评判写成给用户的一句进度；`view_canvas` 把意图和立意放在截图旁边，全图附上 `figure.viewFilled`。看图时按“准确→立意是否读得出→工艺”的顺序评判；
+- 简报里的立意（`concept`）是作者自己定的视觉想法，不引用用户的话；`set_brief` 的参数（`tools.ts` 的 `settleSchema`）在立意前先要两三种画法（`ideas`），每种标明种类（`ideaKinds`）且种类互不相同，只记在运行步骤里不进作品。创作模型在工具循环里几乎不做隐式推理，每一轮都使用用户设置的强度；对于在对话内切换强度的格式（GPT-6+、`perTurnEffort` 的 Claude），`Context.baseEffort` 把顶层请求参数固定在对话首次打开时的强度，`requestRole` 沿用该顶层参数，`agent/conversation.ts` 的 `holdEffort` 在跨运行切档或 `withLessThought` 之后追加 `configuration_update` 换回设置值，从而不破坏提示词缓存前缀（`compact` 重建对话后重置 `baseEffort`）。要它发散、评判，得让它写成显式输出：想法写进参数，看图后的评判写成给用户的一句进度；`view_canvas` 把意图和立意放在截图旁边，全图附上 `figure.viewFilled`；`capture.ts` 执行 `checks`/`actions` 时对 `<input type="range">` 避开当前滑块位置点击轨道，使居中默认值的滑块也能触发变更。看图时按“准确→立意是否读得出→工艺”的顺序评判；
 - 简报只定图意、事实和所需素材；画布坐标不在思考里算（第一稿思考约占输出的七成，主要花在排坐标上），大致放在 20 单位的格子上就写，看图后再小改，因为多看一次比事先算好便宜得多；`set_brief` 之后紧接着 `generate_images`，让图片在布局时显影；保存和看图放在同一轮；一次看图发现的问题集中在一次写入里改；只剩观众注意不到的润色就停；
 - 素材按读者看到它的收获决定：主体和场景氛围值得生图；给普通读者讲日常事物时，主要部分通常也配三到六张图（正式图同样适用），没有外形的概念、长列表和专业图表不配；这些图在简报的 `cast` 和立意里就定好，不等排版后再塞；
 - 全图最想让人记住的那句话写成最醒目的文字，放在它说的部分上；
@@ -243,7 +243,7 @@
 - 指南（`guides.ts` 的 `guides`，主题列表是 `contracts` 的 `guideTopics`）：`drawing`、`diagrams`、`maps`、`exploration`、`formats`、`copy`。几乎每个作品都要的内容不做成指南：怎样请求图片写在 `generate_images` 的说明和 `pictureRequestSchema` 的字段里，怎样组合图片写在 `AUTHOR` 的 Materials 一节（原来的 `pictures` 指南已删，`i18n.tsx` 保留它的名字给旧记录显示）。`cards` 是读这个主题时一起给的画法卡片。指南不再指向别的指南（官方建议引用只深一层）。新增主题要改 `guideTopics`、`guides` 和 `i18n.tsx` 的 `steps.guideTopics` 中英文。
 - 卡片（`materials` 的 `drawingCard`）：库画法的完整说明、参数、默认尺寸和示例数据。
 
-`draw_guide` 是工具循环里的普通步骤，结果追加在对话里，不改系统提示词和工具列表，所以不破坏缓存。`guidesRead` 从 `ctx.input` 算出已读内容，重复请求只回 `alreadyAbove`；压缩替换对话后自然清空，可以重新读。`readGuides` 返回纯文本：每个指南在 `## 主题` 下，卡片每张一行 JSON，循环对字符串结果不再 `JSON.stringify`。作者可能不读就动手，所以有两处提醒：`set_brief` 的结果在还没读过、也没在同一批里请求指南时附 `guides`（`guidesRead(input, batch)` 把同批里还没有结果的 `draw_guide` 也算作已读），`write_work` 的结果列出作品用到但没读过卡片的库画法（`cardsUnread`），每个画法只提醒一次。
+`draw_guide` 是工具循环里的普通步骤，结果追加在对话里，不改系统提示词和工具列表，所以不破坏缓存。`guidesRead` 从 `ctx.input` 算出已读内容，重复请求只回 `alreadyAbove`；压缩替换对话后自然清空，可以重新读。`readGuides` 返回纯文本：每个指南在 `## 主题` 下，卡片每张一行 JSON，循环对字符串结果不再 `JSON.stringify`。作者可能不读就动手，所以有两处提醒：`set_brief` 的结果在还没读过指南或画法卡片、也没在同一批里请求时附 `guides`（`guidesRead(input, batch)` 把同批里还没有结果的 `draw_guide` 也算作已读），`write_work` 的结果列出作品用到但没读过卡片的非常规库画法（`cardsUnread`，豁免参数已在 `# Library` 自明的 `picture`、`label`、`arrow`），每个画法只提醒一次。
 
 一轮有多个工具调用时，`loop` 等这一批的结果全部写入后才追加图片消息，因为 DeepSeek 的 Responses 接口把夹在结果之间的消息当成调用没有结果（400）。
 

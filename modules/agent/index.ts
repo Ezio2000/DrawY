@@ -21,6 +21,7 @@ import {
   holdEffort,
   opened,
   reopened,
+  requestRole,
   userMessage,
   withLessThought,
   type Context,
@@ -230,7 +231,7 @@ export class Agent {
       ctx.input.push(...(await x.developed()));
       await compact(store, run, ctx, signal, instructions, tools);
       if (seen > ctx.input.length) seen = 0;
-      holdEffort(ctx.input, ctx.settings.author);
+      holdEffort(ctx.input, ctx.settings.author, ctx.baseEffort);
       const { result, said } = await this.turn(x, instructions, tools, ctx.input.slice(seen));
       spend(run, result.usage);
       ctx.input.push(...result.items);
@@ -315,7 +316,7 @@ export class Agent {
           },
         },
         async (span) => {
-          let asked = { role: author, effort: author.effort };
+          let asked = { role: requestRole(ctx), effort: author.effort };
           let lessened = false;
           for (let attempt = 0, waits = [2000, 8000, 0]; attempt < waits.length; attempt++) {
             const wait = waits[attempt];
@@ -372,7 +373,7 @@ export class Agent {
                 span.set({ incomplete: e.reason ?? "unknown" });
                 const less =
                   e.thoughtOnly && !lessened && !signal.aborted
-                    ? withLessThought(ctx.input, author, asked.effort)
+                    ? withLessThought(ctx.input, asked.role, asked.effort)
                     : undefined;
                 if (less) {
                   // A turn that thinks away its budget would do so again as it is, and

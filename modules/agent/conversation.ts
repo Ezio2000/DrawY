@@ -37,6 +37,10 @@ export interface Context {
   known?: number;
   /** The user's standing preferences as this conversation was last told them. */
   preferences?: string;
+  /** The request-level effort this conversation opened at, for models that change effort
+   * inside the conversation: keeping it pinned across runs lets effort switches ride on
+   * configuration_update without restarting the cached prefix. */
+  baseEffort?: Effort;
   /** A write that was refused, as it stands, waiting for `amend`. */
   held?: Record<string, unknown>;
   format?: number;
@@ -295,7 +299,7 @@ export async function compact(
     let summary = "",
       answered = false;
     try {
-      const result = await generate(inConversation ? author : { ...author, effort: "low" }, {
+      const result = await generate(inConversation ? requestRole(ctx) : { ...author, effort: "low" }, {
         instructions,
         input: [
           ...ctx.input,
@@ -337,19 +341,38 @@ export async function compact(
     ctx.known = store.work(run.workId).revision;
     ctx.measured = undefined;
     ctx.reported = undefined;
+    ctx.baseEffort = initialEffort(author);
     store.saveContext(run.id, ctx);
     // The next turn starts from this summary alone.
     span.set({ summary, replaced: true });
   });
 }
+const initialEffort = (role: Role): Effort | undefined =>
+  adapterFor(role.protocol).effortControl(role) === "conversation"
+    ? (effortFor(role.effort, role.efforts) ?? role.effort)
+    : undefined;
+/** The role passed to the model adapter: for models whose effort changes inside the
+ * conversation, keep the top-level request pinned to `ctx.baseEffort` so switching effort
+ * across runs never invalidates the cached prefix. */
+export function requestRole(ctx: Context): Role {
+  const author = ctx.settings.author;
+  if (adapterFor(author.protocol).effortControl(author) !== "conversation") return author;
+  const base = ctx.baseEffort && (effortFor(ctx.baseEffort, author.efforts) ?? ctx.baseEffort);
+  return base && base !== (effortFor(author.effort, author.efforts) ?? author.effort)
+    ? { ...author, effort: base }
+    : author;
+}
 /** Every turn thinks at the configured effort. A configuration_update lasts until the next
  * one, so where the format changes effort in the conversation, one left by an earlier turn
- * (see `withLessThought`) or run is replaced before it carries over. */
-export function holdEffort(input: Item[], role: Role) {
+ * (see `withLessThought`) or run — or a cross-run switch from `baseEffort` — is updated
+ * inside the conversation before it carries over. */
+export function holdEffort(input: Item[], role: Role, baseEffort?: Effort) {
   if (adapterFor(role.protocol).effortControl(role) !== "conversation") return;
-  const current = input.findLast((i) => i.type === "configuration_update")?.reasoning?.effort;
-  if (current && current !== role.effort)
-    input.push({ type: "configuration_update", reasoning: { effort: role.effort } });
+  const target = effortFor(role.effort, role.efforts) ?? role.effort;
+  const last = input.findLast((i) => i.type === "configuration_update")?.reasoning?.effort;
+  const current = last ?? (baseEffort ? (effortFor(baseEffort, role.efforts) ?? baseEffort) : undefined);
+  if (current && current !== target)
+    input.push({ type: "configuration_update", reasoning: { effort: target } });
 }
 /** How to ask again a turn whose whole output budget went on thinking: at the least thought
  * the model accepts, the same way its effort changes otherwise. Undefined when it is
@@ -386,12 +409,25 @@ export function opened(store: UserStore, sceneId: string, work: Work, settings: 
   const previous = store.runs(work.id).at(-1);
   const saved = previous && (store.context(previous.id) as Context | null);
   const before = saved?.format === CONTEXT_FORMAT ? saved : undefined;
+  const sameModel =
+    before &&
+    before.settings.author.protocol === settings.author.protocol &&
+    before.settings.author.model === settings.author.model;
+  const baseEffort =
+    adapterFor(settings.author.protocol).effortControl(settings.author) === "conversation"
+      ? sameModel
+        ? (before.baseEffort ??
+          effortFor(before.settings.author.effort, settings.author.efforts) ??
+          before.settings.author.effort)
+        : initialEffort(settings.author)
+      : undefined;
   const ctx: Context = {
     settings,
     input: before ? before.input : earlierRequests(store, work.id),
     generations: 0,
     ...(before?.measured ? { measured: before.measured } : {}),
     ...(before?.reported ? { reported: before.reported } : {}),
+    ...(baseEffort ? { baseEffort } : {}),
     known: work.revision,
     preferences: preferencesOf(settings),
     format: CONTEXT_FORMAT,
@@ -410,6 +446,7 @@ export function reopened(store: UserStore, run: Run, ctx: Context): Context {
   if (ctx.format === CONTEXT_FORMAT) return ctx;
   const work = store.work(run.workId);
   const asked = run.steps.findLast((s) => s.kind === "message" && s.asked);
+  const baseEffort = initialEffort(ctx.settings.author);
   return {
     ...ctx,
     input: [
@@ -419,6 +456,7 @@ export function reopened(store: UserStore, run: Run, ctx: Context): Context {
         : []),
       workMessage(run.sceneId, work),
     ],
+    ...(baseEffort ? { baseEffort } : { baseEffort: undefined }),
     known: work.revision,
     measured: undefined,
     reported: undefined,
