@@ -35,12 +35,7 @@ export function LiveWork({
   const room = useRef(insets);
   room.current = insets;
   const [near, setNear] = useState(false);
-  const [shown, setShown] = useState(false);
-  /** The work the canvas has drawn. While another has been laid on it and is not yet drawn,
-   * the last one is hidden rather than left showing under the new one's title. */
-  const [drawnId, setDrawnId] = useState<string>();
-  const asked = useRef<string>(undefined);
-  asked.current = work?.id;
+  const [drawn, setDrawn] = useState<{ work: Work; sceneId: string }>();
   const [detail, setDetail] = useState<string>();
   const sceneId = work && (scene && work.scenes[scene] ? scene : work.rootSceneId);
 
@@ -62,9 +57,9 @@ export function LiveWork({
     };
   }, []);
 
-  // Made once, for the first work it is given; later works and scenes are laid on it.
+  // Each translated work and scene starts with its own fitted camera.
   useEffect(() => {
-    if (!near || !work || !sceneId || view.current) return;
+    if (!near || !work || !sceneId) return;
     const canvas = new Canvas(host.current!, work, work.scenes[sceneId], {
       movable,
       resizable: false,
@@ -75,7 +70,7 @@ export function LiveWork({
         if (t.kind === "scene") opener.current?.(t.id);
         else setDetail(t.id);
       },
-      shown: () => setDrawnId(asked.current),
+      shown: () => setDrawn({ work, sceneId }),
       select: () => {},
       commit: () => {},
       error: (message) => console.warn("showcase:", message),
@@ -83,42 +78,21 @@ export function LiveWork({
     // A finger dragging up or down the page scrolls it, as it would anywhere else.
     canvas.element.style.touchAction = "pan-y";
     view.current = canvas;
-    let live = true;
-    void canvas.ready.finally(() => {
-      if (!live) return;
-      setShown(true);
-      setDrawnId(asked.current);
-    });
+    setDetail(undefined);
     const resized = new ResizeObserver(() => canvas.refit());
     resized.observe(host.current!);
     return () => {
-      live = false;
       resized.disconnect();
       canvas.dispose();
       view.current = undefined;
     };
-  }, [near, !!work]);
-
-  const drawn = useRef<string>(undefined);
-  useEffect(() => {
-    const canvas = view.current;
-    if (!canvas || !work || !sceneId) return;
-    const key = work.id + work.revision + sceneId;
-    if (drawn.current === undefined) {
-      drawn.current = key;
-      return;
-    }
-    if (drawn.current === key) return;
-    drawn.current = key;
-    setDetail(undefined);
-    canvas.update(work, work.scenes[sceneId]);
-  }, [work, sceneId, near]);
+  }, [near, work, sceneId]);
 
   useEffect(() => view.current?.setMovable(movable), [movable, near]);
   useEffect(() => view.current?.refit(), [insets?.top, insets?.bottom]);
 
   return (
-    <div className={cx("l-live")} data-shown={(shown && drawnId === work?.id) || undefined} aria-label={label} role="group">
+    <div className={cx("l-live")} data-shown={(drawn && drawn.work === work && drawn.sceneId === sceneId) || undefined} aria-label={label} role="group">
       <div className={cx("canvas", "l-live-canvas")} ref={host} />
       {detail && work?.details[detail] && <Detail work={work} id={detail} close={() => setDetail(undefined)} />}
     </div>

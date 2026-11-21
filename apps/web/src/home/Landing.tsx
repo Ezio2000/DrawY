@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import {
   ArrowUp,
   ChevronDown,
@@ -329,6 +329,23 @@ const chapters: { id: ShowcaseId; scene?: string; band: number }[] = [
   { id: "family", band: 3 },
 ];
 
+/** Where the reading line falls, and how much scrolling one handover takes. */
+function reading(page: HTMLElement) {
+  const h = page.clientHeight;
+  const narrow = matchMedia("(max-width: 820px)").matches;
+  return {
+    line: page.getBoundingClientRect().top + h * (narrow ? 0.8 : 0.5),
+    span: Math.min(420, h * 0.45),
+  };
+}
+
+function scrollToChapter(item: HTMLElement) {
+  const page = scroller(item);
+  const { line, span } = reading(page);
+  const top = item.getBoundingClientRect().top;
+  page.scrollBy({ top: top - (line - span / 2 - 16), behavior: reducedMotion() ? "auto" : "smooth" });
+}
+
 /** The range told along a dark drafting band: the chapters scroll past on one side while a
  * pad on the other stays put, a chapter's work to each sheet. As the next chapter comes up to
  * the middle of the screen, the sheet in view is turned up by its bottom right corner, the
@@ -350,16 +367,6 @@ function Story() {
   /** The chapter being read: whichever of the two is more than half in. */
   const [at, setAt] = useState(0);
   const [wanted, setWanted] = useState(false);
-
-  /** Where the reading line falls, and how much scrolling one handover takes. */
-  const reading = (page: HTMLElement) => {
-    const h = page.clientHeight;
-    const narrow = matchMedia("(max-width: 820px)").matches;
-    return {
-      line: page.getBoundingClientRect().top + h * (narrow ? 0.8 : 0.5),
-      span: Math.min(420, h * 0.45),
-    };
-  };
 
   useEffect(() => {
     const el = band.current!;
@@ -434,10 +441,8 @@ function Story() {
 
   /** Scrolls the page until chapter `k` is the one in view. */
   const jump = (k: number) => {
-    const page = scroller(band.current!);
-    const { line, span } = reading(page);
-    const top = items.current[k]!.getBoundingClientRect().top;
-    page.scrollBy({ top: top - (line - span / 2 - 16), behavior: reducedMotion() ? "auto" : "smooth" });
+    const item = items.current[k];
+    if (item) scrollToChapter(item);
   };
 
   // Every chapter's work is loaded as the band comes near, all at once (they are small), so a
@@ -470,7 +475,7 @@ function Story() {
         <ol className={cx("l-chapters")}>
           {l.chapters.map((c, i) => (
             <li
-              key={c.kind}
+              key={chapters[i].id}
               ref={(el) => {
                 items.current[i] = el;
               }}
@@ -549,7 +554,7 @@ function Spectrum({
 }) {
   const l = useT().landing;
   return (
-    <nav className={cx("l-spectrum")} aria-label={l.spectrumNav}>
+    <nav className={cx("l-spectrum")} aria-label={l.spectrumNav} style={{ "--chapters": chapters.length } as CSSProperties}>
       <div className={cx("l-spectrum-track")} ref={track}>
         {chapters.map((c, i) => (
           <button
@@ -566,7 +571,12 @@ function Spectrum({
       </div>
       <div className={cx("l-spectrum-names")}>
         {l.spectrum.map((name, i) => (
-          <button key={name} data-on={i === band || undefined} onClick={() => jump(chapters.findIndex((c) => c.band === i))}>
+          <button
+            key={i}
+            style={{ gridColumn: `span ${chapters.filter((c) => c.band === i).length}` }}
+            data-on={i === band || undefined}
+            onClick={() => jump(chapters.findIndex((c) => c.band === i))}
+          >
             {name}
           </button>
         ))}
@@ -711,11 +721,10 @@ function Footer({ words, go }: { words: Words; go: (path: string) => void }) {
         {chapters.map((c, i) => (
           <button
             key={c.id}
-            onClick={() =>
-              document
-                .getElementById(`l-chapter-${c.id}`)
-                ?.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" })
-            }
+            onClick={() => {
+              const item = document.getElementById(`l-chapter-${c.id}`);
+              if (item) scrollToChapter(item);
+            }}
           >
             {words.chapters[i].kind.split(" · ")[0]}
           </button>

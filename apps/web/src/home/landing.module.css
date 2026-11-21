@@ -797,7 +797,7 @@
 .l-spectrum-track,
 .l-spectrum-names {
   display: grid;
-  grid-template-columns: repeat(9, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--chapters), minmax(0, 1fr));
 }
 
 .l-spectrum-track {
@@ -814,8 +814,8 @@
   content: "";
   position: absolute;
   top: 50%;
-  left: calc(100% / 18);
-  width: calc(100% * 8 / 9);
+  left: calc(50% / var(--chapters));
+  right: calc(50% / var(--chapters));
   height: 1px;
   background: linear-gradient(90deg, #8fb0ff, var(--lamp) 70%, var(--seal));
   opacity: 0.22;
@@ -862,17 +862,17 @@
     scale 0.3s var(--ease-out);
 }
 
-.l-spectrum-track i[data-past] {
+.l-spectrum-track button[data-past] i {
   background: #6f7686;
 }
 
-.l-spectrum-track i[data-on] {
+.l-spectrum-track button[data-on] i {
   background: var(--lamp);
   box-shadow: 0 0 0 4px rgba(233, 169, 58, 0.18);
   scale: 1.5;
 }
 
-/* Each kind under the chapters it spans: three, one, three and two. */
+/* Each category spans its chapters. */
 .l-spectrum-names {
   margin-top: 8px;
   font-size: 12px;
@@ -888,15 +888,6 @@
 
 .l-spectrum-names button:hover {
   color: var(--l-night-text);
-}
-
-.l-spectrum-names button:nth-child(1),
-.l-spectrum-names button:nth-child(3) {
-  grid-column: span 3;
-}
-
-.l-spectrum-names button:nth-child(4) {
-  grid-column: span 2;
 }
 
 .l-spectrum-names button[data-on] {
@@ -1228,7 +1219,7 @@
   text-underline-offset: 3px;
 }
 
-/* The nine kinds of picture, two to a row; each takes the reader to its chapter. */
+/* The kinds of picture, two to a row; each takes the reader to its chapter. */
 .l-footer-kinds {
   grid-template-columns: repeat(2, max-content);
   column-gap: 32px;
@@ -1280,13 +1271,15 @@
   }
   /* The story: the board stays at the top while the chapters pass under it. */
   .l-story-grid {
-    grid-template-columns: minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
     gap: 0;
   }
   /* The chapters pass under the board here, so it keeps the band's own dark behind it
      while two boards hand over. */
   .l-story-stage {
     order: -1;
+    align-self: stretch;
     top: 20px;
     z-index: 2;
     background: var(--l-night);

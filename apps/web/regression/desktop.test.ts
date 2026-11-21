@@ -515,6 +515,20 @@ it("shows guests the home page with its works drawn live, and no sign-in wall", 
     .poll(() => guestPage.locator("#l-chapter-coast").getAttribute("data-on"), { timeout: 8000 })
     .toBe("true");
   expect(await guestPage.getByRole("button", { name: /^Ask this yourself/ }).count()).toBe(0);
+  const range = guestPage.getByRole("navigation", { name: "Jump along the range" });
+  const ticks = range.locator("div").first().getByRole("button");
+  const rows = await ticks.evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().top));
+  expect(rows).toHaveLength(10);
+  expect(new Set(rows).size).toBe(1);
+  await ticks.last().click();
+  const board = guestPage.locator('[class*="l-story-slot"]:not([inert]) [data-shown]');
+  await board.getByText("The Lighthouse Stevensons", { exact: true }).first().waitFor();
+  await guestPage.getByRole("button", { name: "Sign in", exact: true }).click();
+  await guestPage.getByRole("button", { name: "Language · 中文" }).click();
+  await guestPage.keyboard.press("Escape");
+  await board.getByText("造灯塔的一家人", { exact: true }).first().waitFor();
+  await guestPage.getByRole("navigation", { name: "沿着图的光谱跳转" }).getByRole("button").first().click();
+  await guestPage.waitForSelector("#l-chapter-night[data-on]");
   await guest.close();
 });
 

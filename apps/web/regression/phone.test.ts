@@ -353,6 +353,20 @@ it("catches up on what changed while the page was hidden, as a phone does with a
   await expect.poll(() => top().innerText(), { timeout: 10_000 }).toContain("Renamed elsewhere");
 });
 
+it("keeps the story board visible while reading later chapters", async () => {
+  await page.goto(base + "/");
+  const nav = page.getByRole("navigation", { name: "Jump along the range" });
+  const stage = nav.locator("..");
+  const links = page.getByRole("navigation", { name: "What it draws" }).getByRole("button");
+  for (const [index, id] of [[5, "range"], [7, "navigate"]] as const) {
+    await links.nth(index).tap();
+    await page.waitForSelector(`#l-chapter-${id}[data-on]`);
+    const bounds = (await stage.boundingBox())!;
+    expect(bounds.y).toBeCloseTo(20);
+    expect(bounds.y + bounds.height).toBeLessThan(page.viewportSize()!.height);
+  }
+});
+
 it("lays the home page out for a phone: the latest works, and the box's menus inside the screen", async () => {
   for (let i = 0; i < 5; i++) await make();
   await page.goto(base + "/");
