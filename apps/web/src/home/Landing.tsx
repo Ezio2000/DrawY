@@ -396,6 +396,16 @@ function Story() {
           back.style.setProperty("--curl", sheet.back);
         }
       }
+      // Each chapter's words light up as its sheet comes up and dim as it is turned away, in
+      // step with the turn: --light is how far a chapter is the one being read, 0 to 1.
+      const into = (k: number) =>
+        k === 0 ? 1 : k >= tops.length ? 0 : Math.min(1, Math.max(0, 0.5 + (line - tops[k]) / span));
+      items.current.forEach((item, k) => {
+        if (!item) return;
+        let light = into(k) * (1 - into(k + 1));
+        if (reducedMotion()) light = light < 0.5 ? 0 : 1;
+        item.style.setProperty("--light", (light * light * (3 - 2 * light)).toFixed(3));
+      });
       track.current?.style.setProperty("--sp", String((a + p) / (chapters.length - 1)));
       if (!reducedMotion())
         el.style.setProperty("--drift", `${-(el.getBoundingClientRect().top - page.getBoundingClientRect().top) * 0.2}px`);
