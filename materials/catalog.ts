@@ -1,4 +1,5 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
+import { createHash } from "node:crypto";
 import {
   BODY,
   SEARCH_LIMITS,
@@ -77,6 +78,12 @@ export class Catalog {
   private statements = new Map<string, StatementSync>();
   constructor(path: string) {
     this.db = new DatabaseSync(path);
+    // A library kept before material packs holds every material as one JSON column; it is
+    // set aside here and what users made is carried over once the new tables exist.
+    const legacy = (this.db.prepare("PRAGMA table_info(materials)").all() as { name: string }[]).some(
+      (c) => c.name === "data",
+    );
+    if (legacy) this.db.exec("ALTER TABLE materials RENAME TO legacy_materials");
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;
 CREATE TABLE IF NOT EXISTS materials(
   n INTEGER PRIMARY KEY,
@@ -120,9 +127,33 @@ CREATE TABLE IF NOT EXISTS bindings(capability TEXT PRIMARY KEY, material TEXT N
 CREATE TABLE IF NOT EXISTS releases(source TEXT NOT NULL, release TEXT NOT NULL, digest TEXT NOT NULL,
   at INTEGER NOT NULL, items TEXT NOT NULL, data TEXT NOT NULL, bindings TEXT NOT NULL, thesaurus TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(source, release));`);
+    if (legacy) this.migrate();
   }
   close() {
     this.db.close();
+  }
+  /** Carries the pictures users uploaded and generated over from a library kept before
+   * material packs, with who owns them, how they stand and how often they are used. Curated
+   * materials are left behind: they come back, versioned, when a pack is imported. */
+  private migrate() {
+    this.transaction(() => {
+      const rows = this.db.prepare("SELECT data FROM legacy_materials").all() as { data: string }[];
+      const count = this.db.prepare("SELECT COUNT(*) AS n FROM uses WHERE material_id=?");
+      for (const { data } of rows) {
+        const old = JSON.parse(data) as Material & { role?: string };
+        if (old.origin?.kind === "curated" || old.kind !== "picture") continue;
+        const { role, ...rest } = old;
+        const m = {
+          ...rest,
+          type: old.type ?? role ?? "object",
+          version: 1,
+          pack: null,
+          uses: Number((count.get(old.id) as { n: number }).n),
+        } as Material;
+        this.put({ ...m, hash: createHash("sha256").update(data).digest("hex").slice(0, 32) });
+      }
+      this.db.exec("DROP TABLE legacy_materials");
+    });
   }
   /** One prepared statement per query text, kept for the life of the catalog. */
   sql(text: string) {
@@ -179,6 +210,14 @@ CREATE TABLE IF NOT EXISTS releases(source TEXT NOT NULL, release TEXT NOT NULL,
       uses: r.uses,
       version: at,
     } as Material;
+  }
+  /** The version of a material that had this content, if one did. */
+  versionWith(id: string, hash: string) {
+    return (this.sql("SELECT MAX(version) AS v FROM versions WHERE id=? AND hash=?").get(id, hash) as { v: number | null }).v ?? undefined;
+  }
+  /** The highest version a material ever had. */
+  latestVersion(id: string) {
+    return Number((this.sql("SELECT MAX(version) AS v FROM versions WHERE id=?").get(id) as { v: number | null }).v ?? 0);
   }
   versionHash(id: string, version: number) {
     return (this.sql("SELECT hash FROM versions WHERE id=? AND version=?").get(id, version) as { hash: string } | undefined)

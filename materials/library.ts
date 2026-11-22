@@ -376,13 +376,24 @@ export class Library {
     return m;
   }
   /** The picture itself; an SVG drawn in currentColor can be inked in `color`. */
-  async file(id: string, user?: Viewer, color?: string, wait = 240_000) {
+  /** The picture as it was at `version`, once the current one is ready: a work shows the
+   * pixels it took, whatever a later pack put under the same id. */
+  private async at(id: string, user: Viewer, wait: number, version?: number) {
     const m = await this.ready(id, user, wait);
+    if (version === undefined || version === m.version) return m;
+    const old = this.get(id, user, version);
+    if (old.kind !== "picture") throw new LibraryError(`${id} 不是图片素材`);
+    return old;
+  }
+  /** The picture itself, at a version it had or the current one; an SVG drawn in
+   * currentColor can be inked in `color`. */
+  async file(id: string, user?: Viewer, color?: string, wait = 240_000, version?: number) {
+    const m = await this.at(id, user, wait, version);
     const bytes = readFileSync(this.path(m));
     return { material: m, bytes: color && m.form.recolor ? recolor(bytes, color) : bytes };
   }
-  async thumb(id: string, user: Viewer, size: number) {
-    const m = await this.ready(id, user, 240_000);
+  async thumb(id: string, user: Viewer, size: number, version?: number) {
+    const m = await this.at(id, user, 240_000, version);
     const cached = join(this.dir, "thumbs", `${id}-${m.hash}-${size}.webp`);
     if (existsSync(cached)) return readFileSync(cached);
     const webp = await thumbnail(readFileSync(this.path(m)), m.file.mediaType, size);

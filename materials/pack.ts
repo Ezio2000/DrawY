@@ -151,7 +151,11 @@ export function readPack(dir: string, library: Library) {
     if (blobHash(bytes) !== want) problems.push(`文件校验不符: ${path}`);
     return bytes;
   };
-  const lines = readFileSync(join(dir, manifest.materials), "utf8").split("\n").filter((l) => l.trim());
+  // The materials themselves are checked against the manifest like every other file, so a
+  // release's digest stands for its content.
+  const listed = file(manifest.materials);
+  if (!listed) throw new LibraryError(`素材包无效:\n${problems.join("\n")}`, 422);
+  const lines = listed.toString("utf8").split("\n").filter((l) => l.trim());
   const materials: Packed[] = [];
   lines.forEach((line, i) => {
     try {
@@ -274,8 +278,9 @@ export function importPack(library: Library, dir: string): ImportReport {
         report.unchanged++;
         continue;
       }
-      // An unchanged one taken back keeps its version; a changed one gets the next.
-      const version = held ? (held.hash === hash ? held.version : held.version + 1) : 1;
+      // Content the material had before keeps that version; new content gets a version above
+      // every one it ever had, so a version once given always means the same content.
+      const version = held ? (catalog.versionWith(p.id, hash) ?? catalog.latestVersion(p.id) + 1) : 1;
       catalog.put({ ...next, hash, version, uses: held?.uses ?? 0 } as Material);
       if (held) report.updated++;
       else report.added++;

@@ -12,3 +12,6 @@ export function bound(): Bindings {
   if (!current) throw new DomainError("素材库还没有告诉应用用哪些画法编辑，请稍后再试", 503);
   return current;
 }
+/** The bindings if the library has answered, for what is shown rather than done: a view
+ * drawn before they arrive leaves out what depends on them. */
+export const boundIfKnown = (): Bindings | undefined => current;

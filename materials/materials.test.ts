@@ -1,5 +1,8 @@
 import { it, expect, beforeAll, afterAll, vi } from "vitest";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import { build } from "../content/build.ts";
+import { picture as picture_ } from "./testing.ts";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -444,4 +447,113 @@ it("pages through everything a viewer may see, and filters before it cuts", asyn
   expect(food.pages).toBeGreaterThan(2);
   expect(library.browse("food", food.pages, undefined, [], 5).items.length).toBeGreaterThan(0);
   expect(library.browse("", 1, undefined, [], 10, undefined, ["figure"]).items.every((m) => m.type === "figure")).toBe(true);
+});
+
+it("keeps every version a material ever had, and shows a work the pixels of the version it holds", async () => {
+  const { dir, library } = testLibrary();
+  try {
+    const first = library.get("label") as DrawingMaterial;
+    const apple = await library.file("apple");
+    const second = packCopy((out, manifest, lines) => {
+      manifest.release = "v2";
+      lines.find((l) => l.id === "label").about += " Second.";
+      // The apple's picture is replaced by the pear's under the same id.
+      cpSync(join(out, "files", "line-banana.svg"), join(out, "files", "apple.webp"));
+      manifest.files["files/apple.webp"] = createHash("sha256").update(readFileSync(join(out, "files", "apple.webp"))).digest("hex");
+    });
+    importPack(library, second);
+    expect(library.get("apple").version).toBe(2);
+    // The version a work took still serves its own pixels.
+    expect(Buffer.from((await library.file("apple", undefined, undefined, 0, 1)).bytes).equals(Buffer.from(apple.bytes))).toBe(true);
+    expect(Buffer.from((await library.file("apple")).bytes).equals(Buffer.from(apple.bytes))).toBe(false);
+    rollback(library, "drawy-curated", "test");
+    const third = packCopy((_, manifest, lines) => {
+      manifest.release = "v3";
+      lines.find((l) => l.id === "label").about += " Third.";
+    });
+    importPack(library, third);
+    // New content goes above every version given before; version 2 still means what it did.
+    expect(library.get("label").version).toBe(first.version + 2);
+    expect(library.get("label", undefined, first.version + 1).about).toMatch(/Second\.$/);
+    expect(library.get("label", undefined, first.version).about).toBe(first.about);
+    // Content a material had before keeps that version.
+    rollback(library, "drawy-curated", "test");
+    importPack(library, packCopy((_, manifest, lines) => {
+      manifest.release = "v4";
+      lines.find((l) => l.id === "label").about += " Second.";
+    }));
+    expect(library.get("label").version).toBe(first.version + 1);
+  } finally {
+    library.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("checks the materials file against the manifest like any other", () => {
+  const { dir, library } = testLibrary();
+  try {
+    const out = join(mkdtempSync(join(tmpdir(), "drawy-pack-copy-")), "pack");
+    cpSync(curatedPack(), out, { recursive: true });
+    const manifest = JSON.parse(readFileSync(join(out, "manifest.json"), "utf8"));
+    manifest.release = "tampered";
+    writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest));
+    writeFileSync(join(out, "materials.ndjson"), readFileSync(join(out, "materials.ndjson"), "utf8").replace("Arrow", "Arrows"));
+    expect(() => importPack(library, out)).toThrow(/文件校验不符: materials.ndjson/);
+  } finally {
+    library.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("names a release by its content unless one is given", () => {
+  const read = (p: string) => JSON.parse(readFileSync(join(p, "manifest.json"), "utf8")).release as string;
+  const a = join(mkdtempSync(join(tmpdir(), "drawy-build-")), "pack"),
+    b = join(mkdtempSync(join(tmpdir(), "drawy-build-")), "pack");
+  build(a);
+  build(b);
+  expect(read(a)).toMatch(/^\d{4}\.\d{2}\.\d{2}-[0-9a-f]{10}$/);
+  expect(read(b)).toBe(read(a));
+  rmSync(join(a, ".."), { recursive: true });
+  rmSync(join(b, ".."), { recursive: true });
+});
+
+it("carries what users made over from a library kept before material packs", async () => {
+  const old = mkdtempSync(join(tmpdir(), "drawy-legacy-"));
+  try {
+    const db = new DatabaseSync(join(old, "materials.sqlite"));
+    db.exec(`CREATE TABLE materials(id TEXT PRIMARY KEY,data TEXT NOT NULL);
+ CREATE TABLE uses(material_id TEXT NOT NULL,user_id TEXT NOT NULL,work_id TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(material_id,user_id,work_id));`);
+    const base = { aliases: [], category: "", about: "a cherry", tags: [], style: null, uses: 0, status: "ready" };
+    const picture = {
+      ...base,
+      id: "u-cherry-1",
+      kind: "picture",
+      role: "object",
+      name: { zh: "樱桃", en: "cherry" },
+      form: { width: 40, height: 20, background: "transparent", content: { x: 0, y: 0, width: 1, height: 1 }, anchors: {}, palette: [], recolor: false },
+      file: { url: "/materials/files/u-cherry-1", mediaType: "image/png", bytes: 0 },
+      origin: { kind: "upload", user: "alice", createdAt: 1 },
+      owner: "alice",
+    };
+    const curated = { ...picture, id: "apple", origin: { kind: "curated", createdAt: 1 }, owner: null };
+    for (const m of [picture, curated]) db.prepare("INSERT INTO materials VALUES(?,?)").run(m.id, JSON.stringify(m));
+    db.prepare("INSERT INTO uses VALUES(?,?,?,?)").run("u-cherry-1", "alice", "w1", 1);
+    db.close();
+    mkdirSync(join(old, "files"));
+    writeFileSync(join(old, "files", "u-cherry-1.png"), await picture_());
+    const library = new Library(old);
+    try {
+      expect(library.get("u-cherry-1", "alice")).toMatchObject({ type: "object", owner: "alice", uses: 1, version: 1, pack: null });
+      expect(() => library.get("apple")).toThrow();
+      expect((await library.file("u-cherry-1", "alice")).bytes.length).toBeGreaterThan(0);
+      // The pack takes the curated ids back as its own.
+      importPack(library, curatedPack());
+      expect(library.get("apple").pack).toBe("drawy-curated");
+      expect(library.search({ subjects: ["樱桃"] }, "alice")[0].hits[0].material.id).toBe("u-cherry-1");
+    } finally {
+      library.close();
+    }
+  } finally {
+    rmSync(old, { recursive: true });
+  }
 });

@@ -446,7 +446,8 @@ describe("user owned works", () => {
     expect(added.sort()).toEqual(["apple", "earth"]);
     expect(saved.materials.apple).toMatchObject({
       kind: "picture",
-      url: "/materials/files/apple",
+      // A pack picture is addressed at the version the work took.
+        url: "/materials/files/apple?v=1",
       anchors: { stem: expect.any(Object) },
     });
     await expect(

@@ -27,7 +27,10 @@ function walk(dir: string): string[] {
   });
 }
 
-export function build(out: string, release = new Date().toISOString().slice(0, 10).replaceAll("-", ".")) {
+/** Builds the pack into `out`. Without a release named, the release is the day and a digest
+ * of the pack's content, so two builds of different content never share a release and the
+ * same content built again is the same release. */
+export function build(out: string, named?: string) {
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
   const files: Record<string, string> = {};
@@ -73,25 +76,32 @@ export function build(out: string, release = new Date().toISOString().slice(0, 1
   writeFileSync(join(out, "materials.ndjson"), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
   files["materials.ndjson"] = createHash("sha256").update(readFileSync(join(out, "materials.ndjson"))).digest("hex");
   copy(join(here, "LICENSE"), "LICENSE");
+  const types = read<object[]>("types.json"),
+    synonyms = read<string[][]>("synonyms.json"),
+    bindings = { text: "label", picture: "picture", link: "arrow" };
+  const content = createHash("sha256")
+    .update(JSON.stringify([Object.entries(files).sort(), types, synonyms, bindings, data]))
+    .digest("hex");
+  const release = named ?? `${new Date().toISOString().slice(0, 10).replaceAll("-", ".")}-${content.slice(0, 10)}`;
   const manifest = {
     format: "drawy-material-pack/1",
     source: "drawy-curated",
     release,
     materials: "materials.ndjson",
     files,
-    types: read<object[]>("types.json"),
-    bindings: { text: "label", picture: "picture", link: "arrow" },
+    types,
+    bindings,
     data,
-    synonyms: read<string[][]>("synonyms.json"),
+    synonyms,
     withdraw: [],
     license: "LICENSE",
   };
   writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest, null, 1));
-  return { out, materials: lines.length, files: Object.keys(files).length };
+  return { out, release, materials: lines.length, files: Object.keys(files).length };
 }
 
 if (import.meta.main) {
   const [out = join(here, "dist", "pack"), release] = process.argv.slice(2);
   const r = build(out, release);
-  console.log(`built ${relative(process.cwd(), r.out) || "."}: ${r.materials} materials, ${r.files} files`);
+  console.log(`built ${relative(process.cwd(), r.out) || "."} (${r.release}): ${r.materials} materials, ${r.files} files`);
 }

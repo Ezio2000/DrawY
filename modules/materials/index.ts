@@ -47,7 +47,9 @@ export function useOf(m: Material): MaterialUse | null {
         name: m.name.zh,
         type: m.type,
         style: m.style,
-        url: m.file.url,
+        // A pack's picture is addressed at its version, so a later pack's pixels under the
+        // same id do not reach a work that took this one.
+        url: m.pack ? `${m.file.url}?v=${m.version}` : m.file.url,
         width: Math.round(m.form.width * c.width),
         height: Math.round(m.form.height * c.height),
         content: c,

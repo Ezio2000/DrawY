@@ -358,7 +358,7 @@ export function createApp(storage: Storage) {
       await Promise.all(
         Object.values(work.materials).map(async (m) => {
           if (m.kind !== "picture" || m.status !== "ready") return [m.id, m];
-          const bytes = await library.file(m.id, store.viewer, 0).catch(() => undefined);
+          const bytes = await library.file(m.id, store.viewer, 0, undefined, m.version).catch(() => undefined);
           return [m.id, bytes ? { ...m, url: dataUrl(bytes) } : m];
         }),
       ),
@@ -377,7 +377,7 @@ export function createApp(storage: Storage) {
             whole,
             (route === "thumbs"
               ? library.thumb(id, store.viewer, Number(params.get("size")) || 256)
-              : library.file(id, store.viewer, 0, params.get("color") ?? undefined)
+              : library.file(id, store.viewer, 0, params.get("color") ?? undefined, Number(params.get("v")) || undefined)
             ).then(dataUrl, () => undefined),
           );
         }

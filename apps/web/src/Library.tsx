@@ -24,7 +24,7 @@ import { Canvas } from "../../../modules/canvas/index.ts";
 import type { Work } from "../../../modules/contracts/index.ts";
 import { api } from "./api.ts";
 import { cx } from "./cx.ts";
-import { styleList } from "./Composer.tsx";
+import { styleNamed } from "./Composer.tsx";
 import { ago } from "./time.ts";
 import { useT } from "./i18n.tsx";
 import { useCan } from "./account.tsx";
@@ -85,11 +85,17 @@ export function Library({
     [loading, setLoading] = useState(true),
     [error, E] = useState(""),
     [open, O] = useState<Shown>(),
-    [styles, setStyles] = useState<StyleMaterial[]>([]),
+    // Style names by id, read as the materials shown need them: the library may hold more
+    // styles than one page.
+    [styleNames, setStyleNames] = useState<Record<string, StyleMaterial["name"]>>({}),
     [uploading, U] = useState(false),
     [stamp, setStamp] = useState(0);
   const cell = cells[kind];
-  useEffect(() => void styleList().then(setStyles, () => {}), []);
+  useEffect(() => {
+    const id = open?.style;
+    if (id && !styleNames[id])
+      void styleNamed(id).then((st) => setStyleNames((known) => ({ ...known, [id]: st.name })), () => {});
+  }, [open?.style]);
   // How many cells the shelf holds, as the space it has changes.
   useEffect(() => {
     const el = shelf.current;
@@ -143,8 +149,7 @@ export function Library({
     setPage(1);
     O(undefined);
   };
-  const styleName = (id: string | null) =>
-    styles.find((s) => s.id === id)?.name[locale];
+  const styleName = (id: string | null) => (id ? styleNames[id]?.[locale] : undefined);
   async function upload(files: FileList) {
     U(true);
     E("");

@@ -94,7 +94,8 @@ export function createServer(library: Library, streets = new Streets(library.str
   });
   app.get("/files/:id", async (c) => {
     const wait = Number(c.req.query("wait") ?? 240) * 1000;
-    const { material, bytes } = await library.file(c.req.param("id"), viewer(c), c.req.query("color"), wait);
+    const version = c.req.query("v") ? Number(c.req.query("v")) : undefined;
+    const { material, bytes } = await library.file(c.req.param("id"), viewer(c), c.req.query("color"), wait, version);
     return c.body(new Uint8Array(bytes), 200, {
       "Content-Type": material.file.mediaType,
       "Cache-Control": material.owner === null ? "public, max-age=86400" : "private, max-age=3600",
@@ -121,7 +122,8 @@ export function createServer(library: Library, streets = new Streets(library.str
   app.get("/geo/:layer", (c) => data(c, "geo/" + c.req.param("layer")));
   app.get("/thumbs/:id", async (c) => {
     const size = Math.min(512, Math.max(32, Number(c.req.query("size") || 256)));
-    return c.body(new Uint8Array(await library.thumb(c.req.param("id"), viewer(c), size)), 200, {
+    const version = c.req.query("v") ? Number(c.req.query("v")) : undefined;
+    return c.body(new Uint8Array(await library.thumb(c.req.param("id"), viewer(c), size, version)), 200, {
       "Content-Type": "image/webp",
       "Cache-Control": "private, max-age=86400",
     });
