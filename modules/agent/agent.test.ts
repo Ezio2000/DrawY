@@ -997,6 +997,19 @@ it("gives guides and material cards on demand, once, and reminds the author of t
     expect(guidesRead([{ ...read[0], name: "draw_guide", arguments: args }, { ...read[1], output: '{"error":"x"}' }]).topics.size).toBe(0);
 });
 
+it("answers a tool the author invented with an error, and goes on", async () => {
+  const seen = script([
+    ["parallel", { tool_uses: [{ recipient_name: "functions.read_work", parameters: {} }] }],
+    ["read_work", {}],
+    ["view_canvas", {}],
+    ["finish", { message: "done" }],
+  ]);
+  const run = await new Agent(() => {}).start(store, work.id, "root", "看看");
+  await waitFor(run.id, "completed");
+  const [invented] = outputs(seen.at(-1)!);
+  expect(JSON.stringify(invented)).toContain("没有 parallel 这个工具");
+});
+
 it("gives the cards of what a search finds when asked, and counts them as read", async () => {
   work.materials = {};
   store.commit(work, 1, { kind: "edit" });

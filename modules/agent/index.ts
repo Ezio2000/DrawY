@@ -424,7 +424,8 @@ export class Agent {
           x.emit();
         }
         const handler = handlers[item.name];
-        if (!handler) throw Error("Unknown tool " + item.name);
+        if (!handler)
+          throw Error(`没有 ${item.name} 这个工具：请直接调用工具列表里的工具，同一轮可以并列调用多个`);
         const answered = await handler(x, args, call);
         if (answered === "waiting") {
           span.set({ output: null, images: [] });

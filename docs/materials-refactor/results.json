@@ -1,0 +1,543 @@
+{
+ "realModel": {
+  "overall": {
+   "base": {
+    "runs": 24,
+    "completed": 23,
+    "elapsed": 72.3836,
+    "firstScene": 35.5967,
+    "tools": 6.9583,
+    "toolErrors": 0.3333,
+    "input": 71438.8333,
+    "uncached": 9424.4583,
+    "output": 4213.5,
+    "author$": 0.0719,
+    "image$": 0.0505,
+    "findCalls": 0,
+    "readCalls": 0.9583,
+    "generated": 1.9583,
+    "libPictures": 0.25,
+    "libDrawings": 0.375,
+    "views": 1.9167
+   },
+   "new": {
+    "runs": 24,
+    "completed": 23,
+    "elapsed": 59.9995,
+    "firstScene": 30.7947,
+    "tools": 8.125,
+    "toolErrors": 0.2917,
+    "input": 70053.125,
+    "uncached": 9708.75,
+    "output": 3092.3333,
+    "author$": 0.0612,
+    "image$": 0.0339,
+    "findCalls": 0.5417,
+    "readCalls": 1.625,
+    "generated": 1.6667,
+    "libPictures": 0.1667,
+    "libDrawings": 0.375,
+    "views": 1.875
+   },
+   "final": {
+    "runs": 24,
+    "completed": 22,
+    "elapsed": 92.8343,
+    "firstScene": 27.1273,
+    "tools": 6.875,
+    "toolErrors": 0.0417,
+    "input": 57692.0833,
+    "uncached": 8749.8333,
+    "output": 2842.5417,
+    "author$": 0.0552,
+    "image$": 0.0158,
+    "findCalls": 0.375,
+    "readCalls": 1.25,
+    "generated": 1.625,
+    "libPictures": 0.2083,
+    "libDrawings": 0.375,
+    "views": 1.875
+   }
+  },
+  "perPrompt": {
+   "心脏泵血": {
+    "base": {
+     "elapsed": 95.478,
+     "tools": 9,
+     "input": 99164,
+     "output": 7491,
+     "author$": 0.12,
+     "libDrawings": 0.333,
+     "libPictures": 0.667,
+     "generated": 1.333
+    },
+    "new": {
+     "elapsed": 93.057,
+     "tools": 10.667,
+     "input": 106826.333,
+     "output": 7018,
+     "author$": 0.113,
+     "libDrawings": 0,
+     "libPictures": 0.333,
+     "generated": 1.333
+    },
+    "final": {
+     "elapsed": 357.454,
+     "tools": 5.333,
+     "input": 52393,
+     "output": 4467,
+     "author$": 0.071,
+     "libDrawings": 0,
+     "libPictures": 0,
+     "generated": 1.333
+    }
+   },
+   "郑和航线": {
+    "base": {
+     "elapsed": 220.771,
+     "tools": 7.333,
+     "input": 74481,
+     "output": 8006.667,
+     "author$": 0.121,
+     "libDrawings": 0.667,
+     "libPictures": 0,
+     "generated": 0
+    },
+    "new": {
+     "elapsed": 62.78,
+     "tools": 11,
+     "input": 94833.333,
+     "output": 4376.333,
+     "author$": 0.097,
+     "libDrawings": 1,
+     "libPictures": 0,
+     "generated": 0
+    },
+    "final": {
+     "elapsed": 66.731,
+     "tools": 10.667,
+     "input": 89479.667,
+     "output": 4820.333,
+     "author$": 0.103,
+     "libDrawings": 1,
+     "libPictures": 0,
+     "generated": 0
+    }
+   },
+   "订单架构": {
+    "base": {
+     "elapsed": 45.806,
+     "tools": 8,
+     "input": 73208.333,
+     "output": 3267.667,
+     "author$": 0.064,
+     "libDrawings": 1,
+     "libPictures": 0.667,
+     "generated": 0
+    },
+    "new": {
+     "elapsed": 38.512,
+     "tools": 8,
+     "input": 61045.333,
+     "output": 2693.667,
+     "author$": 0.054,
+     "libDrawings": 1,
+     "libPictures": 0.333,
+     "generated": 0
+    },
+    "final": {
+     "elapsed": 41.582,
+     "tools": 7.333,
+     "input": 52819.333,
+     "output": 3105,
+     "author$": 0.056,
+     "libDrawings": 1,
+     "libPictures": 0.333,
+     "generated": 0
+    }
+   },
+   "水循环": {
+    "base": {
+     "elapsed": 83.07,
+     "tools": 8,
+     "input": 81955.333,
+     "output": 6509.333,
+     "author$": 0.094,
+     "libDrawings": 0,
+     "libPictures": 0.667,
+     "generated": 2.333
+    },
+    "new": {
+     "elapsed": 147.631,
+     "tools": 5,
+     "input": 39274,
+     "output": 1749.667,
+     "author$": 0.034,
+     "libDrawings": 0,
+     "libPictures": 0.667,
+     "generated": 1.333
+    },
+    "final": {
+     "elapsed": 149.524,
+     "tools": 5.333,
+     "input": 44927.333,
+     "output": 1966,
+     "author$": 0.038,
+     "libDrawings": 0,
+     "libPictures": 1.333,
+     "generated": 0.667
+    }
+   },
+   "行星大小": {
+    "base": {
+     "elapsed": 69.915,
+     "tools": 9.667,
+     "input": 115960.333,
+     "output": 5030.667,
+     "author$": 0.098,
+     "libDrawings": 0,
+     "libPictures": 0,
+     "generated": 8
+    },
+    "new": {
+     "elapsed": 66.85,
+     "tools": 11.333,
+     "input": 110789.667,
+     "output": 4559.333,
+     "author$": 0.096,
+     "libDrawings": 0,
+     "libPictures": 0,
+     "generated": 8
+    },
+    "final": {
+     "elapsed": 53.67,
+     "tools": 7,
+     "input": 66121,
+     "output": 4070.667,
+     "author$": 0.075,
+     "libDrawings": 0,
+     "libPictures": 0,
+     "generated": 8
+    }
+   },
+   "咖啡海报": {
+    "base": {
+     "elapsed": 26.1,
+     "tools": 5.333,
+     "input": 46614.333,
+     "output": 1551,
+     "author$": 0.032,
+     "libDrawings": 0,
+     "libPictures": 0,
+     "generated": 2
+    },
+    "new": {
+     "elapsed": 39.598,
+     "tools": 8,
+     "input": 65169.333,
+     "output": 2527.333,
+     "author$": 0.05,
+     "libDrawings": 0,
+     "libPictures": 0,
+     "generated": 1.667
+    },
+    "final": {
+     "elapsed": 37.298,
+     "tools": 8.333,
+     "input": 68456.333,
+     "output": 2415.667,
+     "author$": 0.05,
+     "libDrawings": 0,
+     "libPictures": 0,
+     "generated": 1.333
+    }
+   },
+   "销量柱状图": {
+    "base": {
+     "elapsed": 12.692,
+     "tools": 4,
+     "input": 33679,
+     "output": 786.333,
+     "author$": 0.02,
+     "libDrawings": 1,
+     "libPictures": 0,
+     "generated": 0
+    },
+    "new": {
+     "elapsed": 15.157,
+     "tools": 6.667,
+     "input": 43608.333,
+     "output": 962.333,
+     "author$": 0.024,
+     "libDrawings": 1,
+     "libPictures": 0,
+     "generated": 0
+    },
+    "final": {
+     "elapsed": 15.369,
+     "tools": 6.667,
+     "input": 43810.333,
+     "output": 904.333,
+     "author$": 0.024,
+     "libDrawings": 1,
+     "libPictures": 0,
+     "generated": 0
+    }
+   },
+   "月夜狐狸": {
+    "base": {
+     "elapsed": 25.237,
+     "tools": 4.333,
+     "input": 46448.333,
+     "output": 1065.333,
+     "author$": 0.026,
+     "libDrawings": 0,
+     "libPictures": 0,
+     "generated": 2
+    },
+    "new": {
+     "elapsed": 16.411,
+     "tools": 4.333,
+     "input": 38878.667,
+     "output": 852,
+     "author$": 0.021,
+     "libDrawings": 0,
+     "libPictures": 0,
+     "generated": 1
+    },
+    "final": {
+     "elapsed": 21.047,
+     "tools": 4.333,
+     "input": 43529.667,
+     "output": 991.333,
+     "author$": 0.025,
+     "libDrawings": 0,
+     "libPictures": 0,
+     "generated": 1.667
+    }
+   }
+  }
+ },
+ "search": {
+  "old-queries": {
+   "queries": 93,
+   "recall@5": 0.9404761904761905,
+   "mrr": 0.9345238095238095,
+   "precision@5": 0.8321428571428571,
+   "noResultWhenAnswerable": 0.047619047619047616,
+   "offeredForAbsent": 0.3333333333333333,
+   "directForAbsent": 0,
+   "falseDirectPerQuery": 0.16129032258064516,
+   "p50ms": 0.27726000000006934,
+   "p95ms": 0.9500869999999395,
+   "maxms": 1.8588960000000725,
+   "groups": {
+    "exact": {
+     "n": 26,
+     "recall": 1,
+     "mrr": 1
+    },
+    "qualified": {
+     "n": 3,
+     "recall": 0.6666666666666666,
+     "mrr": 0.6666666666666666
+    },
+    "alias": {
+     "n": 21,
+     "recall": 0.9047619047619048,
+     "mrr": 0.8809523809523809
+    },
+    "drawing": {
+     "n": 23,
+     "recall": 0.9130434782608695,
+     "mrr": 0.9130434782608695
+    },
+    "style": {
+     "n": 6,
+     "recall": 1,
+     "mrr": 1
+    },
+    "effect": {
+     "n": 3,
+     "recall": 1,
+     "mrr": 1
+    },
+    "absent": {
+     "n": 0,
+     "recall": 0,
+     "mrr": 0
+    },
+    "not-close": {
+     "n": 2,
+     "recall": 1,
+     "mrr": 1
+    }
+   }
+  },
+  "old-heldout": {
+   "queries": 50,
+   "recall@5": 0.8723404255319149,
+   "mrr": 0.8723404255319149,
+   "precision@5": 0.721276595744681,
+   "noResultWhenAnswerable": 0.06382978723404255,
+   "offeredForAbsent": 0.3333333333333333,
+   "directForAbsent": 0,
+   "falseDirectPerQuery": 0.3,
+   "p50ms": 0.43443600000000515,
+   "p95ms": 0.8772300000000541,
+   "maxms": 1.336328999999978,
+   "groups": {
+    "exact": {
+     "n": 9,
+     "recall": 1,
+     "mrr": 1
+    },
+    "absent": {
+     "n": 0,
+     "recall": 0,
+     "mrr": 0
+    },
+    "alias": {
+     "n": 19,
+     "recall": 0.9473684210526315,
+     "mrr": 0.9473684210526315
+    },
+    "drawing": {
+     "n": 9,
+     "recall": 0.6666666666666666,
+     "mrr": 0.6666666666666666
+    },
+    "style": {
+     "n": 4,
+     "recall": 1,
+     "mrr": 1
+    },
+    "effect": {
+     "n": 2,
+     "recall": 1,
+     "mrr": 1
+    },
+    "not-close": {
+     "n": 1,
+     "recall": 0,
+     "mrr": 0
+    },
+    "qualified": {
+     "n": 3,
+     "recall": 0.6666666666666666,
+     "mrr": 0.6666666666666666
+    }
+   }
+  },
+  "new-queries": {
+   "queries": 93,
+   "recall@5": 1,
+   "mrr": 1,
+   "precision@5": 0.7861111111111111,
+   "noResultWhenAnswerable": 0,
+   "offeredForAbsent": 0.3333333333333333,
+   "directForAbsent": 0,
+   "falseDirectPerQuery": 0.26881720430107525,
+   "p50ms": 0.45347399999991467,
+   "p95ms": 1.6407159999999976,
+   "maxms": 2.133010000000013,
+   "groups": {
+    "exact": {
+     "n": 26,
+     "recall": 1,
+     "mrr": 1
+    },
+    "qualified": {
+     "n": 3,
+     "recall": 1,
+     "mrr": 1
+    },
+    "alias": {
+     "n": 21,
+     "recall": 1,
+     "mrr": 1
+    },
+    "drawing": {
+     "n": 23,
+     "recall": 1,
+     "mrr": 1
+    },
+    "style": {
+     "n": 6,
+     "recall": 1,
+     "mrr": 1
+    },
+    "effect": {
+     "n": 3,
+     "recall": 1,
+     "mrr": 1
+    },
+    "absent": {
+     "n": 0,
+     "recall": 0,
+     "mrr": 0
+    },
+    "not-close": {
+     "n": 2,
+     "recall": 1,
+     "mrr": 1
+    }
+   }
+  },
+  "new-heldout": {
+   "queries": 50,
+   "recall@5": 0.8936170212765957,
+   "mrr": 0.851063829787234,
+   "precision@5": 0.6744680851063829,
+   "noResultWhenAnswerable": 0.06382978723404255,
+   "offeredForAbsent": 0.3333333333333333,
+   "directForAbsent": 0,
+   "falseDirectPerQuery": 0.32,
+   "p50ms": 0.4462190000000419,
+   "p95ms": 1.2992759999999635,
+   "maxms": 1.7826200000000085,
+   "groups": {
+    "exact": {
+     "n": 9,
+     "recall": 1,
+     "mrr": 1
+    },
+    "absent": {
+     "n": 0,
+     "recall": 0,
+     "mrr": 0
+    },
+    "alias": {
+     "n": 19,
+     "recall": 0.9473684210526315,
+     "mrr": 0.9210526315789473
+    },
+    "drawing": {
+     "n": 9,
+     "recall": 0.6666666666666666,
+     "mrr": 0.6111111111111112
+    },
+    "style": {
+     "n": 4,
+     "recall": 1,
+     "mrr": 1
+    },
+    "effect": {
+     "n": 2,
+     "recall": 1,
+     "mrr": 1
+    },
+    "not-close": {
+     "n": 1,
+     "recall": 0,
+     "mrr": 0
+    },
+    "qualified": {
+     "n": 3,
+     "recall": 1,
+     "mrr": 0.6666666666666666
+    }
+   }
+  }
+ }
+}
