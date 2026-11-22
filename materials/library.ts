@@ -400,4 +400,3 @@ export class Library {
     this.catalog.stand(id, { status: "withdrawn" });
   }
 }
-export type { MaterialHead };

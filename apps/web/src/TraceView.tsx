@@ -871,7 +871,7 @@ function Attributes({
       break;
     case "search":
       parts.push(
-        <Part key="request" title={w.request} value={{ subjects: a.subjects, style: a.style, kinds: a.kinds, roles: a.roles, limit: a.limit }} />,
+        <Part key="request" title={w.request} value={{ subjects: a.subjects, style: a.style, types: a.types, kinds: a.kinds, limit: a.limit }} />,
         <Part key="results" title={w.result} value={a.results}>
           {(a.results || []).map((r: Item) => (
             <section key={r.subject} className={cx("hits")}>
