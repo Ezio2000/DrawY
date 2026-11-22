@@ -97,7 +97,8 @@ export async function measure(
     recolor: svg && bytes.toString("utf8").includes("currentColor"),
   };
 }
-/** A small PNG on white paper, the way a model should look at a candidate. */
+/** A small WebP on white paper, the way a model should look at a candidate; a shelf of
+ * them in the library loads several times faster than PNGs would. */
 export function thumbnail(bytes: Uint8Array, mediaType: string, size: number) {
   return sharp(Buffer.from(bytes), {
     density: mediaType === "image/svg+xml" ? 288 : 72,
@@ -107,7 +108,7 @@ export function thumbnail(bytes: Uint8Array, mediaType: string, size: number) {
       withoutEnlargement: mediaType !== "image/svg+xml",
     })
     .flatten({ background: "#ffffff" })
-    .png()
+    .webp({ quality: 85 })
     .toBuffer();
 }
 /** An SVG drawn in currentColor, inked in the given colour. */

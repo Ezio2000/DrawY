@@ -205,7 +205,6 @@ function ConnectionFields<T extends Connection & { name: string }>({
       <Row label={w.credentials[of.channel]}>
         <input
           className={cx("mono")}
-          type="password"
           autoComplete="off"
           value={of.credential}
           spellCheck={false}
@@ -1087,7 +1086,6 @@ export function SearchSection({
                 <Row label="API Key">
                   <input
                     className={cx("mono")}
-                    type="password"
                     autoComplete="off"
                     value={s.credential}
                     spellCheck={false}

@@ -355,7 +355,7 @@ it("catches up on what changed while the page was hidden, as a phone does with a
 
 it("keeps the story board visible while reading later chapters", async () => {
   await page.goto(base + "/");
-  const nav = page.getByRole("navigation", { name: "Jump along the range" });
+  const nav = page.getByRole("navigation", { name: "Switch pictures" });
   const stage = nav.locator("..");
   const links = page.getByRole("navigation", { name: "What it draws" }).getByRole("button");
   for (const [index, id] of [[5, "range"], [7, "navigate"]] as const) {
@@ -367,14 +367,9 @@ it("keeps the story board visible while reading later chapters", async () => {
   }
 });
 
-it("lays the home page out for a phone: the latest works, and the box's menus inside the screen", async () => {
-  for (let i = 0; i < 5; i++) await make();
+it("lays the home page out for a phone, with the box's menus inside the screen", async () => {
   await page.goto(base + "/");
   await settled();
-  // The latest few works, under the box to ask in.
-  const works = page.getByRole("region", { name: "Recent work" }).locator("li button", { hasText: "Check" });
-  await expect.poll(() => works.count()).toBeGreaterThanOrEqual(1);
-  expect(await works.count()).toBeLessThanOrEqual(4);
   const field = (await page.locator("textarea").first().boundingBox())!;
   expect(field.x >= 0 && field.x + field.width <= 390).toBe(true);
   for (const name of ["Add", "Style"]) {

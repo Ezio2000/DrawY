@@ -1,5 +1,6 @@
-import { Check, FilePlus2, Hand, MessageSquareText, PencilLine, RotateCcw } from "lucide-react";
+import { Check } from "lucide-react";
 import { cx } from "./cx.ts";
+import * as Hand from "./ui/brand/icons.tsx";
 import { Seal } from "./Title.tsx";
 import { ago } from "./time.ts";
 import { useT, type Words } from "./i18n.tsx";
@@ -74,7 +75,7 @@ export function Drafts({
               onClick={() => look(current)}
             >
               <i>
-                <PencilLine size={13} />
+                <Hand.Pencil size={16} />
               </i>
               <span>
                 <b>{t.unsaved.row}</b>
@@ -95,12 +96,12 @@ export function Drafts({
         {[...versions].reverse().map((v) => {
           const Icon =
             v.cause.kind === "run"
-              ? MessageSquareText
+              ? Hand.Talk
               : v.cause.kind === "restore"
-                ? RotateCcw
+                ? Hand.Undo
                 : v.cause.kind === "save" || v.cause.kind === "edit"
-                  ? Hand
-                  : FilePlus2;
+                  ? Hand.Pencil
+                  : Hand.Plus;
           const title = versionTitle(v, versions, t);
           // With edits not saved yet, the latest version is what they were made on.
           const now = v.revisions.includes(current) || (!!unsaved && v === latest);
@@ -123,7 +124,7 @@ export function Drafts({
               >
                 {v.cause.kind === "create" ? (
                   <i>
-                    <Icon size={13} />
+                    <Icon size={16} />
                   </i>
                 ) : (
                   <Seal version={v.number} quiet={!now} size="large" />
@@ -137,7 +138,7 @@ export function Drafts({
                   <small>{ago(v.updatedAt)}</small>
                   {v.cause.kind !== "create" && (
                     <q title={title}>
-                      <Icon size={12} />
+                      <Icon size={14} />
                       {title}
                     </q>
                   )}
@@ -147,12 +148,12 @@ export function Drafts({
                 <em>{t.history.current}</em>
               ) : (
                 <button
-                  className={cx("secondary small drafts-restore")}
+                  className={cx("drafts-restore")}
                   disabled={locked}
                   data-tip={locked ? t.work.wait : undefined}
                   onClick={() => restore(v.revision)}
                 >
-                  <RotateCcw size={13} />
+                  <Hand.Undo size={15} />
                   {t.history.restore}
                 </button>
               )}

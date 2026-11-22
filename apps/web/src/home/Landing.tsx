@@ -1,38 +1,26 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import {
-  ArrowUp,
-  ChevronDown,
-  ChevronLeft,
-  CodeXml,
-  Download,
-  MousePointerClick,
-  NotebookPen,
-  Plus,
-  ScanEye,
-  SlidersHorizontal,
-} from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import type { Work } from "../../../../modules/contracts/index.ts";
 import { Composer, Unconnected } from "../Composer.tsx";
 import { useAccount } from "../account.tsx";
-import type { Summary } from "../api.ts";
 import type { Feedback } from "../feedback.ts";
 import { useT } from "../i18n.tsx";
-import { progressOf } from "../Rail.tsx";
 import type { Asking } from "../shell.ts";
 import { useSelect } from "../session/store.ts";
 import { Brand } from "../Title.tsx";
+import * as Hand from "../ui/brand/icons.tsx";
 import { useLocale } from "../ui/locale.tsx";
 import { reducedMotion } from "../ui/primitives.tsx";
 import { cx } from "./cx.ts";
 import { LiveWork } from "./LiveWork.tsx";
 import { scroller, turnedUp, useCycledTyping } from "./motion.ts";
-import { loadShowcase, useShowcase, type ShowcaseId } from "./showcase.ts";
+import { loadShowcase, type ShowcaseId } from "./showcase.ts";
 
-/* The home page, told the way a drawing tool's site tells it: the box to ask in first,
- * then the range of pictures that one box draws — one lighthouse, asked about from a
- * painting of it to the family who built it — then how each is drawn, who it is for and
- * what people ask. Every picture on it is a work DrawY made (apps/showcase), drawn live by
- * the work page's own canvas, so what it shows is what the product does. */
+/* The home page: the box to ask in first, then the pictures that one box draws — one
+ * lighthouse, asked about from a painting of it to the family who built it — then what
+ * one can do with a picture once drawn, and what people ask. Every picture on it is a work
+ * DrawY made (apps/showcase), drawn live by the work page's own canvas, so what it shows
+ * is what the product does. */
 
 type Words = ReturnType<typeof useT>["landing"];
 /** Room the drawing leaves at the edges of its sheet; inside a scene, more at the top for
@@ -43,21 +31,13 @@ export function Landing({
   asking,
   feedback,
   go,
-  works,
-  open,
 }: {
   asking: Asking;
   feedback: Feedback;
   go: (path: string) => void;
-  /** The signed-in person's works, newest first; empty for a visitor. */
-  works: Summary[];
-  open: (id: string) => void;
 }) {
-  const t = useT();
-  const l = t.landing;
-  const locale = useLocale();
+  const l = useT().landing;
   const page = useRef<HTMLDivElement>(null);
-  const solar = useShowcase("solar", locale);
   /** Hands a question to the box at the top and takes the reader there. */
   const ask = (text: string) => {
     asking.draft.hand(text);
@@ -71,18 +51,13 @@ export function Landing({
         feedback={feedback}
         go={go}
         ask={ask}
-        recent={works.length > 0 && <Recent works={works} open={open} />}
         more={() => intro.current?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth" })}
       />
-      {/* What DrawY is, apart from where one asks it: a sheet laid over the desk below. */}
+      {/* What DrawY draws, apart from where one asks it: a sheet laid over the desk below. */}
       <div className={cx("l-intro")} ref={intro}>
-        <Showpiece solar={solar} />
-        <Ticker words={l} ask={ask} />
         <Story />
-        <Process words={l} />
-        <People words={l} />
-        <Belief words={l} />
-        <Closing words={l} ask={() => ask(asking.draft.get().text)} blank={() => go("/new")} />
+        <Ticker words={l} ask={ask} />
+        <Features words={l} />
         <Questions words={l} />
         <Footer words={l} go={go} />
       </div>
@@ -93,22 +68,19 @@ export function Landing({
 /* ---------------------------------------------------------------- hero */
 
 /** Where one asks: the whole first screen, a desk with nothing on it but the box to write
- * in, a few questions to start from and, for someone signed in, their latest works. What
- * DrawY is waits below, a scroll away. */
+ * in and a few questions to start from. What DrawY draws waits below, a scroll away. */
 function Hero({
   asking,
   feedback,
   go,
   ask,
-  recent,
   more,
 }: {
   asking: Asking;
   feedback: Feedback;
   go: (path: string) => void;
   ask: (text: string) => void;
-  recent: ReactNode;
-  /** Takes the reader down to what DrawY is. */
+  /** Takes the reader down to what DrawY draws. */
   more: () => void;
 }) {
   const t = useT(),
@@ -121,9 +93,6 @@ function Hero({
   const typed = useCycledTyping(asks, inBox || request.text !== "");
   return (
     <section className={cx("l-hero")} aria-labelledby="l-hero-title">
-      <p className={cx("l-eyebrow")}>
-        <Brand size={17} />
-      </p>
       <h1 id="l-hero-title" className={cx("l-display")}>
         {l.title.map((line) => (
           <span key={line}>{line}</span>
@@ -169,48 +138,14 @@ function Hero({
         ))}
         <i aria-hidden />
         <button className={cx("l-blank")} onClick={() => go("/new")}>
-          <Plus size={14} />
+          <Hand.Plus size={15} />
           {l.blank}
         </button>
       </div>
-      {recent}
       <button className={cx("l-more")} onClick={more}>
         {l.more}
-        <ChevronDown size={16} aria-hidden />
+        <Hand.Down size={17} />
       </button>
-    </section>
-  );
-}
-
-/** The first thing below the fold: what DrawY is, and one of its works running. */
-function Showpiece({ solar }: { solar: Work[] }) {
-  const l = useT().landing;
-  const [scene, setScene] = useState<string>();
-  const latest = solar.at(-1);
-  return (
-    <section className={cx("l-showpiece")} aria-labelledby="l-intro-title">
-      <header className={cx("l-section-head")}>
-        <p className={cx("l-kicker")}>{l.introKicker}</p>
-        <h2 id="l-intro-title" className={cx("l-display")} data-size="section">
-          {l.introTitle}
-        </h2>
-        <p className={cx("l-lead")}>{l.introLead}</p>
-      </header>
-      <figure>
-        <Sheet work={latest} scene={scene} setScene={setScene}>
-          <LiveWork
-            work={latest}
-            scene={scene}
-            open={setScene}
-            label={latest?.title}
-            insets={margins(!!latest && !!scene && scene !== latest.rootSceneId)}
-          />
-        </Sheet>
-        <figcaption>
-          <i aria-hidden />
-          {l.live}
-        </figcaption>
-      </figure>
     </section>
   );
 }
@@ -258,34 +193,6 @@ function Sheet({
   );
 }
 
-/* ---------------------------------------------------------------- recent work */
-
-function Recent({ works, open }: { works: Summary[]; open: (id: string) => void }) {
-  const t = useT();
-  const shown = [...works].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 4);
-  return (
-    <section className={cx("l-recent")} aria-label={t.home.recent}>
-      <h2>{t.home.recent}</h2>
-      <ul>
-        {shown.map((w) => {
-          const state = progressOf(w, t);
-          return (
-            <li key={w.id}>
-              <button onClick={() => open(w.id)}>
-                <span className={cx("l-recent-cover")}>
-                  {w.cover && !w.progress.blank ? <img src={w.cover} alt="" loading="lazy" /> : <i aria-hidden />}
-                </span>
-                <b>{w.title}</b>
-                <span>{state.text}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
-
 /* ---------------------------------------------------------------- what people ask */
 
 function Ticker({ words, ask }: { words: Words; ask: (text: string) => void }) {
@@ -313,20 +220,20 @@ function Ticker({ words, ask }: { words: Words; ask: (text: string) => void }) {
 
 /* ---------------------------------------------------------------- the range of pictures */
 
-/** The story's chapters: one lighthouse, asked about further and further, from a painting
- * of it to the family who built it — the freest picture first, the most orderly last. Which
- * work each shows, the scene it opens on, and where it stands on the spectrum. */
-const chapters: { id: ShowcaseId; scene?: string; band: number }[] = [
-  { id: "night", band: 0 },
-  { id: "styles", band: 0 },
-  { id: "inside", band: 1 },
-  { id: "lens", band: 1 },
-  { id: "rhythm", band: 2 },
-  { id: "range", band: 2 },
-  { id: "coast", band: 2 },
-  { id: "navigate", band: 3 },
-  { id: "history", band: 3 },
-  { id: "family", band: 3 },
+/** The story's chapters, the work each shows: one lighthouse, asked about further and
+ * further, from a painting of it to the family who built it — the freest picture first,
+ * the most orderly last. */
+const chapters: ShowcaseId[] = [
+  "night",
+  "styles",
+  "inside",
+  "lens",
+  "rhythm",
+  "range",
+  "coast",
+  "navigate",
+  "history",
+  "family",
 ];
 
 /** Where the reading line falls, and how much scrolling one handover takes. */
@@ -346,12 +253,12 @@ function scrollToChapter(item: HTMLElement) {
   page.scrollBy({ top: top - (line - span / 2 - 16), behavior: reducedMotion() ? "auto" : "smooth" });
 }
 
-/** The range told along a dark drafting band: the chapters scroll past on one side while a
+/** The range told along a light drafting band: the chapters scroll past on one side while a
  * pad on the other stays put, a chapter's work to each sheet. As the next chapter comes up to
  * the middle of the screen, the sheet in view is turned up by its bottom right corner, the
  * paper's back curling over with the light on it, and the next lies beneath in its shadow
  * until the sheet has gone over the top. The turn follows the scrolling rather than a timer,
- * so scrolling back lays the sheet down again. The band's grid drifts by a little slower than
+ * so scrolling back lays the sheet down again. The band's dots drift by a little slower than
  * the page. */
 function Story() {
   const l = useT().landing;
@@ -452,7 +359,7 @@ function Story() {
     if (!wanted) return;
     let live = true;
     for (const c of chapters)
-      void loadShowcase(c.id, locale).then((v) => live && setLoaded((m) => ({ ...m, [c.id]: v.at(-1) })));
+      void loadShowcase(c, locale).then((v) => live && setLoaded((m) => ({ ...m, [c]: v.at(-1) })));
     return () => {
       live = false;
     };
@@ -465,7 +372,6 @@ function Story() {
   return (
     <section className={cx("l-story")} aria-labelledby="l-story-title" ref={band}>
       <header className={cx("l-section-head")}>
-        <p className={cx("l-kicker")}>{l.storyKicker}</p>
         <h2 id="l-story-title" className={cx("l-display")} data-size="section">
           {l.storyTitle}
         </h2>
@@ -475,16 +381,16 @@ function Story() {
         <ol className={cx("l-chapters")}>
           {l.chapters.map((c, i) => (
             <li
-              key={chapters[i].id}
+              key={chapters[i]}
               ref={(el) => {
                 items.current[i] = el;
               }}
-              id={`l-chapter-${chapters[i].id}`}
+              id={`l-chapter-${chapters[i]}`}
               data-on={i === at || undefined}
               onClick={() => i !== at && jump(i)}
             >
               <span className={cx("l-chapter-n")}>
-                {String(i + 1).padStart(2, "0")} · {l.spectrum[chapters[i].band]} · {c.kind}
+                {String(i + 1).padStart(2, "0")} · {c.kind}
               </span>
               <h3>{c.title}</h3>
               <p>{c.text}</p>
@@ -494,8 +400,8 @@ function Story() {
         <div className={cx("l-story-stage")}>
           <div className={cx("l-story-boards")}>
             {held.map((k, s) => {
-              const work = loaded[chapters[k].id];
-              const scene = scenes[k] ?? chapters[k].scene;
+              const work = loaded[chapters[k]];
+              const scene = scenes[k];
               const go = (id: string) => setScenes((m) => ({ ...m, [k]: id }));
               return (
                 <div
@@ -531,36 +437,26 @@ function Story() {
               <i ref={flap} />
             </span>
           </div>
-          <Spectrum band={chapters[at].band} at={at} jump={jump} track={track} />
+          <Pager at={at} jump={jump} track={track} />
         </div>
       </div>
     </section>
   );
 }
 
-/** Where the picture in view stands, from the most orderly to the freest: a dot per chapter
- * along a line that fills as one reads, and the four kinds under them. Any of them takes the
- * reader there. */
-function Spectrum({
-  band,
-  at,
-  jump,
-  track,
-}: {
-  band: number;
-  at: number;
-  jump: (k: number) => void;
-  track: RefObject<HTMLDivElement | null>;
-}) {
+/** Which picture is in view: a dot per chapter along a line that fills as one reads, each
+ * named by its title and taking the reader there. */
+function Pager({ at, jump, track }: { at: number; jump: (k: number) => void; track: RefObject<HTMLDivElement | null> }) {
   const l = useT().landing;
   return (
-    <nav className={cx("l-spectrum")} aria-label={l.spectrumNav} style={{ "--chapters": chapters.length } as CSSProperties}>
-      <div className={cx("l-spectrum-track")} ref={track}>
+    <nav className={cx("l-pager")} aria-label={l.chaptersNav} style={{ "--chapters": chapters.length } as CSSProperties}>
+      <div className={cx("l-pager-track")} ref={track}>
         {chapters.map((c, i) => (
           <button
-            key={c.id}
+            key={c}
             aria-label={l.chapters[i].title}
             aria-current={i === at || undefined}
+            data-tip={l.chapters[i].kind}
             data-on={i === at || undefined}
             data-past={i < at || undefined}
             onClick={() => jump(i)}
@@ -569,113 +465,32 @@ function Spectrum({
           </button>
         ))}
       </div>
-      <div className={cx("l-spectrum-names")}>
-        {l.spectrum.map((name, i) => (
-          <button
-            key={i}
-            style={{ gridColumn: `span ${chapters.filter((c) => c.band === i).length}` }}
-            data-on={i === band || undefined}
-            onClick={() => jump(chapters.findIndex((c) => c.band === i))}
-          >
-            {name}
-          </button>
-        ))}
-      </div>
     </nav>
   );
 }
 
-/* ---------------------------------------------------------------- how each is drawn */
+/* ---------------------------------------------------------------- once it is drawn */
 
-const processIcons = [NotebookPen, CodeXml, ScanEye, MousePointerClick, SlidersHorizontal, Download];
+const featureIcons = [Hand.Loupe, Hand.Pencil, Hand.Talk, Hand.Versions, Hand.Palette, Hand.Export];
 
-function Process({ words }: { words: Words }) {
+function Features({ words }: { words: Words }) {
   return (
-    <section className={cx("l-process")} aria-labelledby="l-process-title">
-      <header className={cx("l-section-head")}>
-        <p className={cx("l-kicker")}>{words.processKicker}</p>
-        <h2 id="l-process-title" className={cx("l-display")} data-size="section">
-          {words.processTitle}
-        </h2>
-      </header>
-      <ul className={cx("l-process-grid")}>
-        {words.process.map((p, i) => {
-          const Icon = processIcons[i];
+    <section className={cx("l-features")} aria-labelledby="l-features-title">
+      <h2 id="l-features-title" className={cx("l-display")} data-size="section">
+        {words.featuresTitle}
+      </h2>
+      <ul>
+        {words.features.map((p, i) => {
+          const Icon = featureIcons[i];
           return (
             <li key={p.title}>
-              <span className={cx("l-process-icon")}>
-                <Icon size={18} />
-              </span>
+              <Icon size={30} />
               <b>{p.title}</b>
               <p>{p.text}</p>
             </li>
           );
         })}
       </ul>
-    </section>
-  );
-}
-
-/* ---------------------------------------------------------------- who for */
-
-function People({ words }: { words: Words }) {
-  return (
-    <section className={cx("l-people")} aria-labelledby="l-people-title">
-      <header className={cx("l-section-head")}>
-        <h2 id="l-people-title" className={cx("l-display")} data-size="section">
-          {words.peopleTitle}
-        </h2>
-        <p className={cx("l-lead")}>{words.peopleLead}</p>
-      </header>
-      <ul className={cx("l-people-list")}>
-        {words.people.map((p, i) => (
-          <li key={p.who}>
-            <span className={cx("l-people-n")}>{String(i + 1).padStart(2, "0")}</span>
-            <b>{p.who}</b>
-            <p>{p.what}</p>
-            <span className={cx("l-tags")}>
-              {p.tags.map((tag) => (
-                <i key={tag}>{tag}</i>
-              ))}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function Belief({ words }: { words: Words }) {
-  return (
-    <section className={cx("l-belief")}>
-      <blockquote>
-        {words.belief.map((line) => (
-          <span key={line}>{line}</span>
-        ))}
-      </blockquote>
-      <p>— {words.beliefBy}</p>
-    </section>
-  );
-}
-
-function Closing({ words, ask, blank }: { words: Words; ask: () => void; blank: () => void }) {
-  const t = useT();
-  return (
-    <section className={cx("l-closing")}>
-      <h2 className={cx("l-display")} data-size="section">
-        {words.ctaTitle}
-      </h2>
-      <p>{words.ctaLead}</p>
-      <div>
-        <button className={cx("primary", "l-cta")} onClick={ask}>
-          {words.ctaStart}
-          <ArrowUp size={16} />
-        </button>
-        <button className={cx("secondary", "l-cta")} onClick={blank}>
-          <Plus size={16} />
-          {t.landing.blank}
-        </button>
-      </div>
     </section>
   );
 }
@@ -687,14 +502,13 @@ function Questions({ words }: { words: Words }) {
         <h2 id="l-faq-title" className={cx("l-display")} data-size="section">
           {words.faqTitle}
         </h2>
-        <p>{words.faqLead}</p>
       </header>
       <div>
         {words.faq.map((f) => (
           <details key={f.q}>
             <summary>
               {f.q}
-              <Plus size={16} aria-hidden />
+              <Hand.Plus size={17} />
             </summary>
             <p>{f.a}</p>
           </details>
@@ -720,13 +534,13 @@ function Footer({ words, go }: { words: Words; go: (path: string) => void }) {
         <b>{words.footerWorks}</b>
         {chapters.map((c, i) => (
           <button
-            key={c.id}
+            key={c}
             onClick={() => {
-              const item = document.getElementById(`l-chapter-${c.id}`);
+              const item = document.getElementById(`l-chapter-${c}`);
               if (item) scrollToChapter(item);
             }}
           >
-            {words.chapters[i].kind.split(" · ")[0]}
+            {words.chapters[i].kind}
           </button>
         ))}
       </nav>

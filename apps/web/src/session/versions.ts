@@ -6,13 +6,11 @@ import type { Back, Context } from "./types.ts";
 const BACK_FOR = 10_000;
 
 /** What is done to versions as a whole: saving the hand edits as one, throwing them away,
- * going back to a version (and taking that back), undoing and redoing. Each waits for the
- * hand edits on their way, and each revision it makes is the person's own. */
+ * going back to a version (and taking that back), and undoing. Each waits for the hand
+ * edits on their way, and each revision it makes is the person's own. */
 export class Versions {
   /** Going back, to take back while the work is still where it left it. */
   wentBack?: Back;
-  /** Revisions undone, to bring back while the work is still where undoing left it. */
-  undone?: { at: number; revisions: number[] };
   private timer?: ReturnType<typeof setTimeout>;
 
   constructor(private ctx: Context) {}
@@ -54,10 +52,6 @@ export class Versions {
   get undoable() {
     return !!this.back || this.ctx.revisions.counted.before !== undefined;
   }
-  get redoable() {
-    const w = this.ctx.revisions.work;
-    return !!w && this.undone?.at === w.revision;
-  }
 
   /** Saves the hand edits made since the latest version as a version of their own. */
   async save() {
@@ -95,8 +89,7 @@ export class Versions {
     );
   }
 
-  /** Takes back going back to a version, else the latest request or hand edit as a whole;
-   * it can be brought back until the work changes otherwise. */
+  /** Takes back going back to a version, else the latest request or hand edit as a whole. */
   async undo() {
     if (!this.undoable) return;
     const back = this.back;
@@ -105,22 +98,6 @@ export class Versions {
       await this.restoring(back.from);
       return;
     }
-    const from = this.work.revision;
-    const old = this.undone;
-    const w = await this.apply(() => api<Work>("/works/" + this.ctx.id + "/undo", "POST"));
-    this.undone = {
-      at: w.revision,
-      revisions: [...(old?.at === from ? old.revisions : []), from],
-    };
-    this.ctx.changed();
-  }
-
-  async redo() {
-    if (!this.redoable) return;
-    const revisions = this.undone!.revisions;
-    const w = await this.restoring(revisions.at(-1)!);
-    this.undone =
-      revisions.length > 1 ? { at: w.revision, revisions: revisions.slice(0, -1) } : undefined;
-    this.ctx.changed();
+    await this.apply(() => api<Work>("/works/" + this.ctx.id + "/undo", "POST"));
   }
 }

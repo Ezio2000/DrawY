@@ -176,7 +176,8 @@ function promptFor(
   ].join("\n");
 }
 
-/** Calls the picture model and returns the bytes of one picture. */
+/** Calls the picture model and returns the bytes of one picture; `references` are the
+ * library's thumbnails, which are WebP. */
 async function paint(
   role: ImageRole,
   prompt: string,
@@ -203,8 +204,8 @@ async function paint(
       references.forEach((bytes, i) =>
         form.append(
           "image[]",
-          new Blob([new Uint8Array(bytes)], { type: "image/png" }),
-          `reference-${i}.png`,
+          new Blob([new Uint8Array(bytes)], { type: "image/webp" }),
+          `reference-${i}.webp`,
         ),
       );
       body = form;
@@ -215,7 +216,7 @@ async function paint(
         ...(references.length
           ? {
               images: references.map((bytes) => ({
-                image_url: `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`,
+                image_url: `data:image/webp;base64,${Buffer.from(bytes).toString("base64")}`,
               })),
             }
           : {}),
@@ -435,7 +436,7 @@ export async function develop(
                 span.set({
                   referenceImages: references.map(
                     (b) =>
-                      "data:image/png;base64," +
+                      "data:image/webp;base64," +
                       Buffer.from(b).toString("base64"),
                   ),
                 });

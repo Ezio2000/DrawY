@@ -448,15 +448,15 @@ export class Library {
   }
   async thumb(id: string, user: Viewer, size: number) {
     const m = await this.ready(id, user, 240_000);
-    const cached = join(this.dir, "thumbs", `${id}-${size}.png`);
+    const cached = join(this.dir, "thumbs", `${id}-${size}.webp`);
     if (existsSync(cached)) return readFileSync(cached);
-    const png = await thumbnail(
+    const webp = await thumbnail(
       readFileSync(this.path(m)),
       m.file.mediaType,
       size,
     );
-    writeFileSync(cached, png);
-    return png;
+    writeFileSync(cached, webp);
+    return webp;
   }
   /** Records that a work uses these materials; popular ones rank a little higher. */
   use(ids: string[], work: string, user: string) {

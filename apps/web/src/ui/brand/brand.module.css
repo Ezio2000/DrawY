@@ -29,6 +29,59 @@
   fill-opacity: 0.14;
 }
 
+/* The interface's icons (icons.tsx) are a touch heavier than the larger marks, to read at
+   the size of a button's glyph. */
+.hand-icon path {
+  stroke-width: 1.75;
+}
+
+.hand-icon .mark-accent {
+  stroke-width: 1.75;
+}
+
+.hand-icon .mark-accent-fill {
+  fill-opacity: 0.18;
+}
+
+/* A person's mark: their first letter in ink, inside a ring drawn by hand on a slip of
+   paper. */
+.hand-avatar {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  color: var(--ink);
+}
+
+.hand-avatar svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.hand-avatar path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.hand-avatar .hand-avatar-ground {
+  fill: var(--paper);
+  stroke: none;
+}
+
+.hand-avatar b {
+  position: relative;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .panel-mark .mark-accent-fill {
   transition: fill-opacity 0.3s var(--ease);
 }

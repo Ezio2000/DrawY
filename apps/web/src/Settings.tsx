@@ -15,6 +15,7 @@ import {
   Tags,
 } from "lucide-react";
 import { Switch, Spinner } from "./ui/primitives.tsx";
+import * as Hand from "./ui/brand/icons.tsx";
 import { pageLocale } from "./ui/locale.tsx";
 import {
   permissions,
@@ -22,6 +23,7 @@ import {
   type AccountRole,
   type Invite,
   type ModelCatalog,
+  type Permission,
   type UserSettings,
 } from "../../../modules/contracts/index.ts";
 import { api } from "./api.ts";
@@ -30,7 +32,7 @@ import { Title } from "./Title.tsx";
 import { useT, dictionaries } from "./i18n.tsx";
 import { AccountContext, useCan } from "./account.tsx";
 import { ago } from "./time.ts";
-import { Badge, Entry, Group, Head, Loaded, Row, useLoaded } from "./SettingsParts.tsx";
+import { Badge, Entry, Group, Head, keep, keptValue, Loaded, read, Row, useLoaded } from "./SettingsParts.tsx";
 import { ImageSection, LabelSection, SearchSection, WriterSection } from "./ModelSettings.tsx";
 
 /** The section each model tab shows. */
@@ -46,6 +48,28 @@ let unsaved = false;
  * rather stay. */
 export const leaving = () =>
   !unsaved || confirm(dictionaries[pageLocale()].settings.leave);
+
+/** The account's own settings and, for those who manage models, the models. */
+type Own = { own: UserSettings; catalog?: ModelCatalog };
+const loadOwn = (models: boolean) => (): Promise<Own> =>
+  Promise.all([
+    api<UserSettings>("/settings"),
+    models ? api<ModelCatalog>("/admin/models") : undefined,
+  ]).then(([own, catalog]) => ({ own, catalog }));
+/** The accounts and the roles, which the accounts and roles pages both show. */
+const loadAccounts = () =>
+  Promise.all([api<Account[]>("/admin/accounts"), api<AccountRole[]>("/admin/roles")]);
+const loadInvites = () => api<Invite[]>("/admin/invites");
+
+/** Reads what the settings pages show before they are opened (as the account menu opens,
+ * or the first page while the others wait), so each opens on what it shows. */
+export function readSettings(can: (p: Permission) => boolean) {
+  const quiet = () => {};
+  read("own", loadOwn(can("models.manage"))).catch(quiet);
+  if (!can("accounts.manage")) return;
+  read("accounts", loadAccounts).catch(quiet);
+  read("invites", loadInvites).catch(quiet);
+}
 
 type Tab =
   | "preferences"
@@ -66,28 +90,25 @@ export function Settings() {
   const models = can("models.manage"),
     accounts = can("accounts.manage");
   const [tab, setTab] = useState<Tab>("preferences");
-  const [saved, setSaved] = useState<{
-      own: UserSettings;
-      catalog?: ModelCatalog;
-    }>(),
-    [value, set] = useState<typeof saved>(),
+  // What was kept from the last visit shows at once, and is replaced by what is read afresh
+  // unless it has been changed in the meantime.
+  const [kept] = useState(() => keptValue<Own>("own"));
+  const [saved, setSaved] = useState(kept),
+    [value, set] = useState(kept),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [done, setDone] = useState(false),
     // The model or service opened for editing.
     [editing, setEditing] = useState<string>();
   useEffect(() => {
-    void Promise.all([
-      api<UserSettings>("/settings"),
-      models ? api<ModelCatalog>("/admin/models") : undefined,
-    ]).then(
-      ([own, catalog]) => {
-        const v = { own, catalog };
+    void read("own", loadOwn(models)).then(
+      (v) => {
         setSaved(v);
-        set(v);
+        set((old) => (old === kept ? v : old));
       },
       (e) => setError(e.message),
     );
+    readSettings(can);
   }, [models]);
   const dirty = !!value && JSON.stringify(value) !== JSON.stringify(saved);
   useEffect(() => {
@@ -227,6 +248,7 @@ export function Settings() {
                           )
                         : catalog;
                     const now = { ...value, catalog: next };
+                    keep("own", now);
                     setSaved(now);
                     set(now);
                     setDone(true);
@@ -254,20 +276,13 @@ export function useRoleName() {
     (r.builtin && t.settings.roleNames[r.id]) || r.name;
 }
 
-/** A person's mark: the first letter of their name. */
-const Avatar = ({ name }: { name: string }) => (
-  <span className={cx("avatar")}>{[...name][0]?.toUpperCase()}</span>
-);
-
 /** Every account and the role it holds, as a list to search; a change takes effect at
  * once. */
 function Accounts() {
   const w = useT().settings,
     roleName = useRoleName();
   const me = useContext(AccountContext)?.id;
-  const { value, update, error, attempt } = useLoaded(() =>
-    Promise.all([api<Account[]>("/admin/accounts"), api<AccountRole[]>("/admin/roles")]),
-  );
+  const { value, update, error, attempt } = useLoaded("accounts", loadAccounts);
   const [query, setQuery] = useState("");
   const change = (a: Account, patch: { quota: number | null } | { role: string }) =>
     attempt(async () => {
@@ -305,7 +320,7 @@ function Accounts() {
               <ul>
                 {shown.map((a) => (
                   <li key={a.id}>
-                    <Avatar name={a.name} />
+                    <Hand.Avatar name={a.name} />
                     <span className={cx("member-name")}>
                       <b>{a.name}</b>
                       {a.id === me && <Badge tone="muted">{w.you}</Badge>}
@@ -375,7 +390,7 @@ function Quota({
 function Invites() {
   const t = useT(),
     w = t.settings;
-  const { value: list, update, error, attempt } = useLoaded(() => api<Invite[]>("/admin/invites"));
+  const { value: list, update, error, attempt } = useLoaded("invites", loadInvites);
   const [copied, setCopied] = useState<string>();
   return (
     <section>
@@ -475,11 +490,9 @@ function Roles() {
   const t = useT(),
     w = t.settings,
     roleName = useRoleName();
-  const { value, update, error, attempt } = useLoaded(() =>
-    Promise.all([api<AccountRole[]>("/admin/roles"), api<Account[]>("/admin/accounts")]),
-  );
+  const { value, update, error, attempt } = useLoaded("accounts", loadAccounts);
   const [open, setOpen] = useState<string>();
-  const roles = value?.[0];
+  const roles = value?.[1];
   const save = (r: AccountRole, patch: Partial<AccountRole>) =>
     attempt(async () => {
       const changed = await api<AccountRole>("/admin/roles/" + r.id, "PUT", {
@@ -487,7 +500,7 @@ function Roles() {
         permissions: r.permissions,
         ...patch,
       });
-      update(([roles, accounts]) => [roles.map((x) => (x.id === r.id ? changed : x)), accounts]);
+      update(([accounts, roles]) => [accounts, roles.map((x) => (x.id === r.id ? changed : x))]);
     });
   const summary = (r: AccountRole) =>
     r.permissions.length === permissions.length
@@ -510,7 +523,7 @@ function Roles() {
                   name: w.newRole(n),
                   permissions: [],
                 });
-                update(([roles, accounts]) => [[...roles, made], accounts]);
+                update(([accounts, roles]) => [accounts, [...roles, made]]);
                 setOpen(made.id);
               })
             }
@@ -521,7 +534,7 @@ function Roles() {
         )}
       </Head>
       <Loaded value={value} error={error}>
-        {([roles, accounts]) => (
+        {([accounts, roles]) => (
           <ul className={cx("entries")}>
             {roles.map((r) => (
               <Entry
@@ -586,9 +599,9 @@ function Roles() {
                         void attempt(async () => {
                           await api("/admin/roles/" + r.id, "DELETE");
                           // Its accounts are members again.
-                          update(([roles, accounts]) => [
-                            roles.filter((x) => x.id !== r.id),
+                          update(([accounts, roles]) => [
                             accounts.map((a) => (a.role === r.id ? { ...a, role: "member" } : a)),
+                            roles.filter((x) => x.id !== r.id),
                           ]);
                         });
                       }}

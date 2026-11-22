@@ -7,7 +7,6 @@ import type { Locale } from "../ui/locale.tsx";
  * here as each version came back. Each is loaded only when the page first needs it. */
 
 export type ShowcaseId =
-  | "solar"
   | "night"
   | "styles"
   | "inside"

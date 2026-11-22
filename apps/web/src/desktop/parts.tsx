@@ -1,5 +1,6 @@
 import { useRef } from "react";
-import { ChevronDown, X, MessagesSquare, PencilLine, History, Check, Undo2, Redo2 } from "lucide-react";
+import { ChevronDown, X, Check } from "lucide-react";
+import * as Hand from "../ui/brand/icons.tsx";
 import type { Canvas, CanvasOptions, Pointed } from "../../../../modules/canvas/index.ts";
 import type { Selection, Target } from "../../../../modules/contracts/index.ts";
 import { cx } from "../cx.ts";
@@ -378,7 +379,7 @@ export function Bars({
 
 export type Panel = "" | "journal" | "drafts" | "edit";
 
-/** The buttons beside the panel: undo, redo, the panels, and exporting the scene. */
+/** The buttons beside the panel: undo, the panels, and exporting the scene. */
 export function SideTools({
   session,
   panel,
@@ -399,21 +400,12 @@ export function SideTools({
     sceneId: s.sceneId,
     working: s.working,
     undoable: s.undoable,
-    redoable: s.redoable,
     drawn: !!s.scene?.modules.length,
   }));
   return (
     <nav className={cx("side-tools")}>
       <button aria-label={t.work.undo} data-tip={t.work.undo} disabled={s.working || !s.undoable} onClick={undo}>
-        <Undo2 size={17} />
-      </button>
-      <button
-        aria-label={t.work.redo}
-        data-tip={t.work.redo}
-        disabled={s.working || !s.redoable}
-        onClick={() => void feedback.attempt(session.redo)}
-      >
-        <Redo2 size={17} />
+        <Hand.Undo size={18} />
       </button>
       <button
         aria-label={t.work.edit}
@@ -421,7 +413,7 @@ export function SideTools({
         aria-pressed={panel === "edit"}
         onClick={() => toggle("edit")}
       >
-        <PencilLine size={17} />
+        <Hand.Pencil size={18} />
       </button>
       <button
         aria-label={t.work.journal}
@@ -430,7 +422,7 @@ export function SideTools({
         data-live={s.working || undefined}
         onClick={() => toggle("journal")}
       >
-        <MessagesSquare size={17} />
+        <Hand.Talk size={18} />
       </button>
       <button
         aria-label={t.work.drafts}
@@ -438,7 +430,7 @@ export function SideTools({
         aria-pressed={panel === "drafts"}
         onClick={() => toggle("drafts")}
       >
-        <History size={17} />
+        <Hand.Versions size={18} />
       </button>
       <ExportMenu
         work={s.work}

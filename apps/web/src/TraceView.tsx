@@ -1,14 +1,17 @@
-import type { Citation, RunCost, RunServices } from "../../../modules/contracts/index.ts";
+import type { Account, Citation, RunCost, RunServices, Work } from "../../../modules/contracts/index.ts";
 import { money } from "./money.ts";
 import { CitedText } from "./CitedText.tsx";
 import { citationsOf } from "../../../modules/models/index.ts";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { RefreshCw } from "lucide-react";
-import { api } from "./api.ts";
+import { api, type Summary } from "./api.ts";
+import { useAccount, useCan } from "./account.tsx";
+import { LiveWork } from "./home/LiveWork.tsx";
+import { progressOf } from "./Rail.tsx";
 import { cx } from "./cx.ts";
 import { ago } from "./time.ts";
 import { Title } from "./Title.tsx";
-import { Spinner } from "./ui/primitives.tsx";
+import { Segmented, Spinner } from "./ui/primitives.tsx";
 import { useT, type Words as I18n } from "./i18n.tsx";
 import type { Meter, Span, TraceSummary } from "../../../modules/trace/index.ts";
 
@@ -45,34 +48,59 @@ function Status({ value }: { value: string }) {
 /** A trace with what its run cost and was made with, as the server adds them. */
 type Costed = TraceSummary & { cost?: RunCost; services?: RunServices };
 
-/** Every run of the user's works, and for one run each model turn, tool call, search,
- * generation and capture in time order, with what went in and came out. */
+/** An address as read for `account`: one's own, or another's for those who manage
+ * accounts, with any other parameters. */
+function forAccount(path: string, account: string | undefined, more: Record<string, string> = {}) {
+  const q = new URLSearchParams({ ...(account ? { account } : {}), ...more }).toString();
+  return q ? `${path}${path.includes("?") ? "&" : "?"}${q}` : path;
+}
+
+/** Every run of an account's works, and for one run each model turn, tool call, search,
+ * generation and capture in time order, with what went in and came out. Those who manage
+ * accounts pick whose records to read: their runs, or their works, each drawn as it is now
+ * with its own runs beside it. */
 export function TraceView() {
-  const w = useT().traces;
+  const t = useT(),
+    w = t.traces;
+  const can = useCan(),
+    me = useAccount()!.id;
+  // Whose records: undefined is one's own.
+  const [account, setAccount] = useState<string | undefined>(
+    () => new URLSearchParams(location.search).get("account") || undefined,
+  );
+  const [tab, setTab] = useState<"runs" | "works">("runs");
+  const [accounts, setAccounts] = useState<Account[]>();
   // Undefined until the first list arrives, so an empty list is never shown while loading.
   const [list, setList] = useState<Costed[]>();
+  const [works, setWorks] = useState<Summary[]>();
   const [selected, setSelected] = useState<string | undefined>(
     location.pathname.match(/^\/traces\/([^/]+)/)?.[1],
   );
+  const [work, setWork] = useState<string>();
   const [detail, setDetail] = useState<{
     trace: Costed;
     spans: Span[];
   }>();
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (can("accounts.manage")) void api<Account[]>("/admin/accounts").then(setAccounts, (e) => setError(e.message));
+  }, []);
   const refresh = () =>
-    api<Costed[]>("/traces")
-      .then((l) => {
+    Promise.all([api<Costed[]>(forAccount("/traces", account)), api<Summary[]>(forAccount("/works", account))])
+      .then(([l, ws]) => {
         setList(l);
-        if (!selected && l[0]) setSelected(l[0].id);
+        setWorks(ws);
+        setSelected((s) => s ?? l[0]?.id);
+        setWork((id) => id ?? ws[0]?.id);
       })
       .catch((e) => setError(e.message));
-  useEffect(() => void refresh(), []);
+  useEffect(() => void refresh(), [account]);
   useEffect(() => {
+    history.replaceState(null, "", forAccount("/traces" + (selected ? "/" + selected : ""), account));
     if (!selected) return;
-    history.replaceState(null, "", "/traces/" + selected);
     let timer: ReturnType<typeof setTimeout>;
     const load = () =>
-      api<{ trace: Costed; spans: Span[] }>("/traces/" + selected)
+      api<{ trace: Costed; spans: Span[] }>(forAccount("/traces/" + selected, account))
         .then((d) => {
           setDetail(d);
           if (live(d.trace.status)) timer = setTimeout(load, 2500);
@@ -80,7 +108,18 @@ export function TraceView() {
         .catch((e) => setError(e.message));
     void load();
     return () => clearTimeout(timer);
-  }, [selected]);
+  }, [selected, account]);
+  /** Reads another account's records, from their latest run and work. */
+  const pick = (id: string) => {
+    setError("");
+    setList(undefined);
+    setWorks(undefined);
+    setDetail(undefined);
+    setSelected(undefined);
+    setWork(undefined);
+    setAccount(id === me ? undefined : id);
+  };
+  const shown = works?.find((x) => x.id === work);
   return (
     <div className={cx("traces")}>
       <aside>
@@ -96,38 +135,160 @@ export function TraceView() {
             <RefreshCw size={14} />
           </button>
         </header>
-        <ol>
-          {list?.map((t) => (
-            <li key={t.id}>
-              <button
-                aria-current={t.id === selected || undefined}
-                onClick={() => setSelected(t.id)}
-              >
-                <span className={cx("trace-row")}>
-                  <b>{t.title}</b>
-                  {t.cost && <em className={cx("trace-cost")}>{money(t.cost.total)}</em>}
-                </span>
-                <span className={cx("trace-prompt")}>{t.prompt}</span>
-                <small>
-                  <Status value={t.status} />
-                  <span>{ago(t.startedAt)}</span>
-                  <span>{seconds(t.durationMs)}</span>
-                  {!!t.counts.errors && <em>{w.errorCount(t.counts.errors)}</em>}
-                </small>
+        <div className={cx("trace-pick")}>
+          {accounts && (
+            <select aria-label={w.account} value={account ?? me} onChange={(e) => pick(e.target.value)}>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.id === me ? `${a.name}（${t.settings.you}）` : a.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <Segmented label={w.show}>
+            {(["runs", "works"] as const).map((k) => (
+              <button key={k} aria-pressed={tab === k} onClick={() => setTab(k)}>
+                {w[k]}
               </button>
-            </li>
-          ))}
-        </ol>
-        {!list && !error && <Spinner />}
-        {list && !list.length && !error && (
-          <p className={cx("traces-empty")}>{w.empty}</p>
+            ))}
+          </Segmented>
+        </div>
+        {tab === "runs" ? (
+          <ol>
+            {list?.map((r) => (
+              <li key={r.id}>
+                <RunRow run={r} current={r.id === selected} open={() => setSelected(r.id)} />
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <ol className={cx("trace-works")}>
+            {works?.map((x) => (
+              <li key={x.id}>
+                <button aria-current={x.id === work || undefined} onClick={() => setWork(x.id)}>
+                  <span className={cx("trace-cover")}>
+                    {x.cover && !x.progress.blank ? <img src={forAccount(x.cover, account)} alt="" loading="lazy" /> : <i aria-hidden />}
+                  </span>
+                  <span className={cx("trace-row")}>
+                    <b>{x.title}</b>
+                  </span>
+                  <small>{progressOf(x, t).text}</small>
+                </button>
+              </li>
+            ))}
+          </ol>
         )}
+        {!(tab === "runs" ? list : works) && !error && <Spinner />}
+        {tab === "runs" && list && !list.length && !error && <p className={cx("traces-empty")}>{w.empty}</p>}
+        {tab === "works" && works && !works.length && !error && <p className={cx("traces-empty")}>{w.noWorks}</p>}
       </aside>
       <main>
         {error && <p className={cx("error")}>{error}</p>}
-        {detail && <Timeline {...detail} />}
+        {tab === "runs"
+          ? detail && <Timeline {...detail} account={account} />
+          : shown && (
+              <WorkRecord
+                key={shown.id}
+                summary={shown}
+                account={account}
+                open={(id) => {
+                  setSelected(id);
+                  setTab("runs");
+                }}
+              />
+            )}
       </main>
     </div>
+  );
+}
+
+/** A run in a list: its work, what was asked, how it went, when, how long and what it cost. */
+function RunRow({ run, current, open }: { run: Costed; current: boolean; open: () => void }) {
+  const w = useT().traces;
+  return (
+    <button aria-current={current || undefined} onClick={open}>
+      <span className={cx("trace-row")}>
+        <b>{run.title}</b>
+        {run.cost && <em className={cx("trace-cost")}>{money(run.cost.total)}</em>}
+      </span>
+      <span className={cx("trace-prompt")}>{run.prompt}</span>
+      <small>
+        <Status value={run.status} />
+        <span>{ago(run.startedAt)}</span>
+        <span>{seconds(run.durationMs)}</span>
+        {!!run.counts.errors && <em>{w.errorCount(run.counts.errors)}</em>}
+      </small>
+    </button>
+  );
+}
+
+/** One of an account's works as it is now, drawn live (its scenes can be gone into), and
+ * the runs that made it, each opening its timeline. */
+function WorkRecord({
+  summary,
+  account,
+  open,
+}: {
+  summary: Summary;
+  account?: string;
+  open: (run: string) => void;
+}) {
+  const t = useT(),
+    w = t.traces;
+  const [work, setWork] = useState<Work>();
+  const [runs, setRuns] = useState<Costed[]>();
+  const [scene, setScene] = useState<string>();
+  const [error, setError] = useState("");
+  useEffect(() => {
+    void Promise.all([
+      api<Work>(forAccount("/works/" + summary.id, account)),
+      api<Costed[]>(forAccount("/traces", account, { work: summary.id })),
+    ]).then(([work, runs]) => {
+      setWork(work);
+      setRuns(runs);
+    }, (e) => setError(e.message));
+  }, [summary.id, account]);
+  const path: { id: string; title: string }[] = [];
+  for (let at = work && (scene && work.scenes[scene] ? scene : work.rootSceneId); at && work; at = work.scenes[at].parentId ?? undefined)
+    path.unshift({ id: at, title: work.scenes[at].parentId ? work.scenes[at].title : work.title });
+  return (
+    <>
+      <header className={cx("trace-head")}>
+        <div className={cx("trace-title")}>
+          <h2>{summary.title}</h2>
+          <small>{progressOf(summary, t).text}</small>
+        </div>
+        {path.length > 1 && (
+          <nav className={cx("trace-scenes")} aria-label={w.scenes}>
+            {path.map((p, i) => (
+              <span key={p.id}>
+                {i > 0 && <i>/</i>}
+                <button aria-current={i === path.length - 1 || undefined} onClick={() => setScene(p.id)}>
+                  {p.title}
+                </button>
+              </span>
+            ))}
+          </nav>
+        )}
+      </header>
+      {error && <p className={cx("error")}>{error}</p>}
+      <div className={cx("trace-work")}>
+        {work ? <LiveWork work={work} scene={scene} open={setScene} label={summary.title} /> : !error && <Spinner />}
+      </div>
+      <section className={cx("trace-card")}>
+        <header>
+          <h3>{w.workRuns}</h3>
+        </header>
+        {runs && !runs.length && <p className={cx("traces-empty")}>{w.empty}</p>}
+        <ol className={cx("trace-run-list")}>
+          {runs?.map((r) => (
+            <li key={r.id}>
+              <RunRow run={r} current={false} open={() => open(r.id)} />
+            </li>
+          ))}
+        </ol>
+      </section>
+    </>
   );
 }
 /** One figure at the top of a run: what it measures, the number, and what makes it up. */
@@ -149,7 +310,7 @@ function Stat({ label, value, parts }: { label: string; value: ReactNode; parts?
     </div>
   );
 }
-function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
+function Timeline({ trace, spans, account }: { trace: Costed; spans: Span[]; account?: string }) {
   const w = useT().traces;
   const [open, setOpen] = useState<string>();
   const [kinds, setKinds] = useState<Set<Span["kind"]>>(new Set());
@@ -293,7 +454,7 @@ function Timeline({ trace, spans }: { trace: Costed; spans: Span[] }) {
                   </span>
                   <small>{s.endedAt ? seconds(end - s.startedAt) : "…"}</small>
                 </button>
-                {open === s.id && <Opened traceId={trace.id} brief={s} />}
+                {open === s.id && <Opened traceId={trace.id} brief={s} account={account} />}
               </li>
             );
           })}
@@ -527,12 +688,12 @@ function Conversation({ items }: { items: Item[] }) {
 type Whole = { span: Span; context?: { items: Item[]; complete: boolean } };
 /** A span opened in the timeline: the timeline has only its brief, so the whole record
  * is fetched when it is opened, and again while it is still running when it changes. */
-function Opened({ traceId, brief }: { traceId: string; brief: Span }) {
+function Opened({ traceId, brief, account }: { traceId: string; brief: Span; account?: string }) {
   const [whole, setWhole] = useState<Whole>();
   const [error, setError] = useState("");
   useEffect(() => {
     let current = true;
-    api<Whole>(`/traces/${traceId}/spans/${brief.id}`)
+    api<Whole>(forAccount(`/traces/${traceId}/spans/${brief.id}`, account))
       .then((d) => current && setWhole(d))
       .catch((e) => current && setError(e.message));
     return () => {

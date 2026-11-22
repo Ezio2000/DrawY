@@ -97,7 +97,7 @@ for (const channel of ["api", "oauth"] as const)
       expect(JSON.parse(sent.body as string)).toMatchObject({
         background: "transparent",
         images: Array.from({ length: 3 }, () => ({
-          image_url: expect.stringMatching(/^data:image\/png;base64,/),
+          image_url: expect.stringMatching(/^data:image\/webp;base64,/),
         })),
       });
   });

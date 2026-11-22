@@ -353,13 +353,25 @@ function Look({ m, large = false }: { m: Material; large?: boolean }) {
       return <EffectLook m={m} />;
   }
 }
+/** Each drawing's example work, kept once asked for, so a shelf seen again draws at once. */
+const previews = new Map<string, Promise<Work>>();
+function previewOf(id: string) {
+  let work = previews.get(id);
+  if (!work) {
+    work = api<Work>(`/materials/${id}/preview`);
+    work.catch(() => previews.delete(id));
+    previews.set(id, work);
+  }
+  return work;
+}
+
 /** A drawing material drawn live from its example data. */
 export function DrawingLook({ m }: { m: DrawingMaterial }) {
   const host = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     let view: Canvas | undefined,
       gone = false;
-    void api<Work>(`/materials/${m.id}/preview`).then((work) => {
+    void previewOf(m.id).then((work) => {
       if (gone || !host.current) return;
       view = new Canvas(host.current, work, work.scenes.root, {
         motion: !reducedMotion(),

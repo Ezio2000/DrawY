@@ -144,9 +144,8 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
       removeEventListener("keydown", key);
     };
   }, [scenes]);
-  // Cmd/Ctrl+Z takes back the latest step and Shift+Cmd/Ctrl+Z (or Ctrl+Y) brings it back,
-  // unless a field is being typed in; Cmd/Ctrl+S saves the hand edits as a version; Escape
-  // ends a preview, or puts the reply away.
+  // Cmd/Ctrl+Z takes back the latest step, unless a field is being typed in; Cmd/Ctrl+S
+  // saves the hand edits as a version; Escape ends a preview, or puts the reply away.
   const keys = useRef({ replying, journal, detailId, undo: () => {}, dismiss });
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -154,12 +153,9 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
         k = e.key.toLowerCase(),
         mod = e.metaKey || e.ctrlKey,
         typing = (e.target as Element).closest?.("input,textarea,[contenteditable]");
-      if (mod && (k === "z" || k === "y") && !typing) {
+      if (mod && k === "z" && !e.shiftKey && !typing) {
         e.preventDefault();
-        if (s.working || s.preview) return;
-        if (k === "y" || e.shiftKey) {
-          if (s.redoable) void attempt(session.redo);
-        } else if (s.undoable) keys.current.undo();
+        if (!s.working && !s.preview && s.undoable) keys.current.undo();
       } else if (mod && k === "s" && s.unsaved) {
         e.preventDefault();
         if (!s.locked) void attempt(session.save);

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Clipboard,
-  Download,
   FileCode2,
   FileImage,
   FileText,
@@ -12,6 +11,7 @@ import {
   Square,
 } from "lucide-react";
 import { Spinner } from "./ui/primitives.tsx";
+import { Export } from "./ui/brand/icons.tsx";
 import { useLocale } from "./ui/locale.tsx";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
@@ -298,7 +298,7 @@ export function ExportItems({
   shareFirst?: boolean;
 }) {
   const w = useT().exports;
-  const item = (format: Format, Icon: typeof Download, label: string) => (
+  const item = (format: Format, Icon: typeof FileImage, label: string) => (
     <button
       key={format}
       role="menuitem"
@@ -368,7 +368,7 @@ export function ExportMenu({
         disabled={disabled}
         onClick={() => setOpen(!open)}
       >
-        {busy ? <Spinner size={15} /> : <Download size={17} />}
+        {busy ? <Spinner size={15} /> : <Export size={18} />}
       </button>
       {open && (
         <div className={cx("export-menu")} role="menu">
