@@ -1,21 +1,12 @@
 import { useRef, useState } from "react";
-import {
-  House,
-  Shapes,
-  Settings2,
-  ScrollText,
-  LogIn,
-  LogOut,
-  Trash2,
-  ChevronsUpDown,
-  MonitorSmartphone,
-} from "lucide-react";
 import { PanelMark } from "./ui/brand/hand.tsx";
+import * as Hand from "./ui/brand/icons.tsx";
 import { useLocale } from "./ui/locale.tsx";
 import type { ShellChoice, Shells } from "./shells.ts";
 import { cx } from "./cx.ts";
 import { useDismiss } from "./popover.ts";
 import { Brand } from "./Title.tsx";
+import { readSettings } from "./Settings.tsx";
 import { LanguageSwitch, useT } from "./i18n.tsx";
 import type { Summary, User } from "./api.ts";
 import { ago } from "./time.ts";
@@ -117,7 +108,7 @@ export function Rail({
   const link = (
     path: string,
     label: string,
-    Icon: typeof House,
+    Icon: Hand.HandIcon,
     active: boolean,
   ) => (
     <button
@@ -127,7 +118,7 @@ export function Rail({
       aria-current={active || undefined}
       onClick={() => nav(path)}
     >
-      <Icon size={17} />
+      <Icon size={18} />
       <span className={cx("rail-label")}>{label}</span>
     </button>
   );
@@ -146,8 +137,8 @@ export function Rail({
           <Brand size={20} />
         </span>
       </div>
-      {link("/", t.rail.home, House, page === "home")}
-      {link("/library", t.rail.library, Shapes, page === "library")}
+      {link("/", t.rail.home, Hand.Home, page === "home")}
+      {link("/library", t.rail.library, Hand.Library, page === "library")}
       {user ? (
         <section className={cx("rail-recents")} inert={!open}>
           <h2>{t.rail.recents}</h2>
@@ -177,7 +168,7 @@ export function Rail({
                   data-tip={t.rail.remove}
                   onClick={() => remove(w)}
                 >
-                  <Trash2 size={15} />
+                  <Hand.Trash size={16} />
                 </button>
               </li>
               );
@@ -200,12 +191,12 @@ export function Rail({
                   </small>
                 </p>
                 <button role="menuitem" onClick={() => (setAccount(false), nav("/settings"))}>
-                  <Settings2 size={15} />
+                  <Hand.Settings size={16} />
                   {t.rail.settings}
                 </button>
                 {user.permissions.includes("models.manage") && (
                   <button role="menuitem" onClick={() => (setAccount(false), nav("/traces"))}>
-                    <ScrollText size={15} />
+                    <Hand.Records size={16} />
                     {t.rail.traces}
                   </button>
                 )}
@@ -219,7 +210,7 @@ export function Rail({
                     logout();
                   }}
                 >
-                  <LogOut size={15} />
+                  <Hand.LogOut size={16} />
                   {t.rail.logout}
                 </button>
               </div>
@@ -229,16 +220,20 @@ export function Rail({
               aria-label={t.rail.account}
               aria-expanded={account}
               data-tip={open ? undefined : user.name}
-              onClick={() => setAccount(!account)}
+              onClick={() => {
+                // Settings are a press away: what they show is read as the menu opens.
+                if (!account) readSettings((p) => user.permissions.includes(p));
+                setAccount(!account);
+              }}
             >
-              <span className={cx("avatar")}>{[...user.name][0]?.toUpperCase()}</span>
+              <Hand.Avatar name={user.name} />
               <span className={cx("rail-label")}>{user.name}</span>
-              <ChevronsUpDown size={14} className={cx("rail-label")} />
+              <Hand.UpDown size={15} className={cx("rail-label")} />
             </button>
           </>
         ) : (
           <button
-            className={cx("rail-button rail-account")}
+            className={cx("rail-button")}
             aria-label={t.rail.signIn}
             data-tip={open ? undefined : t.rail.signIn}
             onClick={() => {
@@ -246,9 +241,7 @@ export function Rail({
               onLogin();
             }}
           >
-            <span className={cx("avatar")}>
-              <LogIn size={15} />
-            </span>
+            <Hand.LogIn size={18} />
             <span className={cx("rail-label")}>{t.rail.signIn}</span>
           </button>
         )}
@@ -268,7 +261,7 @@ function ShellSwitch({ shells }: { shells: Shells }) {
     c === "auto" ? t.rail.layoutAuto(shells.nameOf(shells.fits, locale)) : shells.nameOf(c, locale);
   return (
     <button role="menuitem" onClick={() => shells.choose(next)}>
-      <MonitorSmartphone size={15} />
+      <Hand.Devices size={16} />
       {t.rail.layout}
       <small>{name(shells.choice)}</small>
     </button>

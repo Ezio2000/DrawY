@@ -13,6 +13,7 @@ import { AuthDialog } from "./Auth.tsx";
 import { chosen } from "./Composer.tsx";
 import { Library } from "./Library.tsx";
 import { Settings, leaving } from "./Settings.tsx";
+import { forgetSettings } from "./SettingsParts.tsx";
 import { TraceView } from "./TraceView.tsx";
 import { Title } from "./Title.tsx";
 import { listen } from "./events.ts";
@@ -400,6 +401,7 @@ export function App() {
                 logout={() =>
                   void attempt(async () => {
                     await api("/auth/logout", "POST");
+                    forgetSettings();
                     L([]);
                     setListed(false);
                     setModels(undefined);
@@ -430,13 +432,7 @@ export function App() {
               {user === undefined ? (
                 loading
               ) : page === "home" ? (
-                <Landing
-                  asking={asking}
-                  feedback={feedback}
-                  go={go}
-                  works={user ? shownWorks : []}
-                  open={(id) => go("/a/" + id)}
-                />
+                <Landing asking={asking} feedback={feedback} go={go} />
               ) : page === "new" || !user ? (
                 <OpenWork
                   session={blankSession}

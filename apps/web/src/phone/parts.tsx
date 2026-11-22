@@ -4,19 +4,16 @@ import { WorkStudio } from "../Studio.tsx";
 import { WorkDrafts } from "../Drafts.tsx";
 import {
   ChevronDown,
-  ChevronLeft,
   Check,
-  History,
   ImageUp,
   Maximize,
   MessageSquareText,
-  Share,
   Trash2,
   Type,
-  Undo2,
   X,
 } from "lucide-react";
 import { Segmented } from "../ui/primitives.tsx";
+import * as Hand from "../ui/brand/icons.tsx";
 import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
 import {
   type Instance,
@@ -81,7 +78,7 @@ export function TopBar({
   return (
     <header className={cx("bar")}>
       <button className={cx("round")} aria-label={t.phone.back} onClick={back}>
-        <ChevronLeft size={20} />
+        <Hand.Back size={20} />
       </button>
       <button className={cx("title")} aria-label={t.phone.scenes} onClick={() => open("scenes")}>
         <span>{s.scene ?? s.title}</span>
@@ -89,10 +86,10 @@ export function TopBar({
         <ChevronDown size={15} />
       </button>
       <button className={cx("round")} aria-label={t.phone.undo} disabled={!s.undoable} onClick={undo}>
-        <Undo2 size={18} />
+        <Hand.Undo size={19} />
       </button>
       <button className={cx("round")} aria-label={t.phone.history} onClick={() => open("studio")}>
-        <History size={18} />
+        <Hand.Versions size={19} />
         {s.version > 0 && (
           <span className={cx("stamp")}>
             <Seal key={s.version} version={s.version} />
@@ -105,7 +102,7 @@ export function TopBar({
         disabled={!s.drawn}
         onClick={() => open("share")}
       >
-        <Share size={18} />
+        <Hand.Share size={19} />
       </button>
     </header>
   );

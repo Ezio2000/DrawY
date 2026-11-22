@@ -1,16 +1,14 @@
-/* The home page. One long sheet of paper on the desk, read top to bottom like a drawing
-   tool's site: the box to ask in, one question told through on a dark drafting band, then
-   what else can be drawn, who it is for and what people ask. The drawings on it are works,
-   drawn live; around them the page keeps to the desk's palette — ink, the blue pencil, the
+/* The home page. The box to ask in on the desk, then a sheet of paper laid over it: one
+   question told through on a light drafting band, what people ask, what one can do with a
+   picture once drawn, and the questions people have. The drawings on it are works, drawn
+   live; around them the page keeps to the desk's palette — ink, the blue pencil, the
    vermilion seal — with a dotted rule wherever a list divides. */
 
 .l-page {
   --l-max: 1200px;
   --l-side: clamp(16px, 4vw, 48px);
-  --l-night: #12151c;
-  --l-night-2: #1a1e28;
-  --l-night-text: #e9ecf2;
-  --l-night-quiet: #9aa2b2;
+  /* The graph paper the story is told on, under its blue-pencil squares. */
+  --l-band: #f7f9fc;
   --l-dots: radial-gradient(var(--canvas-dots) 1px, transparent 1px);
   --l-rule: repeating-linear-gradient(90deg, var(--line-strong) 0 3px, transparent 3px 7px);
   /* Drawing paper: a fine tooth of grain and long faint fibres, laid over whatever is drawn
@@ -55,8 +53,7 @@
 /* Chinese headlines break at their punctuation, not inside a phrase; a phrase too long for
    the line still breaks where it must. */
 :lang(zh) .l-display,
-:lang(zh) .l-chapters h3,
-:lang(zh) .l-belief blockquote {
+:lang(zh) .l-chapters h3 {
   word-break: keep-all;
   overflow-wrap: anywhere;
 }
@@ -73,25 +70,6 @@
   line-height: 1.62;
   color: var(--text-2);
   text-wrap: pretty;
-}
-
-.l-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 18px;
-  font-size: 13px;
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--blue);
-}
-
-.l-kicker::before {
-  content: "";
-  width: 22px;
-  height: 1.5px;
-  background: currentColor;
 }
 
 .l-section-head {
@@ -165,16 +143,13 @@
    is apart from where one asks, without a wall between them. */
 .l-intro {
   position: relative;
+  /* The band at its top keeps to the sheet's rounded edge. */
+  overflow: clip;
   border-radius: 28px 28px 0 0;
   background: var(--paper);
   box-shadow:
     0 -1px 0 var(--line),
     0 -36px 64px -48px rgba(22, 26, 34, 0.3);
-}
-
-.l-eyebrow {
-  margin: 0 0 22px;
-  opacity: 0.9;
 }
 
 .l-ask {
@@ -271,53 +246,6 @@
 
 .l-blank:hover {
   color: var(--blue);
-}
-
-.l-showpiece {
-  padding: clamp(72px, 11vh, 120px) 0 0;
-}
-
-.l-showpiece figure {
-  max-width: var(--l-max);
-  margin: clamp(40px, 6vh, 64px) auto 0;
-  padding: 0 var(--l-side);
-}
-
-.l-showpiece .l-sheet {
-  aspect-ratio: 16 / 9.4;
-  box-shadow:
-    var(--l-stack),
-    0 2px 3px rgba(60, 50, 30, 0.08),
-    0 36px 70px -36px rgba(40, 34, 22, 0.45);
-}
-
-.l-showpiece figcaption {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 18px;
-  font-size: 14px;
-  color: var(--text-3);
-}
-
-/* A live drawing: the dot breathes, as the canvas does. */
-.l-showpiece figcaption i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ai);
-  box-shadow: 0 0 0 0 rgba(51, 102, 214, 0.45);
-  animation: l-live 2.2s var(--ease) infinite;
-}
-
-@keyframes l-live {
-  70% {
-    box-shadow: 0 0 0 7px rgba(51, 102, 214, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(51, 102, 214, 0);
-  }
 }
 
 /* ---------------------------------------------------------------- the sheet */
@@ -449,71 +377,312 @@
   }
 }
 
-/* ---------------------------------------------------------------- recent work */
+/* ---------------------------------------------------------------- the story band */
 
-/* Someone signed in finds their latest works under the box, still on the desk. */
-.l-recent {
-  width: 100%;
-  max-width: 880px;
-  margin: 40px auto 0;
-  text-align: left;
+/* A drafting band of graph paper: faint squares in blue pencil, a firmer line every fifth,
+   the rows drifting by a little slower than the page (--drift, set as it scrolls), so the
+   pad seems to float over it. */
+.l-story {
+  padding: clamp(72px, 11vh, 120px) 0 clamp(64px, 10vh, 112px);
+  background:
+    linear-gradient(rgba(51, 102, 214, 0.06) 1px, transparent 1px) 0 var(--drift, 0) / 24px 24px,
+    linear-gradient(90deg, rgba(51, 102, 214, 0.06) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(rgba(51, 102, 214, 0.06) 1px, transparent 1px) 0 var(--drift, 0) / 120px 120px,
+    linear-gradient(90deg, rgba(51, 102, 214, 0.06) 1px, transparent 1px) 0 0 / 120px 120px,
+    var(--l-band);
 }
 
-.l-recent h2 {
-  margin: 0 0 12px;
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--text-3);
-}
-
-.l-recent ul {
+.l-story-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: minmax(0, 2.9fr) minmax(0, 9.1fr);
+  gap: clamp(28px, 4vw, 56px);
+  max-width: 1600px;
+  margin: clamp(40px, 7vh, 72px) auto 0;
+  padding: 0 var(--l-side);
+}
+
+.l-chapters {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.l-recent button {
-  display: grid;
-  gap: 4px;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
-  font: inherit;
+/* A chapter's words come up as its sheet comes up and fade as the sheet is turned away
+   (--light, 0 to 1, set as the page scrolls). The light reaches the label first, then the
+   heading, then the text, and leaves them the other way round. */
+.l-chapters li {
+  --dim: 0.22;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 74vh;
+}
+
+.l-chapters li > * {
+  opacity: calc(var(--dim) + (1 - var(--dim)) * var(--lit));
+}
+
+.l-chapter-n {
+  --lit: clamp(0, var(--light, 0) * 1.5, 1);
+}
+
+.l-chapters h3 {
+  --lit: clamp(0, var(--light, 0) * 1.5 - 0.25, 1);
+}
+
+.l-chapters li > p {
+  --lit: clamp(0, var(--light, 0) * 1.5 - 0.5, 1);
+}
+
+.l-chapters li:first-child {
+  min-height: 62vh;
+  justify-content: flex-start;
+  padding-top: 12vh;
+}
+
+.l-chapters li:not([data-on]) {
   cursor: pointer;
 }
 
-.l-recent-cover {
+.l-chapters li:not([data-on]):hover {
+  --dim: 0.5;
+}
+
+.l-chapter-n {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--blue);
+}
+
+.l-chapters h3 {
+  margin: 12px 0 14px;
+  font-size: clamp(24px, 2.3vw, 32px);
+  font-weight: 650;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.l-chapters p {
+  max-width: 380px;
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+/* The works are drawn wide, so the pad is a landscape sheet, held in the middle of the
+   screen. */
+.l-story-stage {
+  position: sticky;
+  top: max(24px, calc(50vh - 330px));
+  align-self: start;
+  /* Set a little off the grid, toward the lower right, as a pad put down on a desk. */
+  translate: clamp(0px, 1.6vw, 32px) clamp(0px, 3vh, 32px);
+}
+
+/* The pad: sheets of drawing paper on a coil along the top, the sheets below showing at the
+   foot. The script turns the top sheet up by its corner: it clips away what has lifted
+   (clip-path on the slot), lays the paper's back over the face (.l-story-curl, reflected
+   about the fold) and darkens the sheet beneath along the fold (.l-story-shade). */
+.l-story-boards {
   position: relative;
-  display: block;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 16 / 10;
+  max-height: calc(100vh - 150px);
+  border-radius: 3px;
+  box-shadow:
+    var(--l-stack),
+    0 2px 3px rgba(60, 50, 30, 0.08),
+    0 36px 70px -36px rgba(40, 34, 22, 0.45);
+}
+
+.l-story-boards::before {
+  content: "";
+  position: absolute;
+  top: -11px;
+  left: 28px;
+  right: 28px;
+  z-index: 5;
+  height: 24px;
+  background: linear-gradient(90deg, transparent 7px, #6d727d 7px, #eef0f3 9.5px, #b9bdc5 11px, #5d626c 13px, transparent 13px) 0 0 /
+    24px 100% repeat-x;
+  filter: drop-shadow(0 2px 1.5px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+}
+
+/* Where the coil goes through, each sheet is punched. */
+.l-story-slot .l-sheet::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 28px;
+  right: 28px;
+  z-index: 4;
+  height: 6px;
+  background: radial-gradient(circle at 10px 3px, var(--l-band) 2.2px, rgba(0, 0, 0, 0.18) 2.6px, transparent 3.2px) 0 0 / 24px 6px repeat-x;
+  pointer-events: none;
+}
+
+.l-story-slot {
+  position: absolute;
+  inset: 0;
+}
+
+.l-story-slot + .l-story-slot {
+  visibility: hidden;
+}
+
+.l-story-shade {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+/* The back of the turning sheet: plain paper, a shade warmer, with the light of the curl laid
+   on it (--curl). Its box clips it to the pad, so it is gone once over the top. */
+.l-story-curl {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  border-radius: 3px;
+  filter: drop-shadow(-2px 4px 6px rgba(20, 16, 10, 0.35));
+  pointer-events: none;
+}
+
+.l-story-curl i {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  border-radius: 3px;
+  background:
+    var(--curl, none),
+    var(--l-grain) 0 0 / 180px 180px,
+    var(--l-fibre) 0 0 / 420px 420px,
+    #f1f0ec;
+  transform-origin: 0 0;
+}
+
+
+/* Which picture is in view: a dot per chapter on a line lit as far as one has read (--sp,
+   from 0 to 1, set as the page scrolls). */
+.l-pager {
+  margin-top: 18px;
+  padding: 0 4px;
+}
+
+.l-pager-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--chapters), minmax(0, 1fr));
+  justify-items: center;
+  align-items: center;
+  height: 24px;
+}
+
+.l-pager-track::before,
+.l-pager-track::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: calc(50% / var(--chapters));
+  right: calc(50% / var(--chapters));
+  height: 1px;
+  background: var(--ai);
+  opacity: 0.2;
+}
+
+.l-pager-track::after {
+  height: 2px;
+  margin-top: -0.5px;
+  opacity: 0.75;
+  clip-path: inset(0 calc((1 - var(--sp, 0)) * 100%) 0 0);
+}
+
+.l-pager-track button {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.l-pager-track i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #c3c9d4;
+  transition:
+    background-color 0.3s var(--ease),
+    scale 0.3s var(--ease-out);
+}
+
+.l-pager-track button:hover i {
+  background: var(--text-3);
+}
+
+.l-pager-track button[data-past] i {
+  background: #8f9bb8;
+}
+
+.l-pager-track button[data-on] i {
+  background: var(--ai);
+  box-shadow: 0 0 0 4px rgba(51, 102, 214, 0.16);
+  scale: 1.5;
+}
+
+/* ---------------------------------------------------------------- once it is drawn */
+
+.l-features {
+  max-width: var(--l-max);
+  margin: 0 auto;
+  padding: clamp(88px, 13vh, 144px) var(--l-side) clamp(16px, 3vh, 32px);
+  text-align: center;
+}
+
+.l-features ul {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 44px clamp(24px, 4vw, 56px);
+  margin: clamp(40px, 6vh, 64px) 0 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.l-features li {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.l-features li > svg {
   margin-bottom: 6px;
-  overflow: hidden;
-  border-radius: var(--r-card);
-  background: var(--bg-2);
-  box-shadow: var(--shadow-1);
+  color: var(--ink);
 }
 
-.l-recent-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.l-features b {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
 
-.l-recent b {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-}
-
-.l-recent button > span:last-child {
-  font-size: 12.5px;
-  color: var(--text-3);
+.l-features p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-2);
 }
 
 /* ---------------------------------------------------------------- what people ask */
@@ -521,7 +690,7 @@
 .l-ticker {
   overflow: hidden;
   mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
-  margin-top: clamp(72px, 10vh, 112px);
+  margin-top: clamp(64px, 9vh, 104px);
   padding: 22px 0 26px;
   background:
     var(--l-rule) top / 100% 1px no-repeat,
@@ -585,511 +754,6 @@
   }
 }
 
-/* ---------------------------------------------------------------- the story band */
-
-/* A drafting band: a fine grid of dots and a coarse one of lines, both drifting by a little
-   slower than the page (--drift, set as it scrolls), so the boards seem to float over it. */
-.l-story {
-  margin-top: clamp(80px, 12vh, 140px);
-  padding: clamp(80px, 12vh, 136px) 0 clamp(64px, 10vh, 120px);
-  background:
-    radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px) 0 var(--drift, 0) / 24px 24px,
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px) 0 calc(var(--drift, 0) * 2) / 100% 192px,
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px) 0 0 / 192px 100%,
-    var(--l-night);
-  color: var(--l-night-text);
-}
-
-.l-story .l-display {
-  color: #fff;
-}
-
-.l-story .l-lead {
-  color: var(--l-night-quiet);
-}
-
-.l-story .l-kicker {
-  color: var(--lamp);
-}
-
-.l-story-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 3.8fr) minmax(0, 8.2fr);
-  gap: clamp(32px, 5vw, 72px);
-  max-width: 1320px;
-  margin: clamp(48px, 8vh, 88px) auto 0;
-  padding: 0 var(--l-side);
-}
-
-.l-chapters {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* A chapter's words come out of the dark as its sheet comes up and go back into it as the
-   sheet is turned away (--light, 0 to 1, set as the page scrolls). The light reaches the
-   label first, then the heading, then the text, and leaves them the other way round. */
-.l-chapters li {
-  --dim: 0.2;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-height: 74vh;
-}
-
-.l-chapters li > * {
-  opacity: calc(var(--dim) + (1 - var(--dim)) * var(--lit));
-  filter: brightness(calc(0.6 + 0.4 * var(--lit)));
-}
-
-.l-chapter-n {
-  --lit: clamp(0, var(--light, 0) * 1.5, 1);
-}
-
-.l-chapters h3 {
-  --lit: clamp(0, var(--light, 0) * 1.5 - 0.25, 1);
-}
-
-.l-chapters li > p {
-  --lit: clamp(0, var(--light, 0) * 1.5 - 0.5, 1);
-}
-
-.l-chapters li:first-child {
-  min-height: 62vh;
-  justify-content: flex-start;
-  padding-top: 12vh;
-}
-
-.l-chapters li:not([data-on]) {
-  cursor: pointer;
-}
-
-.l-chapters li:not([data-on]):hover {
-  --dim: 0.45;
-}
-
-.l-chapter-n {
-  font-size: 13px;
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--lamp);
-}
-
-.l-chapters h3 {
-  margin: 14px 0 16px;
-  font-size: clamp(24px, 2.4vw, 34px);
-  font-weight: 650;
-  line-height: 1.18;
-  letter-spacing: -0.02em;
-  color: #fff;
-  text-wrap: balance;
-}
-
-.l-chapters p {
-  max-width: 460px;
-  margin: 0;
-  font-size: 16.5px;
-  line-height: 1.75;
-  color: var(--l-night-quiet);
-  text-wrap: pretty;
-}
-
-/* The works are drawn wide, so the pad is a landscape sheet, held in the middle of the
-   screen. */
-.l-story-stage {
-  position: sticky;
-  top: max(24px, calc(50vh - 290px));
-  align-self: start;
-}
-
-/* The pad: sheets of drawing paper on a coil along the top, the sheets below showing at the
-   foot. The script turns the top sheet up by its corner: it clips away what has lifted
-   (clip-path on the slot), lays the paper's back over the face (.l-story-curl, reflected
-   about the fold) and darkens the sheet beneath along the fold (.l-story-shade). */
-.l-story-boards {
-  position: relative;
-  aspect-ratio: 16 / 10;
-  max-height: calc(100vh - 150px);
-  border-radius: 3px;
-  box-shadow:
-    var(--l-stack),
-    0 40px 80px -30px rgba(0, 0, 0, 0.7);
-}
-
-.l-story-boards::before {
-  content: "";
-  position: absolute;
-  top: -11px;
-  left: 28px;
-  right: 28px;
-  z-index: 5;
-  height: 24px;
-  background: linear-gradient(90deg, transparent 7px, #6d727d 7px, #eef0f3 9.5px, #b9bdc5 11px, #5d626c 13px, transparent 13px) 0 0 /
-    24px 100% repeat-x;
-  filter: drop-shadow(0 2px 1.5px rgba(0, 0, 0, 0.45));
-  pointer-events: none;
-}
-
-/* Where the coil goes through, each sheet is punched. */
-.l-story-slot .l-sheet::before {
-  content: "";
-  position: absolute;
-  top: 5px;
-  left: 28px;
-  right: 28px;
-  z-index: 4;
-  height: 6px;
-  background: radial-gradient(circle at 10px 3px, #1d2029 2.2px, rgba(0, 0, 0, 0.18) 2.6px, transparent 3.2px) 0 0 / 24px 6px repeat-x;
-  pointer-events: none;
-}
-
-.l-story-slot {
-  position: absolute;
-  inset: 0;
-}
-
-.l-story-slot + .l-story-slot {
-  visibility: hidden;
-}
-
-.l-story-shade {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  border-radius: 3px;
-  pointer-events: none;
-}
-
-/* The back of the turning sheet: plain paper, a shade warmer, with the light of the curl laid
-   on it (--curl). Its box clips it to the pad, so it is gone once over the top. */
-.l-story-curl {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  overflow: hidden;
-  border-radius: 3px;
-  filter: drop-shadow(-2px 4px 6px rgba(20, 16, 10, 0.35));
-  pointer-events: none;
-}
-
-.l-story-curl i {
-  position: absolute;
-  inset: 0;
-  visibility: hidden;
-  border-radius: 3px;
-  background:
-    var(--curl, none),
-    var(--l-grain) 0 0 / 180px 180px,
-    var(--l-fibre) 0 0 / 420px 420px,
-    #f1f0ec;
-  transform-origin: 0 0;
-}
-
-
-/* Where the picture in view stands: a tick per chapter, and the four kinds under them. */
-.l-spectrum {
-  margin-top: 16px;
-  padding: 0 4px;
-}
-
-.l-spectrum-track,
-.l-spectrum-names {
-  display: grid;
-  grid-template-columns: repeat(var(--chapters), minmax(0, 1fr));
-}
-
-.l-spectrum-track {
-  position: relative;
-  justify-items: center;
-  align-items: center;
-  height: 24px;
-}
-
-/* The line runs from the first chapter's tick to the last's, faint, and lit as far as one
-   has read (--sp, from 0 to 1, set as the page scrolls). */
-.l-spectrum-track::before,
-.l-spectrum-track::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: calc(50% / var(--chapters));
-  right: calc(50% / var(--chapters));
-  height: 1px;
-  background: linear-gradient(90deg, #8fb0ff, var(--lamp) 70%, var(--seal));
-  opacity: 0.22;
-}
-
-.l-spectrum-track::after {
-  height: 2px;
-  margin-top: -0.5px;
-  opacity: 1;
-  clip-path: inset(0 calc((1 - var(--sp, 0)) * 100%) 0 0);
-}
-
-.l-spectrum-track button,
-.l-spectrum-names button {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-
-.l-spectrum-track button {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-}
-
-.l-spectrum-track button:hover i {
-  background: #9aa2b2;
-}
-
-.l-spectrum-track i {
-  position: relative;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #3a4050;
-  transition:
-    background-color 0.3s var(--ease),
-    scale 0.3s var(--ease-out);
-}
-
-.l-spectrum-track button[data-past] i {
-  background: #6f7686;
-}
-
-.l-spectrum-track button[data-on] i {
-  background: var(--lamp);
-  box-shadow: 0 0 0 4px rgba(233, 169, 58, 0.18);
-  scale: 1.5;
-}
-
-/* Each category spans its chapters. */
-.l-spectrum-names {
-  margin-top: 8px;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-align: center;
-  white-space: nowrap;
-  color: #6f7686;
-}
-
-.l-spectrum-names button {
-  transition: color 0.3s var(--ease);
-}
-
-.l-spectrum-names button:hover {
-  color: var(--l-night-text);
-}
-
-.l-spectrum-names button[data-on] {
-  color: var(--lamp);
-  font-weight: 650;
-}
-
-/* ---------------------------------------------------------------- how each is drawn */
-
-.l-process {
-  padding: clamp(96px, 14vh, 160px) 0 clamp(24px, 4vh, 48px);
-}
-
-.l-process-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 48px clamp(24px, 4vw, 64px);
-  max-width: var(--l-max);
-  margin: clamp(48px, 7vh, 72px) auto 0;
-  padding: 0 var(--l-side);
-  list-style: none;
-}
-
-.l-process-grid li {
-  display: grid;
-  align-content: start;
-  gap: 8px;
-}
-
-.l-process-icon {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  margin-bottom: 8px;
-  border-radius: 8px;
-  background: var(--blue-soft);
-  color: var(--blue);
-}
-
-.l-process-grid b {
-  font-size: 17px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-
-.l-process-grid p {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.65;
-  color: var(--text-2);
-}
-
-/* ---------------------------------------------------------------- who for */
-
-.l-people {
-  margin-top: clamp(96px, 14vh, 160px);
-  padding: clamp(80px, 12vh, 128px) 0;
-  background: var(--desk);
-}
-
-.l-people-list {
-  max-width: var(--l-max);
-  margin: clamp(40px, 6vh, 64px) auto 0;
-  padding: 0 var(--l-side);
-  list-style: none;
-}
-
-.l-people-list li {
-  display: grid;
-  grid-template-columns: 48px minmax(140px, 220px) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 20px;
-  padding: 20px 0;
-  background: var(--l-rule) top / 100% 1px no-repeat;
-}
-
-.l-people-list li:last-child {
-  background:
-    var(--l-rule) top / 100% 1px no-repeat,
-    var(--l-rule) bottom / 100% 1px no-repeat;
-}
-
-.l-people-n {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  color: var(--text-3);
-}
-
-.l-people-list b {
-  font-size: clamp(20px, 2vw, 26px);
-  font-weight: 600;
-  letter-spacing: -0.015em;
-}
-
-.l-people-list p {
-  margin: 0;
-  font-size: 15.5px;
-  line-height: 1.55;
-  color: var(--text-2);
-}
-
-.l-tags {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.l-tags i {
-  padding: 3px 9px;
-  border-radius: 6px;
-  background: var(--paper);
-  box-shadow: var(--shadow-1);
-  font-size: 12.5px;
-  font-style: normal;
-  color: var(--text-2);
-}
-
-/* ---------------------------------------------------------------- the belief */
-
-.l-belief {
-  max-width: 1040px;
-  margin: 0 auto;
-  padding: clamp(96px, 16vh, 176px) var(--l-side);
-  text-align: center;
-}
-
-.l-belief blockquote {
-  margin: 0;
-  font-size: clamp(30px, 4.2vw, 56px);
-  font-weight: 650;
-  line-height: 1.18;
-  letter-spacing: -0.03em;
-  color: var(--ink);
-  text-wrap: balance;
-}
-
-.l-belief blockquote span {
-  display: block;
-}
-
-.l-belief blockquote span:first-child::before {
-  content: "“";
-  color: var(--seal);
-}
-
-.l-belief blockquote span:last-child::after {
-  content: "”";
-  color: var(--seal);
-}
-
-.l-belief p {
-  margin: 28px 0 0;
-  font-size: 14px;
-  color: var(--text-3);
-}
-
-/* ---------------------------------------------------------------- the last word */
-
-.l-closing {
-  position: relative;
-  padding: clamp(72px, 12vh, 120px) var(--l-side);
-  overflow: hidden;
-  background:
-    repeating-linear-gradient(-45deg, rgba(51, 102, 214, 0.05) 0 1px, transparent 1px 12px),
-    #eaf0fb;
-  text-align: center;
-}
-
-.l-closing > p {
-  margin: 18px 0 0;
-  font-size: 17px;
-  color: var(--text-2);
-}
-
-.l-closing > div {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 32px;
-}
-
-.l-cta {
-  min-height: 46px;
-  padding: 10px 22px;
-  font-size: 15px;
-}
-
-.l-cta.secondary,
-.l-closing .secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: var(--r-control);
-  background: var(--paper);
-  box-shadow: 0 0 0 1px var(--line-strong);
-  color: var(--ink);
-  cursor: pointer;
-}
-
 /* ---------------------------------------------------------------- questions */
 
 .l-faq {
@@ -1099,12 +763,6 @@
   max-width: var(--l-max);
   margin: 0 auto;
   padding: clamp(80px, 13vh, 144px) var(--l-side);
-}
-
-.l-faq header p {
-  margin: 16px 0 0;
-  font-size: 15.5px;
-  color: var(--text-2);
 }
 
 .l-faq details {
@@ -1174,14 +832,10 @@
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.6fr);
   gap: 32px;
-  padding: 64px var(--l-side) 32px;
-  background: var(--l-night);
-  color: var(--l-night-quiet);
+  padding: 56px var(--l-side) 28px;
+  background: var(--desk);
+  color: var(--text-desk);
   font-size: 14px;
-}
-
-.l-footer-brand > span {
-  color: #fff;
 }
 
 .l-footer > div p {
@@ -1199,7 +853,7 @@
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #6f7686;
+  color: var(--text-3);
 }
 
 .l-footer nav button {
@@ -1207,14 +861,14 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--l-night-text);
+  color: var(--text-2);
   font: inherit;
   font-size: 15px;
   cursor: pointer;
 }
 
 .l-footer nav button:hover {
-  color: #fff;
+  color: var(--ink);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -1233,22 +887,15 @@
   grid-column: 1 / -1;
   margin: 24px 0 0;
   padding-top: 20px;
-  background: repeating-linear-gradient(90deg, #3a4050 0 3px, transparent 3px 7px) top / 100% 1px no-repeat;
+  background: var(--l-rule) top / 100% 1px no-repeat;
   font-size: 12.5px;
 }
 
 /* ---------------------------------------------------------------- narrow screens */
 
 @media (max-width: 1080px) {
-  .l-process-grid {
+  .l-features ul {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .l-people-list li {
-    grid-template-columns: 40px minmax(110px, 160px) minmax(0, 1fr);
-  }
-  .l-tags {
-    grid-column: 3;
-    justify-content: flex-start;
   }
 }
 
@@ -1263,29 +910,24 @@
   .l-intro {
     border-radius: 20px 20px 0 0;
   }
-  .l-showpiece .l-sheet {
-    aspect-ratio: 4 / 4.4;
-  }
-  .l-recent ul {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  /* The story: the board stays at the top while the chapters pass under it. */
+  /* The story: the pad stays at the top while the chapters pass under it. */
   .l-story-grid {
     display: flex;
     flex-direction: column;
     gap: 0;
   }
-  /* The chapters pass under the board here, so it keeps the band's own dark behind it
-     while two boards hand over. */
+  /* The chapters pass under the pad here, so it keeps the band's own ground behind it
+     while two sheets hand over. */
   .l-story-stage {
     order: -1;
+    translate: none;
     align-self: stretch;
     top: 20px;
     z-index: 2;
-    background: var(--l-night);
+    background: var(--l-band);
     box-shadow:
-      0 -20px 0 var(--l-night),
-      0 18px 18px -2px var(--l-night);
+      0 -20px 0 var(--l-band),
+      0 18px 18px -2px var(--l-band);
   }
   .l-chapters li,
   .l-chapters li:first-child {
@@ -1302,17 +944,9 @@
     left: 60px;
     max-width: calc(100% - 72px);
   }
-  .l-process-grid {
+  .l-features ul {
     grid-template-columns: minmax(0, 1fr);
-    gap: 32px;
-  }
-  .l-people-list li {
-    grid-template-columns: 32px minmax(0, 1fr);
-    gap: 6px 12px;
-  }
-  .l-people-list p,
-  .l-tags {
-    grid-column: 2;
+    gap: 28px;
   }
   .l-faq {
     grid-template-columns: minmax(0, 1fr);
@@ -1330,9 +964,6 @@
     animation: none;
   }
   .l-ticker-track {
-    animation: none;
-  }
-  .l-showpiece figcaption i {
     animation: none;
   }
   .l-faq details::details-content {

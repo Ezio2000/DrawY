@@ -325,13 +325,20 @@ export class Tracer {
     );
     return { ...trace, durationMs, tokens, counts, meters: [...meters.values()] };
   }
-  list(userId: string, limit = 60): TraceSummary[] {
+  /** A user's latest traces, newest first; with `workId`, only that work's. */
+  list(userId: string, limit = 60, workId?: string): TraceSummary[] {
     return (
-      this.db
-        ?.prepare(
-          "SELECT data FROM traces WHERE user_id=? ORDER BY updated_at DESC LIMIT ?",
-        )
-        .all(userId, limit) ?? []
+      (workId
+        ? this.db
+            ?.prepare(
+              "SELECT data FROM traces WHERE user_id=? AND json_extract(data,'$.workId')=? ORDER BY updated_at DESC LIMIT ?",
+            )
+            .all(userId, workId, limit)
+        : this.db
+            ?.prepare(
+              "SELECT data FROM traces WHERE user_id=? ORDER BY updated_at DESC LIMIT ?",
+            )
+            .all(userId, limit)) ?? []
     ).map((r) => {
       const trace = JSON.parse(r.data as string) as Trace;
       return this.summarize(trace, this.spans(trace.id));

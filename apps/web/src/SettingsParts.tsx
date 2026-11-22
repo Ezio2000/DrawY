@@ -1,6 +1,6 @@
 /* The pieces every settings page is made of: a row per setting, settings grouped on a
  * card, a section's head, and lists of things that open to their own settings. */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { cx } from "./cx.ts";
 import { Spinner } from "./ui/primitives.tsx";
@@ -113,17 +113,51 @@ export const Badge = ({
   </span>
 );
 
-/** What a section reads from the server once it opens: the value when it has arrived, a
- * way to change it in place, the last error, and `attempt`, which runs a change and reports
- * its error the same way. */
-export function useLoaded<T>(load: () => Promise<T>) {
-  const [value, setValue] = useState<T>(),
+/** What the settings pages last read from the server, by name: a page opened again shows
+ * it at once while it is read afresh, and what was read ahead (`read`) is there when the
+ * page opens. */
+const kept = new Map<string, unknown>();
+const reading = new Map<string, Promise<unknown>>();
+
+export const keptValue = <T,>(key: string) => kept.get(key) as T | undefined;
+export const keep = (key: string, value: unknown) => void kept.set(key, value);
+/** Lets go of everything kept, as the account signs out. */
+export const forgetSettings = () => kept.clear();
+
+/** Reads a value afresh and keeps it; a read already on its way is shared. */
+export function read<T>(key: string, load: () => Promise<T>): Promise<T> {
+  let on = reading.get(key) as Promise<T> | undefined;
+  if (!on) {
+    on = load()
+      .then((v) => (kept.set(key, v), v))
+      .finally(() => reading.delete(key));
+    reading.set(key, on);
+  }
+  return on;
+}
+
+/** What a section reads from the server once it opens, kept under `key`: what was kept at
+ * once and then the value read afresh, a way to change it in place, the last error, and
+ * `attempt`, which runs a change and reports its error the same way. */
+export function useLoaded<T>(key: string, load: () => Promise<T>) {
+  const [value, setValue] = useState(() => keptValue<T>(key)),
     [error, setError] = useState("");
+  // A change made here before the fresh value arrives is newer than it.
+  const changed = useRef(false);
   useEffect(() => {
-    void load().then(setValue, (e: Error) => setError(e.message));
+    void read(key, load).then(
+      (v) => changed.current || setValue(v),
+      (e: Error) => setError(e.message),
+    );
   }, []);
   const update = (change: (value: T) => T) =>
-    setValue((old) => (old === undefined ? old : change(old)));
+    setValue((old) => {
+      if (old === undefined) return old;
+      changed.current = true;
+      const next = change(old);
+      kept.set(key, next);
+      return next;
+    });
   const attempt = async (change: () => Promise<void>) => {
     setError("");
     try {

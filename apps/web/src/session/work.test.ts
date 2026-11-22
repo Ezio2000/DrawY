@@ -213,24 +213,6 @@ it("going back to a version can be taken back for a while", async () => {
   expect(s().back).toBeUndefined();
 });
 
-it("redoes what undoing took back until the work changes otherwise", async () => {
-  const { store, s } = await open();
-  await store.change(moved);
-  await settle();
-  await store.undo();
-  await settle();
-  expect(heading(s().work)).toBe(100);
-  expect(s().redoable).toBe(true);
-  await store.redo();
-  await settle();
-  expect(heading(s().work)).toBe(0);
-  expect(s().redoable).toBe(false);
-  await store.undo();
-  await settle();
-  await store.change((w) => moveParts(w, "root", [{ id: "control", bounds: { x: 0, y: 0, width: 340, height: 48 } }]));
-  expect(s().redoable).toBe(false);
-});
-
 it("a preview ends when the work changes under it, and shows without being drawn", async () => {
   const { store, s } = await open();
   await store.change(moved);

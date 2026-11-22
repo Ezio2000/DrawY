@@ -1,7 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import type { Work } from "../../modules/contracts/index.ts";
 import { sayIn, type Lang, type ShowcaseFile, type ShowcaseSource } from "./kit.ts";
-import { solar } from "./works/solar.ts";
 import { night } from "./works/night.ts";
 import { styled } from "./works/styles.ts";
 import { inside } from "./works/inside.ts";
@@ -22,7 +21,7 @@ import { family } from "./works/family.ts";
  *     pnpm exec tsx apps/showcase/build.ts [id…]
  */
 
-export const sources: ShowcaseSource[] = [solar, night, styled, inside, lens, rhythm, range, coast, navigate, history, family];
+export const sources: ShowcaseSource[] = [night, styled, inside, lens, rhythm, range, coast, navigate, history, family];
 const base = process.env.DRAWY_URL || "http://127.0.0.1:8080";
 const out = new URL("../web/src/home/showcase/", import.meta.url);
 

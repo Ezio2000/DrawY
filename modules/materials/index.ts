@@ -272,13 +272,13 @@ export async function look(ids: string[], user: Viewer, size = 256) {
   const images = await Promise.all(
     ids.map(async (id) => {
       try {
-        const png = await library.thumb(id, user, size);
+        const thumb = await library.thumb(id, user, size);
         return [
           { type: "input_text", text: `[${id}]` },
           {
             type: "input_image",
             image_url:
-              "data:image/png;base64," + Buffer.from(png).toString("base64"),
+              "data:image/webp;base64," + Buffer.from(thumb).toString("base64"),
             detail: "low",
           },
         ];
@@ -367,7 +367,7 @@ export async function attached(ids: string[], user: Viewer): Promise<Item[]> {
         note,
         {
           type: "input_image",
-          image_url: `data:${raster ? m.file.mediaType : "image/png"};base64,${Buffer.from(bytes).toString("base64")}`,
+          image_url: `data:${raster ? m.file.mediaType : "image/webp"};base64,${Buffer.from(bytes).toString("base64")}`,
         },
       ];
     }),

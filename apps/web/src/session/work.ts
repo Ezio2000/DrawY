@@ -16,7 +16,7 @@ export * from "./types.ts";
 /* One open work, as any page shows it. It is made of parts, each with one job and its own
  * state: the work and its revisions (`Revisions`), the author's runs and the server's
  * events (`Runs`), hand edits on their way and their draft (`Edits`), requests and holding
- * them back (`Sending`), saving, discarding, going back, undoing and redoing (`Versions`),
+ * them back (`Sending`), saving, discarding, going back and undoing (`Versions`),
  * and the scene in view (`Scenes`). The session puts what they know into one snapshot,
  * which parts of the page read slices of (`useSelect`), and what they do into actions,
  * methods of the session itself, bound once. It says what happened (`on`), never how to
@@ -66,7 +66,6 @@ export interface Snapshot {
   /** Going back, while it can be taken back. */
   back?: Back;
   undoable: boolean;
-  redoable: boolean;
   /** Editing waits while the runs load, the author works or waits, or a preview shows. */
   locked: boolean;
 }
@@ -82,7 +81,6 @@ export interface Actions {
   restore(revision: number): Promise<void>;
   /** Takes back going back to a version, else the latest request or hand edit. */
   undo(): Promise<void>;
-  redo(): Promise<void>;
   look(revision: number): Promise<void>;
   endPreview(): void;
   /** Stops the author; resolves to what was asked, to change and send again. */
@@ -137,7 +135,6 @@ export class WorkSession extends Store<Snapshot> {
       discard: () => versions.discard(),
       restore: (revision) => versions.restore(revision),
       undo: () => versions.undo(),
-      redo: () => versions.redo(),
       look: (revision) => revisions.look(revision),
       endPreview: () => revisions.endPreview(),
       stop: () => sending.stop(),
@@ -214,7 +211,6 @@ export class WorkSession extends Store<Snapshot> {
       holding: sending.holding,
       back: versions.back,
       undoable: !!work && versions.undoable,
-      redoable: versions.redoable,
       locked: !runs.loaded || runs.working || runs.waiting || !!preview,
     });
   }

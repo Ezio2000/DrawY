@@ -215,7 +215,7 @@ describe("user owned works", () => {
     expect([kept.title, kept.named, keptTitle]).toEqual(["【high】我的标题", true, true]);
     expect(undo(store, work.id)).toMatchObject({ title: "【high】我的标题", named: true });
   });
-  it("keeps undo moving backward after undoing twice and redoing a restored revision", async () => {
+  it("keeps undo moving backward after undoing twice and restoring the revision an undo made", async () => {
     const user = register(db, "author", "abcdef"),
       store = db.scoped(user.id);
     let work = createWork(store, "test");
@@ -239,7 +239,7 @@ describe("user owned works", () => {
     const b = await change("undo");
     expect(b.scenes.root.title).toBe("B");
     expect((await change("undo")).scenes.root.title).toBe("A");
-    // Redo uses the revision saved by the first undo, inside the same restore group.
+    // Going back to the revision the first undo saved stays inside the same restore group.
     expect((await change("restore", b.revision)).scenes.root.title).toBe("B");
     expect((await change("undo")).scenes.root.title).toBe("A");
     expect((await change("undo")).scenes).toEqual(store.revision(work.id, 1).scenes);
@@ -567,6 +567,16 @@ describe("over HTTP, by role", () => {
     ] as const)
       expect((await call(bob.cookie, "/works/" + w.id + path, method, body)).status).toBe(404);
     expect((await call(member.cookie, "/works/" + w.id)).status).toBe(200);
+    // Those who manage accounts read anyone's works and runs, for the run records; others
+    // cannot, whoever they name.
+    const of = "?account=" + member.id;
+    expect((await call(admin.cookie, "/works" + of)).body.map((x: Work) => x.title)).toContain("private");
+    expect((await call(admin.cookie, "/works/" + w.id + of)).body.title).toBe("private");
+    expect((await call(admin.cookie, "/works/" + w.id)).status).toBe(404);
+    expect((await call(admin.cookie, "/traces" + of)).body).toEqual([]);
+    expect((await call(admin.cookie, "/works?account=nobody")).status).toBe(404);
+    expect((await call(bob.cookie, "/works" + of)).status).toBe(403);
+    expect((await call(bob.cookie, "/works/" + w.id + of)).status).toBe(403);
     // Members see labels by name only, never the models in them, and cannot manage
     // anything.
     const seen = await call(member.cookie, "/models");

@@ -29,7 +29,7 @@ import {
 
 setup({ viewport: { width: 1440, height: 900 } });
 
-it("paints the drawing's words as laid out; shows a hand edit at once and lays the saved one over it in place; undoes, redoes, throws it away and takes that back, and saves it by keyboard; its seal opens the versions, which are looked at and gone back to in place, which can be undone", async () => {
+it("paints the drawing's words as laid out; shows a hand edit at once and lays the saved one over it in place; undoes it, throws it away and takes that back, and saves it by keyboard; its seal opens the versions, which are looked at and gone back to in place, which can be undone", async () => {
   await open(await make());
   for (const words of ["Alpha", "Beta"]) await paintedAsLaidOut(words);
   // The seal in the title block is the version in hand; it opens the versions and closes them.
@@ -61,12 +61,12 @@ it("paints the drawing's words as laid out; shows a hand edit at once and lays t
   expect(await module("Alpha")).toMatchObject({ left: moved.left, mark: before.mark });
   expect(await statuses()).toContain("1 change not saved\nDiscard changes\nSave as version 2");
   expect(await seal("Version 1 · unsaved changes").count()).toBe(1);
-  // Undone and redone by keyboard, in place.
+  // Undone by keyboard, in place; moved again.
   await page.keyboard.press("Control+z");
   await settled();
   expect(await module("Alpha")).toMatchObject({ left: before.left, mark: before.mark });
   expect((await statuses()).join()).not.toContain("not saved");
-  await page.keyboard.press("Control+Shift+z");
+  await drag("Alpha");
   await settled();
   expect(await module("Alpha")).toMatchObject({ left: moved.left, mark: before.mark });
   // Thrown away, which can be undone.
@@ -500,10 +500,10 @@ it("shows guests the home page with its works drawn live, and no sign-in wall", 
   await guestPage.goto(base + "/");
   expect(await guestPage.getByRole("heading", { level: 1 }).innerText()).toContain("say it and it's drawn");
   expect(await guestPage.getByRole("dialog").count()).toBe(0);
-  // The first screen is only for asking; what DrawY is waits below, and its showpiece is a
-  // work drawn by the canvas, not a picture of one.
+  // The first screen is only for asking; what DrawY draws waits below, works drawn by the
+  // canvas, not pictures of them.
   expect(await guestPage.locator("[data-canvas]").count()).toBe(0);
-  await guestPage.getByRole("button", { name: "See what DrawY can draw" }).click();
+  await guestPage.getByRole("button", { name: "See what it can draw" }).click();
   await guestPage.waitForSelector("[data-canvas]");
   // An example goes into the box to send.
   await guestPage.getByRole("button", { name: "How does the solar system work?" }).first().click();
@@ -515,7 +515,7 @@ it("shows guests the home page with its works drawn live, and no sign-in wall", 
     .poll(() => guestPage.locator("#l-chapter-coast").getAttribute("data-on"), { timeout: 8000 })
     .toBe("true");
   expect(await guestPage.getByRole("button", { name: /^Ask this yourself/ }).count()).toBe(0);
-  const range = guestPage.getByRole("navigation", { name: "Jump along the range" });
+  const range = guestPage.getByRole("navigation", { name: "Switch pictures" });
   const ticks = range.locator("div").first().getByRole("button");
   const rows = await ticks.evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().top));
   expect(rows).toHaveLength(10);
@@ -527,7 +527,7 @@ it("shows guests the home page with its works drawn live, and no sign-in wall", 
   await guestPage.getByRole("button", { name: "Language · 中文" }).click();
   await guestPage.keyboard.press("Escape");
   await board.getByText("造灯塔的一家人", { exact: true }).first().waitFor();
-  await guestPage.getByRole("navigation", { name: "沿着图的光谱跳转" }).getByRole("button").first().click();
+  await guestPage.getByRole("navigation", { name: "切换作品" }).getByRole("button").first().click();
   await guestPage.waitForSelector("#l-chapter-night[data-on]");
   await guest.close();
 });

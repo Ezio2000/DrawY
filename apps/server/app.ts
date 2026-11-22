@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import { compress } from "hono/compress";
@@ -174,6 +174,15 @@ export function createApp(storage: Storage) {
       allowed(c, permission);
       await next();
     });
+  /** The account whose works and runs a read is about: one's own, or, for those who manage
+   * accounts, the one named by `?account=` — the run records show any account's. */
+  const readable = (c: Context<Env>) => {
+    const id = c.req.query("account");
+    if (!id || id === c.get("user").id) return c.get("store");
+    allowed(c, "accounts.manage");
+    storage.account(id);
+    return storage.scoped(id);
+  };
   app.post("/api/auth/logout", (c) => {
     storage.endSession(getCookie(c, "drawy_session")!);
     deleteCookie(c, "drawy_session", { path: "/" });
@@ -240,35 +249,29 @@ export function createApp(storage: Storage) {
     removeRole(storage, c.req.param("id"));
     return c.json({ ok: true });
   });
-  app.get("/api/works", (c) =>
-    c.json(
-      c
-        .get("store")
-        .works()
-        .map(({ id, title, revision, updatedAt }) => ({
-          id,
-          title,
-          revision,
-          updatedAt,
-          cover: c.get("store").cover(id),
-          progress: c.get("store").progress(id),
-        })),
-    ),
-  );
+  app.get("/api/works", (c) => {
+    const store = readable(c);
+    return c.json(
+      store.works().map(({ id, title, revision, updatedAt }) => ({
+        id,
+        title,
+        revision,
+        updatedAt,
+        cover: store.cover(id),
+        progress: store.progress(id),
+      })),
+    );
+  });
   app.post("/api/works", async (c) => {
     const { title } = z
       .object({ title: z.string().min(1) })
       .parse(await c.req.json());
     return c.json(createWork(c.get("store"), title));
   });
-  app.get("/api/works/:id", async (c) =>
-    c.json(
-      await freshen(
-        c.get("store").work(c.req.param("id")),
-        c.get("store").viewer,
-      ),
-    ),
-  );
+  app.get("/api/works/:id", async (c) => {
+    const store = readable(c);
+    return c.json(await freshen(store.work(c.req.param("id")), store.viewer));
+  });
   app.patch("/api/works/:id", async (c) => {
     const { title } = z
       .object({ title: z.string().trim().min(1).max(80) })
@@ -489,7 +492,7 @@ export function createApp(storage: Storage) {
     c.json(showRun(agent.cancel(c.get("store"), c.req.param("id")), c.get("user"))),
   );
   app.get("/api/captures/:id", (c) => {
-    const store = c.get("store");
+    const store = readable(c);
     return c.body(new Uint8Array(store.captureBytes(c.req.param("id"))), 200, {
       "Content-Type": "image/png",
       "Cache-Control": "private, max-age=86400",
@@ -562,10 +565,11 @@ export function createApp(storage: Storage) {
     return { ...trace, cost: run && costOf(run.usage, run.prices), services: run?.services };
   };
   app.get("/api/traces", (c) => {
+    const store = readable(c);
     return c.json(
       tracer
-        .list(c.get("user").id, Number(c.req.query("limit") || 60))
-        .map((t) => costed(c.get("store"), t)),
+        .list(store.userId, Number(c.req.query("limit") || 60), c.req.query("work"))
+        .map((t) => costed(store, t)),
     );
   });
   app.get("/api/traces/files/:name", (c) => {
@@ -579,14 +583,15 @@ export function createApp(storage: Storage) {
   // A span in full, with the whole input a model turn was sent; the timeline has only
   // each span's brief.
   app.get("/api/traces/:id/spans/:span", (c) => {
-    const found = tracer.whole(c.get("user").id, c.req.param("id"), c.req.param("span"));
+    const found = tracer.whole(readable(c).userId, c.req.param("id"), c.req.param("span"));
     if (!found) throw new DomainError("没有这次运行的记录", 404);
     return c.json(found);
   });
   app.get("/api/traces/:id", (c) => {
-    const trace = tracer.get(c.get("user").id, c.req.param("id"));
+    const store = readable(c);
+    const trace = tracer.get(store.userId, c.req.param("id"));
     if (!trace) throw new DomainError("没有这次运行的记录", 404);
-    return c.json({ ...trace, trace: costed(c.get("store"), trace.trace) });
+    return c.json({ ...trace, trace: costed(store, trace.trace) });
   });
   app.get("/api/events", (c) => {
     // A proxy in front (nginx, a CDN) must pass each event on as it is written, not hold

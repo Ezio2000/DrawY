@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, ArrowUp, Eye, EyeOff } from "lucide-react";
+import { ArrowUp } from "lucide-react";
+import * as Hand from "./ui/brand/icons.tsx";
 import { Spinner } from "./ui/primitives.tsx";
 import { Dialog } from "./ui/dialogs.tsx";
 import { ModelSketch, KinshipSketch } from "./ui/brand/sketches.tsx";
@@ -88,7 +89,7 @@ function AuthForm({ done }: { done: (user: User) => void }) {
             data-tip={shown ? t.auth.hidePassword : t.auth.showPassword}
             onClick={() => setShown(!shown)}
           >
-            {shown ? <EyeOff size={16} /> : <Eye size={16} />}
+            {shown ? <Hand.EyeShut size={17} /> : <Hand.Eye size={17} />}
           </button>
         </span>
       </label>
@@ -121,7 +122,7 @@ function AuthForm({ done }: { done: (user: User) => void }) {
         ) : (
           <>
             {signup ? t.auth.signup : t.auth.login}
-            <ArrowRight size={16} />
+            <Hand.ArrowRight size={17} />
           </>
         )}
       </button>

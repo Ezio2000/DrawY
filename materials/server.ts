@@ -165,7 +165,7 @@ export function createServer(
       new Uint8Array(await library.thumb(c.req.param("id"), viewer(c), size)),
       200,
       {
-        "Content-Type": "image/png",
+        "Content-Type": "image/webp",
         "Cache-Control": "private, max-age=86400",
       },
     );
