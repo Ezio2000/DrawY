@@ -201,7 +201,9 @@ export function styleOf(id: string): Promise<StyleMaterial> {
   const known = styles.get(id);
   if (known && Date.now() - known.at < 60_000) return known.style;
   const style = library.get([id]).then(([m]) => {
-    if (m?.kind !== "style") throw new DomainError(`未知风格 ${id}：用 find_materials 搜索 types ["style"]`);
+    // A withdrawn style is still read for works that hold it, but not taken for new ones.
+    if (m?.kind !== "style" || m.status === "withdrawn")
+      throw new DomainError(`未知风格 ${id}：用 find_materials 搜索 types ["style"]`);
     return m;
   }, (e) => {
     throw e instanceof MaterialsError && e.status === 404

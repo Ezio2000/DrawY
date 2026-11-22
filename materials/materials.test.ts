@@ -553,6 +553,9 @@ it("carries what users made over from a library kept before material packs", asy
     const curated = { ...picture, id: "apple", origin: { kind: "curated", createdAt: 1 }, owner: null };
     for (const m of [picture, curated]) db.prepare("INSERT INTO materials VALUES(?,?)").run(m.id, JSON.stringify(m));
     db.prepare("INSERT INTO uses VALUES(?,?,?,?)").run("u-cherry-1", "alice", "w1", 1);
+    // A curated material used before keeps its count once the pack brings it back.
+    db.prepare("INSERT INTO uses VALUES(?,?,?,?)").run("apple", "alice", "w1", 1);
+    db.prepare("INSERT INTO uses VALUES(?,?,?,?)").run("apple", "bob", "w2", 1);
     db.close();
     mkdirSync(join(old, "files"));
     writeFileSync(join(old, "files", "u-cherry-1.png"), await picture_());
@@ -564,6 +567,7 @@ it("carries what users made over from a library kept before material packs", asy
       // The pack takes the curated ids back as its own.
       importPack(library, curatedPack());
       expect(library.get("apple").pack).toBe("drawy-curated");
+      expect(library.get("apple").uses).toBe(2);
       expect(library.search({ subjects: ["樱桃"] }, "alice")[0].hits[0].material.id).toBe("u-cherry-1");
     } finally {
       library.close();
@@ -633,5 +637,24 @@ it("reads more materials at once than one batch holds", async () => {
     expect(found.map((m) => m.id)).toEqual(["apple", "label"]);
   } finally {
     served.close();
+  }
+});
+
+it("weighs the style asked for, however many of other styles match", () => {
+  const { dir, library } = testLibrary();
+  try {
+    const apple = library.get("apple");
+    const crayon = library.search({ subjects: ["苹果"], style: "crayon", limit: 24 })[0].hits.find((h) => h.material.style === "crayon");
+    expect(crayon).toBeTruthy();
+    // Three hundred more apples, all of another style and used more.
+    library.catalog.transaction(() => {
+      for (let i = 0; i < 300; i++)
+        library.catalog.put({ ...apple, id: `more-apple-${i}`, hash: `more${i}`, uses: 50, origin: { ...apple.origin, createdAt: i } });
+    });
+    const [found] = library.search({ subjects: [apple.name.zh], style: "crayon", limit: 4 });
+    expect(found.hits[0].material.style).toBe("crayon");
+  } finally {
+    library.close();
+    rmSync(dir, { recursive: true });
   }
 });

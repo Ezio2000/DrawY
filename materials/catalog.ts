@@ -370,20 +370,27 @@ CREATE TABLE IF NOT EXISTS releases(source TEXT NOT NULL, release TEXT NOT NULL,
     const { sql: where, params } = this.where(scope);
     const cap = SEARCH_LIMITS.candidates;
     const rows = new Map<number, Row>();
-    const byName = (k: string) => {
-      for (const r of this.sql(
-        `SELECT m.n, m.head, m.owner, m.status, m.uses, m.version FROM names x JOIN materials m ON m.n = x.n WHERE x.key = :key AND ${where} LIMIT ${cap}`,
-      ).all({ ...params, key: k }) as unknown as Row[])
-        rows.set(r.n, r);
+    /** Candidates by name and by words, within `extra` conditions, a bounded number each. */
+    const gather = (extra: string, more: Record<string, string>) => {
+      const byName = (k: string) => {
+        for (const r of this.sql(
+          `SELECT m.n, m.head, m.owner, m.status, m.uses, m.version FROM names x JOIN materials m ON m.n = x.n WHERE x.key = :key AND ${where}${extra} LIMIT ${cap}`,
+        ).all({ ...params, ...more, key: k }) as unknown as Row[])
+          rows.set(r.n, r);
+      };
+      if (exactKey) byName(exactKey);
+      for (const s of synonyms) if (s.whole) s.keys.forEach(byName);
+      if (retrieval.length)
+        for (const r of this.sql(
+          `SELECT m.n, m.head, m.owner, m.status, m.uses, m.version FROM search s JOIN materials m ON m.n = s.rowid
+           WHERE search MATCH :q AND ${where}${extra} ORDER BY bm25(search, ${Object.values(FIELDS).join(", ")}) LIMIT ${cap}`,
+        ).all({ ...params, ...more, q: anyOf(retrieval) }) as unknown as Row[])
+          rows.set(r.n, r);
     };
-    if (exactKey) byName(exactKey);
-    for (const s of synonyms) if (s.whole) s.keys.forEach(byName);
-    if (retrieval.length)
-      for (const r of this.sql(
-        `SELECT m.n, m.head, m.owner, m.status, m.uses, m.version FROM search s JOIN materials m ON m.n = s.rowid
-         WHERE search MATCH :q AND ${where} ORDER BY bm25(search, ${Object.values(FIELDS).join(", ")}) LIMIT ${cap}`,
-      ).all({ ...params, q: anyOf(retrieval) }) as unknown as Row[])
-        if (rows.size < cap * 2) rows.set(r.n, r);
+    // The style asked for is gathered on its own first, so however many materials of other
+    // styles match as well, its own are among those weighed.
+    if (scope.style) gather(" AND (m.style = :style OR m.style IS NULL)", { style: scope.style });
+    gather("", {});
     const total = Math.max(1, this.size);
     const idf = (t: string) => Math.log(1 + total / (df.get(t) ?? 0.5));
     const sum = (ts: Iterable<string>) => [...ts].reduce((s, t) => s + idf(t), 0);

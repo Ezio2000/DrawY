@@ -18,7 +18,7 @@ import { observe, Unavailable } from "../observation/index.ts";
 import { boxOf, costOf, guideTopics, labelOf, modelCatalogSchema, type Run, type Work } from "../contracts/index.ts";
 import { removeParts, setData } from "../editing/index.ts";
 import { tracer } from "../trace/index.ts";
-import { library as client } from "../materials/index.ts";
+import { library as client, resolveStyle } from "../materials/index.ts";
 import { serveLibrary, picture, solid } from "@drawy/materials/testing";
 import type { DrawingMaterial } from "@drawy/materials/schema";
 
@@ -995,6 +995,13 @@ it("gives guides and material cards on demand, once, and reminds the author of t
   expect(guidesRead(read.slice(0, 1)).drawings.size).toBe(0);
   for (const args of ['{"topics":["maps","bogus"]}', "{not json"])
     expect(guidesRead([{ ...read[0], name: "draw_guide", arguments: args }, { ...read[1], output: '{"error":"x"}' }]).topics.size).toBe(0);
+});
+
+it("does not take a withdrawn style for a new brief", async () => {
+  library.library.withdraw("crayon");
+  const { style, chosen } = await resolveStyle("crayon", store.viewer, "expressive");
+  expect(style.id).not.toBe("crayon");
+  expect(chosen).toBe(true);
 });
 
 it("answers a tool the author invented with an error, and goes on", async () => {

@@ -284,7 +284,12 @@ export function importPack(library: Library, dir: string): ImportReport {
       // Content the material had before keeps that version; new content gets a version above
       // every one it ever had, so a version once given always means the same content.
       const version = held ? (catalog.versionWith(p.id, hash) ?? catalog.latestVersion(p.id) + 1) : 1;
-      catalog.put({ ...next, hash, version, uses: held?.uses ?? 0 } as Material);
+      // A material new to the catalog may have been used before, in a library migrated from
+      // before packs: its count starts from the uses recorded.
+      const uses =
+        held?.uses ??
+        Number((catalog.sql("SELECT COUNT(*) AS n FROM uses WHERE material_id=?").get(p.id) as { n: number }).n);
+      catalog.put({ ...next, hash, version, uses } as Material);
       if (held) report.updated++;
       else report.added++;
     }
