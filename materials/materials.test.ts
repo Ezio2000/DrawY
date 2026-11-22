@@ -2,6 +2,7 @@ import { it, expect, beforeAll, afterAll, vi } from "vitest";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { build } from "../content/build.ts";
+import { localize } from "../modules/contracts/messages.ts";
 import { picture as picture_ } from "./testing.ts";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -556,4 +557,55 @@ it("carries what users made over from a library kept before material packs", asy
   } finally {
     rmSync(old, { recursive: true });
   }
+});
+
+it("goes back to a release's own bindings, dropping one a later release added", () => {
+  const { dir, library } = testLibrary();
+  try {
+    // A later release binds links to a drawing of its own.
+    importPack(
+      library,
+      packCopy((_, manifest, lines) => {
+        manifest.release = "with-link";
+        lines.push({ ...lines.find((l) => l.id === "arrow"), id: "arrow-two", name: { zh: "新箭头", en: "New arrow" } });
+        manifest.bindings.link = "arrow-two";
+      }),
+    );
+    expect(library.bindings().link).toBe("arrow-two");
+    rollback(library, "drawy-curated", "test");
+    expect(library.bindings().link).toBe("arrow");
+    // A release that bound nothing leaves nothing bound by its source.
+    const unbound = packCopy((_, manifest) => {
+      manifest.release = "unbound";
+      delete manifest.bindings;
+    });
+    const other = testLibrary();
+    try {
+      other.library.catalog.sql("DELETE FROM bindings").run();
+      other.library.catalog.sql("DELETE FROM releases").run();
+      importPack(other.library, unbound);
+      importPack(other.library, packCopy((_, manifest) => (manifest.release = "bound")));
+      rollback(other.library, "drawy-curated", "unbound");
+      expect(() => other.library.bindings()).toThrow(/没有为 text 指定画法/);
+    } finally {
+      other.library.close();
+      rmSync(other.dir, { recursive: true });
+    }
+  } finally {
+    library.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("says its new errors in English too", () => {
+  for (const [zh, en] of [
+    ["素材库没有为 link 指定画法", "The material library names no drawing for link"],
+    ['未知风格 nope：用 kinds ["style"] 搜索风格', "Unknown style nope; search for styles to find one"],
+    ["素材 label 没有版本 9", "Material label has no version 9"],
+    ["没有这份数据: geo/x", "No data named geo/x"],
+    ["未知图片类型 blob", "Unknown picture type blob"],
+    ["素材库里还没有风格", "The material library has no styles yet"],
+    ["素材库还没有告诉应用用哪些画法编辑，请稍后再试", "The material library hasn't said which drawings editing uses yet; try again shortly"],
+  ])
+    expect(localize(zh, "en")).toBe(en);
 });

@@ -350,6 +350,9 @@ export function rollback(library: Library, source: string, release: string) {
     c.sql("DELETE FROM data WHERE source=?").run(source);
     for (const d of JSON.parse(r.data) as { name: string; blob: string; media: string }[])
       c.sql("INSERT INTO data VALUES(?,?,?,?) ON CONFLICT(name) DO UPDATE SET blob=excluded.blob, media=excluded.media, source=excluded.source").run(d.name, d.blob, d.media, source);
+    // The source's bindings become exactly those of the release: one a later release added
+    // goes, as its drawing may be withdrawn above.
+    c.sql("DELETE FROM bindings WHERE source=?").run(source);
     for (const b of JSON.parse(r.bindings) as { capability: string; material: string }[])
       c.sql("INSERT INTO bindings VALUES(?,?,?) ON CONFLICT(capability) DO UPDATE SET material=excluded.material, source=excluded.source").run(b.capability, b.material, source);
     c.setThesaurus(source, JSON.parse(r.thesaurus));
