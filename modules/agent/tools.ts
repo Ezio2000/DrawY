@@ -98,6 +98,12 @@ export const findSchema = z.object({
       "Material types to keep: pictures by what they are (object, figure, scene, icon, texture), drawing (code for marks, charts and diagrams), effect, style. Leave out to search every type",
     ),
   style: z.string().optional().describe("A style id to prefer; defaults to the brief's style"),
+  cards: z
+    .boolean()
+    .optional()
+    .describe(
+      "Also return the card of each subject's best drawing, style or effect, saving a read_materials turn: set it when you are searching for forms you already mean to use",
+    ),
 });
 export const generateSchema = z.object({
   images: z.array(pictureRequestSchema).min(1).max(8),
@@ -147,7 +153,7 @@ export const tools = [
   ),
   fn(
     "find_materials",
-    "Search the material library, which is far larger than anything listed to you: pictures (objects, figures, scenes, icons, textures), drawings (code for marks, charts, diagrams and maps), effects and styles. Each subject gets a few ranked hits with a short description and how well it matches (exact: it is that thing; close: every word of the subject is in its own words; related: only part is), with thumbnails of the best pictures, and says so when nothing matches directly: then generate that picture or try other words. Put every subject in one call.",
+    "Search the material library, which is far larger than anything listed to you: pictures (objects, figures, scenes, icons, textures), drawings (code for marks, charts, diagrams and maps), effects and styles. Each subject gets a few ranked hits with a short description and how well it matches (exact: it is that thing; close: every word of the subject is in its own words; related: only part is), with thumbnails of the best pictures, and says so when nothing matches directly: then generate that picture or try other words. With cards: true, the best drawing, style or effect of each subject comes with its card, as read_materials would give it. Put every subject in one call.",
     schema(findSchema),
   ),
   fn(

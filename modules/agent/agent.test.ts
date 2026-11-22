@@ -997,6 +997,28 @@ it("gives guides and material cards on demand, once, and reminds the author of t
     expect(guidesRead([{ ...read[0], name: "draw_guide", arguments: args }, { ...read[1], output: '{"error":"x"}' }]).topics.size).toBe(0);
 });
 
+it("gives the cards of what a search finds when asked, and counts them as read", async () => {
+  work.materials = {};
+  store.commit(work, 1, { kind: "edit" });
+  const seen = script([
+    ["find_materials", { subjects: ["柱状图", "苹果"], cards: true }],
+    ["read_materials", { ids: ["bars"] }],
+    ["write_work", { scenes: [{ id: "root", clear: true }], modules: [{ id: "a", label: "a", bounds: [0, 0, 10, 10], drawingId: "bars" }] }],
+    ["view_canvas", {}],
+    ["finish", { message: "done" }],
+  ]);
+  const run = await new Agent(() => {}).start(store, work.id, "root", "画柱状图");
+  await waitFor(run.id, "completed");
+  const [found, again, written] = outputs(seen.at(-1)!);
+  expect(found.results[0].hits[0]).toMatchObject({ id: "bars", match: "exact" });
+  // A search result never carries code; the card asked for does, and pictures get none.
+  expect(JSON.stringify(found.results)).not.toContain("example");
+  expect(found.cards).toContain('{"id":"bars","version":1');
+  expect(found.cards).not.toContain('"id":"apple"');
+  expect(again).toContain("Already above in this conversation: bars.");
+  expect(written.cardsUnread).toBeUndefined();
+});
+
 it("keeps the instructions and tools the same for every request, with what only some works need listed to read", async () => {
   // Two users, each with their own preferences and works, are sent the same prefix.
   const other = db.scoped(register(db, "other", "abcdef").id);

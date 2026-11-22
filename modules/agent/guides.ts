@@ -101,11 +101,17 @@ export function guidesRead(input: Item[], pending: Item[] = []) {
     if (item.type !== "function_call" || !answered.has(item.call_id)) continue;
     if (item.name === "draw_guide")
       for (const topic of requested(item, guideSchema)?.topics ?? []) read.topics.add(topic);
-    if (item.name === "read_materials") {
+    // Cards given with a search's results count as read the same way.
+    if (item.name === "read_materials" || (item.name === "find_materials" && outputs.get(item.call_id)?.includes('"cards":'))) {
       // A card counts as read once it was shown: one left out for the budget was not.
       const output = outputs.get(item.call_id);
-      for (const id of requested(item, readSchema)?.ids ?? [])
-        if (output === undefined || output.includes(`{"id":${JSON.stringify(id)}`)) read.drawings.add(id);
+      const ids =
+        item.name === "read_materials"
+          ? (requested(item, readSchema)?.ids ?? [])
+          : [...(output ?? "").matchAll(/\{\\"id\\":\\"([a-z0-9-]+)\\",\\"version\\"/g)].map((m) => m[1]);
+      for (const id of ids)
+        if (item.name === "find_materials" || output === undefined || output.includes(`{"id":${JSON.stringify(id)}`))
+          read.drawings.add(id);
     }
   }
   return read;

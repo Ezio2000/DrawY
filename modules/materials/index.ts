@@ -222,9 +222,11 @@ export async function resolveStyle(wanted: string, user: Viewer, register?: "for
     const style = await styleOf(wanted).catch(() => undefined);
     if (style) return { style, chosen: false, others: [] as string[] };
   }
-  const words = wanted.split(/[\s,，、/;；]+/).filter(Boolean).slice(0, 11);
+  // However long the description, what is searched is bounded.
+  const text = wanted.slice(0, 200);
+  const words = text.split(/[\s,，、/;；]+/).filter(Boolean).slice(0, 11);
   const results = await library.search(
-    { subjects: [wanted, ...(words.length > 1 ? words : [])], types: ["style"], limit: 3 },
+    { subjects: [text, ...(words.length > 1 ? words : [])], types: ["style"], limit: 3 },
     user,
   );
   const score = new Map<string, number>();

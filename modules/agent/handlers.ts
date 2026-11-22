@@ -113,6 +113,10 @@ export function parsedArguments(x: Execution, call: Item) {
     throw Error(`工具参数不是有效的 JSON（${why}），没有保存。请改正后把完整参数重发`);
   }
 }
+/** Which payload a search hit is: briefs of drawings carry use, of effects apply, of
+ * styles register; pictures carry a size. */
+const kindOfBrief = (hit: object) =>
+  "use" in hit ? "drawing" : "apply" in hit ? "effect" : "register" in hit ? "style" : "picture";
 /** The app's own text, picture and link drawings, whose use the instructions show. */
 const basic = async () => new Set(Object.values(await bindings().catch(() => ({}))));
 /** Library drawings the work uses whose cards the author has not read: parameters it
@@ -246,11 +250,25 @@ export const handlers: Record<
   },
 
   async find_materials(x, args, call) {
-    const request = findSchema.parse(args);
+    const { cards, ...request } = findSchema.parse(args);
     const style = x.store.work(x.run.workId).brief?.style;
     const found = await find({ ...request, style: request.style ?? style, limit: 5 }, x.store.userId);
     Object.assign(call.step!, { found: found.found });
-    return { output: found.output, images: found.images };
+    if (!cards) return { output: found.output, images: found.images };
+    // The best code material of each subject, when it is the thing asked for, read now.
+    const best = [
+      ...new Set(
+        found.output.flatMap((r) => {
+          const hit = r.hits.find((h) => "match" in h && h.match !== "related" && kindOfBrief(h) !== "picture");
+          return hit ? [hit.id] : [];
+        }),
+      ),
+    ].slice(0, 6);
+    const read = guidesRead(x.ctx.input);
+    const fresh = best.filter((id) => !read.drawings.has(id));
+    const full = fresh.length ? await library.get(fresh, x.store.viewer, true) : [];
+    const { text } = readCards(best, full, read);
+    return { output: { results: found.output, cards: text }, images: found.images };
   },
 
   async read_materials(x, args, call) {

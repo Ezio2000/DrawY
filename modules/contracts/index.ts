@@ -104,7 +104,7 @@ export const briefSchema = z.object({
       "The visual idea the picture is built on, chosen by the author: what the eye meets first, how the parts are arranged and what that arrangement says; not a list of parts and not the look",
     ),
   register: z.enum(["formal", "expressive"]),
-  style: z.string().min(1).max(80).describe(
+  style: z.string().min(1).describe(
     "A style id from the library, or a few words describing the look wanted (水彩绘本, flat infographic): the closest library style is chosen and named in the result",
   ),
   direction: z
