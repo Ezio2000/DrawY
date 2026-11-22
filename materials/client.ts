@@ -14,6 +14,8 @@ import type {
 } from "./schema.ts";
 import { viewerOf } from "./schema.ts";
 
+/** How many materials one batch request reads; the service refuses more. */
+const BATCH = 200;
 /** Talks to a material library service on behalf of one user at a time. */
 export class MaterialsClient {
   constructor(readonly base: string) {}
@@ -72,11 +74,19 @@ export class MaterialsClient {
   }
   /** The named materials, each at the version asked for or the current one; leniently,
    * only those that exist. */
-  get(ids: (string | MaterialRef)[], user?: Viewer, lenient = false) {
-    return this.call<Material[]>("/materials/batch", user, {
-      method: "POST",
-      body: JSON.stringify({ ids, lenient }),
-    });
+  async get(ids: (string | MaterialRef)[], user?: Viewer, lenient = false) {
+    // The service reads a bounded number at a time; a work may name more.
+    const chunks: (string | MaterialRef)[][] = [];
+    for (let i = 0; i < ids.length; i += BATCH) chunks.push(ids.slice(i, i + BATCH));
+    const pages = await Promise.all(
+      chunks.map((chunk) =>
+        this.call<Material[]>("/materials/batch", user, {
+          method: "POST",
+          body: JSON.stringify({ ids: chunk, lenient }),
+        }),
+      ),
+    );
+    return pages.flat();
   }
   /** The material types the library holds. */
   types() {

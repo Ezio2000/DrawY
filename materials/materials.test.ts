@@ -11,7 +11,8 @@ import sharp from "sharp";
 import { Library } from "./library.ts";
 import { createServer } from "./server.ts";
 import { Streets, type StreetTile } from "./streets.ts";
-import { curatedPack, testLibrary } from "./testing.ts";
+import { curatedPack, serveLibrary, testLibrary } from "./testing.ts";
+import { MaterialsClient } from "./client.ts";
 import { importPack, releases, rollback, PACK_FORMAT } from "./pack.ts";
 import type { DrawingMaterial, StyleMaterial } from "./schema.ts";
 
@@ -403,6 +404,13 @@ it("refuses a pack that is not whole, or that would take what is not its own", (
       manifest.bindings.text = "bars";
     });
     expect(() => importPack(library, bound)).toThrow(/绑定 text: bars 缺少 text 参数 text/);
+    // An id keeps its payload: a picture does not become a drawing.
+    const kind = packCopy((_, manifest, lines) => {
+      manifest.release = "kind-change";
+      const apple = lines.findIndex((l) => l.id === "apple");
+      lines[apple] = { ...lines.find((l) => l.id === "label"), id: "apple" };
+    });
+    expect(() => importPack(library, kind)).toThrow(/apple: 已是 picture，不能改成 drawing/);
     // An id too long for a work to recognise in its data is refused at import.
     const long = packCopy((_, manifest, lines) => {
       manifest.release = "long-id";
@@ -614,4 +622,16 @@ it("says its new errors in English too", () => {
     ["素材库还没有告诉应用用哪些画法编辑，请稍后再试", "The material library hasn't said which drawings editing uses yet; try again shortly"],
   ])
     expect(localize(zh, "en")).toBe(en);
+});
+
+it("reads more materials at once than one batch holds", async () => {
+  const served = serveLibrary("http://library.test");
+  try {
+    const client = new MaterialsClient("http://library.test");
+    const ids = [...Array.from({ length: 230 }, (_, i) => `no-such-${i}`), "apple", "label"];
+    const found = await client.get(ids, undefined, true);
+    expect(found.map((m) => m.id)).toEqual(["apple", "label"]);
+  } finally {
+    served.close();
+  }
 });

@@ -178,6 +178,8 @@ export function readPack(dir: string, library: Library) {
   for (const m of materials) {
     if (types.get(m.type) !== m.kind) problems.push(`${m.id}: 类型 ${m.type} 不是 ${m.kind} 载荷`);
     const held = existing(m.id);
+    // An id keeps its payload: works hold its earlier versions and read them as that kind.
+    if (held && held.kind !== m.kind) problems.push(`${m.id}: 已是 ${held.kind}，不能改成 ${m.kind}`);
     if (held && held.pack !== manifest.source)
       problems.push(`${m.id}: 已属于${held.pack ? "素材源 " + held.pack : "用户素材"}，不能覆盖`);
     const isStyle = (id: string) => ids.get(id)?.kind === "style" || existing(id)?.kind === "style";
