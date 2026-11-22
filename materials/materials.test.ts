@@ -403,6 +403,12 @@ it("refuses a pack that is not whole, or that would take what is not its own", (
       manifest.bindings.text = "bars";
     });
     expect(() => importPack(library, bound)).toThrow(/绑定 text: bars 缺少 text 参数 text/);
+    // An id too long for a work to recognise in its data is refused at import.
+    const long = packCopy((_, manifest, lines) => {
+      manifest.release = "long-id";
+      lines.push({ ...lines.find((l) => l.id === "label"), id: "a".repeat(64) });
+    });
+    expect(() => importPack(library, long)).toThrow(/第 \d+ 行/);
     const typed = packCopy((_, manifest, lines) => {
       manifest.release = "bad-type";
       lines.find((l) => l.id === "label").type = "object";

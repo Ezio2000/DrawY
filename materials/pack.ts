@@ -56,7 +56,8 @@ export const manifestSchema = z.object({
 export type Manifest = z.infer<typeof manifestSchema>;
 
 const common = {
-  id: z.string().regex(ID).max(96),
+  // An id longer than this is not recognised as a reference in a work's data (modules/materials).
+  id: z.string().regex(ID).max(63),
   type: typeIdSchema,
   name: namesSchema,
   aliases: z.array(z.string()).default([]),
