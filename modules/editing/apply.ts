@@ -1,3 +1,4 @@
+import { bound } from "./bindings.ts";
 import {
   boundsOf,
   drawingOf,
@@ -167,7 +168,7 @@ function linkChange(work: Work, edit: LinkEdit, current: string, problems: Probl
     const home = work.scenes[named ?? current];
     if (!home)
       return void problems.push({ at: `${at}.scene`, problem: `场景 ${named ?? current} 不存在：新场景写在 scenes 里` });
-    l = { id, drawingId: drawingId ?? "arrow", from: asEnd(from!), to: asEnd(to!), data: {} };
+    l = { id, drawingId: drawingId ?? bound().link, from: asEnd(from!), to: asEnd(to!), data: {} };
     home.links.push(l);
   }
   if (drawingId) l.drawingId = drawingId;
@@ -268,7 +269,7 @@ export const showable = (work: Work, edit: WorkEdit) => {
     (edit.drawings ?? []).every((d) => !d.from || !!drawingOf(work, d.from)) &&
     (edit.modules ?? []).every((m) => !m.drawingId || drawn(m.drawingId)) &&
     (edit.links ?? []).every((l) =>
-      l.drawingId ? drawn(l.drawingId) : !!links[l.id] || drawn("arrow"),
+      l.drawingId ? drawn(l.drawingId) : !!links[l.id] || drawn(bound().link),
     )
   );
 };

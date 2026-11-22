@@ -1,7 +1,7 @@
 import { DomainError, id, type Run, type Settings, type Step } from "../contracts/index.ts";
 import { MIN_TEXT } from "../contracts/geometry.ts";
 import type { UserStore } from "../storage/index.ts";
-import { kit, library, look, styleList, useOf } from "../materials/index.ts";
+import { bindings, library, look, useOf } from "../materials/index.ts";
 import { requireObserved, sceneObservations, Unavailable } from "../observation/index.ts";
 import {
   citationsOf,
@@ -13,7 +13,7 @@ import {
   type Item,
 } from "../models/index.ts";
 import { tracer } from "../trace/index.ts";
-import { AUTHOR, catalogue } from "./prompts.ts";
+import { author } from "./prompts.ts";
 import { tools, searchTools } from "./tools.ts";
 import {
   compact,
@@ -178,7 +178,7 @@ export class Agent {
           },
           async (execution) => {
             try {
-              const instructions = [AUTHOR, catalogue(await styleList(), await kit())].join("\n\n");
+              const instructions = author(await bindings());
               // Where this execution starts from; each turn records what it adds.
               execution.set({
                 instructions,

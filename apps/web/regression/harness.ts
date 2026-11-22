@@ -1,3 +1,6 @@
+import { Library } from "../../../materials/library.ts";
+import { importPack } from "../../../materials/pack.ts";
+import { curatedPack } from "../../../materials/curated.ts";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
@@ -69,6 +72,10 @@ beforeAll(async () => {
   data = mkdtempSync(join(tmpdir(), "drawy-pages-"));
   const materials = await freePort(),
     port = await freePort();
+  // The library starts from what was imported into it: the curated pack.
+  const library = new Library(join(data, "materials"));
+  importPack(library, curatedPack());
+  library.close();
   start(["server.ts"], join(root, "materials"), {
     PORT: String(materials),
     MATERIALS_DATA: join(data, "materials"),

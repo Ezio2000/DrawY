@@ -32,7 +32,7 @@ export function forAuthor(work: Work) {
           ? {
               kind: m.kind,
               name: m.name,
-              role: m.role,
+              type: m.type,
               style: m.style,
               size: `${m.width}×${m.height}`,
               anchors: Object.keys(m.anchors),

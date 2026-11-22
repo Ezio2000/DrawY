@@ -1,0 +1,10 @@
+[
+  { "id": "object", "kind": "picture", "name": { "zh": "物件", "en": "Object" }, "about": "One isolated thing, cut out on transparency." },
+  { "id": "figure", "kind": "picture", "name": { "zh": "人物", "en": "Figure" }, "about": "A person or character, cut out." },
+  { "id": "scene", "kind": "picture", "name": { "zh": "场景", "en": "Scene" }, "about": "A complete backdrop or vignette, opaque." },
+  { "id": "icon", "kind": "picture", "name": { "zh": "图标", "en": "Icon" }, "about": "A symbol glyph." },
+  { "id": "texture", "kind": "picture", "name": { "zh": "纹理", "en": "Texture" }, "about": "A surface to fill areas with." },
+  { "id": "drawing", "kind": "drawing", "name": { "zh": "画法", "en": "Drawing" }, "about": "Parameterised drawing code: a mark, chart or structured diagram." },
+  { "id": "effect", "kind": "effect", "name": { "zh": "效果", "en": "Effect" }, "about": "An SVG filter, paint or marker." },
+  { "id": "style", "kind": "style", "name": { "zh": "风格", "en": "Style" }, "about": "How a work looks: palette, type, drawing rules and picture prompt." }
+]

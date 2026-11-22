@@ -9,7 +9,7 @@ import { Agent } from "./index.ts";
 import { SEARCH_LIMIT, steering } from "./spending.ts";
 import { withLessThought } from "./conversation.ts";
 import { guidesRead, guides } from "./guides.ts";
-import { AUTHOR, catalogue, gist } from "./prompts.ts";
+
 import { settleSchema } from "./tools.ts";
 import { restore, writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
@@ -20,6 +20,7 @@ import { removeParts, setData } from "../editing/index.ts";
 import { tracer } from "../trace/index.ts";
 import { library as client } from "../materials/index.ts";
 import { serveLibrary, picture, solid } from "@drawy/materials/testing";
+import type { DrawingMaterial } from "@drawy/materials/schema";
 
 let library: ReturnType<typeof serveLibrary>;
 /** A storage in a temporary directory, an author account in it, and a work to draw on,
@@ -298,7 +299,7 @@ it("continues the conversation across answers and requests, with the user's pref
   const reference = await client.ingest(
     await picture(),
     "image/png",
-    { role: "object", name: { zh: "参考", en: "reference" }, style: null, origin: { kind: "upload" } },
+    { type: "object", name: { zh: "参考", en: "reference" }, style: null, origin: { kind: "upload" } },
     store.userId,
   );
   const instructions: string[] = [];
@@ -412,7 +413,7 @@ it("compacts the conversation at its budget, and goes on without old pictures wh
   const reference = await client.ingest(
     await picture(),
     "image/png",
-    { role: "object", name: { zh: "参考", en: "reference" }, style: null, origin: { kind: "upload" } },
+    { type: "object", name: { zh: "参考", en: "reference" }, style: null, origin: { kind: "upload" } },
     store.userId,
   );
   const run = newRun("budget");
@@ -562,8 +563,8 @@ it("bills pictures developing while the author composes, and holds the end until
   });
   const seen = script([
     ["generate_images", { images: [
-      { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a blue whale, side view", aspect: "landscape" },
-      { name: { zh: "船", en: "boat" }, role: "object", depicts: "a boat" },
+      { name: { zh: "鲸", en: "whale" }, type: "object", depicts: "a blue whale, side view", aspect: "landscape" },
+      { name: { zh: "船", en: "boat" }, type: "object", depicts: "a boat" },
     ] }],
     ["finish", { message: "too soon" }],
     ["view_canvas", {}],
@@ -936,7 +937,7 @@ it("keeps a saved write done when its embedded view cannot reach the canvas", as
   expect(view).toMatchObject({ name: "view_canvas", status: "failed" });
 }, 20000);
 
-it("gives guides and drawing cards on demand, once, and reminds the author of those it has not read", async () => {
+it("gives guides and material cards on demand, once, and reminds the author of those it has not read", async () => {
   work.materials = {};
   store.commit(work, 1, { kind: "edit" });
   const uses = { scenes: [{ id: "root", clear: true }], modules: [{ id: "a", label: "a", bounds: [0, 0, 10, 10], drawingId: "plot" }] };
@@ -944,49 +945,56 @@ it("gives guides and drawing cards on demand, once, and reminds the author of th
     ["set_brief", { ...brief, cast: [], basis: { subject: "苹果", intent: "苹果" } }],
     ["write_work", uses],
     ["write_work", { ...uses, title: "again" }],
-    ["draw_guide", { topics: ["maps", "copy"], drawings: ["arrow", "no-such"] }],
-    // Asked again: geomap came with maps, and arrow was read on its own.
-    ["draw_guide", { topics: ["maps"], drawings: ["geomap", "arrow", "plot"] }],
+    [item("draw_guide", { topics: ["maps", "copy"] }, "g1"), item("read_materials", { ids: ["arrow", "geomap", "no-such"] }, "r1")],
+    // Asked again: what was shown is above, and only plot is new.
+    [item("draw_guide", { topics: ["maps"] }, "g2"), item("read_materials", { ids: ["geomap", "arrow", "plot"] }, "r2")],
     ["draw_guide", {}],
     // Asked for in the same message as the brief and the write, nothing is pointed out.
     [item("set_brief", { ...brief, cast: [], basis: { subject: "苹果", intent: "苹果" } }, "s2"), item("draw_guide", { topics: ["diagrams"] }, "d2")],
-    [item("write_work", { ...uses, modules: [{ ...uses.modules[0], drawingId: "bars" }] }, "w3"), item("draw_guide", { drawings: ["bars"] }, "d3")],
+    [item("write_work", { ...uses, modules: [{ ...uses.modules[0], drawingId: "bars" }] }, "w3"), item("read_materials", { ids: ["bars"] }, "d3")],
     ["view_canvas", {}],
     ["finish", { message: "done" }],
   ]);
   const run = await new Agent(() => {}).start(store, work.id, "root", "画苹果");
   await waitFor(run.id, "completed");
-  const [settled, written, again, first, second, empty, settledAgain, , writtenAgain] = outputs(seen.at(-1)!);
+  const [settled, written, again, guide, first, guideAgain, second, empty, settledAgain, , writtenAgain] = outputs(seen.at(-1)!);
   expect(settled.guides).toContain("draw_guide");
   expect(written.cardsUnread).toEqual(["plot"]);
   expect(again.cardsUnread).toBeUndefined();
   // Guides read as text under their topics, and cards one line of JSON each.
   const cards = (text: string) => text.split("\n").filter((line) => line.startsWith("{")).map((line) => JSON.parse(line));
-  expect([...first.matchAll(/^## (\w+)$/gm)].map((m: string[]) => m[1])).toEqual(["maps", "copy"]);
-  expect(first).toContain("Real geography comes from data.");
-  expect(cards(first).map((d: any) => d.id)).toEqual(["geomap", "arrow"]);
-  expect(cards(first)[1]).toMatchObject({ use: "link", size: "200×60", example: { flow: true } });
-  expect(first).toContain("Not library drawings: no-such.");
+  expect([...guide.matchAll(/^## (\w+)$/gm)].map((m: string[]) => m[1])).toEqual(["maps", "copy"]);
+  expect(guide).toContain("Real geography comes from data.");
+  // No guide names a library material; the map drawing is found by searching.
+  expect(guide).not.toContain("geomap");
+  expect(cards(first).map((d: any) => d.id)).toEqual(["arrow", "geomap"]);
+  expect(cards(first)[0]).toMatchObject({ use: "link", size: "200×60", example: { flow: true }, version: 1 });
+  expect(first).toContain("Not in the library: no-such.");
+  expect(guideAgain).toContain("Already above in this conversation: maps.");
   expect(cards(second).map((d: any) => d.id)).toEqual(["plot"]);
-  expect(second).toContain("Already above in this conversation: maps, geomap, arrow.");
+  expect(second).toContain("Already above in this conversation: geomap, arrow.");
   expect(empty.error).toBeTruthy();
   expect(settledAgain.guides).toBeUndefined();
   expect(writtenAgain.cardsUnread).toBeUndefined();
   expect(store.run(run.id).steps.find((s) => s.kind === "tool" && s.name === "draw_guide")).toMatchObject({
     status: "done",
     topics: ["maps", "copy"],
-    drawings: ["arrow", "no-such"],
   });
-  // A guide read before a summary, or by a call refused or not yet answered, is not above.
+  expect(store.run(run.id).steps.find((s) => s.kind === "tool" && s.name === "read_materials")).toMatchObject({
+    status: "done",
+    ids: ["arrow", "geomap"],
+  });
+  // A card read before a summary, or by a call refused or not yet answered, is not above;
+  // nor is one the answer left out.
   const read = [
-    { type: "function_call", name: "draw_guide", call_id: "a", arguments: '{"topics":["maps"]}' },
-    { type: "function_call_output", call_id: "a", output: "{}" },
+    { type: "function_call", name: "read_materials", call_id: "a", arguments: '{"ids":["geomap","plot"]}' },
+    { type: "function_call_output", call_id: "a", output: '{"id":"geomap","version":1}\n\nNot shown, to keep this answer short: plot.' },
   ];
   expect([...guidesRead(read).drawings]).toEqual(["geomap"]);
   expect(guidesRead([{ role: "user", content: "Conversation summary. …" }]).topics.size).toBe(0);
-  expect(guidesRead(read.slice(0, 1)).topics.size).toBe(0);
+  expect(guidesRead(read.slice(0, 1)).drawings.size).toBe(0);
   for (const args of ['{"topics":["maps","bogus"]}', "{not json"])
-    expect(guidesRead([{ ...read[0], arguments: args }, { ...read[1], output: '{"error":"x"}' }]).topics.size).toBe(0);
+    expect(guidesRead([{ ...read[0], name: "draw_guide", arguments: args }, { ...read[1], output: '{"error":"x"}' }]).topics.size).toBe(0);
 });
 
 it("keeps the instructions and tools the same for every request, with what only some works need listed to read", async () => {
@@ -1000,25 +1008,35 @@ it("keeps the instructions and tools the same for every request, with what only 
     return { items: [item("ask_user", ask, crypto.randomUUID())], usage: {}, response: {} };
   });
   const agent = new Agent(() => {});
+  const started: string[] = [];
   for (const s of [store, other]) {
     const run = await agent.start(s, work.id, "root", "画");
+    started.push(run.id);
     await vi.waitFor(() => expect(s.run(run.id).status).toBe("waiting"));
   }
   expect(prefixes).toHaveLength(2);
   expect(prefixes[0]).toBe(prefixes[1]);
   expect(vi.mocked(generate).mock.calls.map(([, t]) => t.cacheKey)).toEqual([store.userId, other.userId]);
-  // Every guide is listed with when to read it, and the index is one short line per drawing.
-  const seed = (name: string) => JSON.parse(readFileSync(new URL(`../../materials/seed/${name}.json`, import.meta.url), "utf8"));
+  // Every guide is listed with when to read it.
+  const instructions = JSON.parse(prefixes[0])[0] as string;
   expect(Object.keys(guides).sort()).toEqual([...guideTopics].sort());
-  for (const topic of guideTopics) expect(AUTHOR).toContain(`- ${topic}: ${guides[topic].when}.`);
-  expect(AUTHOR + Object.values(guides).map((g) => g.text).join("")).not.toMatch(/\b(MUST|NEVER|ALWAYS|IMPORTANT|CRITICAL)\b/);
-  const index = catalogue(seed("styles"), [...seed("drawings"), ...seed("effects")]);
-  expect(index).not.toContain("e.g. ");
-  for (const d of seed("drawings")) {
-    expect(index).toContain(`- ${d.id}`);
-    expect(gist(d.about).length).toBeLessThan(170);
-  }
-  expect(AUTHOR.length + index.length).toBeLessThan(32000);
+  for (const topic of guideTopics) expect(instructions).toContain(`- ${topic}: ${guides[topic].when}.`);
+  expect(instructions + Object.values(guides).map((g) => g.text).join("")).not.toMatch(/\b(MUST|NEVER|ALWAYS|IMPORTANT|CRITICAL)\b/);
+  // The instructions describe how the library is used, never what it holds: no style,
+  // effect or drawing of the library is named but the app's own three, and adding to the
+  // library leaves them byte for byte the same.
+  const named = ["colored-pencil", "ink-wash", "pencil-grain", "rough-edge", "geomap", "step-badge", "leader-label"];
+  for (const id of named) expect(instructions).not.toContain(id);
+  library.library.catalog.put({
+    ...(library.library.get("label") as DrawingMaterial),
+    id: "label-extra",
+    name: { zh: "新画法", en: "Extra" },
+  });
+  agent.cancel(store, started[0]);
+  const later = await agent.start(store, work.id, "root", "再画");
+  await vi.waitFor(() => expect(store.run(later.id).status).toBe("waiting"));
+  expect(prefixes[2]).toBe(prefixes[0]);
+  expect(instructions.length).toBeLessThan(20000);
 });
 
 it("observes in the same turn when write_work carries view, skips it on write failure, and does not double-capture beside view_canvas", async () => {
@@ -1051,7 +1069,7 @@ it("sends image-only requests without synthetic no-words or language prompts, le
   const reference = await client.ingest(
     await picture(),
     "image/png",
-    { role: "object", name: { zh: "评审表", en: "review" }, style: null, origin: { kind: "upload" } },
+    { type: "object", name: { zh: "评审表", en: "review" }, style: null, origin: { kind: "upload" } },
     store.userId,
   );
   // First run: image-only request (no typed text).
@@ -1166,13 +1184,13 @@ it("keeps top-level request effort pinned across runs on conversation-effort mod
   expect(seen).toEqual([{ roleEffort: "medium", turnEffort: "medium", updates: ["high", "medium"] }]);
 });
 
-it("exempts basic primitives (picture, label, arrow) from cardsUnread and treats drawing cards as read guides in set_brief", async () => {
+it("exempts the drawings the library binds to text, pictures and links from cardsUnread and treats cards as read in set_brief", async () => {
   work.materials = {};
   store.commit(work, 1, { kind: "edit" });
   const seen = script([
     [
       item("set_brief", { ...brief, cast: [], basis: { subject: "苹果", intent: "苹果" } }, "s1"),
-      item("draw_guide", { drawings: ["bars"] }, "d1"),
+      item("read_materials", { ids: ["bars"] }, "d1"),
     ],
     [
       "write_work",

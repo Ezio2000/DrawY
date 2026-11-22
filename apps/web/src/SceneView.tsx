@@ -23,7 +23,7 @@ import type {
   Detail,
 } from "../../../modules/contracts/index.ts";
 import { cx } from "./cx.ts";
-import { styleList } from "./Composer.tsx";
+import { styleNamed } from "./Composer.tsx";
 import { GRID, Rulers, ViewControls, type BoardSettings } from "./EditView.tsx";
 import { useT } from "./i18n.tsx";
 import { currentOf, thinkingOf } from "./Studio.tsx";
@@ -255,8 +255,11 @@ export function SceneView({
       (!s.sceneId || s.sceneId === sceneId),
   );
   const empty = !work.scenes[sceneId].modules.length;
-  const [styles, setStyles] = useState<StyleMaterial[]>([]);
-  useEffect(() => void styleList().then(setStyles, () => {}), []);
+  const [style, setStyle] = useState<StyleMaterial>();
+  const styleId = work.brief?.style;
+  useEffect(() => {
+    if (styleId) void styleNamed(styleId).then(setStyle, () => {});
+  }, [styleId]);
   // A note on the paper while the canvas is still blank, so there is something to watch
   // before the first stroke: at first the request as it was written and what the author is
   // thinking about now, as it thinks; once it settles what to draw, the subject, the ways
@@ -281,7 +284,7 @@ export function SceneView({
           tags: brief
             ? [
                 brief.audience,
-                styles.find((s) => s.id === brief.style)?.name[locale],
+                style?.id === brief.style ? style.name[locale] : undefined,
               ].filter((x): x is string => !!x)
             : [],
         }

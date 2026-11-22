@@ -60,7 +60,7 @@ for (const channel of ["api", "oauth"] as const)
     const [made] = await develop(store, role, work, [
       {
         name: { zh: "显微镜", en: "microscope" },
-        role: "object",
+        type: "object",
         depicts: "a school microscope, three-quarter view",
         references: ["microscope"],
       },
@@ -111,7 +111,7 @@ it("cuts a long name before trimming its hyphens, so no id carries \"--\"", asyn
   const [cut] = await develop(store, role, fixture(), [
     {
       name: { zh: "塑料瓶和铝罐", en: "plastic bottle and aluminum can" },
-      role: "object",
+      type: "object",
       depicts: "a plastic bottle and an aluminum can",
     },
   ]);
@@ -131,7 +131,7 @@ it("retries a dropped connection or a busy server before giving up", async () =>
   vi.useFakeTimers({ toFake: ["setTimeout"] });
   try {
     const [made] = await develop(store, role, fixture(), [
-      { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
+      { name: { zh: "鲸", en: "whale" }, type: "object", depicts: "a whale" },
     ]);
     while (!made.settled) await vi.advanceTimersByTimeAsync(1000);
     expect(await made.done).toEqual({ status: "ready", count: 1 });
@@ -149,9 +149,9 @@ it("paints a cut-out again when it comes out with a background, and says so when
   library.route(async () => {
     return painted(answers[calls++] ?? boxed, usage);
   });
-  const ask = (en: string, role: "object" | "scene" = "object") => ({
+  const ask = (en: string, type: "object" | "scene" = "object") => ({
     name: { zh: en, en },
-    role,
+    type,
     depicts: "a " + en,
   });
   const [ship] = await develop(store, role, fixture(), [ask("ship")]);
@@ -178,7 +178,7 @@ it("records a failed picture so the work and the author both learn of it", async
   const { store, role } = author();
   library.route(async () => new Response("unsafe prompt", { status: 400 }));
   const [made] = await develop(store, role, fixture(), [
-    { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
+    { name: { zh: "鲸", en: "whale" }, type: "object", depicts: "a whale" },
   ]);
   expect(await made.done).toMatchObject({
     status: "failed",
@@ -190,7 +190,7 @@ it("records a failed picture so the work and the author both learn of it", async
   );
   await expect(
     develop(store, role, { ...fixture(), brief: null }, [
-      { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
+      { name: { zh: "鲸", en: "whale" }, type: "object", depicts: "a whale" },
     ]),
   ).rejects.toThrow("set_brief");
 });
@@ -211,7 +211,7 @@ it("makes pictures that reference another in the same request after it, all priv
     png,
     "image/png",
     {
-      role: "figure",
+      type: "figure",
       name: { zh: "我的兔子", en: "my rabbit" },
       style: null,
       origin: { kind: "upload" },
@@ -222,18 +222,18 @@ it("makes pictures that reference another in the same request after it, all priv
     {
       key: "rabbit",
       name: { zh: "兔子", en: "rabbit" },
-      role: "figure",
+      type: "figure",
       depicts: "a white rabbit",
     },
     {
       name: { zh: "迷路", en: "lost" },
-      role: "scene",
+      type: "scene",
       depicts: "the rabbit lost in a wood",
       references: ["rabbit"],
     },
     {
       name: { zh: "我的兔子回家", en: "home" },
-      role: "scene",
+      type: "scene",
       depicts: "my rabbit at home",
       references: [mine.id],
     },
@@ -266,7 +266,7 @@ it("paints new pictures to look like the ones the work already has in its style"
     return painted(png);
   });
   const [earlier] = await develop(store, role, fixture(), [
-    { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale" },
+    { name: { zh: "鲸", en: "whale" }, type: "object", depicts: "a whale" },
   ]);
   await earlier.done;
   const [m] = await client.get([earlier.id], store.userId);
@@ -279,7 +279,7 @@ it("paints new pictures to look like the ones the work already has in its style"
   const [later] = await develop(store, role, work, [
     {
       name: { zh: "海豚", en: "dolphin" },
-      role: "object",
+      type: "object",
       depicts: "a dolphin",
     },
   ]);
@@ -297,7 +297,7 @@ it("paints new pictures to look like the ones the work already has in its style"
 describe("pictures that depend on each other", () => {
   const ask = (en: string, references: string[] = [], key?: string) => ({
     name: { zh: en, en },
-    role: "figure" as const,
+    type: "figure" as const,
     depicts: en,
     references,
     ...(key ? { key } : {}),
@@ -377,9 +377,9 @@ it("defaults quality to medium, passes explicit quality, falls back to auto on H
     return painted(png);
   });
   const made = await develop(store, role, fixture(), [
-    { name: { zh: "鲸", en: "whale" }, role: "object", depicts: "a whale", references: ["microscope"] },
-    { name: { zh: "星云", en: "nebula" }, role: "scene", depicts: "a nebula", quality: "high" },
-    { name: { zh: "图标", en: "badge" }, role: "icon", depicts: "a star icon", quality: "low" },
+    { name: { zh: "鲸", en: "whale" }, type: "object", depicts: "a whale", references: ["microscope"] },
+    { name: { zh: "星云", en: "nebula" }, type: "scene", depicts: "a nebula", quality: "high" },
+    { name: { zh: "图标", en: "badge" }, type: "icon", depicts: "a star icon", quality: "low" },
   ]);
   const results = await Promise.all(made.map((d) => d.done));
   expect(results.map((r) => r.status)).toEqual(["ready", "ready", "ready"]);

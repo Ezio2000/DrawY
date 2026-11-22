@@ -103,10 +103,8 @@ const host = (url: string) => {
 /** A tool's name as words, for tools the app has no view of its own for. */
 const toolName = (name: string) => name.replace(/[_-]+/g, " ");
 /** What a guide step read, in the reader's words; a library drawing goes by its id. */
-const guideNames = (step: Extract<ToolStep, { name: "draw_guide" }>, t: Words) => [
-  ...step.topics.map((topic) => t.steps.guideTopics[topic] ?? topic),
-  ...step.drawings,
-];
+const guideNames = (step: Extract<ToolStep, { name: "draw_guide" }>, t: Words) =>
+  step.topics.map((topic) => t.steps.guideTopics[topic] ?? topic);
 /** What the author is doing, in a word or two. */
 function doing(step: ToolStep, t: Words): string {
   const w = t.now;
@@ -124,6 +122,8 @@ function doing(step: ToolStep, t: Words): string {
       return w.reading;
     case "draw_guide":
       return [w.guiding, guideNames(step, t).join(w.list)].filter(Boolean).join(" · ");
+    case "read_materials":
+      return [w.guiding, step.ids.join(w.list)].filter(Boolean).join(" · ");
     case "set_brief":
       return [w.briefing, step.subject].filter(Boolean).join(" · ");
     case "find_materials":
@@ -442,6 +442,7 @@ const icons = {
   hosted: Wrench,
   read_work: BookOpen,
   draw_guide: BookMarked,
+  read_materials: BookMarked,
   set_brief: Compass,
   find_materials: Search,
   generate_images: ImagePlus,
@@ -586,6 +587,13 @@ function ToolBody({
           {guideNames(step, t).length > 0 && (
             <code className={cx("step-detail")}>{guideNames(step, t).join(t.now.list)}</code>
           )}
+        </>
+      );
+    case "read_materials":
+      return (
+        <>
+          <span className={cx("step-title")}>{w.read_materials}</span>
+          {step.ids.length > 0 && <code className={cx("step-detail")}>{step.ids.join(t.now.list)}</code>}
         </>
       );
     case "set_brief":

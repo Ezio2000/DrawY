@@ -1,5 +1,6 @@
 packages:
   - materials
+  - content
 allowBuilds:
   esbuild: true
   sharp: true

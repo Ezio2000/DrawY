@@ -1,16 +1,19 @@
 import { it, expect, beforeAll, afterAll, vi } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import { Library } from "./library.ts";
 import { createServer } from "./server.ts";
 import { Streets, type StreetTile } from "./streets.ts";
+import { curatedPack, testLibrary } from "./testing.ts";
+import { importPack, releases, rollback, PACK_FORMAT } from "./pack.ts";
+import type { DrawingMaterial, StyleMaterial } from "./schema.ts";
 
 let dir: string, library: Library;
 beforeAll(() => {
-  dir = mkdtempSync(join(tmpdir(), "drawy-materials-"));
-  library = new Library(dir, new URL("./seed", import.meta.url).pathname);
+  ({ dir, library } = testLibrary());
 });
 afterAll(() => {
   library.close();
@@ -36,7 +39,7 @@ it("finds the thing asked for in either language, ignoring request noise", () =>
     ["水墨", "ink-wash"],
   ])
     expect(
-      top(query).map((h) => h.material.id),
+      top(query, { limit: 8 }).map((h) => h.material.id),
       query,
     ).toContain(id);
   expect(top("apple")[0]).toMatchObject({
@@ -57,17 +60,34 @@ it("finds the thing asked for in either language, ignoring request noise", () =>
     top("sun planets solar system illustration")[0].material.id,
   ).not.toMatch(/general|folder/);
 });
-it("prefers the requested style and kind", () => {
+it("prefers the requested style and type", () => {
   const pictures = top("apple", { kinds: ["picture"], style: "line-icon" });
   expect(pictures[0].material.id).toBe("line-apple");
   expect(top("planet", { style: "crayon" })[0].material.style).toBe("crayon");
   expect(top("arrow", { kinds: ["drawing"] })[0].material.id).toBe("arrow");
+  expect(top("apple", { types: ["icon"] }).every((h) => h.material.type === "icon")).toBe(true);
+  // Types are flat: a drawing is found by its type as a picture is by its own.
+  expect(top("柱状图", { types: ["drawing"] })[0].material.id).toBe("bars");
+});
+it("weighs what a request states about the picture, and what the thesaurus gives as the same thing", () => {
+  // A cut-out doctor is asked for, so the cut-out ranks as the thing; the condition is
+  // not searched for as words.
+  expect(top("透明背景的医生")[0].material.id).toBe("doctor");
+  // A word the library has never seen still says what a hit is not.
+  const [green] = library.search({ subjects: ["青苹果"] });
+  expect(green.unknown).toContain("青苹");
+  expect(green.hits.every((h) => h.match === "related")).toBe(true);
+  // Inventory is a warehouse, though no material says inventory.
+  expect(top("库存").map((h) => h.material.id)).toContain("line-warehouse");
+  // A request's own name ranks above an alias of something else.
+  expect(top("帆船")[0].match).toBe("exact");
+  expect(top("帆船").find((h) => h.material.id === "lighthouse-crayon")?.match).not.toBe("exact");
 });
 it("develops reserved pictures in the background, private to their maker until published", async () => {
   const reserved = library.reserve(
     {
       id: "g-test-cherry",
-      role: "object",
+      type: "object",
       name: { zh: "咖啡樱桃", en: "coffee cherry" },
       aliases: ["coffee fruit"],
       about: "a branch of ripe coffee cherries",
@@ -155,7 +175,7 @@ it("develops reserved pictures in the background, private to their maker until p
     png,
     "image/png",
     {
-      role: "object",
+      type: "object",
       name: { zh: "我的图", en: "my sketch" },
       style: "colored-pencil",
       origin: { kind: "upload" },
@@ -167,7 +187,7 @@ it("develops reserved pictures in the background, private to their maker until p
   library.reserve(
     {
       id: "g-test-fail",
-      role: "object",
+      type: "object",
       name: { zh: "失败", en: "fail" },
       style: "colored-pencil",
       width: 8,
@@ -187,17 +207,14 @@ it("serves recoloured icons and counts uses per work", async () => {
   library.use(["apple"], "w2", "alice");
   library.use(["apple"], "w2", "alice");
   expect(library.get("apple").uses).toBe(2);
-  const styles = (await (await app.request("/styles")).json()) as {
-    id: string;
-    samples: string[];
-    count: number;
-  }[];
-  expect(styles.find((s) => s.id === "colored-pencil")).toMatchObject({
-    count: expect.any(Number),
-  });
-  expect(styles.find((s) => s.id === "colored-pencil")!.samples[0]).toBe(
-    "lighthouse-colored-pencil",
-  );
+  const style = (await (await app.request("/materials/colored-pencil")).json()) as StyleMaterial;
+  expect(style.count).toBeGreaterThan(10);
+  // A few samples, its own showcase first, however many pictures it has.
+  expect(style.samples[0]).toBe("lighthouse-colored-pencil");
+  expect(style.samples.length).toBeLessThanOrEqual(4);
+  // An unknown style is reported without listing the others.
+  const unknown = await (await app.request("/materials/nope")).json();
+  expect(JSON.stringify(unknown)).not.toContain("colored-pencil");
 });
 
 it("serves the geographic layers the map drawing projects, and nothing else from disk", async () => {
@@ -296,7 +313,7 @@ it("boils a city's OpenStreetMap tile down to its water, ways and names, fetched
 });
 
 it("declares every value a library drawing reads, so its card and the hand controls can offer it", () => {
-  const seed = new URL("./seed/", import.meta.url);
+  const seed = new URL("../content/seed/", import.meta.url);
   const drawings = JSON.parse(readFileSync(new URL("drawings.json", seed), "utf8")) as {
     id: string;
     params: Record<string, { type: string }>;
@@ -317,4 +334,114 @@ it("declares every value a library drawing reads, so its card and the hand contr
         for (const named of dictionaries)
           expect(named.has(key), `${id}.${key}`).toBe(true);
   }
+});
+
+/** A copy of the curated pack to change, with its manifest's digests kept true. */
+function packCopy(change: (dir: string, manifest: Record<string, any>, lines: Record<string, any>[]) => void) {
+  const out = join(mkdtempSync(join(tmpdir(), "drawy-pack-copy-")), "pack");
+  cpSync(curatedPack(), out, { recursive: true });
+  const manifest = JSON.parse(readFileSync(join(out, "manifest.json"), "utf8"));
+  const lines = readFileSync(join(out, "materials.ndjson"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  change(out, manifest, lines);
+  writeFileSync(join(out, "materials.ndjson"), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  manifest.files["materials.ndjson"] = createHash("sha256").update(readFileSync(join(out, "materials.ndjson"))).digest("hex");
+  writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest));
+  return out;
+}
+
+it("imports a pack once, versions what changed, and goes back to an earlier release", () => {
+  const { dir, library } = testLibrary();
+  try {
+    expect(library.size).toBeGreaterThan(700);
+    // The same release again changes nothing; the same release with other content is refused.
+    expect(importPack(library, curatedPack())).toMatchObject({ status: "unchanged", added: 0, updated: 0 });
+    const label = library.get("label") as DrawingMaterial;
+    const changed = packCopy((_, manifest, lines) => {
+      lines.find((l) => l.id === "label").about += " Now with a halo.";
+      lines.push({ ...lines.find((l) => l.id === "label"), id: "label-two", name: { zh: "第二标签", en: "Second label" } });
+    });
+    expect(() => importPack(library, changed)).toThrow(/已导入过不同内容/);
+    const next = packCopy((_, manifest, lines) => {
+      manifest.release = "test-2";
+      lines.find((l) => l.id === "label").about += " Now with a halo.";
+      lines.push({ ...lines.find((l) => l.id === "label"), id: "label-two", name: { zh: "第二标签", en: "Second label" } });
+      manifest.withdraw = ["apple"];
+    });
+    expect(importPack(library, next)).toMatchObject({ status: "imported", added: 1, updated: 1, withdrawn: 1 });
+    // A changed material is a new version; the one a work took stays readable as it was.
+    expect(library.get("label").version).toBe(label.version + 1);
+    expect(library.get("label", undefined, label.version).about).toBe(label.about);
+    // A withdrawn one is not offered, but a work that holds it can still read it.
+    expect(library.search({ subjects: ["apple"] })[0].hits.map((h) => h.material.id)).not.toContain("apple");
+    expect(library.get("apple").status).toBe("withdrawn");
+    expect(releases(library).filter((r) => r.active).map((r) => r.release)).toEqual(["test-2"]);
+    // Back to the first release: its versions, without what came later.
+    rollback(library, "drawy-curated", "test");
+    expect(library.get("label").about).toBe(label.about);
+    expect(library.get("label-two").status).toBe("withdrawn");
+    expect(library.get("apple").status).toBe("ready");
+    expect(library.search({ subjects: ["apple"], limit: 12 })[0].hits.map((h) => h.material.id)).toContain("apple");
+  } finally {
+    library.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("refuses a pack that is not whole, or that would take what is not its own", () => {
+  const { dir, library } = testLibrary();
+  try {
+    const broken = packCopy((out) => writeFileSync(join(out, "files", "apple.webp"), "not the picture"));
+    expect(() => importPack(library, broken)).toThrow(/文件校验不符: files\/apple.webp/);
+    const other = packCopy((_, manifest) => (manifest.source = "someone-else"));
+    expect(() => importPack(library, other)).toThrow(/已属于素材源 drawy-curated/);
+    const bound = packCopy((_, manifest) => {
+      manifest.release = "bad-binding";
+      manifest.bindings.text = "bars";
+    });
+    expect(() => importPack(library, bound)).toThrow(/绑定 text: bars 缺少 text 参数 text/);
+    const typed = packCopy((_, manifest, lines) => {
+      manifest.release = "bad-type";
+      lines.find((l) => l.id === "label").type = "object";
+    });
+    expect(() => importPack(library, typed)).toThrow(/类型 object 不是 drawing 载荷/);
+    expect(() =>
+      importPack(library, packCopy((_, manifest) => (manifest.format = "other"))),
+    ).toThrow();
+    expect(PACK_FORMAT).toMatch(/^drawy-material-pack\//);
+  } finally {
+    library.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("starts from what is on disk, without reading a pack", () => {
+  const again = new Library(dir);
+  try {
+    expect(again.size).toBe(library.size);
+    expect(again.search({ subjects: ["木星"] })[0].hits[0].material.id).toBe("jupiter");
+    expect(again.bindings()).toEqual({ text: "label", picture: "picture", link: "arrow" });
+  } finally {
+    again.close();
+  }
+});
+
+it("pages through everything a viewer may see, and filters before it cuts", async () => {
+  // Many private pictures of one user do not crowd another's search or pages.
+  for (let i = 0; i < 300; i++)
+    library.reserve(
+      { id: `g-noise-apple-${i}`, type: "object", name: { zh: "苹果", en: "apple" }, style: null, width: 8, height: 8, origin: { kind: "generated" } },
+      "mallory",
+    );
+  expect(top("apple", { limit: 24 }).some((h) => h.material.owner === "mallory")).toBe(false);
+  expect(library.search({ subjects: ["apple"], limit: 24 }, "mallory")[0].hits.length).toBe(24);
+  const all = library.browse("", 1, undefined, ["picture"], 50);
+  const seen = new Set<string>();
+  for (let page = 1; page <= all.pages; page++)
+    for (const m of library.browse("", page, undefined, ["picture"], 50).items) seen.add(m.id);
+  expect(seen.size).toBe(all.total);
+  // A query's last page is reachable too.
+  const food = library.browse("food", 1, undefined, [], 5);
+  expect(food.pages).toBeGreaterThan(2);
+  expect(library.browse("food", food.pages, undefined, [], 5).items.length).toBeGreaterThan(0);
+  expect(library.browse("", 1, undefined, [], 10, undefined, ["figure"]).items.every((m) => m.type === "figure")).toBe(true);
 });

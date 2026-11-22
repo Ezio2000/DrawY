@@ -17,7 +17,7 @@ const seed = (name: string) =>
   (
     JSON.parse(
       readFileSync(
-        new URL(`../../materials/seed/${name}.json`, import.meta.url),
+        new URL(`../../content/seed/${name}.json`, import.meta.url),
         "utf8",
       ),
     ) as Material[]
@@ -26,6 +26,9 @@ const seed = (name: string) =>
       ({
         ...m,
         status: "ready",
+        version: 1,
+        // The seed names a picture's type as its role.
+        ...("role" in m ? { type: (m as { role: string }).role } : {}),
         ...(m.kind === "picture"
           ? { file: { ...m.file, url: `/materials/files/${m.id}` } }
           : {}),
@@ -51,7 +54,7 @@ beforeAll(async () => {
       const send = () => {
         // Curated icons are SVG; the rest are WebP.
         const svg = new URL(
-          `../../materials/seed/files/${id}.svg`,
+          `../../content/seed/files/${id}.svg`,
           import.meta.url,
         );
         if (existsSync(svg)) {
@@ -62,7 +65,7 @@ beforeAll(async () => {
         res.end(
           readFileSync(
             new URL(
-              `../../materials/seed/files/${id === "g-late" ? "apple" : id}.webp`,
+              `../../content/seed/files/${id === "g-late" ? "apple" : id}.webp`,
               import.meta.url,
             ),
           ),
@@ -101,7 +104,7 @@ beforeAll(async () => {
       res.end(
         readFileSync(
           new URL(
-            `../../materials/seed/geo/${url.pathname.split("/").at(-1)}.json`,
+            `../../content/seed/geo/${url.pathname.split("/").at(-1)}.json`,
             import.meta.url,
           ),
         ),
@@ -134,7 +137,7 @@ async function open() {
 const libraryDrawing = (id: string) =>
   useOf({
     ...seed("drawings").find((m) => m.id === id)!,
-    source: readFileSync(new URL(`../../materials/seed/drawings/${id}.js`, import.meta.url), "utf8"),
+    source: readFileSync(new URL(`../../content/seed/drawings/${id}.js`, import.meta.url), "utf8"),
   } as Material)!;
 /** What the page kept of a canvas callback in `document.body.dataset`. */
 const data = (key: string) => page.evaluate((k) => document.body.dataset[k], key);
@@ -725,7 +728,7 @@ it("draws every library drawing from its example with words uncut at large sizes
           ({
             ...m,
             source: readFileSync(
-              new URL(`../../materials/seed/drawings/${m.id}.js`, import.meta.url),
+              new URL(`../../content/seed/drawings/${m.id}.js`, import.meta.url),
               "utf8",
             ),
           }) as Material,
@@ -1110,7 +1113,7 @@ it("routes elbow arrows out of their modules before turning, going round when th
         useOf({
           ...m,
           source: readFileSync(
-            new URL(`../../materials/seed/drawings/${m.id}.js`, import.meta.url),
+            new URL(`../../content/seed/drawings/${m.id}.js`, import.meta.url),
             "utf8",
           ),
         } as Material)!,
@@ -1388,13 +1391,13 @@ it("draws links from ends they hold, following their modules, and every drawing 
 });
 
 it("tints recolourable picture icons with the picture drawing's color parameter", async () => {
-  const pictureSource = readFileSync(new URL("../../materials/seed/drawings/picture.js", import.meta.url), "utf8");
+  const pictureSource = readFileSync(new URL("../../content/seed/drawings/picture.js", import.meta.url), "utf8");
   work.drawings.picture = { id: "picture", name: "图片", defaults: {}, source: pictureSource };
   work.materials["line-apple"] = {
     id: "line-apple",
     kind: "picture",
     name: "苹果图标",
-    role: "icon",
+    type: "icon",
     style: "line-icon",
     url: "/materials/files/line-apple",
     width: 24,

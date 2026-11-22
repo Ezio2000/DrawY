@@ -1,13 +1,15 @@
 import type {
+  Bindings,
   Describe,
   Material,
   MaterialKind,
   MaterialPage,
+  MaterialRef,
+  MaterialType,
   Reserve,
   SearchRequest,
   SearchResult,
   Shelf,
-  StyleMaterial,
   Viewer,
 } from "./schema.ts";
 import { viewerOf } from "./schema.ts";
@@ -53,9 +55,10 @@ export class MaterialsClient {
     kinds: MaterialKind[] = [],
     size?: number,
     shelf?: Shelf,
+    types: string[] = [],
   ) {
     return this.call<MaterialPage>(
-      `/browse?q=${encodeURIComponent(query)}&page=${page}&kind=${kinds.join(",")}${size ? "&size=" + size : ""}${shelf ? "&shelf=" + shelf : ""}`,
+      `/browse?q=${encodeURIComponent(query)}&page=${page}&kind=${kinds.join(",")}${types.length ? "&type=" + types.join(",") : ""}${size ? "&size=" + size : ""}${shelf ? "&shelf=" + shelf : ""}`,
       user,
     );
   }
@@ -67,15 +70,21 @@ export class MaterialsClient {
       { method: "POST", body: JSON.stringify({ published }) },
     );
   }
-  /** The named materials; leniently, only those that exist. */
-  get(ids: string[], user?: Viewer, lenient = false) {
+  /** The named materials, each at the version asked for or the current one; leniently,
+   * only those that exist. */
+  get(ids: (string | MaterialRef)[], user?: Viewer, lenient = false) {
     return this.call<Material[]>("/materials/batch", user, {
       method: "POST",
       body: JSON.stringify({ ids, lenient }),
     });
   }
-  styles() {
-    return this.call<StyleMaterial[]>("/styles", undefined);
+  /** The material types the library holds. */
+  types() {
+    return this.call<MaterialType[]>("/types", undefined);
+  }
+  /** Which drawing the app's own editing uses for text, pictures and links. */
+  bindings() {
+    return this.call<Bindings>("/bindings", undefined);
   }
   reserve(input: Reserve, user: string) {
     return this.call<Material>("/materials/reserve", user, {

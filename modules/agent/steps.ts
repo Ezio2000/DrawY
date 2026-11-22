@@ -77,7 +77,11 @@ export function activity(name: string, args: any, sceneId: string): ToolActivity
         topics: (Array.isArray(args.topics) ? args.topics : []).filter((t: unknown) =>
           guideTopics.includes(t as GuideTopic),
         ),
-        drawings: (Array.isArray(args.drawings) ? args.drawings : []).filter(
+      };
+    case "read_materials":
+      return {
+        name,
+        ids: (Array.isArray(args.ids) ? args.ids : []).filter(
           (d: unknown): d is string => typeof d === "string" && !!d,
         ),
       };

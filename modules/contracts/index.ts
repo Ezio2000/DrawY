@@ -104,7 +104,9 @@ export const briefSchema = z.object({
       "The visual idea the picture is built on, chosen by the author: what the eye meets first, how the parts are arranged and what that arrangement says; not a list of parts and not the look",
     ),
   register: z.enum(["formal", "expressive"]),
-  style: key.describe("A style id from the library"),
+  style: z.string().min(1).max(80).describe(
+    "A style id from the library, or a few words describing the look wanted (水彩绘本, flat infographic): the closest library style is chosen and named in the result",
+  ),
   direction: z
     .string()
     .min(1)
@@ -134,13 +136,17 @@ export const briefSchema = z.object({
   }),
 });
 /** A material as a work uses it: what the runtime needs, copied when the work took it, so
- * the work keeps drawing the same way whatever happens to the library. */
+ * the work keeps drawing the same way whatever happens to the library. `version` is the
+ * library version it was taken at: a later version of the library's reaches the work only
+ * when it is taken again on purpose. */
 export type MaterialUse =
   | {
       id: string;
       kind: "picture";
+      version?: number;
       name: string;
-      role: string;
+      /** Its material type, such as object, figure, scene, icon or texture. */
+      type: string;
       style: string | null;
       url: string;
       /** The visible content's size in pixels; anchors are relative to it. */
@@ -157,13 +163,14 @@ export type MaterialUse =
   | {
       id: string;
       kind: "drawing";
+      version?: number;
       name: string;
       source: string;
       defaults: Record<string, unknown>;
       /** The parameters a person can change by hand; the app names them itself. */
       params: Record<string, Omit<Param, "label">>;
     }
-  | { id: string; kind: "effect"; name: string; defs: string };
+  | { id: string; kind: "effect"; version?: number; name: string; defs: string };
 export type Point = z.infer<typeof pointSchema>;
 export type Bounds = z.infer<typeof boundsSchema>;
 export type Target = z.infer<typeof targetSchema>;
@@ -645,8 +652,10 @@ export type ToolActivity =
    * by its output item's type without `_call` (e.g. `code_interpreter`). */
   | { name: "hosted"; tool: string; detail?: string }
   | { name: "read_work"; revision?: number }
-  /** What the author read on demand: guides by topic, library drawings by id. */
-  | { name: "draw_guide"; topics: GuideTopic[]; drawings: string[] }
+  /** What the author read on demand: guides by topic. */
+  | { name: "draw_guide"; topics: GuideTopic[] }
+  /** Material cards the author read on demand, by id. */
+  | { name: "read_materials"; ids: string[] }
   | {
       name: "set_brief";
       subject: string;

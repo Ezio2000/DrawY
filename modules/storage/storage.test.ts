@@ -116,7 +116,7 @@ describe("user owned works", () => {
     expect(store.work(work.id).drawings.tier).toEqual(content.drawings.tier);
     expect(store.revision(work.id, 4).drawings.tier).toEqual(changed);
   });
-  it("takes library code again on each write, so a work runs what the author's catalog describes", async () => {
+  it("keeps the version of library code a work took, through every later write", async () => {
     const store = db.scoped(register(db, "a", "abcdef").id);
     const work = createWork(store, "test");
     store.commit({ ...store.work(work.id), brief: fixture().brief }, 1, {
@@ -133,8 +133,8 @@ describe("user owned works", () => {
       if (m.kind !== "drawing") throw Error("steps is a library drawing");
       return m;
     };
-    const current = sourceOf(first).source;
-    // As if saved by an earlier version of the library.
+    expect(sourceOf(first).version).toBe(1);
+    // As if taken from an earlier version of the library.
     store.commit(
       {
         ...first,
@@ -150,8 +150,9 @@ describe("user owned works", () => {
       store,
       work.id,
       { title: "renamed" }, { cause: { kind: "edit" } });
-    expect(sourceOf(next).source).toBe(current);
-    // Until it is written, a work keeps the version it was saved with.
+    // A library update reaches a work only when it takes the material again on purpose:
+    // writing something else leaves the code it holds as it is.
+    expect(sourceOf(next).source).toBe("return api.svg('<svg/>')");
     expect(sourceOf(store.revision(work.id, 4)).source).toBe(
       "return api.svg('<svg/>')",
     );
@@ -411,7 +412,7 @@ describe("user owned works", () => {
       await picture(),
       "image/png",
       {
-        role: "object",
+        type: "object",
         name: { zh: "私图", en: "private" },
         style: null,
         origin: { kind: "upload" },
@@ -474,7 +475,7 @@ describe("user owned works", () => {
     await client.reserve(
       {
         id: "g-old-name--ab12",
-        role: "object",
+        type: "object",
         name: { zh: "旧图", en: "old" },
         about: "",
         tags: [],
@@ -659,7 +660,7 @@ describe("over HTTP, by role", () => {
       await picture(),
       "image/png",
       {
-        role: "object",
+        type: "object",
         name: { zh: "生成图", en: "Generated picture" },
         style: null,
         origin: { kind: "generated", model: "image-model", prompt: "A red square" },

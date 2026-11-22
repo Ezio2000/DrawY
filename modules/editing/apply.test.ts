@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fixture } from "../runtime/fixture.ts";
 import { EditRejected, labelOf, shownName, type Problem, type Work, type WorkEdit } from "../contracts/index.ts";
 import { linkEnds } from "../contracts/geometry.ts";
-import { WRITE_EXAMPLE, EDIT_EXAMPLE } from "../agent/prompts.ts";
+import { writeExample, EDIT_EXAMPLE } from "../agent/prompts.ts";
 import { writeSchema } from "../agent/tools.ts";
 import { validateWork } from "../workspace/index.ts";
 import { applied, composed, layOn, readEdit } from "./apply.ts";
@@ -85,7 +85,7 @@ describe("what a write says", () => {
     expect(problems(() => readEdit({ sceneEdits: [] }))[0].problem).toMatch(/sceneEdits/);
   });
   it("holds the examples the author is shown", () => {
-    expect(writeSchema.safeParse(WRITE_EXAMPLE).success).toBe(true);
+    expect(writeSchema.safeParse(writeExample({ text: "label", picture: "picture", link: "arrow" })).success).toBe(true);
     expect(writeSchema.safeParse(EDIT_EXAMPLE).success).toBe(true);
   });
 });

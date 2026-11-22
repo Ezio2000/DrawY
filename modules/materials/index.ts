@@ -1,7 +1,8 @@
-import { MaterialsClient } from "@drawy/materials/client";
+import { MaterialsClient, MaterialsError } from "@drawy/materials/client";
 import type {
-  DrawingMaterial,
+  Bindings,
   Material,
+  MaterialHead,
   Param,
   SearchRequest,
   SearchResult,
@@ -20,6 +21,7 @@ import {
   type Work,
 } from "../contracts/index.ts";
 import type { Item } from "../models/index.ts";
+import { setBindings } from "../editing/bindings.ts";
 import { tracer } from "../trace/index.ts";
 
 export const library = new MaterialsClient(
@@ -41,8 +43,9 @@ export function useOf(m: Material): MaterialUse | null {
       return {
         id: m.id,
         kind: "picture",
+        version: m.version,
         name: m.name.zh,
-        role: m.role,
+        type: m.type,
         style: m.style,
         url: m.file.url,
         width: Math.round(m.form.width * c.width),
@@ -59,13 +62,15 @@ export function useOf(m: Material): MaterialUse | null {
         ),
         recolor: m.form.recolor,
         opaque: m.form.background === "opaque",
-        status: m.status,
+        // A withdrawn picture is no longer offered, but draws as it did.
+        status: m.status === "withdrawn" ? "ready" : m.status,
       };
     }
     case "drawing":
       return {
         id: m.id,
         kind: "drawing",
+        version: m.version,
         name: m.name.zh,
         source: m.source,
         defaults: Object.fromEntries(
@@ -93,7 +98,7 @@ export function useOf(m: Material): MaterialUse | null {
         ),
       };
     case "effect":
-      return { id: m.id, kind: "effect", name: m.name.zh, defs: m.defs };
+      return { id: m.id, kind: "effect", version: m.version, name: m.name.zh, defs: m.defs };
     case "style":
       return null;
   }
@@ -157,16 +162,11 @@ export async function take(work: Work, explicit: string[], user: Viewer, keep = 
       if (!kept) delete work.materials[id];
     }
   const strict = [...new Set([...explicit, ...called])];
-  // Library code (drawings and effects) is taken again each time the work is written, so
-  // it is the version the author's catalog describes; a work left alone keeps rendering
-  // with the version it was saved with.
+  // A work keeps the version of each material it took: an update to the library reaches it
+  // only when it is taken again on purpose. Only pictures still developing are fetched
+  // again, for their finished form.
   const refresh = Object.values(work.materials)
-    .filter(
-      (m) =>
-        (m.kind === "picture" && m.status === "developing") ||
-        m.kind === "drawing" ||
-        m.kind === "effect",
-    )
+    .filter((m) => m.kind === "picture" && m.status === "developing")
     .map((m) => m.id);
   const wanted = [...new Set([...strict, ...drawings, ...mentioned, ...refresh])].filter(
     (id) => !work.materials[id] || refresh.includes(id),
@@ -191,73 +191,151 @@ export function used(ids: string[], workId: string, user: string) {
   if (ids.length) void library.use(ids, workId, user).catch(() => {});
 }
 
-let styles: { at: number; list: Promise<StyleMaterial[]> } | undefined;
-/** The library's styles, refreshed every minute. */
-export function styleList() {
-  if (!styles || Date.now() - styles.at > 60_000)
-    styles = { at: Date.now(), list: library.styles() };
-  styles.list.catch(() => (styles = undefined));
-  return styles.list;
-}
-export async function styleOf(id: string) {
-  const style = (await styleList()).find((s) => s.id === id);
-  if (!style)
-    throw new DomainError(
-      `未知风格 ${id}，可用：${(await styleList()).map((s) => s.id).join(", ")}`,
-    );
+/** Styles read recently, by id: a few at a time, however many the library has. */
+const styles = new Map<string, { at: number; style: Promise<StyleMaterial> }>();
+/** A style by id, fresh within a minute. An unknown id is reported as such; the library's
+ * styles are never listed in its place. */
+export function styleOf(id: string): Promise<StyleMaterial> {
+  const known = styles.get(id);
+  if (known && Date.now() - known.at < 60_000) return known.style;
+  const style = library.get([id]).then(([m]) => {
+    if (m?.kind !== "style") throw new DomainError(`未知风格 ${id}：用 find_materials 搜索 types ["style"]`);
+    return m;
+  }, (e) => {
+    throw e instanceof MaterialsError && e.status === 404
+      ? new DomainError(`未知风格 ${id}：用 find_materials 搜索 types ["style"]`)
+      : e;
+  });
+  styles.set(id, { at: Date.now(), style });
+  style.catch(() => styles.delete(id));
+  // Kept bounded: the oldest goes first.
+  if (styles.size > 64) styles.delete(styles.keys().next().value!);
   return style;
 }
+/** The style a brief names: its id, or the library style closest to a few words describing
+ * the look, with the next closest named so the author can choose another. Words that match
+ * no style as a whole are weighed one by one, and failing that the first style of the
+ * register on the library's first page is taken: a brief is never refused for how it
+ * describes a look. */
+export async function resolveStyle(wanted: string, user: Viewer, register?: "formal" | "expressive") {
+  if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(wanted)) {
+    const style = await styleOf(wanted).catch(() => undefined);
+    if (style) return { style, chosen: false, others: [] as string[] };
+  }
+  const words = wanted.split(/[\s,，、/;；]+/).filter(Boolean).slice(0, 11);
+  const results = await library.search(
+    { subjects: [wanted, ...(words.length > 1 ? words : [])], types: ["style"], limit: 3 },
+    user,
+  );
+  const score = new Map<string, number>();
+  results.forEach((r, i) =>
+    r.hits.forEach((h) => score.set(h.material.id, (score.get(h.material.id) ?? 0) + h.score * (i === 0 ? 3 : 1))),
+  );
+  let ranked = [...score].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  if (!ranked.length) {
+    const page = await library.browse("", 1, user, ["style"], 24);
+    const fits = page.items.filter(
+      (m) => m.kind === "style" && (!register || m.register === register || m.register === "any"),
+    );
+    ranked = (fits.length ? fits : page.items).map((m) => m.id);
+  }
+  if (!ranked.length) throw new DomainError("素材库里还没有风格");
+  return { style: await styleOf(ranked[0]), chosen: true, others: ranked.slice(1, 3) };
+}
+let bound: { at: number; bindings: Promise<Bindings> } | undefined;
+/** Which library drawing the app's own editing uses for text, pictures and links, as the
+ * library's material packs name them. */
+export function bindings() {
+  if (!bound || Date.now() - bound.at > 60_000)
+    bound = { at: Date.now(), bindings: library.bindings().then((b) => (setBindings(b), b)) };
+  bound.bindings.catch(() => (bound = undefined));
+  return bound.bindings;
+}
 
-/** A library drawing as the author reads it on demand: all it needs to use the drawing. */
-export const drawingCard = (m: DrawingMaterial) => ({
-  ...brief(m),
-  size: `${m.size.width}×${m.size.height}`,
-  example: m.example,
-});
-/** A material as the author reads it in a search result. */
-function brief(m: Material, match?: string) {
-  const name = `${m.name.zh} / ${m.name.en}`;
+/** How much of one description a search result carries: enough to judge a hit by. The
+ * rest is on the material's card. */
+const ABOUT = 180;
+const clip = (text: string, n: number) => (text.length > n ? text.slice(0, n - 1).trimEnd() + "…" : text);
+/** A material as the author reads it in a search result: what it is and whether it fits,
+ * never its code or long instructions, so a result costs the same whatever it found. */
+function brief(m: MaterialHead, match?: string) {
+  const base = {
+    id: m.id,
+    type: m.type,
+    name: `${m.name.zh} / ${m.name.en}`,
+    ...(match ? { match } : {}),
+  };
   switch (m.kind) {
     case "picture":
       return {
-        id: m.id,
-        kind: `picture/${m.role}`,
-        name,
+        ...base,
         style: m.style,
-        ...(match ? { match } : {}),
         size: `${Math.round(m.form.width * m.form.content.width)}×${Math.round(m.form.height * m.form.content.height)}`,
-        ...(Object.keys(m.form.anchors).length
-          ? { anchors: Object.keys(m.form.anchors) }
-          : {}),
+        ...(Object.keys(m.form.anchors).length ? { anchors: Object.keys(m.form.anchors).slice(0, 8) } : {}),
         ...(m.form.recolor ? { recolor: true } : {}),
         ...(m.status !== "ready" ? { status: m.status } : {}),
-        about: m.about,
+        about: clip(m.about, ABOUT),
       };
     case "drawing":
-      return {
-        id: m.id,
-        kind: "drawing",
-        name,
-        ...(match ? { match } : {}),
-        use: m.use,
-        about: m.about,
-        params: Object.fromEntries(
-          Object.entries(m.params).map(([k, p]) => [k, paramLine(p)]),
-        ),
-      };
+      return { ...base, use: m.use, about: clip(m.about, ABOUT) };
     case "effect":
-      return { id: m.id, kind: "effect", name, apply: m.apply, about: m.about };
+      return { ...base, apply: m.apply, about: clip(m.about, ABOUT) };
+    case "style":
+      return { ...base, register: m.register, about: clip(m.about, ABOUT) };
+  }
+}
+/** The most one read_materials answer carries, in characters; what does not fit is named
+ * to be read in another call. */
+export const CARD_BUDGET = 14_000;
+/** A material's card: all the author needs to use it, read on demand. */
+export function card(m: Material): Record<string, unknown> {
+  const base = { id: m.id, version: m.version, type: m.type, name: `${m.name.zh} / ${m.name.en}`, about: m.about };
+  switch (m.kind) {
+    case "drawing":
+      return {
+        ...base,
+        use: m.use,
+        params: Object.fromEntries(Object.entries(m.params).map(([k, p]) => [k, paramLine(p)])),
+        size: `${m.size.width}×${m.size.height}`,
+        example: m.example,
+      };
+    case "picture": {
+      const c = m.form.content;
+      return {
+        ...base,
+        style: m.style,
+        size: `${Math.round(m.form.width * c.width)}×${Math.round(m.form.height * c.height)}`,
+        ...(m.form.view ? { view: m.form.view } : {}),
+        ...(m.form.facing ? { facing: m.form.facing } : {}),
+        ...(Object.keys(m.form.anchors).length
+          ? {
+              anchors: Object.fromEntries(
+                Object.entries(m.form.anchors).map(([k, a]) => [
+                  k,
+                  [round(Math.min(1, Math.max(0, (a.x - c.x) / c.width))), round(Math.min(1, Math.max(0, (a.y - c.y) / c.height)))],
+                ]),
+              ),
+            }
+          : {}),
+        ...(m.form.recolor ? { recolor: true } : {}),
+        background: m.form.background,
+        ...(m.status !== "ready" ? { status: m.status } : {}),
+      };
+    }
+    case "effect":
+      return { ...base, apply: m.apply, use: `api.effect("${m.id}")` };
     case "style":
       return {
-        id: m.id,
-        kind: "style",
-        name,
+        ...base,
         register: m.register,
-        about: m.about,
+        tokens: m.tokens,
+        guide: m.guide,
+        effects: m.effects,
+        samples: m.samples,
       };
   }
 }
-export const candidate = (m: Material): Candidate => ({
+export const candidate = (m: MaterialHead): Candidate => ({
   id: m.id,
   kind: m.kind,
   name: m.name.zh,
@@ -289,8 +367,11 @@ export async function look(ids: string[], user: Viewer, size = 256) {
   );
   return images.flat() as Item[];
 }
-/** Searches the library and shows the author what it found: descriptions, and the best
- * pictures for each subject as thumbnails. */
+/** The most a search shows the author, whatever the library holds: hits in all, and
+ * pictures looked at. */
+export const FIND_LIMITS = { hits: 24, images: 6 } as const;
+/** Searches the library and shows the author what it found: short descriptions, and the
+ * best pictures as thumbnails. */
 export async function find(request: SearchRequest, user: string) {
   return tracer.span("search", "materials", { ...request }, async (span) => {
     const results: SearchResult[] = await library.search(request, user);
@@ -301,6 +382,7 @@ export async function find(request: SearchRequest, user: string) {
           id: h.material.id,
           name: h.material.name.zh,
           kind: h.material.kind,
+          type: h.material.type,
           style: h.material.style,
           match: h.match,
           score: h.score,
@@ -308,30 +390,42 @@ export async function find(request: SearchRequest, user: string) {
             ? { url: `/materials/thumbs/${h.material.id}?size=128` }
             : {}),
         })),
+        ...(r.unknown.length ? { unknown: r.unknown } : {}),
       })),
     });
-    const shown = results
+    // However many subjects were asked, a bounded number of hits is returned: each subject
+    // keeps its best, the rest share what is left.
+    let left = FIND_LIMITS.hits;
+    const per = Math.max(1, Math.floor(FIND_LIMITS.hits / Math.max(1, results.length)));
+    const kept = results.map((r) => {
+      const hits = r.hits.slice(0, Math.min(per, left));
+      left -= hits.length;
+      return { ...r, hits };
+    });
+    const shown = kept
       .flatMap((r) =>
         r.hits
           .filter((h) => h.material.kind === "picture" && h.match !== "related")
-          .slice(0, 3)
+          .slice(0, 2)
           .map((h) => h.material.id),
       )
       .filter((id, i, all) => all.indexOf(id) === i)
-      .slice(0, 12);
+      .slice(0, FIND_LIMITS.images);
     return {
-      output: results.map((r) => ({
+      output: kept.map((r) => ({
         subject: r.subject,
         hits: r.hits.map((h) => brief(h.material, h.match)),
         ...(r.hits.some((h) => h.match !== "related")
           ? {}
           : {
-              note: "No direct match: generate this picture, or search a synonym.",
+              note: r.unknown.length
+                ? `Nothing here is ${r.unknown.join(" ")}: generate this picture, or search other words.`
+                : "No direct match: generate this picture, or search a synonym.",
             }),
       })),
       images: await look(shown, user),
       // A partial match is not a picture of the thing; only direct ones are shown.
-      found: results.map((r) => ({
+      found: kept.map((r) => ({
         subject: r.subject,
         candidates: r.hits
           .filter((h) => h.match !== "related")
@@ -423,7 +517,7 @@ export function upload(
     bytes,
     mediaType,
     {
-      role: "object",
+      type: "object",
       name: { zh: name, en: name },
       style: null,
       origin: { kind: "upload" },
@@ -431,20 +525,6 @@ export function upload(
     user,
   );
 }
-/** The catalogue of drawing code and effects, for the author's instructions. */
-/** Every library drawing and effect. All of them, not a page: which would make a page
- * changes as they are used, and the author's index, cached as the start of every
- * request, would change with it. */
-export async function kit() {
-  const first = await library.browse("", 1, undefined, ["drawing", "effect"], 200);
-  const rest = await Promise.all(
-    Array.from({ length: first.pages - 1 }, (_, i) =>
-      library.browse("", i + 2, undefined, ["drawing", "effect"], 200),
-    ),
-  );
-  return [first, ...rest].flatMap((page) => page.items);
-}
-
 /** The work with pictures that were developing when it was saved brought up to date, so it
  * draws them with their measured content. */
 export async function freshen(work: Work, user: Viewer): Promise<Work> {

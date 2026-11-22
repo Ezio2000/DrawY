@@ -12,14 +12,14 @@ import {
 import { composed } from "../editing/index.ts";
 import type { Development } from "../images/index.ts";
 import { develop } from "../images/index.ts";
-import { find, freshen, kit, library } from "../materials/index.ts";
+import { bindings, find, freshen, library } from "../materials/index.ts";
 import type { Item } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
 import { readPage, searchWeb } from "../search/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { forAuthor, setBrief, writeWork } from "../workspace/index.ts";
 import { said, type Context } from "./conversation.ts";
-import { guidesRead, readGuides } from "./guides.ts";
+import { guidesRead, readCards, readGuides } from "./guides.ts";
 import { completedRecords } from "./partial.ts";
 import { counted, failedOf, research, searchesLeft, spendImages } from "./spending.ts";
 import { activity, type ToolStep } from "./steps.ts";
@@ -29,6 +29,7 @@ import {
   generateSchema,
   guideSchema,
   openSchema,
+  readSchema,
   searchSchema,
   settleSchema,
 } from "./tools.ts";
@@ -112,11 +113,11 @@ export function parsedArguments(x: Execution, call: Item) {
     throw Error(`工具参数不是有效的 JSON（${why}），没有保存。请改正后把完整参数重发`);
   }
 }
-/** Basic primitives whose parameters are already self-explanatory in # Library. */
-const BASIC_DRAWINGS = new Set(["picture", "label", "arrow"]);
+/** The app's own text, picture and link drawings, whose use the instructions show. */
+const basic = async () => new Set(Object.values(await bindings().catch(() => ({}))));
 /** Library drawings the work uses whose cards the author has not read: parameters it
  * guessed draw something other than it meant, or nothing. */
-function cardsUnread(work: Work, input: Item[], batch: Item[] = []) {
+function cardsUnread(work: Work, input: Item[], batch: Item[] = [], primitives = new Set<string>()) {
   const { drawings } = guidesRead(input, batch);
   // Each drawing is pointed out once: an author that went on without its card had a reason.
   const told = new Set(
@@ -131,12 +132,12 @@ function cardsUnread(work: Work, input: Item[], batch: Item[] = []) {
     }),
   );
   const unread = Object.values(work.materials)
-    .filter((m) => m.kind === "drawing" && !BASIC_DRAWINGS.has(m.id) && !drawings.has(m.id) && !told.has(m.id))
+    .filter((m) => m.kind === "drawing" && !primitives.has(m.id) && !drawings.has(m.id) && !told.has(m.id))
     .map((m) => m.id);
   return unread.length
     ? {
         cardsUnread: unread,
-        note: "Read these drawings' cards with draw_guide before judging them: their parameters cannot be guessed.",
+        note: "Read these drawings' cards with read_materials before judging them: their parameters cannot be guessed.",
       }
     : {};
 }
@@ -207,7 +208,7 @@ export const handlers: Record<
     const { store, run, ctx } = x;
     // The ideas weighed stay on the step; the work keeps the brief.
     const { ideas: _, ...brief } = settleSchema.parse(args);
-    const { work, style } = await setBrief(
+    const { work, style, chosen, others } = await setBrief(
       store,
       run.workId,
       brief,
@@ -228,6 +229,7 @@ export const handlers: Record<
         style: {
           id: style.id,
           name: style.name.zh,
+          ...(chosen ? { chosenFor: args.style, others } : {}),
           register: style.register,
           tokens: style.tokens,
           guide: style.guide,
@@ -237,7 +239,7 @@ export const handlers: Record<
         ...research(run),
         ...(read.topics.size || read.drawings.size
           ? {}
-          : { guides: "Read what this work needs with draw_guide before drawing: see # Guides." }),
+          : { guides: "Read what this work needs with draw_guide and read_materials before drawing: see # Guides." }),
       },
       images: cast?.images ?? [],
     };
@@ -251,8 +253,22 @@ export const handlers: Record<
     return { output: found.output, images: found.images };
   },
 
+  async read_materials(x, args, call) {
+    const { ids } = readSchema.parse(args);
+    const read = guidesRead(x.ctx.input);
+    const work = x.store.work(x.run.workId);
+    // A material the work holds is read at the version it holds; the rest as they are now.
+    const refs = [...new Set(ids)]
+      .filter((id) => !read.drawings.has(id))
+      .map((id) => ({ id, ...(work.materials[id]?.version ? { version: work.materials[id].version } : {}) }));
+    const found = refs.length ? await library.get(refs, x.store.viewer, true) : [];
+    const { text, shown } = readCards(ids, found, read);
+    Object.assign(call.step!, { ids: shown });
+    return { output: text };
+  },
+
   async draw_guide(x, args) {
-    return { output: readGuides(guideSchema.parse(args), await kit(), guidesRead(x.ctx.input)) };
+    return { output: readGuides(guideSchema.parse(args), guidesRead(x.ctx.input)) };
   },
 
   async generate_images(x, args, call) {
@@ -324,7 +340,7 @@ export const handlers: Record<
       ...(absent.length
         ? { notThere: `Asked to remove what the work does not have: ${absent.join(", ")}.` }
         : {}),
-      ...cardsUnread(work, ctx.input, call.batch),
+      ...cardsUnread(work, ctx.input, call.batch, await basic()),
     };
     if (!view || call.batch.some((c) => c.name === "view_canvas")) return { output };
     // Mark the write step done before the embedded view step starts waiting/capturing.

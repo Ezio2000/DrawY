@@ -6,7 +6,7 @@ DrawY 是一个让 AI 画可探索、可修改的图的 Web 应用。用户提�
 
 ## 命令
 
-这是一个 pnpm workspace，`materials` 是 `@drawy/materials`。运行需要 Node 25，存储依赖它内置的 `node:sqlite`。TypeScript 由 tsx 直接执行，不预编译。
+这是一个 pnpm workspace，`materials` 是 `@drawy/materials`（素材服务），`content` 是策展素材的内容项目（只产出素材包，应用不读它）。运行需要 Node 25，存储依赖它内置的 `node:sqlite`。TypeScript 由 tsx 直接执行，不预编译。
 
 ```sh
 pnpm install
@@ -23,7 +23,8 @@ docker compose up -d --build                      # 完整部署，访问 http:/
 默认验证只跑核心单测（`pnpm test`）即可，不依赖构建产物。`modules/runtime/runtime.test.ts` 会加载 `dist/runtime/runtime.js` 并在 Playwright Chromium 里执行（改了 `modules/runtime`、`modules/observation/capture.ts` 或相关协议需要验证时跑 `pnpm test:runtime`）。`apps/web/regression/` 下的作品页回归验证测的是构建出的 `dist/web`，耗时较长，仅在需要时手动跑 `pnpm test:desktop`。Playwright 自带的浏览器没装时，可用 `DRAWY_CHROMIUM` 指定一个 Chromium 可执行文件。
 
 本地开发要同时起几个进程：
-- `pnpm --dir materials start`：素材服务，端口 8090，数据在 `data/materials`。
+- 先构建并导入素材包（重复导入同一版本无副作用）：`pnpm --dir content build /tmp/drawy-pack` 和 `pnpm --dir materials library import /tmp/drawy-pack`。
+- `pnpm --dir materials start`：素材服务，端口 8090，数据在 `data/materials`；启动不读素材包。
 - `pnpm exec tsx apps/capture/main.ts`：截图服务，端口 8091。
 - `pnpm server`：主程序，端口 8080，数据在 `data`，同时提供 `dist/runtime` 和 `dist/web` 的静态文件。
 - `pnpm dev`：Vite 前端，把 `/api`、`/materials`、`/runtime` 代理到 8080。

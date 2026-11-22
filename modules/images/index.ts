@@ -11,7 +11,7 @@ import { tracer } from "../trace/index.ts";
 export const pictureRequestSchema = z.object({
   name: z.object({ zh: z.string().min(1), en: z.string().min(1) }),
   aliases: z.array(z.string()).default([]),
-  role: z
+  type: z
     .enum(["object", "figure", "scene", "texture", "icon"])
     .describe(
       "How the picture will be used: object, figure and icon are cut-outs on transparency to place, move and label; scene is a vignette whose edges fade into paper; texture is a seamless surface",
@@ -104,12 +104,12 @@ export interface Development {
 const STYLE_REFERENCES = 2;
 
 /** The pictures a new one is painted to look like: those the work already has in its
- * style, then the style's own samples, each of the same role first. A picture of the
+ * style, then the style's own samples, each of the same type first. A picture of the
  * request's own references is not repeated. */
 export async function styleReferences(
   work: Work,
   style: Pick<StyleMaterial, "id" | "samples">,
-  role: string,
+  type: string,
   references: string[],
   user: string,
 ) {
@@ -118,13 +118,13 @@ export async function styleReferences(
     .catch(() => [] as Material[]);
   const own = Object.values(work.materials).filter(
     (m) => m.kind === "picture" && m.style === style.id && m.status === "ready",
-  ) as { id: string; role: string }[];
+  ) as { id: string; type: string }[];
   const shown = samples.filter(
     (m) => m.kind === "picture" && m.status === "ready",
-  ) as { id: string; role: string }[];
+  ) as { id: string; type: string }[];
   const ranked = [
-    ...own.filter((m) => m.role === role),
-    ...shown.filter((m) => m.role === role),
+    ...own.filter((m) => m.type === type),
+    ...shown.filter((m) => m.type === type),
     ...own,
     ...shown,
   ].map((m) => m.id);
@@ -141,7 +141,7 @@ function promptFor(
   direction: string,
   styled = 0,
 ) {
-  // The role decides the background: a cut-out stands on transparency, a scene is whole.
+  // The type decides the background: a cut-out stands on transparency, a scene is whole.
   const framing = {
     object:
       "A single subject, centred, filling most of the frame with a small even margin, isolated on a fully transparent background; no scenery, ground, cast shadow or frame.",
@@ -151,7 +151,7 @@ function promptFor(
     scene:
       "A self-contained vignette: the scene fills the frame, but its edges dissolve softly into plain off-white paper; no border, no frame.",
     texture: "A seamless full-bleed surface with no focal subject.",
-  }[r.role];
+  }[r.type];
   // The images are sent in this order: what to work from, then what to look like.
   const given = r.references.length,
     all = given + styled;
@@ -363,7 +363,7 @@ export async function develop(
       const styled = await styleReferences(
         work,
         style,
-        r.role,
+        r.type,
         r.references,
         store.userId,
       );
@@ -377,7 +377,7 @@ export async function develop(
       await library.reserve(
         {
           id,
-          role: r.role,
+          type: r.type,
           name: r.name,
           aliases: r.aliases,
           about: r.depicts,
@@ -404,7 +404,7 @@ export async function develop(
     const known = developments.get(i);
     if (known) return known;
     const { r, id, prompt, styled, width, height } = reserved[i];
-    const transparent = r.role !== "scene" && r.role !== "texture";
+    const transparent = r.type !== "scene" && r.type !== "texture";
     let count = 0;
     let usage: ImageUsage | undefined;
     const development: Development = {

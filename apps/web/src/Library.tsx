@@ -13,6 +13,7 @@ import { Segmented, Spinner, reducedMotion } from "./ui/primitives.tsx";
 import { useLocale } from "./ui/locale.tsx";
 import type {
   Material,
+  MaterialHead,
   MaterialPage,
   StyleMaterial,
   DrawingMaterial,
@@ -29,7 +30,7 @@ import { useT } from "./i18n.tsx";
 import { useCan } from "./account.tsx";
 
 /** A material as the app shows it: another user's carries their name. */
-type Shown = Material & { ownerName?: string | null };
+type Shown = MaterialHead & { ownerName?: string | null };
 /** The shelf last looked at, so the library opens where the user left it. */
 let lastShelf: Shelf = "public";
 
@@ -301,7 +302,8 @@ export function Library({
           m={open}
           styleName={styleName}
           close={() => O(undefined)}
-          use={() => use(open)}
+          // What is used is the material in full, as its shelf shows only its head.
+          use={() => void api<Material>("/materials/" + open.id).then(use, () => {})}
           action={action}
           published={(m) => {
             // It moves to the other shelf: the list it was on no longer has it.
@@ -316,7 +318,7 @@ export function Library({
 
 /** What a material looks like: a picture, a style's samples, a drawing drawn from its
  * example, an effect on a swatch. */
-function Look({ m, large = false }: { m: Material; large?: boolean }) {
+function Look({ m, large = false }: { m: MaterialHead; large?: boolean }) {
   switch (m.kind) {
     case "picture":
       return (
@@ -366,7 +368,7 @@ function previewOf(id: string) {
 }
 
 /** A drawing material drawn live from its example data. */
-export function DrawingLook({ m }: { m: DrawingMaterial }) {
+export function DrawingLook({ m }: { m: Extract<MaterialHead, { kind: "drawing" }> }) {
   const host = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     let view: Canvas | undefined,
@@ -473,7 +475,7 @@ function Inspector({
     [f.kind, t.library.kinds[m.kind]],
     ...(m.kind === "picture"
       ? ([
-          [f.role, t.library.roles[m.role]],
+          [f.role, t.library.roles[m.type as keyof typeof t.library.roles] ?? m.type],
           [f.style, styleName(m.style) || f.any],
           [
             f.size,
