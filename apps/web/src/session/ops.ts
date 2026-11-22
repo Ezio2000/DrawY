@@ -1,4 +1,4 @@
-import { bound } from "../../../../modules/editing/bindings.ts";
+import { loadBindings } from "../bindings.ts";
 import type {
   DrawingMaterial,
   Material,
@@ -142,6 +142,7 @@ export function editOps(ctx: Context) {
     const centre = at ?? view.center(),
       sceneId = scene();
     try {
+      await loadBindings();
       // A work whose own drawing uses the library drawing's id gets a copy of it.
       const own = shadowed(w, what)
         ? ownCopy(await fromLibrary(drawingFor(what)), ctx.host.locale())
@@ -160,7 +161,7 @@ export function editOps(ctx: Context) {
    * of the work's own drawings already uses its id. */
   const linkWith = async (w: Work, sceneId: string) => {
     const like = linkLook(w, sceneId);
-    const link = bound().link;
+    const { link } = await loadBindings();
     return {
       look: like ?? { drawingId: link, data: {} },
       own:

@@ -265,7 +265,11 @@ export const handlers: Record<
       ),
     ].slice(0, 6);
     const read = guidesRead(x.ctx.input);
-    const fresh = best.filter((id) => !read.drawings.has(id));
+    // A material the work holds is shown at the version it holds, as read_materials does.
+    const held = x.store.work(x.run.workId).materials;
+    const fresh = best
+      .filter((id) => !read.drawings.has(id))
+      .map((id) => ({ id, ...(held[id]?.version ? { version: held[id].version } : {}) }));
     const full = fresh.length ? await library.get(fresh, x.store.viewer, true) : [];
     const { text } = readCards(best, full, read);
     return { output: { results: found.output, cards: text }, images: found.images };

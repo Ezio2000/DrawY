@@ -7,7 +7,7 @@ import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { Agent } from "./index.ts";
 import { SEARCH_LIMIT, steering } from "./spending.ts";
-import { withLessThought } from "./conversation.ts";
+import { CONTEXT_FORMAT, withLessThought } from "./conversation.ts";
 import { guidesRead, guides } from "./guides.ts";
 
 import { settleSchema } from "./tools.ts";
@@ -119,7 +119,7 @@ const newRun = (id = "run"): Run => {
 };
 /** Executes a run straight from a conversation, as a request would. */
 async function execute(input: Item[] = [], run = newRun()) {
-  const ctx = { input, settings: store.settings(), generations: 0, format: 2 };
+  const ctx = { input, settings: store.settings(), generations: 0, format: CONTEXT_FORMAT };
   await new Agent(() => {}).execute(store, run, ctx, "request");
   return { run, ctx };
 }
@@ -448,7 +448,7 @@ it("compacts the conversation at its budget, and goes on without old pictures wh
       return { items: ["one", "two"].map((id) => item("read_work", {}, id)), usage: {}, response: {} };
     },
   ]);
-  const ctx = { input: structuredClone(long) as Item[], settings: store.settings(), generations: 0, format: 2 };
+  const ctx = { input: structuredClone(long) as Item[], settings: store.settings(), generations: 0, format: CONTEXT_FORMAT };
   await agent.execute(store, run, ctx, "request");
   expect(requests[0]).toEqual(requests[1]);
   expect(store.run(run.id).status).toBe("cancelled");
@@ -493,7 +493,7 @@ it("bills every model attempt: a broken stream asked again, a refused request, a
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"], shouldAdvanceTime: true, advanceTimeDelta: 500 });
   try {
     const run = newRun();
-    const ctx = { input: [] as Item[], settings: store.settings(), generations: 0, format: 2 };
+    const ctx = { input: [] as Item[], settings: store.settings(), generations: 0, format: CONTEXT_FORMAT };
     ctx.settings.prices = { ...ctx.settings.prices, author: { input: 4, cached: 0.2, cacheWrite: 5, output: 20 } };
     script([
       ({ onEvent }) => {
@@ -1030,6 +1030,23 @@ it("gives the cards of what a search finds when asked, and counts them as read",
   expect(found.cards).not.toContain('"id":"apple"');
   expect(again).toContain("Already above in this conversation: bars.");
   expect(written.cardsUnread).toBeUndefined();
+});
+
+it("gives a search's card at the version the work holds", async () => {
+  // The work holds bars at version 1; the library has moved on to version 2.
+  const bars = library.library.get("bars") as DrawingMaterial;
+  library.library.catalog.put({ ...bars, about: bars.about + " Newer.", version: 2, hash: "newer" });
+  work.materials = { bars: { id: "bars", kind: "drawing", version: 1, name: "柱状图", source: bars.source, defaults: {}, params: {} } };
+  store.commit(work, 1, { kind: "edit" });
+  const seen = script([
+    ["find_materials", { subjects: ["柱状图"], cards: true }],
+    ["finish", { message: "done" }],
+  ]);
+  const run = await new Agent(() => {}).start(store, work.id, "root", "看看");
+  await vi.waitFor(() => expect(["completed", "failed"]).toContain(store.run(run.id).status));
+  const [found] = outputs(seen.at(-1)!);
+  expect(found.cards).toContain('{"id":"bars","version":1');
+  expect(found.cards).not.toContain("Newer.");
 });
 
 it("keeps the instructions and tools the same for every request, with what only some works need listed to read", async () => {

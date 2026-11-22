@@ -116,6 +116,33 @@ describe("user owned works", () => {
     expect(store.work(work.id).drawings.tier).toEqual(content.drawings.tier);
     expect(store.revision(work.id, 4).drawings.tier).toEqual(changed);
   });
+  it("names a saved picture's type as type, upgrading works and revisions saved with role", () => {
+    const store = db.scoped(register(db, "old", "abcdef").id);
+    const work = createWork(store, "old");
+    const old = {
+      id: "apple",
+      kind: "picture",
+      name: "苹果",
+      role: "object",
+      style: null,
+      url: "/materials/files/apple",
+      width: 10,
+      height: 10,
+      content: { x: 0, y: 0, width: 1, height: 1 },
+      anchors: {},
+      recolor: false,
+      opaque: false,
+      status: "ready",
+    };
+    // As a version before this one saved it.
+    for (const table of ["works", "revisions"])
+      db.db.prepare(`UPDATE ${table} SET data=json_set(data, '$.materials', json(?))`).run(JSON.stringify({ apple: old }));
+    db.db.prepare("DELETE FROM system WHERE key='work-format'").run();
+    const reopened = new Storage(dir).scoped(store.userId);
+    for (const w of [reopened.work(work.id), reopened.revision(work.id, work.revision)])
+      expect(w.materials.apple).toMatchObject({ type: "object" });
+    expect(JSON.stringify(reopened.work(work.id))).not.toContain('"role"');
+  });
   it("keeps the version of library code a work took, through every later write", async () => {
     const store = db.scoped(register(db, "a", "abcdef").id);
     const work = createWork(store, "test");

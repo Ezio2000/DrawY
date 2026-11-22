@@ -3,8 +3,8 @@ import { X, ImagePlus } from "lucide-react";
 import { Spinner, Tooltips, Presence, UndoToast } from "./ui/primitives.tsx";
 import { useLocale, LocaleContext } from "./ui/locale.tsx";
 import { Dialog } from "./ui/dialogs.tsx";
-import type { Bindings, Material } from "@drawy/materials/schema";
-import { setBindings } from "../../../modules/editing/bindings.ts";
+import type { Material } from "@drawy/materials/schema";
+import { loadBindings } from "./bindings.ts";
 import { blankStyle, type SettingsChange, type Work } from "../../../modules/contracts/index.ts";
 import { api, type Models, type Summary, type User } from "./api.ts";
 import { AccountContext } from "./account.tsx";
@@ -289,9 +289,9 @@ export function App() {
     };
   }, []);
   // What editing draws added words, pictures and links with: the drawings the material
-  // library names for them.
+  // library names for them, asked for early so the first edit need not wait.
   useEffect(() => {
-    if (user) void api<Bindings>("/materials/bindings").then(setBindings, () => {});
+    if (user) void loadBindings().catch(() => {});
   }, [user?.id]);
   // The list of works follows the server: a work saved anew, a run starting or ending.
   useEffect(() => {
