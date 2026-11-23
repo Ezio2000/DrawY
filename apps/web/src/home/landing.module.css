@@ -997,19 +997,34 @@
 
 .l-reference-sheet {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
-  gap: clamp(4px, 1vw, 18px);
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 2.8fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: clamp(6px, 1.2vw, 18px);
   height: 100%;
-  padding: clamp(16px, 3vw, 36px) clamp(8px, 2.4vw, 26px);
+  padding: clamp(20px, 3vw, 42px) clamp(9px, 2.4vw, 28px) clamp(9px, 2.4vw, 28px);
+  color: var(--text-2);
 }
 
+.l-reference-prompt {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  margin: 0;
+  padding-block-end: clamp(4px, 1vw, 12px);
+  border-bottom: 1px dashed var(--line-strong);
+  font-size: clamp(11px, 1.3vw, 17px);
+}
+
+.l-reference-prompt span,
+.l-reference-notes > span { color: var(--text-3); font-size: 0.85em; }
+.l-reference-prompt q { color: var(--text); font-weight: 600; }
+
 .l-reference-sheet figure {
-  align-self: center;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  justify-items: center;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 6px;
-  height: 82%;
   min-height: 0;
   margin: 0;
 }
@@ -1025,8 +1040,45 @@
 
 .l-reference-sheet figcaption {
   color: var(--text-2);
-  font-size: clamp(10px, 1vw, 13px);
+  font-size: clamp(10px, 1.1vw, 14px);
+  font-weight: 600;
   text-align: center;
 }
 
 .l-reference-result { position: relative; }
+
+.l-reference-arrow {
+  align-self: center;
+  width: clamp(10px, 1.5vw, 18px);
+  color: #a74432;
+}
+
+.l-reference-notes {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: clamp(10px, 1.15vw, 14px);
+}
+
+.l-reference-notes ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px clamp(9px, 1.6vw, 24px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.l-reference-notes li { display: flex; align-items: center; gap: 5px; }
+.l-reference-notes i { width: 0.9em; height: 0.65em; color: #8a7c6a; }
+.l-reference-notes li:nth-child(1) i {
+  background: linear-gradient(currentColor, currentColor) center / 100% 1px no-repeat;
+}
+.l-reference-notes li:nth-child(2) i {
+  background: repeating-linear-gradient(135deg, transparent 0 2px, currentColor 2px 3px);
+}
+.l-reference-notes li:nth-child(3) i {
+  background: radial-gradient(circle, #b34430 0 2.5px, transparent 3px);
+}

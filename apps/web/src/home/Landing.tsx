@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { ChevronLeft } from "lucide-react";
+import { ArrowRight, ChevronLeft } from "lucide-react";
 import type { Work } from "../../../../modules/contracts/index.ts";
 import { Composer, Unconnected } from "../Composer.tsx";
 import { useAccount } from "../account.tsx";
@@ -431,12 +431,26 @@ function Story({ band }: { band: RefObject<HTMLElement | null> }) {
                   <Sheet work={work} scene={scene} setScene={go}>
                     {isReference ? (
                       <div className={cx("l-reference-sheet")}>
+                        <p className={cx("l-reference-prompt")}>
+                          <span>{l.referencePrompt}</span>
+                          <q>{l.chapters[k].ask}</q>
+                        </p>
                         <figure>
-                          <img src={referenceImage} alt={l.referenceAlt} loading="lazy" />
                           <figcaption>{l.referenceCaption}</figcaption>
+                          <img src={referenceImage} alt={l.referenceAlt} loading="lazy" />
                         </figure>
-                        <div className={cx("l-reference-result")}>
-                          <LiveWork work={work} label={work?.title} />
+                        <ArrowRight className={cx("l-reference-arrow")} size={18} aria-hidden />
+                        <figure>
+                          <figcaption>{l.referenceResult}</figcaption>
+                          <div className={cx("l-reference-result")}>
+                            <LiveWork work={work} label={work?.title} />
+                          </div>
+                        </figure>
+                        <div className={cx("l-reference-notes")}>
+                          <span>{l.referenceShared}</span>
+                          <ul>
+                            {l.referenceTraits.map((trait) => <li key={trait}><i aria-hidden />{trait}</li>)}
+                          </ul>
                         </div>
                       </div>
                     ) : (

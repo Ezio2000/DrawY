@@ -103,7 +103,11 @@ const zh = {
   // The home page: the range of what DrawY draws, told through works it made
   landing: {
     referenceAlt: "淡彩剖面图里的礁石灯塔",
-    referenceCaption: "画风参考",
+    referenceCaption: "上传参考图 · 灯塔剖面",
+    referencePrompt: "示例提示词",
+    referenceResult: "按画风生成 · 老式唱片机",
+    referenceShared: "沿用的画法",
+    referenceTraits: ["细墨线勾边", "排线标出剖切面", "塔顶与唱针都点朱红"],
     title: ["想要什么样的图，", "说一句，就画出来。"],
     lead: "画好了还能点开看、拖一拖、接着改。",
     more: "看看能画些什么",
@@ -132,7 +136,7 @@ const zh = {
       {
         kind: "参考图",
         title: "借画风，换个题材",
-        text: "给一张灯塔剖面作参考，画一台同样笔触的老式唱片机。",
+        text: "上传一张图，再说你想画什么。DrawY 会沿用参考图的画法，画出新内容。",
         ask: "照这张灯塔的画风，画一台老式唱片机。",
       },
       {
@@ -1487,7 +1491,11 @@ const en: Words = {
   },
   landing: {
     referenceAlt: "A lightly colored lighthouse cutaway",
-    referenceCaption: "Style reference",
+    referenceCaption: "Uploaded reference · Lighthouse cutaway",
+    referencePrompt: "Example prompt",
+    referenceResult: "Drawn in that style · Vintage record player",
+    referenceShared: "What carries over",
+    referenceTraits: ["Fine ink outlines", "Hatched cut surfaces", "Vermilion on the lantern and stylus"],
     title: ["Whatever picture you need,", "say it and it's drawn."],
     lead: "Then click into it, drag things about and keep changing it.",
     more: "See what it can draw",
@@ -1516,7 +1524,7 @@ const en: Words = {
       {
         kind: "Style reference",
         title: "Borrow a style",
-        text: "Use a lighthouse cutaway as a reference and draw a vintage record player in the same style.",
+        text: "Upload an image and describe what you want to draw. DrawY uses the reference style for your new subject.",
         ask: "Draw a vintage record player in the style of this lighthouse.",
       },
       {
