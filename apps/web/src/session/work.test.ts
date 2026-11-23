@@ -362,3 +362,16 @@ it("tells those who listen once for the changes of one turn, and keeps what did 
   await job;
   expect(s().scene!.modules.at(-1)!.bounds).toEqual(box);
  });
+
+it("asks the server nothing about the blank sheet before it is saved", async () => {
+  const asked: string[] = [];
+  server.handle = async (path) => {
+    asked.push(path);
+    throw Error("no route " + path);
+  };
+  const store = new WorkSession("_blank", host, { ...structuredClone(head), id: "_blank" });
+  await settle();
+  await settle();
+  expect(asked).toEqual([]);
+  store.dispose();
+});
