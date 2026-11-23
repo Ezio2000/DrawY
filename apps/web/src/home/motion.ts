@@ -11,10 +11,11 @@ const pace = (text: string) => (/[\u3400-\u9fff]/.test(text) ? 95 : 42);
 /** One question after another, typed out, held, then cleared for the next, so an empty box
  * shows what one might ask in it. While `held`, the current question stays whole and nothing
  * moves. */
-export function useCycledTyping(lines: readonly string[], held: boolean): string {
+export function useCycledTyping(lines: readonly string[], held: boolean) {
   const [at, setAt] = useState(0);
   const [shown, setShown] = useState(0);
-  const line = lines[at % lines.length] ?? "";
+  const index = at % lines.length;
+  const line = lines[index] ?? "";
   useEffect(() => {
     if (held || reducedMotion()) return;
     const timer =
@@ -26,7 +27,7 @@ export function useCycledTyping(lines: readonly string[], held: boolean): string
           }, 2400);
     return () => clearTimeout(timer);
   }, [held, shown, line]);
-  return held || reducedMotion() ? line : line.slice(0, shown);
+  return { index, text: held || reducedMotion() ? line : line.slice(0, shown) };
 }
 
 /** The nearest element above `el` that scrolls up and down: the home page's sheet. */
