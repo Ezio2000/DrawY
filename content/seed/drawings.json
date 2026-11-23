@@ -238,11 +238,28 @@
       "leader line",
       "callout",
       "part label",
-      "annotation"
+      "annotation",
+      "器官标注",
+      "解剖标注",
+      "结构标注",
+      "部位名称",
+      "anatomy label",
+      "labelled diagram",
+      "part names"
     ],
     "category": "drawing/text",
-    "about": "Names a part the textbook way: a thin leader line from a small dot on the part to the label. The module spans from the part to the text; target is the named point in the module (0..1) and side says where the text sits.",
-    "tags": ["label", "leader", "annotation", "textbook", "part"],
+    "about": "Names a part the textbook way: a thin leader line from a small dot on the part to the label, with one bend so it runs level into the text. The module spans from the part to the text; target is the named point in the module (0..1), side says where the text sits and textAt where along that side, so a column of labels lines up on one side (give their modules the same outer edge) while each leader bends to its own part.",
+    "tags": [
+      "label",
+      "leader",
+      "annotation",
+      "textbook",
+      "part",
+      "anatomy",
+      "diagram",
+      "organ",
+      "structure"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -250,12 +267,17 @@
     },
     "use": "module",
     "size": {
-      "width": 160,
-      "height": 30
+      "width": 180,
+      "height": 60
     },
     "example": {
       "text": "叶绿体",
-      "side": "right"
+      "side": "right",
+      "target": {
+        "x": 0.05,
+        "y": 0.9
+      },
+      "textAt": 0.25
     },
     "params": {
       "text": {
@@ -271,6 +293,20 @@
       "target": {
         "type": "object",
         "description": "the named point {x,y} 0..1; defaults to the edge opposite the text"
+      },
+      "textAt": {
+        "type": "number",
+        "min": 0,
+        "max": 1,
+        "step": 0.01,
+        "default": 0.5,
+        "description": "where the text sits along its side, 0..1 (top to bottom on the left or right, left to right above or below)"
+      },
+      "bend": {
+        "type": "choice",
+        "options": ["elbow", "straight"],
+        "default": "elbow",
+        "description": "one bend into a level run, or a straight line"
       },
       "size": {
         "type": "number",
@@ -811,11 +847,35 @@
       "zone",
       "area",
       "blob",
-      "territory"
+      "territory",
+      "分组框",
+      "边界框",
+      "虚线框",
+      "group",
+      "boundary",
+      "frame",
+      "cluster",
+      "部署边界",
+      "系统边界",
+      "网络边界",
+      "deployment boundary",
+      "system boundary"
     ],
     "category": "drawing/area",
-    "about": "A soft organic area that marks a zone (a habitat, a layer, a sphere of influence) without drawing a box: a seeded irregular translucent blob filling the module, optional label and texture effect.",
-    "tags": ["region", "zone", "area", "organic", "background"],
+    "about": "An area that marks a zone or a group, placed under what it holds. shape blob is a soft seeded irregular translucent area (a habitat, a layer, a sphere of influence) drawn without a box; shape box is a tidy rounded frame, dashed by default and named in its top-left corner, around modules that belong together (a host, a network, a cluster, a subsystem, a boundary).",
+    "tags": [
+      "region",
+      "zone",
+      "area",
+      "organic",
+      "background",
+      "group",
+      "boundary",
+      "architecture",
+      "deployment",
+      "system",
+      "network"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -827,9 +887,16 @@
       "height": 220
     },
     "example": {
-      "label": "栖息地"
+      "shape": "box",
+      "label": "应用主机 · Docker Compose"
     },
     "params": {
+      "shape": {
+        "type": "choice",
+        "options": ["blob", "box"],
+        "default": "blob",
+        "description": "soft organic area or tidy rounded frame"
+      },
       "label": {
         "type": "text",
         "description": "the zone's name"
@@ -844,13 +911,12 @@
       },
       "labelColor": {
         "type": "color",
-        "description": "colour of the label; defaults to ink"
+        "description": "colour of the label; defaults to ink (blob) or the frame's colour (box)"
       },
       "labelAt": {
         "type": "choice",
-        "options": ["center", "top"],
-        "default": "center",
-        "description": "where the label sits"
+        "options": ["center", "top", "corner"],
+        "description": "where the label sits; defaults to center (blob) or corner (box)"
       },
       "color": {
         "type": "color",
@@ -861,8 +927,24 @@
         "min": 0,
         "max": 1,
         "step": 0.01,
-        "default": 0.18,
-        "description": "fill opacity"
+        "description": "fill opacity; defaults to 0.18 (blob) or 0.06 (box)"
+      },
+      "outline": {
+        "type": "boolean",
+        "description": "draw the edge; defaults to off (blob) or on (box)"
+      },
+      "dashed": {
+        "type": "boolean",
+        "default": true,
+        "description": "box only: dashed or solid edge"
+      },
+      "radius": {
+        "type": "number",
+        "min": 0,
+        "max": 60,
+        "step": 1,
+        "default": 12,
+        "description": "box only: corner radius"
       },
       "wobble": {
         "type": "number",
@@ -870,12 +952,7 @@
         "max": 0.2,
         "step": 0.01,
         "default": 0.08,
-        "description": "irregularity 0..0.2"
-      },
-      "outline": {
-        "type": "boolean",
-        "default": false,
-        "description": "dashed outline"
+        "description": "blob only: irregularity 0..0.2"
       },
       "effect": {
         "type": "effect",
@@ -883,7 +960,7 @@
       },
       "seed": {
         "type": "number",
-        "description": "changes the shape"
+        "description": "blob only: changes the shape"
       }
     }
   },
@@ -1225,7 +1302,7 @@
       "database"
     ],
     "category": "drawing/structure",
-    "about": "A block of a flowchart, architecture or concept map: a box, pill, circle, decision diamond, database cylinder or document holding a title, an optional note and an optional icon, coloured by the style. One per module, joined by arrow links (route elbow for flowcharts) so blocks move on their own and connections follow; the words wrap inside the shape.",
+    "about": "A block of a flowchart, architecture or concept map: a box, pill, circle, decision diamond, database cylinder or document holding a title, an optional note and an optional icon, coloured by the style. One per module, joined by arrow links (route elbow for flowcharts) so blocks move on their own and connections follow; the words wrap inside the shape. With stack, copies of it stand behind, for a service run as several replicas.",
     "tags": ["structure", "flowchart", "architecture", "box", "node"],
     "style": null,
     "origin": {
@@ -1320,6 +1397,14 @@
       "effect": {
         "type": "effect",
         "description": "an effect id applied to the shape, such as rough-edge"
+      },
+      "stack": {
+        "type": "number",
+        "min": 0,
+        "max": 4,
+        "step": 1,
+        "default": 0,
+        "description": "copies stacked behind the block, for a service run as several replicas"
       }
     }
   },
@@ -1654,7 +1739,7 @@
       "feature matrix"
     ],
     "category": "drawing/structure",
-    "about": "A comparison table: options as columns, criteria as rows; true and false show as a tick and a dash, other values as words; one column can be highlighted as the recommended or subject option. Rules between rows only, no grid, so it reads as a figure.",
+    "about": "A comparison grid: options as columns, criteria as rows. A value shows in its cell as words, a tick (true) or a dash (false); a cell left empty (null) stays clear so a picture, node or small diagram can sit there as its own module. Each column can take its own colour (heading and a light band down it), rows can be numbered and carry a note, one column can be highlighted as the recommended or subject option. Rules between rows only, so it reads as a figure. With labelWidth and headerHeight set, the cell of row i and column j is x = labelWidth + (width − labelWidth)·j/columns, y = headerHeight + (height − headerHeight)·i/rows.",
     "tags": ["structure", "table", "comparison", "options", "criteria"],
     "style": null,
     "origin": {
@@ -1664,38 +1749,48 @@
     "use": "module",
     "size": {
       "width": 600,
-      "height": 260
+      "height": 300
     },
     "example": {
-      "columns": ["燃油车", "混动", "纯电"],
-      "highlight": 2,
+      "columns": [
+        {
+          "label": "Kafka",
+          "color": "#7137C4"
+        },
+        {
+          "label": "RocketMQ",
+          "color": "#13835B"
+        }
+      ],
+      "numbered": true,
       "rows": [
         {
-          "label": "续航",
-          "values": ["700 km", "1000 km", "550 km"]
+          "label": "消息组织",
+          "values": ["Topic → Partition", "Topic → Queue"]
         },
         {
-          "label": "补能速度",
-          "values": ["5 分钟", "5 分钟", "30 分钟"]
+          "label": "顺序保证",
+          "values": ["分区内有序", "队列内有序"]
         },
         {
-          "label": "零排放",
-          "values": [false, false, true]
+          "label": "延迟消息",
+          "values": [false, true]
         },
         {
-          "label": "每公里成本",
-          "values": ["0.6 元", "0.35 元", "0.1 元"]
+          "label": "消费模型",
+          "note": "留空放小图",
+          "values": [null, null]
         }
       ]
     },
     "params": {
       "columns": {
         "type": "array",
-        "description": "the options compared, as column headings"
+        "description": "the options compared: [{label, note?, color?}] or names, as column headings"
       },
       "rows": {
         "type": "array",
-        "description": "[{label, values: [one per column: text, number, true or false]}]"
+        "description": "[{label, note?, values: [one per column: text, number, true, false, or null to leave the cell clear]}]"
       },
       "highlight": {
         "type": "number",
@@ -1705,9 +1800,28 @@
         "default": -1,
         "description": "index of the highlighted column, -1 for none"
       },
+      "numbered": {
+        "type": "boolean",
+        "default": false,
+        "description": "number the rows in small badges"
+      },
       "corner": {
         "type": "text",
         "description": "an optional heading above the criteria"
+      },
+      "labelWidth": {
+        "type": "number",
+        "min": 0,
+        "max": 400,
+        "step": 5,
+        "description": "width of the criteria column; unset fits the labels"
+      },
+      "headerHeight": {
+        "type": "number",
+        "min": 0,
+        "max": 200,
+        "step": 2,
+        "description": "height of the headings row; unset is 2.8 × size, 3.8 × size with notes"
       },
       "size": {
         "type": "number",
@@ -2078,11 +2192,25 @@
       "swimlanes",
       "swim lane",
       "cross-functional flowchart",
-      "lanes"
+      "lanes",
+      "路线图",
+      "产品路线图",
+      "季度计划",
+      "roadmap",
+      "product roadmap",
+      "quarterly plan"
     ],
     "category": "drawing/structure",
-    "about": "Swimlanes: parallel bands, one per actor, team or system, each named in its header, as the background of a cross-functional process; place the steps over it as node modules joined by arrow links. Lanes run across (rows) or down (columns); one can be accented.",
-    "tags": ["structure", "process", "lanes", "roles", "flowchart"],
+    "about": "Swimlanes: parallel bands, one per actor, team, track or system, each named in its header, as the background of a cross-functional process or a roadmap. With stages (quarters, months, phases) the lanes are crossed by columns named along the top, so a plan reads as lanes × stages. Place the steps, items and milestones over it as their own modules (node, label, step-badge) joined by arrow links. Each lane can take its own colour and one stage can be marked as now. With header set, the cell of lane i and stage j starts at x = header + (width − header)·j/stages and y = stageHeader + (height − stageHeader)·i/lanes (rows across; swapped when vertical).",
+    "tags": [
+      "structure",
+      "process",
+      "lanes",
+      "roles",
+      "flowchart",
+      "roadmap",
+      "plan"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -2096,22 +2224,35 @@
     "example": {
       "lanes": [
         {
-          "label": "顾客"
+          "label": "平台"
         },
         {
-          "label": "前台",
-          "note": "接待"
+          "label": "移动端"
         },
         {
-          "label": "后厨",
+          "label": "AI",
           "accent": true
         }
-      ]
+      ],
+      "stages": [
+        "Q1",
+        "Q2",
+        {
+          "label": "Q3",
+          "accent": true
+        },
+        "Q4"
+      ],
+      "header": 110
     },
     "params": {
       "lanes": {
         "type": "array",
-        "description": "[{label, note?, accent?}] or names, first at the top or left"
+        "description": "[{label, note?, color?, accent?}] or names, first at the top or left; color gives the lane its own colour"
+      },
+      "stages": {
+        "type": "array",
+        "description": "[{label, note?, accent?}] or names: quarters, months or phases crossing the lanes, in order; accent marks one as current"
       },
       "direction": {
         "type": "choice",
@@ -2124,7 +2265,14 @@
         "min": 0,
         "max": 300,
         "step": 5,
-        "description": "width or height of the header; unset fits the names"
+        "description": "width (rows across) or height (vertical) of the lanes' header; unset fits the names"
+      },
+      "stageHeader": {
+        "type": "number",
+        "min": 0,
+        "max": 300,
+        "step": 5,
+        "description": "height (rows across) or width (vertical) of the stages' header; unset is 2.6 × size, 3.4 × size with notes"
       },
       "size": {
         "type": "number",

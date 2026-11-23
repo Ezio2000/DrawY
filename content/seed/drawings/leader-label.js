@@ -1,6 +1,7 @@
 // A label joined to the part it names by a thin leader line ending in a small dot, the way
 // textbook figures name parts. `target` is the named point in the module (0..1); the text
-// sits on `side` of the module.
+// sits on `side` of the module, at `textAt` along that side, so a column of labels can line
+// up on one side while their leaders bend once to parts at any height.
 const d = api.data,
   t = api.theme;
 const W = api.width,
@@ -18,37 +19,41 @@ const target = {
   y: (d.target ?? fallback).y * H,
 };
 const text = String(d.text ?? "");
+const font = t.font || "system-ui";
 const esc = (s) =>
   String(s).replace(
     /[&<>"]/g,
     (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch],
   );
-const width = [...text].reduce(
-  (n, ch) => n + (/[⺀-￿]/.test(ch) ? size : size * 0.56),
-  0,
-);
-let tx, ty, anchor, end;
-if (side === "right")
-  [tx, ty, anchor, end] = [W, H / 2, "end", { x: W - width - 7, y: H / 2 }];
-else if (side === "left")
-  [tx, ty, anchor, end] = [0, H / 2, "start", { x: width + 7, y: H / 2 }];
-else if (side === "above")
-  [tx, ty, anchor, end] = [
-    W / 2,
-    size * 0.85,
-    "middle",
-    { x: W / 2, y: size * 1.35 },
-  ];
-else
-  [tx, ty, anchor, end] = [
-    W / 2,
-    H - size * 0.3,
-    "middle",
-    { x: W / 2, y: H - size * 1.35 },
-  ];
+const ctx = document.createElement("canvas").getContext("2d");
+ctx.font = `${size}px ${font}`;
+const width = ctx.measureText(text).width;
+const at = Math.min(1, Math.max(0, Number(d.textAt ?? 0.5)));
+const gap = 7;
+let tx, ty, anchor, end, knee;
+if (side === "right" || side === "left") {
+  const y = Math.min(H - size * 0.7, Math.max(size * 0.7, at * H));
+  const right = side === "right";
+  [tx, ty, anchor] = [right ? W : 0, y, right ? "end" : "start"];
+  end = { x: right ? W - width - gap : width + gap, y };
+  // A level run out of the text, then one bend down or up to the part.
+  const run = Math.min(size * 2, Math.abs(end.x - target.x) * 0.5);
+  knee = { x: end.x + (right ? -run : run), y };
+} else {
+  const x = Math.min(W - width / 2, Math.max(width / 2, at * W));
+  const above = side === "above";
+  [tx, ty, anchor] = [x, above ? size * 0.85 : H - size * 0.3, "middle"];
+  end = { x, y: above ? size * 1.35 : H - size * 1.35 };
+  const run = Math.min(size * 2, Math.abs(target.y - end.y) * 0.5);
+  knee = { x, y: end.y + (above ? run : -run) };
+}
+const bend = d.bend !== "straight";
+const path = bend
+  ? `M${target.x} ${target.y}L${knee.x} ${knee.y}L${end.x} ${end.y}`
+  : `M${target.x} ${target.y}L${end.x} ${end.y}`;
 const line = d.color || t.muted || "#888";
-return api.svg(`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(t.font || "system-ui")}">
-  <path d="M${target.x} ${target.y}L${end.x} ${end.y}" stroke="${line}" stroke-width="${Number(d.width ?? 1)}" fill="none" stroke-linecap="round"/>
+return api.svg(`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}">
+  <path d="${path}" stroke="${line}" stroke-width="${Number(d.width ?? 1)}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
   ${d.dot === false ? "" : `<circle cx="${target.x}" cy="${target.y}" r="${Number(d.width ?? 1) * 2.2}" fill="${line}"/>`}
   <text x="${tx}" y="${ty}" text-anchor="${anchor}" dominant-baseline="central" font-size="${size}" fill="${d.textColor || t.ink || "#222"}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4" stroke-linejoin="round">${esc(text)}</text>
 </svg>`);
