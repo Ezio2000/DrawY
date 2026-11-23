@@ -11,6 +11,7 @@ import {
   defaultCatalog,
   emptySettings,
   modelCatalogSchema,
+  settingsFor,
   userSettingsSchema,
   permissions,
   DomainError,
@@ -21,6 +22,7 @@ import {
   type UserSettings,
   type Work,
   type Capture,
+  type Settings,
   type Run,
   type Cause,
   type RevisionSummary,
@@ -452,6 +454,12 @@ export class UserStore {
       )
       .run(this.userId, JSON.stringify(value));
   }
+  /** What a run draws, searches and paints with: the drawing model, effort, speed, search
+   * and picture model the user picked, or the defaults when they have not or one was taken
+   * away, and their preferences. */
+  settings(): Settings {
+    return settingsFor(this.storage.models(), this.ownSettings());
+  }
   capture(captureId: string) {
     return this.one<Capture>(
       "SELECT data FROM captures WHERE user_id=? AND id=?",
@@ -509,13 +517,7 @@ export class UserStore {
   busy(workId: string) {
     return this.runs(workId).some((r) => ["running", "viewing", "waiting"].includes(r.status));
   }
-  /** The last saved conversation, including when a later run stopped during routing. */
-  latestContext(workId: string) {
-    const row = this.storage.db.prepare(
-      "SELECT context FROM runs WHERE user_id=? AND work_id=? AND context IS NOT NULL ORDER BY rowid DESC LIMIT 1",
-    ).get(this.userId, workId);
-    return row ? JSON.parse(row.context as string) : null;
-  }
+  /** The conversation a run carries on, kept beside it; null before one is saved. */
   context(runId: string) {
     const row = this.storage.db
       .prepare("SELECT context FROM runs WHERE user_id=? AND id=?")

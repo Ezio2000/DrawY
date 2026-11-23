@@ -8,7 +8,6 @@ import { createWork, writeWork, restore, undo } from "../workspace/index.ts";
 import { moveParts } from "../editing/index.ts";
 import {
   emptySettings,
-  settingsFor,
   defaultCatalog,
   type Work,
   type Run,
@@ -75,7 +74,7 @@ describe("user owned works", () => {
     expect(() => b.revision(work.id, 1)).toThrow();
     expect(() => b.run("run")).toThrow();
     expect(() => b.context("run")).toThrow();
-    expect(b.ownSettings().preferences).toBe("");
+    expect(b.settings().preferences).toBe("");
     expect(() => b.delete(work.id)).toThrow();
     expect(a.work(work.id)).toEqual(work);
   });
@@ -660,8 +659,8 @@ describe("over HTTP, by role", () => {
     // anything.
     const seen = await call(member.cookie, "/models");
     expect(seen.body).toEqual({
-      labels: [{ id: null, name: "", description: "", ready: false }, { id: "default", name: "默认", description: "", ready: false }],
-      chosen: { label: null },
+      labels: [{ id: "default", name: "默认", description: "", ready: false }],
+      chosen: { label: "default" },
     });
     expect(JSON.stringify(seen.body)).not.toMatch(/credential|prices|gpt/);
     for (const path of ["/admin/models", "/admin/accounts", "/admin/roles", "/traces"])
@@ -690,8 +689,8 @@ describe("over HTTP, by role", () => {
       });
     expect((await models([...labels, { ...labels[0], id: "broken", writer: "missing" }])).status).toBe(400);
     expect((await models(labels)).status).toBe(200);
-    expect((await call(member.cookie, "/models")).body.chosen.label).toBeNull();
-    expect(settingsFor(db.models(), db.scoped(member.id).ownSettings())).toMatchObject({
+    expect((await call(member.cookie, "/models")).body.chosen.label).toBe("fast");
+    expect(db.scoped(member.id).settings()).toMatchObject({
       label: "快速",
       author: { credential: "key", effort: "low" },
       search: { mode: "off" },
@@ -699,7 +698,7 @@ describe("over HTTP, by role", () => {
     // Only a label can be picked.
     await call(member.cookie, "/settings", "PUT", { preferences: "", label: "deep", writer: "gpt-6-astra" });
     expect(db.scoped(member.id).ownSettings()).toEqual({ preferences: "", label: "deep" });
-    expect(settingsFor(db.models(), db.scoped(member.id).ownSettings())).toMatchObject({
+    expect(db.scoped(member.id).settings()).toMatchObject({
       label: "深入",
       author: { credential: "key", effort: "high" },
       search: { mode: "builtin" },

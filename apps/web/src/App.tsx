@@ -84,7 +84,6 @@ export function App() {
   const pendingAuth = useRef<(() => void) | undefined>(undefined);
   const pendingMaterialize = useRef<((session: WorkSession | undefined) => void) | undefined>(undefined);
   const language = useRef({ t, locale });
-  const savingPick = useRef<Promise<void> | undefined>(undefined);
   language.current = { t, locale };
   const draft = useRequest();
   const [feedback] = useState(() => new Feedback(() => language.current.t));
@@ -108,8 +107,7 @@ export function App() {
       requireAuth(to === "/library" ? "library" : "page", () => now.current.go(to));
       return;
     }
-    const withinSettings = pageOf(location.pathname) === "settings" && pageOf(to) === "settings";
-    if (!withinSettings && !leaving()) return;
+    if (!leaving()) return;
     // Navigation from an open layer uses its temporary step, leaving the previous
     // page exactly one Back away when the layer closes.
     if (window.history.state?.drawyLayer !== undefined) window.history.replaceState(null, "", to);
@@ -183,8 +181,7 @@ export function App() {
    * author's questions still works when none are left. Those who manage the models are
    * taken to connect one. */
   const allowed = (answering: boolean) => {
-    if (answering) return true;
-    if (blocked === "spent") throw Error(t.composer.quotaOut);
+    if (blocked === "spent" && !answering) throw Error(t.composer.quotaOut);
     if (blocked !== "unconnected") return true;
     if (manages) go("/settings");
     return false;
@@ -200,7 +197,6 @@ export function App() {
       requireAuth("send", () => void attempt(() => latest.current.send(ask)));
       return;
     }
-    if (savingPick.current && !session?.get().waiting) await savingPick.current;
     if (session) {
       if (!allowed(session.get().waiting)) return;
       return session.send({ text, materials, picked: ask.picked ?? r.choices, scene: ask.scene, focus: ask.focus, sent: ask.sent ?? draft.clear });
@@ -234,20 +230,10 @@ export function App() {
   };
   const choose = (change: SettingsChange) => {
     setModels((m) => m && chosen(m, change));
-    const saved = (savingPick.current ?? Promise.resolve()).catch(() => {}).then(async () => {
-      await api("/settings", "PUT", change);
-    });
-    savingPick.current = saved;
+    // What the server settles on (a label taken away falls back) is shown next.
     void attempt(async () => {
-      try {
-        await saved;
-      } finally {
-        const menu = await api<Models>("/models");
-        if (savingPick.current === saved) {
-          savingPick.current = undefined;
-          setModels(menu);
-        }
-      }
+      await api("/settings", "PUT", change);
+      setModels(await api<Models>("/models"));
     });
   };
   // What the work page is handed keeps its identity until the labels or what blocks a
@@ -442,7 +428,7 @@ export function App() {
               ) : page === "traces" ? (
                 <TraceView />
               ) : page === "settings" ? (
-                <Settings path={path} go={go} />
+                <Settings />
               ) : page === "library" ? (
                 <div className={cx("page")}>
                   <header className={cx("page-head")}>
