@@ -1,11 +1,17 @@
 // A block of a flowchart, architecture or concept map: a shape holding a title, an
 // optional note and an optional icon picture, coloured by the style's tokens. Place one per
 // module and join them with arrow links, so each block moves on its own and its
-// connections follow. The words are HTML, so they wrap inside the shape.
+// connections follow. The words are HTML, so they wrap inside the shape. With stack the
+// block stands in front of copies of itself, for a service run as several replicas.
 const d = api.data,
   t = api.theme;
-const W = api.width,
-  H = api.height;
+const size = Number(d.size ?? 15);
+// The copies behind take a step up and to the right each; the block keeps the rest.
+const stack = Math.max(0, Math.min(4, Math.round(Number(d.stack ?? 0))));
+const step = stack ? Math.min(size * 0.45, api.width * 0.06, api.height * 0.08) : 0;
+const rise = stack * step;
+const W = api.width - rise,
+  H = api.height - rise;
 const esc = (s) =>
   String(s ?? "").replace(
     /[&<>"]/g,
@@ -26,7 +32,6 @@ const color = d.color || tones[tone];
 const fill = d.fillStyle || (tone === "plain" ? "none" : "soft");
 const sw = Math.max(1, Number(t.stroke ?? 1.6) * 0.85);
 const shape = d.shape || "box";
-const size = Number(d.size ?? 15);
 const s = sw / 2 + 0.5;
 const iw = W - 2 * s,
   ih = H - 2 * s;
@@ -68,15 +73,22 @@ const shade = d.lift
   : "";
 const effect = d.effect ? ` filter="${api.effect(d.effect)}"` : "";
 const solid = fill === "solid";
+// Each copy on paper behind the block, so only its offset edge shows.
+let copies = "";
+for (let k = stack; k >= 1; k--)
+  copies += `<g transform="translate(${k * step} ${rise - k * step})" fill="${paper}" stroke="${color}" stroke-opacity="${0.75 - k * 0.1}" stroke-width="${sw}"${effect}>${path}</g>`;
+// The block itself stands on paper, so a soft fill does not show the copies through it.
+if (stack)
+  copies += `<g transform="translate(0 ${rise})" fill="${paper}" stroke="none">${path}</g>`;
 const root = api.html(`<style>
-:host,.node{position:relative;width:${W}px;height:${H}px}
+:host,.node{position:relative;width:${W + rise}px;height:${H + rise}px}
 svg{position:absolute;inset:0;overflow:visible}
-.words{position:absolute;left:${inset.l}px;right:${inset.r}px;top:${inset.t}px;bottom:${inset.b}px;display:flex;flex-direction:${d.icon && W < H * 1.6 ? "column" : "row"};align-items:center;justify-content:center;gap:${size * 0.55}px;font-family:${esc(t.font || "system-ui")};text-align:${d.align === "left" ? "left" : "center"};color:${solid ? paper : ink}}
+.words{position:absolute;left:${inset.l}px;right:${inset.r + rise}px;top:${inset.t + rise}px;bottom:${inset.b}px;display:flex;flex-direction:${d.icon && W < H * 1.6 ? "column" : "row"};align-items:center;justify-content:center;gap:${size * 0.55}px;font-family:${esc(t.font || "system-ui")};text-align:${d.align === "left" ? "left" : "center"};color:${solid ? paper : ink}}
 .text{display:flex;flex-direction:column;gap:${size * 0.18}px;min-width:0;${d.align === "left" ? "flex:1;" : ""}}
 .title{font-size:${size}px;font-weight:${d.weight ?? 600};line-height:1.25;overflow-wrap:anywhere;text-wrap:balance}
 .note{font-size:${size * 0.8}px;line-height:1.3;color:${solid ? paper : muted};opacity:${solid ? 0.85 : 1};overflow-wrap:anywhere;text-wrap:balance}
 .icon{flex:none;display:flex}
-</style><div class="node"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${shade}<g ${fills[fill] || fills.none} stroke-width="${sw}"${d.lift ? ' filter="url(#lift)"' : ""}${effect}>${path}${extra}</g></svg><div class="words"><div class="text">${d.title ? `<div class="title">${esc(d.title)}</div>` : ""}${d.note ? `<div class="note">${esc(d.note)}</div>` : ""}</div></div></div>`);
+</style><div class="node"><svg viewBox="0 0 ${W + rise} ${H + rise}" width="${W + rise}" height="${H + rise}">${shade}${copies}<g transform="translate(0 ${rise})" ${fills[fill] || fills.none} stroke-width="${sw}"${d.lift ? ' filter="url(#lift)"' : ""}${effect}>${path}${extra}</g></svg><div class="words"><div class="text">${d.title ? `<div class="title">${esc(d.title)}</div>` : ""}${d.note ? `<div class="note">${esc(d.note)}</div>` : ""}</div></div></div>`);
 if (d.dashed)
   root
     .querySelector("g")

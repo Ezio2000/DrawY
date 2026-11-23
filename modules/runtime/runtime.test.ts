@@ -1604,3 +1604,78 @@ it("patches untouched modules in place on AI updates and developing-to-ready pic
     moverMovedInPlace: true,
   });
 });
+
+it("lays out plans, comparisons, part labels, group frames and replicas from the library", async () => {
+  work.materials = Object.fromEntries(
+    ["swimlanes", "compare", "leader-label", "region", "node"].map((id) => [id, libraryDrawing(id)]),
+  );
+  const at = (id: string, drawingId: string, x: number, y: number, width: number, height: number, data: Record<string, unknown>) => ({
+    id,
+    label: id,
+    drawingId,
+    data,
+    bounds: { x, y, width, height },
+  });
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      at("plan", "swimlanes", 0, 0, 500, 236, {
+        lanes: ["平台", { label: "AI", color: "#2f6fd6" }],
+        stages: ["Q1", "Q2", { label: "Q3", accent: true }, "Q4"],
+        header: 100,
+        size: 14,
+      }),
+      at("grid", "compare", 0, 260, 500, 200, {
+        columns: [{ label: "Kafka", color: "#7137c4" }, "RocketMQ"],
+        numbered: true,
+        labelWidth: 140,
+        headerHeight: 40,
+        rows: [
+          { label: "延迟消息", values: [false, true] },
+          { label: "消费进度", values: [null, "Broker"] },
+        ],
+      }),
+      at("part", "leader-label", 520, 0, 200, 120, { text: "胃", side: "left", textAt: 0.2, target: { x: 0.9, y: 0.8 } }),
+      at("host", "region", 520, 140, 240, 160, { shape: "box", label: "应用主机", color: "#667780" }),
+      at("api", "node", 540, 320, 180, 90, { title: "API", stack: 2 }),
+    ],
+    links: [],
+  };
+  await open();
+  const look = await page.evaluate(() => {
+    const root = (id: string) => document.querySelector(`[data-module-id="${id}"]`)!.shadowRoot!;
+    const texts = (id: string) =>
+      [...root(id).querySelectorAll("text")].map((t) => ({
+        text: t.textContent,
+        x: Number(t.getAttribute("x")),
+        y: Number(t.getAttribute("y")),
+      }));
+    return {
+      errors: window.drawyErrors,
+      plan: texts("plan"),
+      dashes: root("plan").querySelectorAll("path[stroke-dasharray]").length,
+      grid: texts("grid"),
+      tints: [...root("grid").querySelectorAll("rect")].map((r) => r.getAttribute("fill")),
+      leader: root("part").querySelector("path")!.getAttribute("d"),
+      part: texts("part"),
+      host: { dash: root("host").querySelector("rect")!.getAttribute("stroke-dasharray"), label: texts("host")[0] },
+      copies: root("api").querySelectorAll("svg > g").length,
+    };
+  });
+  expect(look.errors).toEqual([]);
+  // Stages cross the lanes: named along the top, each centred over its quarter of the run.
+  const q2 = look.plan.find((t) => t.text === "Q2")!;
+  expect(q2.x).toBeCloseTo(100 + (400 * 1.5) / 4);
+  expect(q2.y).toBeLessThan(14 * 2.6);
+  expect(look.dashes).toBe(3);
+  // A false shows a dash and an empty cell stays clear; the coloured column has its band.
+  expect(look.grid.map((t) => t.text)).toEqual(["Kafka", "RocketMQ", "1", "延迟消息", "2", "消费进度", "Broker"]);
+  expect(look.tints).toContain("#7137c4");
+  // The leader bends once and runs level into text set at a fifth of the side.
+  expect(look.leader!.match(/L/g)).toHaveLength(2);
+  expect(look.part[0].y).toBeCloseTo(24);
+  expect(look.host.dash).not.toBe("none");
+  expect(look.host.label).toMatchObject({ text: "应用主机", x: 15 * 0.8 });
+  // Two copies, the paper under the block, and the block itself.
+  expect(look.copies).toBe(4);
+});
