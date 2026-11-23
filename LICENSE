@@ -2,8 +2,9 @@ MIT License
 
 Copyright (c) 2026 JHarness contributors
 
-This license covers SeeY except packages/art, which carries its own license (see
-packages/art/LICENSE and packages/art/README.md).
+This license covers DrawY except the art in content/seed/files (pictures and icons
+not named line-*.svg) and apps/web/src/ui/brand, which carry their own licenses
+(see content/LICENSE and apps/web/src/ui/brand/LICENSE).
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

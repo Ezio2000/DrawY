@@ -1,6 +1,6 @@
 The library code (*.ts, seed/drawings, seed/effects.json, seed/styles.json) is covered by the repository's MIT license.
 
-seed/files: pictures and icons not named line-*.svg are UNLICENSED — SeeY Art. Proprietary materials copied from Ezio2000/seeY-art for this deployment.
+seed/files: pictures and icons not named line-*.svg are UNLICENSED — DrawY Art. Proprietary materials of DrawY.
 
 seed/files/line-*.svg are Lucide icons (https://lucide.dev), used under the ISC License:
 
