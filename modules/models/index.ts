@@ -27,9 +27,10 @@ export const adapterFor = (protocol: Protocol): Adapter => adapters[protocol];
  * items, whichever format the model speaks. */
 export async function generate(role: Role, turn: Turn): Promise<Answer> {
   if (!role.credential) throw Error("请先配置模型凭证");
+  const input = role.efforts.length ? turn.input : turn.input.filter((i) => i.type !== "configuration_update");
   return adapterFor(role.protocol).generate(role, {
     ...turn,
-    input: role.vision ? turn.input : blind(turn.input),
+    input: role.vision ? input : blind(input),
     tools: turn.tools ?? [],
     onEvent: turn.onEvent ?? (() => {}),
     budget: Math.min(turn.budget ?? 32768, role.maxOutput),

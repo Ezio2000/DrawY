@@ -11,6 +11,17 @@ const role: Role = {
   speed: "default",
 };
 afterEach(() => vi.unstubAllGlobals());
+it("sends a Responses request without reasoning options for a model with no adjustable effort", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(
+    'data: {"type":"response.completed","response":{"output":[],"usage":{}}}\n\n',
+  )));
+  await generate({ ...role, efforts: [] }, {
+    instructions: "", input: [{ type: "configuration_update", reasoning: { effort: "high" } }], signal: new AbortController().signal,
+  });
+  const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);
+  expect(body).not.toHaveProperty("reasoning");
+  expect(body.input).toEqual([]);
+});
 it("retains completed streamed tool arguments when final output is empty", async () => {
   const item = {
     type: "function_call",

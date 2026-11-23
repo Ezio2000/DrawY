@@ -249,6 +249,7 @@ function estimate(items: Item[]): number {
  * of what has been added since. */
 export function contextSize(ctx: Context): number {
   const m = ctx.measured;
+  if (m?.items === ctx.input.length) return m.tokens;
   return m && m.items <= ctx.input.length
     ? m.tokens + estimate(ctx.input.slice(m.items))
     : estimate(ctx.input);
@@ -295,7 +296,7 @@ export async function compact(
     // output budget and the cut-off summary failed the whole run. Where the effort changes
     // in the conversation, the summary is asked of the same request as every turn, so it
     // reads the whole conversation from the cache instead of paying for all of it again.
-    const inConversation = adapterFor(author.protocol).effortControl(author) === "conversation";
+    const inConversation = author.efforts.length > 0 && adapterFor(author.protocol).effortControl(author) === "conversation";
     let summary = "",
       answered = false;
     try {
@@ -367,7 +368,7 @@ export function requestRole(ctx: Context): Role {
  * (see `withLessThought`) or run — or a cross-run switch from `baseEffort` — is updated
  * inside the conversation before it carries over. */
 export function holdEffort(input: Item[], role: Role, baseEffort?: Effort) {
-  if (adapterFor(role.protocol).effortControl(role) !== "conversation") return;
+  if (!role.efforts.length || adapterFor(role.protocol).effortControl(role) !== "conversation") return;
   const target = effortFor(role.effort, role.efforts) ?? role.effort;
   const last = input.findLast((i) => i.type === "configuration_update")?.reasoning?.effort;
   const current = last ?? (baseEffort ? (effortFor(baseEffort, role.efforts) ?? baseEffort) : undefined);
@@ -385,9 +386,10 @@ export function withLessThought(input: Item[], role: Role, effort: Effort) {
   return { role: { ...role, ...(adapterFor(role.protocol).effortControl(role) === "fixed" ? { effort: least } : {}) }, effort: least };
 }
 /** The user's messages on this work, oldest first. */
-export const userMessages = (store: UserStore, workId: string) =>
+export const userMessages = (store: UserStore, workId: string, except?: string) =>
   store
     .runs(workId)
+    .filter((r) => r.id !== except)
     .flatMap((r) => r.steps.flatMap((s) => (s.kind === "message" && s.role === "user" ? [s] : [])));
 /** Everything the user has said (or attached) about this work, for checking a brief's quotes. */
 export const said = (store: UserStore, workId: string, preferences: string) => [
@@ -396,26 +398,42 @@ export const said = (store: UserStore, workId: string, preferences: string) => [
 ];
 /** Where a conversation starts when the one before it cannot be continued: what the user has
  * asked of this work so far. The whole work follows it. */
-export function earlierRequests(store: UserStore, workId: string): Item[] {
-  const asked = userMessages(store, workId).map((s) => s.text);
+export function earlierRequests(store: UserStore, workId: string, except?: string): Item[] {
+  const asked = userMessages(store, workId, except).map((s) => s.text);
   return asked.length
     ? [{ role: "user", content: `Earlier requests on this work, oldest first:\n${asked.map((a) => `- ${a}`).join("\n")}` }]
     : [];
 }
-/** The conversation a new request goes on with: the one the work's last run left, unless it
- * is in an older format, then what the user asked before. Either way it is told the user's
- * preferences when they changed, the request, and the work as far as it does not hold it. */
-export function opened(store: UserStore, sceneId: string, work: Work, settings: Settings, message: Item): Context {
-  const previous = store.runs(work.id).at(-1);
-  const saved = previous && (store.context(previous.id) as Context | null);
-  const before = saved?.format === CONTEXT_FORMAT ? saved : undefined;
-  const sameModel =
-    before &&
-    before.settings.author.protocol === settings.author.protocol &&
-    before.settings.author.model === settings.author.model;
+/** Cache and provider-specific conversation items belong to one writer connection. */
+export function sameWriter(a: Settings, b: Settings) {
+  return a.writerProviderId === b.writerProviderId && a.author.model === b.author.model &&
+    a.author.protocol === b.author.protocol && a.author.provider === b.author.provider &&
+    a.author.channel === b.author.channel && a.author.baseUrl === b.author.baseUrl &&
+    a.author.credential === b.author.credential && a.author.accountId === b.author.accountId;
+}
+
+/** The common conversation items another writer can read, including attached images
+ * and tool results. Signed reasoning, item IDs and effort changes belong to the sender. */
+function transferable(input: Item[]): Item[] {
+  return input.flatMap((item): Item[] => {
+    if (item.role === "user" || item.role === "assistant")
+      return [{ role: item.role, content: item.content }];
+    if (item.type === "function_call")
+      return [{ type: item.type, call_id: item.call_id, name: item.name, arguments: item.arguments }];
+    if (item.type === "function_call_output")
+      return [{ type: item.type, call_id: item.call_id, output: item.output }];
+    return [];
+  });
+}
+
+/** Continue the same writer's prefix. A different writer receives the visible dialogue
+ * and the current work afresh, without another account's signed or encrypted items. */
+export function opened(store: UserStore, run: Run, work: Work, settings: Settings, message: Item,
+  previous?: Context): Context {
+  const before = previous && sameWriter(previous.settings, settings) ? previous : undefined;
   const baseEffort =
     adapterFor(settings.author.protocol).effortControl(settings.author) === "conversation"
-      ? sameModel
+      ? before
         ? (before.baseEffort ??
           effortFor(before.settings.author.effort, settings.author.efforts) ??
           before.settings.author.effort)
@@ -423,7 +441,7 @@ export function opened(store: UserStore, sceneId: string, work: Work, settings: 
       : undefined;
   const ctx: Context = {
     settings,
-    input: before ? before.input : earlierRequests(store, work.id),
+    input: before?.input ?? (previous ? transferable(previous.input) : earlierRequests(store, work.id, run.id)),
     generations: 0,
     ...(before?.measured ? { measured: before.measured } : {}),
     ...(before?.reported ? { reported: before.reported } : {}),
@@ -436,7 +454,7 @@ export function opened(store: UserStore, sceneId: string, work: Work, settings: 
     // Told again only when they changed since this conversation last heard them.
     ...(before?.preferences === ctx.preferences ? [] : [preferencesMessage(ctx.preferences!)]),
     message,
-    catchUp(store, sceneId, work, before?.known),
+    catchUp(store, run.sceneId, work, before?.known),
   );
   return ctx;
 }

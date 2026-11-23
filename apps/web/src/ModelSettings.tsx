@@ -56,7 +56,7 @@ import {
 import { cx } from "./cx.ts";
 import { useT, type Words } from "./i18n.tsx";
 import { useDismiss } from "./popover.ts";
-import { Badge, Entry, Group, Head, Row, newId } from "./SettingsParts.tsx";
+import { Badge, Chips, Entry, Group, Head, Row, newId } from "./SettingsParts.tsx";
 
 type W = Words["settings"];
 type Patch<T> = (patch: Partial<T>) => void;
@@ -93,41 +93,6 @@ function Choose<V extends string>({
         </button>
       ))}
     </Segmented>
-  );
-}
-
-/** Some of a few, as chips that toggle, kept in the order given. */
-function Chips<V extends string>({
-  label,
-  options,
-  value,
-  name,
-  pick,
-}: {
-  label: string;
-  options: readonly V[];
-  value: readonly V[];
-  name: (v: V) => string;
-  pick: (v: V[]) => void;
-}) {
-  return (
-    <div className={cx("chips")} role="group" aria-label={label}>
-      {options.map((v) => (
-        <button
-          key={v}
-          aria-pressed={value.includes(v)}
-          onClick={() =>
-            pick(
-              value.includes(v)
-                ? value.filter((x) => x !== v)
-                : options.filter((x) => x === v || value.includes(x)),
-            )
-          }
-        >
-          {name(v)}
-        </button>
-      ))}
-    </div>
   );
 }
 
@@ -900,7 +865,14 @@ export function WriterSection({
     <ProviderSection
       title={t.titles.author}
       list={catalog.writers}
-      set={(writers) => change({ ...catalog, writers })}
+      set={(writers) => {
+        const models = writers.flatMap((p) => p.models);
+        const routes = catalog.decision.routes.filter(({ writer, effort }) => {
+          const m = models.find((m) => m.id === writer);
+          return m && (effort ? m.efforts.includes(effort) : !m.efforts.length);
+        });
+        change({ ...catalog, writers, decision: { ...catalog.decision, routes } });
+      }}
       catalog={catalog}
       change={change}
       kind={kind}

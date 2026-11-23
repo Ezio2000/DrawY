@@ -17,6 +17,7 @@ import { author } from "./prompts.ts";
 import { tools, searchTools } from "./tools.ts";
 import {
   compact,
+  CONTEXT_FORMAT,
   contextSize,
   holdEffort,
   opened,
@@ -26,6 +27,7 @@ import {
   withLessThought,
   type Context,
 } from "./conversation.ts";
+import { selectSettings } from "./routing.ts";
 import { failedOf, spend, spendFailed, steering } from "./spending.ts";
 import { activity, LiveSteps, silent, type ToolStep } from "./steps.ts";
 import { handlers, parsedArguments, Refusal, type Call, type Execution, type Outcome } from "./handlers.ts";
@@ -70,8 +72,13 @@ export class Agent {
     const work = store.work(workId);
     if (store.busy(workId)) throw new DomainError("请先完成或取消当前任务", 409);
     if (!work.scenes[sceneId]) throw new DomainError("场景不存在", 404);
-    const settings = store.settings();
+    const catalog = store.storage.models();
+    const own = store.ownSettings();
     const message = await userMessage(store, prompt, materials);
+    // A concurrent request can claim the work while its attachments are loading.
+    if (store.busy(workId)) throw new DomainError("请先完成或取消当前任务", 409);
+    const saved = store.latestContext(workId) as Context | null;
+    const previous = saved?.format === CONTEXT_FORMAT ? saved : undefined;
     const run: Run = {
       id: id(),
       workId,
@@ -81,9 +88,7 @@ export class Agent {
       observations: [],
       startedAt: Date.now(),
     };
-    const ctx = opened(store, sceneId, work, settings, message);
     this.emit(store, run);
-    store.saveContext(run.id, ctx);
     tracer.begin({
       id: run.id,
       userId: store.userId,
@@ -93,7 +98,11 @@ export class Agent {
       status: run.status,
       startedAt: run.startedAt,
     });
-    void this.execute(store, run, ctx, "request");
+    void this.execute(store, run, async (signal) => {
+      const settings = await selectSettings(catalog, own, run, message, signal);
+      signal.throwIfAborted();
+      return opened(store, run, work, settings, message, previous);
+    }, "request");
     return run;
   }
   async resume(
@@ -130,35 +139,11 @@ export class Agent {
   }
   /** Runs the author's turns from a request or an answer until the run ends, waits for the
    * user or fails. The run is billed at the settings and prices it started with. */
-  async execute(store: UserStore, run: Run, ctx: Context, trigger: "request" | "answer") {
+  async execute(store: UserStore, run: Run, context: Context | ((signal: AbortSignal) => Promise<Context>), trigger: "request" | "answer") {
     const abort = new AbortController();
     this.active.set(run.id, abort);
     const timeout = setTimeout(() => abort.abort(new Error("运行超过 15 分钟")), 15 * 60 * 1000);
-    const settings = ctx.settings;
-    const developments = this.developments.get(run.id) ?? [];
-    this.developments.set(run.id, developments);
-    const x: Execution = {
-      store,
-      run,
-      ctx,
-      signal: abort.signal,
-      start: Date.now(),
-      emit: () => this.emit(store, run),
-      showWork: (work) => this.publish(store.userId, { type: "work", work }),
-      developments,
-      developed: () => developed(store, developments),
-    };
-    run.services = {
-      label: settings.label,
-      author: settings.authorName,
-      model: settings.author.model,
-      effort: settings.author.effort,
-      speed: settings.author.speed,
-      search: settings.search.mode,
-      ...(settings.search.service ? { searchBy: settings.search.service.name } : {}),
-      image: settings.imageName,
-    };
-    run.prices = settings.prices;
+    const began = Date.now();
     await tracer.within(run.id, () =>
       tracer
         .span(
@@ -168,19 +153,47 @@ export class Agent {
             message: run.steps.findLast(
               (s): s is Extract<Step, { kind: "message" }> => s.kind === "message" && s.role === "user",
             )?.text,
-            model: settings.author.model,
-            protocol: settings.author.protocol,
-            effort: settings.author.effort,
-            search: settings.search.mode,
-            ...(settings.search.service ? { searchService: settings.search.service.provider } : {}),
-            speed: settings.author.speed,
-            imageModel: settings.image.model,
           },
           async (execution) => {
+            let ctx: Context | undefined;
             try {
+              ctx = typeof context === "function" ? await context(abort.signal) : context;
+              const settings = ctx.settings;
+              const developments = this.developments.get(run.id) ?? [];
+              this.developments.set(run.id, developments);
+              const x: Execution = {
+                store,
+                run,
+                ctx,
+                signal: abort.signal,
+                start: began,
+                emit: () => this.emit(store, run),
+                showWork: (work) => this.publish(store.userId, { type: "work", work }),
+                developments,
+                developed: () => developed(store, developments),
+              };
+              run.services = {
+                label: settings.label,
+                author: settings.authorName,
+                model: settings.author.model,
+                effort: settings.author.efforts.length ? settings.author.effort : undefined,
+                speed: settings.author.speed,
+                search: settings.search.mode,
+                ...(settings.search.service ? { searchBy: settings.search.service.name } : {}),
+                image: settings.imageName,
+              };
+              run.prices = settings.prices;
+              store.saveContext(run.id, ctx);
               const instructions = author(await bindings());
               // Where this execution starts from; each turn records what it adds.
               execution.set({
+                model: settings.author.model,
+                protocol: settings.author.protocol,
+                effort: run.services.effort,
+                search: settings.search.mode,
+                ...(settings.search.service ? { searchService: settings.search.service.provider } : {}),
+                speed: settings.author.speed,
+                imageModel: settings.image.model,
                 instructions,
                 context: ctx.input,
                 tools: toolsFor(settings).map((t) => ("name" in t ? t.name : t.type)),
@@ -193,17 +206,19 @@ export class Agent {
               if (run.status === "failed") throw e;
             } finally {
               // A cancelled batch still needs a result for every emitted tool call.
-              const answered = new Set(
-                ctx.input.filter((item) => item.type === "function_call_output").map((item) => item.call_id),
-              );
-              for (const item of ctx.input.filter((item) => item.type === "function_call"))
-                if (!answered.has(item.call_id))
-                  ctx.input.push({
-                    type: "function_call_output",
-                    call_id: item.call_id,
-                    output: "Execution interrupted. Read the current work before continuing.",
-                  });
-              store.saveContext(run.id, ctx);
+              if (ctx) {
+                const answered = new Set(
+                  ctx.input.filter((item) => item.type === "function_call_output").map((item) => item.call_id),
+                );
+                for (const item of ctx.input.filter((item) => item.type === "function_call"))
+                  if (!answered.has(item.call_id))
+                    ctx.input.push({
+                      type: "function_call_output",
+                      call_id: item.call_id,
+                      output: "Execution interrupted. Read the current work before continuing.",
+                    });
+                store.saveContext(run.id, ctx);
+              }
               clearTimeout(timeout);
               this.active.delete(run.id);
               // Only a waiting run goes on, with the pictures it asked for.
@@ -211,7 +226,7 @@ export class Agent {
                 this.developments.delete(run.id);
                 this.heldForText.delete(run.id);
               }
-              run.elapsedMs = (run.elapsedMs || 0) + Date.now() - x.start;
+              run.elapsedMs = (run.elapsedMs || 0) + Date.now() - began;
               this.emit(store, run);
               execution.set({ status: run.status });
               tracer.status(run.id, run.status);
@@ -234,6 +249,9 @@ export class Agent {
       holdEffort(ctx.input, ctx.settings.author, ctx.baseEffort);
       const { result, said } = await this.turn(x, instructions, tools, ctx.input.slice(seen));
       spend(run, result.usage);
+      if (typeof result.usage.input_tokens === "number") {
+        run.usage!.firstCached ??= result.usage.input_tokens_details?.cached_tokens ?? 0;
+      }
       ctx.input.push(...result.items);
       seen = ctx.input.length;
       if (result.usage.input_tokens)
@@ -309,7 +327,7 @@ export class Agent {
           estimatedTokens: contextSize(ctx),
           request: {
             ...requestOf(author),
-            effort: author.effort,
+            effort: author.efforts.length ? author.effort : undefined,
             instructionsChars: instructions.length,
             tools: tools.length,
             ...(Object.keys(steer).length ? { steer } : {}),

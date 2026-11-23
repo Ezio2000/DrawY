@@ -11,6 +11,7 @@ export interface Span {
   parentId: string | null;
   kind:
     | "execution"
+    | "decision"
     | "turn"
     | "tool"
     | "search"
@@ -58,7 +59,7 @@ export interface TraceSummary extends Trace {
 }
 /** The meter a span counts towards; executions and notes are not work of their own. */
 export const meterOf = (s: Span) =>
-  s.kind === "execution" || s.kind === "note"
+  s.kind === "execution" || s.kind === "note" || (s.kind === "decision" && !s.attrs.called)
     ? undefined
     : typeof s.attrs.meter === "string"
       ? s.attrs.meter
@@ -281,6 +282,7 @@ export class Tracer {
     const tokens = { input: 0, output: 0, reasoning: 0, cached: 0 };
     const counts = {
       execution: 0,
+      decision: 0,
       turn: 0,
       tool: 0,
       search: 0,
@@ -295,7 +297,7 @@ export class Tracer {
       counts[s.kind]++;
       if (s.status === "error") counts.errors++;
       const used = tokensOf(s.attrs.usage);
-      if (s.kind === "turn")
+      if (s.kind === "turn" || s.kind === "decision")
         for (const k of ["input", "output", "reasoning", "cached"] as const)
           tokens[k] += used[k];
       const key = meterOf(s);
@@ -419,6 +421,7 @@ export function brief(span: Span): Span {
     if (a[k] !== undefined) keep[k] = a[k];
   if (Array.isArray(a.subjects)) keep.subjects = a.subjects.slice(0, 12);
   if (Array.isArray(a.shots)) keep.shots = a.shots.length;
+  if (span.kind === "decision") Object.assign(keep, { called: a.called, writer: a.writer, effort: a.effort, cost: a.cost, reason: a.reason });
   if (span.kind === "tool")
     keep.asked = [a.hosted && a.args?.type, ...words(a.args)]
       .filter(Boolean)

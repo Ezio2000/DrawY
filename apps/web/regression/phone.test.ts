@@ -357,9 +357,9 @@ it("keeps the story board visible while reading later chapters", async () => {
   await page.goto(base + "/");
   const nav = page.getByRole("navigation", { name: "Switch pictures" });
   const stage = nav.locator("..");
-  const links = page.getByRole("navigation", { name: "What it draws" }).getByRole("button");
-  for (const [index, id] of [[5, "range"], [7, "navigate"]] as const) {
-    await links.nth(index).tap();
+  const links = page.getByRole("navigation", { name: "What it draws" });
+  for (const [name, id] of [["Curve", "range"], ["Flowchart", "navigate"]] as const) {
+    await links.getByRole("button", { name, exact: true }).tap();
     await page.waitForSelector(`#l-chapter-${id}[data-on]`);
     const bounds = (await stage.boundingBox())!;
     expect(bounds.y).toBeCloseTo(20);

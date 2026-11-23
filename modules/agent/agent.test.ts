@@ -7,7 +7,7 @@ import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { Agent } from "./index.ts";
 import { SEARCH_LIMIT, steering } from "./spending.ts";
-import { CONTEXT_FORMAT, withLessThought } from "./conversation.ts";
+import { CONTEXT_FORMAT, opened, withLessThought } from "./conversation.ts";
 import { guidesRead, guides } from "./guides.ts";
 
 import { settleSchema } from "./tools.ts";
@@ -15,7 +15,7 @@ import { restore, writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { CutOff, generate, type Item } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
-import { boxOf, costOf, guideTopics, labelOf, modelCatalogSchema, type Run, type Work } from "../contracts/index.ts";
+import { boxOf, costOf, guideTopics, labelOf, modelCatalogSchema, settingsFor, type Run, type Work } from "../contracts/index.ts";
 import { removeParts, setData } from "../editing/index.ts";
 import { tracer } from "../trace/index.ts";
 import { library as client, resolveStyle } from "../materials/index.ts";
@@ -26,6 +26,7 @@ let library: ReturnType<typeof serveLibrary>;
 /** A storage in a temporary directory, an author account in it, and a work to draw on,
  * saved as revision 1 with an empty child scene. */
 let dir: string, db: Storage, store: UserStore, work: Work;
+const fixedSettings = () => settingsFor(db.models(), store.ownSettings());
 beforeEach(() => {
   library = serveLibrary(client.base);
   dir = mkdtempSync(join(tmpdir(), "drawy-agent-"));
@@ -119,7 +120,7 @@ const newRun = (id = "run"): Run => {
 };
 /** Executes a run straight from a conversation, as a request would. */
 async function execute(input: Item[] = [], run = newRun()) {
-  const ctx = { input, settings: store.settings(), generations: 0, format: CONTEXT_FORMAT };
+  const ctx = { input, settings: fixedSettings(), generations: 0, format: CONTEXT_FORMAT };
   await new Agent(() => {}).execute(store, run, ctx, "request");
   return { run, ctx };
 }
@@ -269,7 +270,7 @@ it("shows a turn's thinking, words and streamed layout as steps before the write
       laid.push(step.scenes[0]?.modules.length);
       written.push(step.writing);
     }
-  }).execute(store, run, { input: [], settings: store.settings(), generations: 0 }, "request");
+  }).execute(store, run, { input: [], settings: fixedSettings(), generations: 0 }, "request");
   expect(run.status).toBe("completed");
   // The layout showed part way, and which drawing was being written.
   expect(laid).toContain(3);
@@ -448,7 +449,7 @@ it("compacts the conversation at its budget, and goes on without old pictures wh
       return { items: ["one", "two"].map((id) => item("read_work", {}, id)), usage: {}, response: {} };
     },
   ]);
-  const ctx = { input: structuredClone(long) as Item[], settings: store.settings(), generations: 0, format: CONTEXT_FORMAT };
+  const ctx = { input: structuredClone(long) as Item[], settings: fixedSettings(), generations: 0, format: CONTEXT_FORMAT };
   await agent.execute(store, run, ctx, "request");
   expect(requests[0]).toEqual(requests[1]);
   expect(store.run(run.id).status).toBe("cancelled");
@@ -493,7 +494,7 @@ it("bills every model attempt: a broken stream asked again, a refused request, a
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"], shouldAdvanceTime: true, advanceTimeDelta: 500 });
   try {
     const run = newRun();
-    const ctx = { input: [] as Item[], settings: store.settings(), generations: 0, format: CONTEXT_FORMAT };
+    const ctx = { input: [] as Item[], settings: fixedSettings(), generations: 0, format: CONTEXT_FORMAT };
     ctx.settings.prices = { ...ctx.settings.prices, author: { input: 4, cached: 0.2, cacheWrite: 5, output: 20 } };
     script([
       ({ onEvent }) => {
@@ -705,7 +706,7 @@ it("keeps hosted tools in the conversation as steps, records them under their tu
       new Agent((_user, event: any) => {
         const step = event.run?.steps.find((s: any) => s.id === "ws_1");
         if (step) states.push(step.status);
-      }).execute(store, run, { input: [], settings: store.settings(), generations: 0 }, "request"),
+      }).execute(store, run, { input: [], settings: fixedSettings(), generations: 0 }, "request"),
     );
     expect(run.status).toBe("completed");
     expect(states).toContain("running");
@@ -715,7 +716,7 @@ it("keeps hosted tools in the conversation as steps, records them under their tu
     expect(run.steps).toContainEqual({ kind: "tool", id: "ci_1", status: "done", name: "hosted", tool: "code_interpreter", detail: "print(6 * 7)" });
     expect(run.steps).toContainEqual({ kind: "tool", id: "ws_1", status: "done", name: "web_search", queries: [], urls: ["https://example.com/a"], action: "open_page" });
     expect(run.steps).toContainEqual({ kind: "message", role: "assistant", text: "说明[1]", citations: [{ start: 2, end: 5, url: "https://openai.com/", title: "OpenAI" }] });
-    expect(run.usage).toEqual({ input: 500, cached: 250, output: 30, reasoning: 12, pages: 1, hosted: { code_interpreter: 1, web_search: 1 } });
+    expect(run.usage).toEqual({ input: 500, cached: 250, firstCached: 50, output: 30, reasoning: 12, pages: 1, hosted: { code_interpreter: 1, web_search: 1 } });
     // A look tells the author what it has already searched, to judge against it.
     expect(outputs(seen[2])[0].research).toMatchObject({ calls: 1, pagesOpened: ["https://example.com/a"] });
     const { spans, trace } = tracer.get(store.userId, run.id)!;
@@ -925,7 +926,7 @@ it("pins a run's settings and prices across answers, other works and a storage r
   ];
   catalog.defaults.label = "a";
   db.saveModels(modelCatalogSchema.parse(catalog));
-  const original = store.settings();
+  const original = fixedSettings();
   vi.mocked(generate).mockImplementation(async () => ({
     items: [item("ask_user", ask, crypto.randomUUID())],
     usage: { input_tokens: 1000, input_tokens_details: { cached_tokens: 200, cache_write_tokens: 100 }, output_tokens: 100 },
@@ -943,7 +944,7 @@ it("pins a run's settings and prices across answers, other works and a storage r
   for (const model of catalog.writers[0].models) model.prices.output = 99;
   catalog.painters[0].models[0].model = "new-painter";
   db.saveModels(modelCatalogSchema.parse(catalog));
-  const current = store.settings();
+  const current = fixedSettings();
   expect(current.author.model).toBe("writer-b");
   store.commit({ ...fixture(), id: "other-work", revision: 0 }, 0, { kind: "edit" });
   const other = await agent.start(store, "other-work", "root", "Another picture");
@@ -1329,3 +1330,113 @@ it("exempts the drawings the library binds to text, pictures and links from card
 });
 
 
+
+it("routes each new Auto request, keeps the writer prefix across effort changes, and pins a waiting run", async () => {
+  const c = db.models();
+  const p = c.writers[0], m = p.models[0];
+  p.credential = "router-key";
+  m.model = "gpt-6.2-sol";
+  m.efforts = ["low", "medium"];
+  m.effort = "medium";
+  c.decision.credential = "decision-key";
+  c.decision.routes = [
+    { writer: m.id, effort: "low", descriptions: ["Local edits"] },
+    { writer: m.id, effort: "medium", descriptions: ["Interactive scenes"] },
+  ];
+  db.saveModels(modelCatalogSchema.parse(c));
+
+  const tasks = ["Interactive scenes", "Local edits", "Interactive scenes"];
+  const actual = globalThis.fetch;
+  const decisions: Item[] = [];
+  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+    if (String(url) !== "https://api.openai.com/v1/decisions") return actual(url, init);
+    const body = JSON.parse(String(init?.body));
+    decisions.push(body);
+    const task = tasks.shift();
+    const choice = body.questions[0].choices.find((o: Item) => o.description === task).value;
+    return Response.json({ answers: [{ type: "choice", name: "task", choice }],
+      usage: { input_tokens: 200, input_tokens_details: { cached_tokens: 0 } } });
+  });
+  const turns: { top: string; effort?: string; updates: string[]; input: Item[] }[] = [];
+  let askNext = false;
+  vi.mocked(generate).mockImplementation(async (role, turn) => {
+    turns.push({ top: role.effort, effort: turn.effort, input: structuredClone(turn.input),
+      updates: turn.input.filter((x) => x.type === "configuration_update").map((x) => x.reasoning.effort) });
+    const response = turns.length === 1 ? item("view_canvas", {}) : askNext ? item("ask_user", ask) : item("finish", { message: "Done" });
+    askNext = false;
+    return { items: [response], usage: { input_tokens: 2000, input_tokens_details: { cached_tokens: 1024 } }, response: {} };
+  });
+  try {
+    const agent = new Agent(() => {});
+    for (const prompt of ["Draw a complex scene", "Shorten its title"]) {
+      const run = await agent.start(store, work.id, "root", prompt);
+      await waitFor(run.id, "completed");
+      expect(store.run(run.id).usage?.firstCached).toBe(1024);
+    }
+    askNext = true;
+    const run = await agent.start(store, work.id, "root", "Add a new interactive scene");
+    await waitFor(run.id, "waiting");
+    // The administrator takes the model out of Auto before the user's answer.
+    c.decision.routes = [];
+    db.saveModels(modelCatalogSchema.parse(c));
+    await agent.resume(store, run.id, "A");
+    await waitFor(run.id, "completed");
+    expect(decisions).toHaveLength(3);
+    expect(decisions.map((d) => d.input)).toEqual(["Draw a complex scene", "Shorten its title", "Add a new interactive scene"]);
+    expect(turns.map(({ top, effort, updates }) => [top, effort, updates])).toEqual([
+      ["medium", "medium", []], ["medium", "medium", []], ["medium", "low", ["low"]],
+      ["medium", "medium", ["low", "medium"]], ["medium", "medium", ["low", "medium"]],
+    ]);
+    expect(turns[2].input.slice(0, turns[1].input.length)).toEqual(turns[1].input);
+    expect(JSON.stringify(turns)).not.toContain("Local edits");
+    expect(store.run(run.id).usage?.decision?.input).toBe(200);
+  } finally {
+    fetcher.mockRestore();
+  }
+});
+
+it("cancels an in-flight decision without drawing or admitting another run on that work", async () => {
+  const c = db.models(), p = c.writers[0], m = p.models[0];
+  p.credential = "test";
+  m.efforts = ["low", "high"];
+  c.decision.credential = "router-key";
+  c.decision.routes = [{ writer: m.id, effort: "low", descriptions: ["Edit a label"] },
+    { writer: m.id, effort: "high", descriptions: ["Design an interaction"] }];
+  db.saveModels(modelCatalogSchema.parse(c));
+  const actual = globalThis.fetch;
+  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation((url, init) => {
+    if (!String(url).endsWith("/decisions")) return actual(url, init);
+    return new Promise<Response>((_, reject) =>
+      init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true }));
+  });
+  try {
+    const agent = new Agent(() => {});
+    const run = await agent.start(store, work.id, "root", "Draw a diagram");
+    await expect(agent.start(store, work.id, "root", "Again")).rejects.toThrow("请先完成或取消当前任务");
+    agent.cancel(store, run.id);
+    await waitFor(run.id, "cancelled");
+    expect(generate).not.toHaveBeenCalled();
+    expect(store.busy(work.id)).toBe(false);
+    expect(store.context(run.id)).toBeNull();
+  } finally {
+    fetcher.mockRestore();
+  }
+});
+
+it("hands a different account the prior image and tool results without its signed items or cache measurements", () => {
+  const settings = fixedSettings(), run = newRun();
+  const image = { role: "user", content: [{ type: "input_image", image_url: "data:image/png;base64,AA==" }] };
+  const previous = {
+    settings, generations: 1, known: work.revision, measured: { tokens: 6400, items: 5 },
+    input: [image, { type: "reasoning", encrypted_content: "account-bound" }, { type: "configuration_update", reasoning: { effort: "high" } },
+      { type: "function_call", call_id: "c", name: "read_work", arguments: "{}", id: "account-bound" },
+      { type: "function_call_output", call_id: "c", output: "current title" }],
+  };
+  const next = opened(store, run, work, { ...settings, writerProviderId: "second" },
+    { role: "user", content: "Edit the title" }, previous);
+  expect(next.measured).toBeUndefined();
+  expect(next.input).toContainEqual(image);
+  expect(next.input).toContainEqual({ type: "function_call_output", call_id: "c", output: "current title" });
+  expect(JSON.stringify(next.input)).not.toMatch(/account-bound|configuration_update/);
+  expect(next.input.at(-1)?.content).toContain("Current work:");
+});

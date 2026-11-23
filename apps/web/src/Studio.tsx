@@ -787,6 +787,9 @@ function Draft({ step }: { step: Tool<"write_work"> }) {
 export function spentBy(run: Run) {
   const u = run.usage;
   return {
+    decisionModels: u?.decision?.model ? [u.decision.model] : [],
+    decisionInput: u?.decision?.input ?? 0,
+    decisionCached: u?.decision?.cached ?? 0,
     input: u?.input ?? 0,
     cached: u?.cached ?? 0,
     cacheWrite: u?.cacheWrite ?? 0,
@@ -813,6 +816,9 @@ export function spentBy(run: Run) {
 type Spent = ReturnType<typeof spentBy>;
 const sum = (a: number, b: number) => a + b;
 const total = (list: Spent[]): Spent => ({
+  decisionModels: [...new Set(list.flatMap((s) => s.decisionModels))],
+  decisionInput: list.map((s) => s.decisionInput).reduce(sum, 0),
+  decisionCached: list.map((s) => s.decisionCached).reduce(sum, 0),
   input: list.map((s) => s.input).reduce(sum, 0),
   cached: list.map((s) => s.cached).reduce(sum, 0),
   cacheWrite: list.map((s) => s.cacheWrite).reduce(sum, 0),
@@ -836,6 +842,7 @@ const total = (list: Spent[]): Spent => ({
   cost: list.some((s) => s.cost)
     ? {
         author: list.map((s) => s.cost?.author ?? 0).reduce(sum, 0),
+        decision: list.map((s) => s.cost?.decision ?? 0).reduce(sum, 0),
         search: list.map((s) => s.cost?.search ?? 0).reduce(sum, 0),
         image: list.map((s) => s.cost?.image ?? 0).reduce(sum, 0),
         failed: list.map((s) => s.cost?.failed ?? 0).reduce(sum, 0),
@@ -867,8 +874,17 @@ function Stats({
 }) {
   const t = useT(),
     w = t.usage;
-  const hit = s.input ? Math.round((s.cached / s.input) * 100) : 0;
+  const input = s.input + s.decisionInput;
+  const hit = input ? Math.round((s.cached + s.decisionCached) / input * 100) : 0;
   const services = [
+    {
+      key: "decision",
+      label: t.traces.kinds.decision,
+      who: s.decisionModels.join(t.now.list),
+      parts: [w.inputShort(k(s.decisionInput))],
+      cost: s.cost?.decision,
+      used: s.decisionInput > 0,
+    },
     {
       key: "author",
       label: w.author,
@@ -915,8 +931,8 @@ function Stats({
     {
       key: "tokens",
       label: w.tokensLabel,
-      value: k(s.input + s.output),
-      sub: s.input ? w.cacheHit(hit) : undefined,
+      value: k(input + s.output),
+      sub: input ? w.cacheHit(hit) : undefined,
     },
     ...(elapsed ? [{ key: "time", label: w.elapsed, value: span(elapsed) }] : []),
     ...(s.searches || s.pages
@@ -981,7 +997,7 @@ function WorkUsage({ runs }: { runs: Run[] }) {
     manages = useCan()("models.manage");
   const [open, setOpen] = useState(false);
   const s = total(runs.map(spentBy));
-  if (!manages || (!s.input && !s.output && !s.searches && !s.pages && !s.images))
+  if (!manages || (!s.decisionInput && !s.input && !s.output && !s.searches && !s.pages && !s.images))
     return null;
   const names = (pick: (r: Run) => string | undefined) =>
     [...new Set(runs.map(pick).filter(Boolean))].join(t.now.list) || undefined;
@@ -993,7 +1009,7 @@ function WorkUsage({ runs }: { runs: Run[] }) {
         <span className={cx("usage-chips")}>
           {[
             s.cost && money(s.cost.total),
-            t.usage.tokens(k(s.input + s.output)),
+            t.usage.tokens(k(s.input + s.output + s.decisionInput)),
             !!s.searches && t.usage.searches(s.searches),
             !!s.images && t.usage.images(s.images),
           ]
@@ -1198,7 +1214,7 @@ function RunView({
   // What a run spent is for those who manage the models; others count requests.
   const priced =
     manages && !working && !!r.usage &&
-    (spent.input + spent.output > 0 || !!spent.images || !!spent.failed.attempts || !!spent.failed.images);
+    (spent.decisionInput + spent.input + spent.output > 0 || !!spent.images || !!spent.failed.attempts || !!spent.failed.images);
   const answer = reply >= 0 ? (r.steps[reply] as Extract<Step, { kind: "message" }>) : undefined;
   const sources = sourcesOf(answer?.citations);
   const ended = last && r.status === "failed" ? stopped(r, work) : undefined;
