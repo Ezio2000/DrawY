@@ -107,7 +107,7 @@ export function parsedArguments(x: Execution, call: Item) {
     if (kept && Object.keys(kept).length) {
       const error = `工具参数不是有效的 JSON（${why}），没有保存`;
       const { amend, view: _view, ...records } = kept;
-      x.ctx.held = amend && x.ctx.held ? composed(x.ctx.held, records) : records;
+      x.ctx.held = amend && x.ctx.held ? composed(x.ctx.held, records, { replaceEdits: true }) : records;
       throw new Refusal(error, { error, note: heldNote(x.ctx.held) });
     }
     throw Error(`工具参数不是有效的 JSON（${why}），没有保存。请改正后把完整参数重发`);
@@ -335,7 +335,7 @@ export const handlers: Record<
     if (amend && !ctx.held)
       throw new DomainError("没有等待修正的写入：amend 只用在一次写入被拒绝之后；这次把要改的内容直接写出来");
     // A correction lays over the write it corrects, and the two save as one revision.
-    const edit = amend ? composed(ctx.held, written) : written;
+    const edit = amend ? composed(ctx.held, written, { replaceEdits: true }) : written;
     ctx.held = edit;
     let saved;
     try {
