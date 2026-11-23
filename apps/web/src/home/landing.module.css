@@ -384,6 +384,9 @@
    pad seems to float over it. */
 .l-story {
   padding: clamp(72px, 11vh, 120px) 0 clamp(64px, 10vh, 112px);
+}
+
+.l-drafting-band {
   background:
     linear-gradient(rgba(51, 102, 214, 0.06) 1px, transparent 1px) 0 var(--drift, 0) / 24px 24px,
     linear-gradient(90deg, rgba(51, 102, 214, 0.06) 1px, transparent 1px) 0 0 / 24px 24px,
@@ -969,4 +972,221 @@
   .l-faq details::details-content {
     transition: none;
   }
+}
+
+/* A reference and the new picture sit side by side like two prints on the same desk. */
+.l-style-link,
+.l-style-upload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.l-style-link {
+  margin-top: 14px;
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.l-style-link:hover { border-color: var(--blue); }
+
+.l-style-demo {
+  padding: clamp(36px, 5vw, 64px) var(--l-side);
+  border-bottom: 1px solid var(--line);
+  scroll-margin-top: 8px;
+}
+
+.l-style-copy {
+  margin-bottom: clamp(20px, 3vw, 32px);
+  text-align: center;
+}
+
+.l-style-copy h2[data-size="section"] {
+  font-size: clamp(28px, 3.4vw, 44px);
+}
+
+.l-style-copy p {
+  margin: 12px auto 16px;
+  max-width: 580px;
+  color: var(--text-2);
+  line-height: 1.65;
+}
+
+.l-style-upload {
+  background: var(--paper);
+  border-color: var(--line-strong);
+  color: var(--blue);
+}
+
+.l-style-upload:hover { background: var(--blue-soft); border-color: var(--blue); }
+
+.l-style-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.44fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(12px, 2.7vw, 36px);
+  max-width: 960px;
+  margin-inline: auto;
+}
+
+.l-style-pair figure {
+  min-width: 0;
+  margin: 0;
+  padding: clamp(6px, 1.15vw, 14px);
+  background: var(--l-paper);
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  box-shadow: var(--l-stack);
+}
+
+.l-style-picture {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: var(--l-dots) 0 0 / 18px 18px, var(--l-paper);
+}
+
+.l-style-picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.l-style-picture[data-output] img {
+  opacity: 0;
+  clip-path: inset(0 0 100% 0);
+  transition: opacity 0.8s ease, clip-path 1.2s var(--ease);
+}
+
+.l-style-pair[data-stage="3"] [data-output] img {
+  opacity: 1;
+  clip-path: inset(0);
+}
+
+.l-style-selected {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--blue);
+  color: white;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.l-style-pair[data-stage="0"] .l-style-selected {
+  opacity: 0;
+  transform: scale(0.7);
+}
+
+.l-style-message {
+  width: 100%;
+  min-height: 8rem;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--l-paper);
+  text-align: start;
+}
+
+.l-style-message p {
+  margin: 8px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.l-style-screen-reader {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.l-style-stage { font-weight: 650; }
+
+.l-style-player {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 32px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.l-style-player button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--l-paper);
+  color: var(--blue);
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-style-picture[data-output] img { transition: none; }
+}
+
+.l-style-pair figcaption {
+  padding: 10px 3px 2px;
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: center;
+}
+
+.l-style-request {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--blue);
+  text-align: center;
+  text-wrap: balance;
+  font-size: clamp(13px, 1.35vw, 16px);
+  line-height: 1.55;
+}
+
+@media (max-width: 600px) {
+  .l-style-pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .l-style-request { grid-column: 1 / -1; grid-row: 1; }
+  .l-style-direction { display: none; }
+  .l-style-message { min-height: 7rem; }
+}
+
+.l-style-attachment {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+.l-style-attachment[data-attached="true"] { opacity: 1; }
+.l-style-attachment img {
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
 }
