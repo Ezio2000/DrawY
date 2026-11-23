@@ -782,6 +782,62 @@ it("holds a refused write for amending, so a correction carries only what was wr
   expect(store.revisions(work.id).map((r) => r.revision)).toEqual([3, 2, 1]);
 });
 
+it("replaces broken edits and clears stale edits on whole source when amending a refused write", async () => {
+  const seen = script([
+    [
+      "write_work",
+      {
+        drawings: [
+          { id: "card", name: "卡片", source: "return api.svg('<svg><rect fill=\"red\"/></svg>');" },
+        ],
+      },
+    ],
+    // First refused write: malformed edit object (missing replace + unknown key) alongside another change.
+    [
+      "write_work",
+      {
+        title: "已修正",
+        drawings: [{ id: "card", edits: [{ find: 'fill="red"', bogus: "" }] }],
+      },
+    ],
+    // Amending with corrected edits replaces the broken edit list instead of appending after it.
+    [
+      "write_work",
+      {
+        amend: true,
+        drawings: [{ id: "card", edits: [{ find: 'fill="red"', replace: 'fill="blue"' }] }],
+      },
+    ],
+    // Second refused write: unmatched find, then author switches to full source via amend.
+    [
+      "write_work",
+      {
+        drawings: [{ id: "card", edits: [{ find: "missing-snippet", replace: "x" }] }],
+      },
+    ],
+    [
+      "write_work",
+      {
+        amend: true,
+        drawings: [{ id: "card", source: "return api.svg('<svg><rect fill=\"green\"/></svg>');" }],
+      },
+    ],
+    ["view_canvas", {}],
+    ["finish", { message: "好了" }],
+  ]);
+  const { run } = await execute();
+  expect(run.status).toBe("completed");
+  const results = outputs(seen.at(-1)!);
+  expect(results[0].revision).toBe(2);
+  expect(results[1].problems.map((p: any) => p.at)).toContain("drawings.card.edits.0.replace");
+  expect(results[2].revision).toBe(3);
+  expect(results[3].problems[0].at).toBe("drawings.card.edits.0");
+  expect(results[4].revision).toBe(4);
+  const saved = store.work(work.id);
+  expect(saved.title).toBe("已修正");
+  expect(saved.drawings.card.source).toContain('fill="green"');
+});
+
 it("answers tool input written broken as a failed call, holding a write's whole records for the correction", async () => {
   const module = (id: string, x = 0) => ({ id, bounds: [x, 0, 100, 60], drawingId: "tier", data: { color: "#000", label: id, tip: "" } });
   const broken = `{"modules":[${JSON.stringify(module("first"))},${JSON.stringify(module("second", 200))},{"id":"third","bounds":[0,0,1,1],"drawingId":"tier","data":{"label":"bad "quote""}}],"links":[]}`;

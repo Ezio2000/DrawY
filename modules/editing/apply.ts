@@ -297,23 +297,42 @@ export function readEdit(input: unknown): WorkEdit {
   );
 }
 const records = ["scenes", "modules", "links", "drawings", "details"] as const;
+/** Whole-text fields that supersede any earlier patch list on the same record. */
+const wholeToEdits: Record<string, string> = {
+  source: "edits",
+  html: "edits",
+  interaction: "interactionEdits",
+};
 /** Two changes to one record as one, written or not. What the later says wins; objects it
- * changes keep what the earlier said about their other keys, and edits to text run in turn. */
-function bothRecords(a: Record<string, unknown>, b: Record<string, unknown>) {
+ * changes keep what the earlier said about their other keys. Patch lists run in turn by
+ * default, or replace earlier patches when correcting a refused write (`replaceEdits`), and
+ * writing whole text drops earlier patches for that text. */
+function bothRecords(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  replaceEdits = false,
+) {
   const out = { ...a };
-  for (const [key, value] of Object.entries(b))
+  for (const [key, value] of Object.entries(b)) {
+    if (key in wholeToEdits && value !== undefined) delete out[wholeToEdits[key]];
     out[key] =
-      Array.isArray(a[key]) && Array.isArray(value) && /edits$/i.test(key)
+      !replaceEdits && Array.isArray(a[key]) && Array.isArray(value) && /edits$/i.test(key)
         ? [...a[key], ...value]
         : isRecord(a[key]) && isRecord(value) && key !== "target"
-          ? bothRecords(a[key], value)
+          ? bothRecords(a[key], value, replaceEdits)
           : value;
+  }
   return out;
 }
 /** Two edits as one, the later laid on the earlier, whether or not they read as edits yet: a
  * refused write and its correction, or a hand edit in two steps. A record of the same id
  * becomes one record, and what the later removes the earlier no longer adds. */
-export function composed(earlier: unknown, later: unknown): Record<string, unknown> {
+export function composed(
+  earlier: unknown,
+  later: unknown,
+  options?: { replaceEdits?: boolean },
+): Record<string, unknown> {
+  const replaceEdits = options?.replaceEdits ?? false;
   const a = isRecord(earlier) ? earlier : {},
     b = isRecord(later) ? later : {};
   const out: Record<string, unknown> = { ...a, ...b };
@@ -327,7 +346,7 @@ export function composed(earlier: unknown, later: unknown): Record<string, unkno
     for (const record of add) {
       const at = isRecord(record) ? list.findIndex((r) => r?.id === record.id) : -1;
       if (at < 0) list.push(record);
-      else list[at] = bothRecords(list[at], record as Record<string, unknown>);
+      else list[at] = bothRecords(list[at], record as Record<string, unknown>, replaceEdits);
     }
     if (list.length) out[section] = list;
     else delete out[section];

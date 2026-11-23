@@ -337,6 +337,36 @@ describe("two edits as one", () => {
     const edit: WorkEdit = { title: "x" };
     expect(composed({}, edit)).toEqual(edit);
   });
+  it("replaces patch lists when amending and clears stale patches when whole text is given", () => {
+    const held = {
+      drawings: [
+        { id: "cup", source: "old", edits: [{ find: "x", bogus: "" }] },
+        { id: "mug", edits: [{ find: "a", replace: "b" }] },
+      ],
+      details: [{ id: "d1", edits: [{ find: "p", replace: "q" }] }],
+      scenes: [{ id: "root", interactionEdits: [{ find: "m", replace: "n" }] }],
+    };
+    const fix = {
+      drawings: [
+        { id: "cup", edits: [{ find: "old", replace: "new" }] },
+        { id: "mug", source: "return api.svg('<svg/>');" },
+      ],
+      details: [{ id: "d1", html: "<p>fresh</p>" }],
+      scenes: [{ id: "root", interaction: "api.on('click', () => {});" }],
+    };
+    expect(composed(held, fix, { replaceEdits: true })).toEqual({
+      drawings: [
+        { id: "cup", source: "old", edits: [{ find: "old", replace: "new" }] },
+        { id: "mug", source: "return api.svg('<svg/>');" },
+      ],
+      details: [{ id: "d1", html: "<p>fresh</p>" }],
+      scenes: [{ id: "root", interaction: "api.on('click', () => {});" }],
+    });
+    // Whole text also drops earlier patches under the default composed mode.
+    expect(composed({ drawings: [{ id: "mug", edits: [{ find: "a", replace: "b" }] }] }, { drawings: [{ id: "mug", source: "whole" }] })).toEqual({
+      drawings: [{ id: "mug", source: "whole" }],
+    });
+  });
 });
 
 describe("what a module is called", () => {
