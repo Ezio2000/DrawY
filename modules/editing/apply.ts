@@ -297,31 +297,42 @@ export function readEdit(input: unknown): WorkEdit {
   );
 }
 const records = ["scenes", "modules", "links", "drawings", "details"] as const;
-/** Whole-text fields that supersede any earlier patch list on the same record. */
-const wholeToEdits: Record<string, string> = {
-  source: "edits",
-  html: "edits",
-  interaction: "interactionEdits",
+type RecordSection = (typeof records)[number];
+/** Protocol whole-text field and its paired patch-list field per record section. */
+const textPatchField: Partial<Record<RecordSection, readonly [whole: string, edits: string]>> = {
+  drawings: ["source", "edits"],
+  details: ["html", "edits"],
+  scenes: ["interaction", "interactionEdits"],
 };
+function bothObjects(a: Record<string, unknown>, b: Record<string, unknown>) {
+  const out = { ...a };
+  for (const [key, value] of Object.entries(b))
+    out[key] =
+      isRecord(a[key]) && isRecord(value) && key !== "target"
+        ? bothObjects(a[key], value)
+        : value;
+  return out;
+}
 /** Two changes to one record as one, written or not. What the later says wins; objects it
  * changes keep what the earlier said about their other keys. Patch lists run in turn by
  * default, or replace earlier patches when correcting a refused write (`replaceEdits`), and
  * writing whole text drops earlier patches for that text. */
 function bothRecords(
+  section: RecordSection,
   a: Record<string, unknown>,
   b: Record<string, unknown>,
   replaceEdits = false,
 ) {
   const out = { ...a };
-  for (const [key, value] of Object.entries(b)) {
-    if (key in wholeToEdits && value !== undefined) delete out[wholeToEdits[key]];
+  const pair = textPatchField[section];
+  if (pair && b[pair[0]] !== undefined) delete out[pair[1]];
+  for (const [key, value] of Object.entries(b))
     out[key] =
-      !replaceEdits && Array.isArray(a[key]) && Array.isArray(value) && /edits$/i.test(key)
-        ? [...a[key], ...value]
+      !replaceEdits && pair && key === pair[1] && Array.isArray(out[key]) && Array.isArray(value)
+        ? [...out[key], ...value]
         : isRecord(a[key]) && isRecord(value) && key !== "target"
-          ? bothRecords(a[key], value, replaceEdits)
+          ? bothObjects(a[key], value)
           : value;
-  }
   return out;
 }
 /** Two edits as one, the later laid on the earlier, whether or not they read as edits yet: a
@@ -346,7 +357,7 @@ export function composed(
     for (const record of add) {
       const at = isRecord(record) ? list.findIndex((r) => r?.id === record.id) : -1;
       if (at < 0) list.push(record);
-      else list[at] = bothRecords(list[at], record as Record<string, unknown>, replaceEdits);
+      else list[at] = bothRecords(section, list[at], record as Record<string, unknown>, replaceEdits);
     }
     if (list.length) out[section] = list;
     else delete out[section];
