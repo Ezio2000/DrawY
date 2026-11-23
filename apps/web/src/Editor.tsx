@@ -1,3 +1,4 @@
+import { boundIfKnown } from "../../../modules/editing/bindings.ts";
 import {
   useEffect,
   useLayoutEffect,
@@ -772,13 +773,14 @@ function LinkPanel({
       </div>
     );
   };
-  // The drawings links in this work are drawn with, and the library's arrow.
+  // The drawings links in this work are drawn with, and the library's drawing for links.
   const drawings = new Map<string, string>();
   for (const s of Object.values(work.scenes))
     for (const x of s.links)
       drawings.set(x.drawingId, work.drawings[x.drawingId]?.name ?? work.materials[x.drawingId]?.name ?? x.drawingId);
-  if (!drawings.has("arrow") && !work.drawings.arrow)
-    drawings.set("arrow", work.materials.arrow?.name ?? l.arrow);
+  const bound = boundIfKnown()?.link;
+  if (bound && !drawings.has(bound) && !work.drawings[bound])
+    drawings.set(bound, work.materials[bound]?.name ?? l.arrow);
   return (
     <>
       <header className={cx("edit-head")}>

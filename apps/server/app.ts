@@ -36,13 +36,14 @@ import {
   standaloneDocument,
 } from "../../modules/runtime/document.ts";
 import {
+  bindings,
   library,
   upload,
   freshen,
   preview,
 } from "../../modules/materials/index.ts";
 import { MaterialsError, viewerHeaders } from "@drawy/materials/client";
-import { kindSchema, shelfSchema, type Material } from "@drawy/materials/schema";
+import { kindSchema, shelfSchema, typeIdSchema, type MaterialHead } from "@drawy/materials/schema";
 import { Agent } from "../../modules/agent/index.ts";
 import { tracer, type TraceSummary } from "../../modules/trace/index.ts";
 import { picture } from "../../modules/observation/index.ts";
@@ -357,7 +358,7 @@ export function createApp(storage: Storage) {
       await Promise.all(
         Object.values(work.materials).map(async (m) => {
           if (m.kind !== "picture" || m.status !== "ready") return [m.id, m];
-          const bytes = await library.file(m.id, store.viewer, 0).catch(() => undefined);
+          const bytes = await library.file(m.id, store.viewer, 0, undefined, m.version).catch(() => undefined);
           return [m.id, bytes ? { ...m, url: dataUrl(bytes) } : m];
         }),
       ),
@@ -376,7 +377,7 @@ export function createApp(storage: Storage) {
             whole,
             (route === "thumbs"
               ? library.thumb(id, store.viewer, Number(params.get("size")) || 256)
-              : library.file(id, store.viewer, 0, params.get("color") ?? undefined)
+              : library.file(id, store.viewer, 0, params.get("color") ?? undefined, Number(params.get("v")) || undefined)
             ).then(dataUrl, () => undefined),
           );
         }
@@ -414,6 +415,11 @@ export function createApp(storage: Storage) {
       "Content-Type": "text/html; charset=utf-8",
       "Content-Disposition": attachment(fileName(work, sceneId, ".html")),
     });
+  });
+  // Editing draws what it adds with the drawings the library names for it.
+  app.use("/api/works/*", async (c, next) => {
+    if (c.req.method !== "GET") await bindings().catch(() => {});
+    await next();
   });
   // A hand edit on the canvas: any change to the work, committed like the author's.
   app.post("/api/works/:id/edits", async (c) => {
@@ -500,7 +506,7 @@ export function createApp(storage: Storage) {
   });
   /** Material responses follow the same model visibility as runs, while keeping their
    * provenance in the library. Other users' private materials carry their owner's name. */
-  const showMaterial = (user: Account) => (m: Material) => {
+  const showMaterial = (user: Account) => <M extends MaterialHead>(m: M): M => {
     const { model, ...origin } = m.origin;
     return {
       ...m,
@@ -510,6 +516,9 @@ export function createApp(storage: Storage) {
         : {}),
     };
   };
+  // Which drawings editing uses, and the material types, as the library's packs name them.
+  app.get("/api/materials/bindings", async (c) => c.json(await bindings()));
+  app.get("/api/materials/types", async (c) => c.json(await library.types()));
   app.get("/api/materials", async (c) => {
     const page = await library.browse(
       c.req.query("q") || "",
@@ -524,6 +533,7 @@ export function createApp(storage: Storage) {
         .parse(c.req.query("kind")?.split(",").filter(Boolean) ?? []),
       Number(c.req.query("size")) || undefined,
       shelfSchema.optional().parse(c.req.query("shelf") || undefined),
+      typeIdSchema.array().parse(c.req.query("type")?.split(",").filter(Boolean) ?? []),
     );
     return c.json({ ...page, items: page.items.map(showMaterial(c.get("user"))) });
   });

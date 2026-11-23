@@ -77,7 +77,11 @@ export function activity(name: string, args: any, sceneId: string): ToolActivity
         topics: (Array.isArray(args.topics) ? args.topics : []).filter((t: unknown) =>
           guideTopics.includes(t as GuideTopic),
         ),
-        drawings: (Array.isArray(args.drawings) ? args.drawings : []).filter(
+      };
+    case "read_materials":
+      return {
+        name,
+        ids: (Array.isArray(args.ids) ? args.ids : []).filter(
           (d: unknown): d is string => typeof d === "string" && !!d,
         ),
       };
@@ -187,7 +191,9 @@ export function activity(name: string, args: any, sceneId: string): ToolActivity
               : "overview",
       };
     default:
-      throw Error("Unknown tool " + name);
+      // A tool the author invented (some models wrap a batch as "parallel") is shown by its
+      // name; its call is answered with an error, and the run goes on.
+      return { name: "hosted", tool: name };
   }
 }
 /** The steps a turn shows while it streams: the author's thinking and progress words take

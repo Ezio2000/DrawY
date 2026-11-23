@@ -1,159 +1,50 @@
-import type { Hit, Material, MaterialKind, Role } from "./schema.ts";
-import { key, terms, units } from "./text.ts";
+import type { MaterialHead } from "./schema.ts";
+import { normalize } from "./text.ts";
 
-/** How much a word counts where it is found: a name says what a picture is, a description
- * only mentions what is in it. */
-const FIELDS = {
-  name: 10,
-  aliases: 7,
-  tags: 3,
-  category: 2,
-  about: 1,
-} as const;
-type Field = keyof typeof FIELDS;
-interface Entry {
-  material: Material;
-  fields: Record<Field, Set<string>>;
-  /** Its names and aliases as exact keys. */
-  names: Set<string>;
+/** Conditions a request states about how a picture is made rather than what it shows:
+ * "透明背景的医生" asks for a doctor, cut out. They are taken out of the words searched and
+ * checked against each picture's form, so a doctor in a hospital scene is not passed off as
+ * the cut-out asked for. */
+const FACETS: { words: RegExp; check: (form: NonNullable<Extract<MaterialHead, { kind: "picture" }>["form"]>) => boolean }[] = [
+  {
+    words: /透明背景|透明底|无背景|抠图|cut[- ]?out|transparent(?: background)?|no background/g,
+    check: (f) => f.background === "transparent",
+  },
+  { words: /完整背景|带背景|背景图|with background|full background|backdrop/g, check: (f) => f.background === "opaque" },
+  { words: /俯视图?|俯瞰|顶视图?|top[- ]view|from above|bird'?s[- ]eye/g, check: (f) => f.view === "top" },
+  { words: /侧面的?|侧视图?|side[- ]view|in profile/g, check: (f) => f.view === "side" || f.view === "portrait" },
+  { words: /正面的?|正视图?|front[- ]view/g, check: (f) => f.view === "front" || f.facing === "viewer" },
+  { words: /朝左|面向左|facing left/g, check: (f) => f.facing === "left" },
+  { words: /朝右|面向右|facing right/g, check: (f) => f.facing === "right" },
+];
+export interface Facet {
+  word: string;
+  check: (m: MaterialHead) => boolean;
 }
-export interface Scope {
-  /** The user searching; their private materials are included. */
-  user?: string;
-  /** Everyone's private materials are included too. */
-  all?: boolean;
-  style?: string;
-  kinds?: MaterialKind[];
-  /** Picture roles to keep; other kinds pass. */
-  roles?: Role[];
+/** The request without its stated conditions, and the conditions. */
+export function facets(subject: string): { rest: string; facets: Facet[] } {
+  let rest = normalize(subject);
+  const found: Facet[] = [];
+  for (const f of FACETS)
+    rest = rest.replace(f.words, (word) => {
+      // A condition on pictures: other materials have no form to fail it.
+      found.push({ word, check: (m) => m.kind !== "picture" || f.check(m.form) });
+      return " ";
+    });
+  return { rest: rest.replace(/\s+/g, " ").trim(), facets: found };
 }
-/** Public and the user's own materials (everyone's, for one who sees all); a picture
- * still developing only to its maker. */
-const visible = (m: Material, scope: Scope) =>
-  m.status !== "failed" &&
-  (m.owner === null || m.owner === scope.user || !!scope.all) &&
-  (m.status === "ready" || (!!scope.user && m.origin.user === scope.user));
-
-/** An in-memory index over every material, ranked by field-weighted term rarity. */
-export class Index {
-  private entries = new Map<string, Entry>();
-  private df = new Map<string, number>();
-  get size() {
-    return this.entries.size;
+/** The phrases of a request a thesaurus could name: every run of up to four latin words and
+ * every stretch of two to six Chinese characters. A long request has a bounded number. */
+export function phrases(text: string): string[] {
+  const t = normalize(text);
+  const out = new Set<string>();
+  for (const [run] of t.matchAll(/[a-z0-9]+(?:[ -][a-z0-9]+)*/g)) {
+    const words = run.split(/[ -]/);
+    for (let i = 0; i < words.length; i++)
+      for (let n = 1; n <= 4 && i + n <= words.length; n++) out.add(words.slice(i, i + n).join(" "));
   }
-  put(material: Material) {
-    this.remove(material.id);
-    const fields: Entry["fields"] = {
-      name: new Set(terms(`${material.name.zh} ${material.name.en}`)),
-      aliases: new Set(terms(material.aliases.join(" "))),
-      tags: new Set(terms(material.tags.join(" "))),
-      category: new Set(terms(material.category.replace(/[/_-]/g, " "))),
-      about: new Set(terms(material.about)),
-    };
-    const entry: Entry = {
-      material,
-      fields,
-      names: new Set(
-        [material.name.zh, material.name.en, ...material.aliases].map(key),
-      ),
-    };
-    for (const t of this.vocabulary(entry))
-      this.df.set(t, (this.df.get(t) ?? 0) + 1);
-    this.entries.set(material.id, entry);
-  }
-  remove(id: string) {
-    const old = this.entries.get(id);
-    if (!old) return;
-    for (const t of this.vocabulary(old)) {
-      const n = this.df.get(t)! - 1;
-      if (n) this.df.set(t, n);
-      else this.df.delete(t);
-    }
-    this.entries.delete(id);
-  }
-  get(id: string) {
-    return this.entries.get(id)?.material;
-  }
-  all(scope: Scope = {}) {
-    return [...this.entries.values()]
-      .map((e) => e.material)
-      .filter((m) => visible(m, scope));
-  }
-  private vocabulary(e: Entry) {
-    return new Set(Object.values(e.fields).flatMap((s) => [...s]));
-  }
-  private idf(t: string) {
-    return Math.log(1 + this.entries.size / (this.df.get(t) ?? 1));
-  }
-  /** Pictures of one subject, best first. Words no material contains are ignored, so a
-   * qualifier the library has never heard of does not hide the thing itself. */
-  search(subject: string, scope: Scope, limit: number): Hit[] {
-    const wanted = [...new Set(terms(subject, true))].filter((t) =>
-      this.df.has(t),
-    );
-    if (!wanted.length) return [];
-    const exact = key(subject);
-    const total = wanted.reduce((sum, t) => sum + this.idf(t), 0);
-    const parts = units(subject);
-    const hits: Hit[] = [];
-    for (const e of this.entries.values()) {
-      const m = e.material;
-      if (!visible(m, scope)) continue;
-      if (scope.kinds?.length && !scope.kinds.includes(m.kind)) continue;
-      if (
-        scope.roles?.length &&
-        m.kind === "picture" &&
-        !scope.roles.includes(m.role)
-      )
-        continue;
-      let matched = 0,
-        weight = 0,
-        named = false;
-      for (const t of wanted) {
-        let best = 0;
-        for (const f of Object.keys(FIELDS) as Field[])
-          if (e.fields[f].has(t) && FIELDS[f] > best) {
-            best = FIELDS[f];
-            if (f === "name" || f === "aliases") named = true;
-          }
-        if (!best) continue;
-        const idf = this.idf(t);
-        matched += idf;
-        weight += idf * best;
-      }
-      const coverage = matched / total;
-      if (coverage < 0.5) continue;
-      const isExact = e.names.has(exact);
-      // Close means nearly every part of the request is in this picture's own words: "订单
-      // 服务" is not close to a service bell, nor "青苹果" to a red apple.
-      const found = new Set(
-        wanted.filter((t) =>
-          (Object.keys(FIELDS) as Field[]).some((f) => e.fields[f].has(t)),
-        ),
-      );
-      const spanned =
-        parts.filter((p) => p.some((t) => found.has(t))).length /
-        Math.max(1, parts.length);
-      const match: Hit["match"] = isExact
-        ? "exact"
-        : coverage > 0.999 && spanned >= 0.75 && named
-          ? "close"
-          : "related";
-      let score = (weight / total) * coverage + (isExact ? 20 : 0);
-      if (scope.user && m.owner === scope.user) score *= 1.1;
-      score *= 1 + 0.05 * Math.log1p(m.uses);
-      hits.push({ material: m, score: Math.round(score * 100) / 100, match });
-    }
-    // Among pictures of the thing itself, the requested style comes first: a crayon planet
-    // serves a crayon work better than an icon named exactly "planet".
-    const tier = (h: Hit) =>
-      (h.match === "related" ? 0 : 2) +
-      (scope.style &&
-      (h.material.style === scope.style || h.material.style === null)
-        ? 1
-        : 0);
-    return hits
-      .sort((a, b) => tier(b) - tier(a) || b.score - a.score)
-      .slice(0, limit);
-  }
+  for (const [run] of t.matchAll(/[㐀-鿿豈-﫿]+/g))
+    for (let i = 0; i < run.length; i++)
+      for (let n = 2; n <= 6 && i + n <= run.length; n++) out.add(run.slice(i, i + n));
+  return [...out].slice(0, 400);
 }

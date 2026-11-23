@@ -1821,7 +1821,7 @@ export class Canvas {
     const named =
       frame?.dataset.material ??
       (href &&
-        pictures.find((p) => new URL(href, location.href).pathname === p.url)
+        pictures.find((p) => new URL(href, location.href).pathname === new URL(p.url, location.href).pathname)
           ?.id);
     if (named) {
       e.preventDefault();

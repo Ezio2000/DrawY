@@ -222,7 +222,7 @@ export class SceneRenderer {
         ? // A picture carried inside an exported file is recoloured here, as the library
           // would: its SVG text inks with currentColor.
           m.url.replaceAll("currentColor", encodeURIComponent(o.color))
-        : m.url + "?color=" + encodeURIComponent(o.color);
+        : m.url + (m.url.includes("?") ? "&" : "?") + "color=" + encodeURIComponent(o.color);
     const spare = height - m.height * k;
     const top = { bottom: spare, center: spare / 2, top: 0 }[
       o.align ?? "bottom"

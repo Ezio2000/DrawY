@@ -45,9 +45,46 @@ export class Storage {
  CREATE TABLE IF NOT EXISTS roles(id TEXT PRIMARY KEY,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS system(key TEXT PRIMARY KEY,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS invites(code TEXT PRIMARY KEY,created_by TEXT,created_at INTEGER NOT NULL,used_by TEXT,used_at INTEGER);`);
+    this.upgradeWorks();
     this.recordRoles();
     if (!this.db.prepare("SELECT 1 FROM system WHERE key='models'").get())
       this.saveModels(defaultCatalog());
+  }
+  /** Brings saved works and revisions to the current shape, in one transaction, once:
+   * format 2 names a picture's type as `type` (it was `role`). */
+  private upgradeWorks() {
+    const FORMAT = 2;
+    const row = this.db.prepare("SELECT data FROM system WHERE key='work-format'").get() as { data: string } | undefined;
+    if (row && Number(row.data) >= FORMAT) return;
+    const upgrade = (data: string) => {
+      const work = JSON.parse(data) as { materials?: Record<string, Record<string, unknown>> };
+      let changed = false;
+      for (const m of Object.values(work.materials ?? {}))
+        if (m.kind === "picture" && "role" in m) {
+          if (!("type" in m)) m.type = m.role;
+          delete m.role;
+          changed = true;
+        }
+      return changed ? JSON.stringify(work) : undefined;
+    };
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const table of ["works", "revisions"]) {
+        const rows = this.db.prepare(`SELECT rowid, data FROM ${table}`).all() as { rowid: number; data: string }[];
+        const write = this.db.prepare(`UPDATE ${table} SET data=? WHERE rowid=?`);
+        for (const r of rows) {
+          const next = upgrade(r.data);
+          if (next) write.run(next, r.rowid);
+        }
+      }
+      this.db
+        .prepare("INSERT INTO system VALUES('work-format',?) ON CONFLICT(key) DO UPDATE SET data=excluded.data")
+        .run(JSON.stringify(FORMAT));
+      this.db.exec("COMMIT");
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
   }
   /** The two built-in roles; the first account registers as administrator. */
   private recordRoles() {

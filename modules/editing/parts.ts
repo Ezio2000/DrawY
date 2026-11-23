@@ -1,3 +1,4 @@
+import { bound } from "./bindings.ts";
 import type {
   Bounds,
   Drawing,
@@ -344,9 +345,9 @@ export type Addition =
 export const drawingFor = (what: Addition | Addition["kind"]) => {
   const kind = typeof what === "string" ? what : what.kind;
   return kind === "text"
-    ? "label"
+    ? bound().text
     : kind === "picture"
-      ? "picture"
+      ? bound().picture
       : (what as Extract<Addition, { kind: "drawing" }>).material;
 };
 /** Whether the work has a drawing of its own under the id of the library drawing an

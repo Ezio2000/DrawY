@@ -1,0 +1,15 @@
+{
+  "name": "@drawy/content",
+  "private": true,
+  "type": "module",
+  "description": "DrawY's curated materials. Builds a material pack; the app never imports this package.",
+  "scripts": {
+    "build": "tsx build.ts",
+    "geo": "tsx geo.ts",
+    "relief": "tsx relief.ts"
+  },
+  "dependencies": {
+    "sharp": "^0.35.5",
+    "tsx": "^4.20.0"
+  }
+}

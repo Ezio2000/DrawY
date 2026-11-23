@@ -245,6 +245,7 @@ const zh = {
     send: "发送",
     style: "画风",
     auto: "自动",
+    moreStyles: "更多风格",
     answering: "回答问题，或补充你的想法…",
     selected: "要怎样修改选中的部分？",
     working: "正在画…",
@@ -855,6 +856,7 @@ const zh = {
     findInPage: "页内查找",
     read_work: "翻阅作品",
     draw_guide: "查阅画法指南",
+    read_materials: "查阅素材用法",
     guideTopics: {
       pictures: "生图与摆图",
       drawing: "编写画法",
@@ -1614,6 +1616,7 @@ const en: Words = {
     send: "Send",
     style: "Style",
     auto: "Auto",
+    moreStyles: "More styles",
     answering: "Answer, or add your thoughts…",
     selected: "How should the selection change?",
     working: "Drawing…",
@@ -2217,6 +2220,7 @@ const en: Words = {
     findInPage: "Looked in a page",
     read_work: "Read the work",
     draw_guide: "Read the drawing guide",
+    read_materials: "Read material cards",
     guideTopics: {
       pictures: "Pictures",
       drawing: "Writing drawings",

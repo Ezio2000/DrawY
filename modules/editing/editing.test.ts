@@ -670,7 +670,7 @@ describe("hand edits reach what the author writes", () => {
       id: "apple",
       kind: "picture",
       name: "苹果",
-      role: "object",
+      type: "object",
       style: null,
       url: "/x.png",
       width: 1,

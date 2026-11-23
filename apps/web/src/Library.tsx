@@ -13,6 +13,7 @@ import { Segmented, Spinner, reducedMotion } from "./ui/primitives.tsx";
 import { useLocale } from "./ui/locale.tsx";
 import type {
   Material,
+  MaterialHead,
   MaterialPage,
   StyleMaterial,
   DrawingMaterial,
@@ -23,13 +24,13 @@ import { Canvas } from "../../../modules/canvas/index.ts";
 import type { Work } from "../../../modules/contracts/index.ts";
 import { api } from "./api.ts";
 import { cx } from "./cx.ts";
-import { styleList } from "./Composer.tsx";
+import { styleNamed } from "./Composer.tsx";
 import { ago } from "./time.ts";
 import { useT } from "./i18n.tsx";
 import { useCan } from "./account.tsx";
 
 /** A material as the app shows it: another user's carries their name. */
-type Shown = Material & { ownerName?: string | null };
+type Shown = MaterialHead & { ownerName?: string | null };
 /** The shelf last looked at, so the library opens where the user left it. */
 let lastShelf: Shelf = "public";
 
@@ -84,11 +85,17 @@ export function Library({
     [loading, setLoading] = useState(true),
     [error, E] = useState(""),
     [open, O] = useState<Shown>(),
-    [styles, setStyles] = useState<StyleMaterial[]>([]),
+    // Style names by id, read as the materials shown need them: the library may hold more
+    // styles than one page.
+    [styleNames, setStyleNames] = useState<Record<string, StyleMaterial["name"]>>({}),
     [uploading, U] = useState(false),
     [stamp, setStamp] = useState(0);
   const cell = cells[kind];
-  useEffect(() => void styleList().then(setStyles, () => {}), []);
+  useEffect(() => {
+    const id = open?.style;
+    if (id && !styleNames[id])
+      void styleNamed(id).then((st) => setStyleNames((known) => ({ ...known, [id]: st.name })), () => {});
+  }, [open?.style]);
   // How many cells the shelf holds, as the space it has changes.
   useEffect(() => {
     const el = shelf.current;
@@ -142,8 +149,7 @@ export function Library({
     setPage(1);
     O(undefined);
   };
-  const styleName = (id: string | null) =>
-    styles.find((s) => s.id === id)?.name[locale];
+  const styleName = (id: string | null) => (id ? styleNames[id]?.[locale] : undefined);
   async function upload(files: FileList) {
     U(true);
     E("");
@@ -301,7 +307,8 @@ export function Library({
           m={open}
           styleName={styleName}
           close={() => O(undefined)}
-          use={() => use(open)}
+          // What is used is the material in full, as its shelf shows only its head.
+          use={() => void api<Material>("/materials/" + open.id).then(use, () => {})}
           action={action}
           published={(m) => {
             // It moves to the other shelf: the list it was on no longer has it.
@@ -316,7 +323,7 @@ export function Library({
 
 /** What a material looks like: a picture, a style's samples, a drawing drawn from its
  * example, an effect on a swatch. */
-function Look({ m, large = false }: { m: Material; large?: boolean }) {
+function Look({ m, large = false }: { m: MaterialHead; large?: boolean }) {
   switch (m.kind) {
     case "picture":
       return (
@@ -366,7 +373,7 @@ function previewOf(id: string) {
 }
 
 /** A drawing material drawn live from its example data. */
-export function DrawingLook({ m }: { m: DrawingMaterial }) {
+export function DrawingLook({ m }: { m: Extract<MaterialHead, { kind: "drawing" }> }) {
   const host = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     let view: Canvas | undefined,
@@ -473,7 +480,7 @@ function Inspector({
     [f.kind, t.library.kinds[m.kind]],
     ...(m.kind === "picture"
       ? ([
-          [f.role, t.library.roles[m.role]],
+          [f.role, t.library.roles[m.type as keyof typeof t.library.roles] ?? m.type],
           [f.style, styleName(m.style) || f.any],
           [
             f.size,

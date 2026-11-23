@@ -26,15 +26,32 @@ import type { Asking } from "./shell.ts";
 import type { Feedback } from "./feedback.ts";
 import { counted } from "./probe.ts";
 
-let styles: Promise<StyleMaterial[]> | undefined;
-/** The library's styles, loaded once. */
-export const styleList = () =>
-  (styles ??= api<{ items: StyleMaterial[] }>("/materials?kind=style")
-    .then((r) => r.items)
-    .catch((e) => {
-      styles = undefined;
-      throw e;
-    }));
+/** How many styles one page of the picker shows. */
+const STYLE_PAGE = 24;
+const stylePages = new Map<number, Promise<{ items: StyleMaterial[]; pages: number }>>();
+/** One page of the library's styles, each page loaded once: the library may hold many. */
+export const stylePage = (page: number) => {
+  let p = stylePages.get(page);
+  if (!p) {
+    p = api<{ items: StyleMaterial[]; pages: number }>(`/materials?kind=style&page=${page}&size=${STYLE_PAGE}`);
+    p.catch(() => stylePages.delete(page));
+    stylePages.set(page, p);
+  }
+  return p;
+};
+/** The first page of styles, for offering a few to choose from. */
+export const styleList = () => stylePage(1).then((r) => r.items);
+const named = new Map<string, Promise<StyleMaterial>>();
+/** A style by id, however far down the library's list it is. */
+export const styleNamed = (id: string) => {
+  let p = named.get(id);
+  if (!p) {
+    p = api<StyleMaterial>("/materials/" + encodeURIComponent(id));
+    p.catch(() => named.delete(id));
+    named.set(id, p);
+  }
+  return p;
+};
 
 /** Where the user writes to the author. On the home page it is large and can pick a
  * style; under the canvas it is one line, and what the author is doing shows inside it,
@@ -403,11 +420,18 @@ function StylePicker({
   const t = useT(),
     locale = useLocale();
   const [open, setOpen] = useState(false),
-    [list, setList] = useState<StyleMaterial[]>([]);
+    [list, setList] = useState<StyleMaterial[]>([]),
+    [shown, setShown] = useState({ page: 0, pages: 1 });
   const ref = useRef<HTMLDivElement>(null);
   useDismiss(open, () => setOpen(false), ref);
+  /** The next page of styles, added below those shown. */
+  const more = (page: number) =>
+    void stylePage(page).then((r) => {
+      setList((old) => (page === 1 ? r.items : [...old, ...r.items.filter((s) => !old.some((o) => o.id === s.id))]));
+      setShown({ page, pages: r.pages });
+    }, () => {});
   useEffect(() => {
-    if (open) void styleList().then(setList, () => {});
+    if (open && !shown.page) more(1);
   }, [open]);
   const choose = (s?: StyleMaterial) => {
     pick(s);
@@ -462,6 +486,14 @@ function StylePicker({
               {style?.id === s.id && <Check size={15} />}
             </button>
           ))}
+          {shown.page < shown.pages && (
+            <button role="menuitem" onClick={() => more(shown.page + 1)}>
+              <span className={cx("styles-auto")} />
+              <span>
+                <b>{t.composer.moreStyles}</b>
+              </span>
+            </button>
+          )}
         </div>
       )}
     </div>

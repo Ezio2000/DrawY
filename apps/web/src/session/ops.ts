@@ -1,3 +1,4 @@
+import { loadBindings } from "../bindings.ts";
 import type {
   DrawingMaterial,
   Material,
@@ -141,6 +142,7 @@ export function editOps(ctx: Context) {
     const centre = at ?? view.center(),
       sceneId = scene();
     try {
+      await loadBindings();
       // A work whose own drawing uses the library drawing's id gets a copy of it.
       const own = shadowed(w, what)
         ? ownCopy(await fromLibrary(drawingFor(what)), ctx.host.locale())
@@ -155,15 +157,16 @@ export function editOps(ctx: Context) {
     }
   };
   /** What a link drawn by hand is drawn with: like the scene's other links, or with the
-   * library's arrow when it has none, which comes in as a copy when one of the work's own
-   * drawings already uses its id. */
+   * drawing the library binds to links when it has none, which comes in as a copy when one
+   * of the work's own drawings already uses its id. */
   const linkWith = async (w: Work, sceneId: string) => {
     const like = linkLook(w, sceneId);
+    const { link } = await loadBindings();
     return {
-      look: like ?? { drawingId: "arrow", data: {} },
+      look: like ?? { drawingId: link, data: {} },
       own:
-        !like && w.drawings.arrow
-          ? ownCopy(await fromLibrary("arrow"), ctx.host.locale())
+        !like && w.drawings[link]
+          ? ownCopy(await fromLibrary(link), ctx.host.locale())
           : undefined,
     };
   };

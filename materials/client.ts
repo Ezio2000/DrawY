@@ -1,17 +1,21 @@
 import type {
+  Bindings,
   Describe,
   Material,
   MaterialKind,
   MaterialPage,
+  MaterialRef,
+  MaterialType,
   Reserve,
   SearchRequest,
   SearchResult,
   Shelf,
-  StyleMaterial,
   Viewer,
 } from "./schema.ts";
 import { viewerOf } from "./schema.ts";
 
+/** How many materials one batch request reads; the service refuses more. */
+const BATCH = 200;
 /** Talks to a material library service on behalf of one user at a time. */
 export class MaterialsClient {
   constructor(readonly base: string) {}
@@ -53,9 +57,10 @@ export class MaterialsClient {
     kinds: MaterialKind[] = [],
     size?: number,
     shelf?: Shelf,
+    types: string[] = [],
   ) {
     return this.call<MaterialPage>(
-      `/browse?q=${encodeURIComponent(query)}&page=${page}&kind=${kinds.join(",")}${size ? "&size=" + size : ""}${shelf ? "&shelf=" + shelf : ""}`,
+      `/browse?q=${encodeURIComponent(query)}&page=${page}&kind=${kinds.join(",")}${types.length ? "&type=" + types.join(",") : ""}${size ? "&size=" + size : ""}${shelf ? "&shelf=" + shelf : ""}`,
       user,
     );
   }
@@ -67,15 +72,29 @@ export class MaterialsClient {
       { method: "POST", body: JSON.stringify({ published }) },
     );
   }
-  /** The named materials; leniently, only those that exist. */
-  get(ids: string[], user?: Viewer, lenient = false) {
-    return this.call<Material[]>("/materials/batch", user, {
-      method: "POST",
-      body: JSON.stringify({ ids, lenient }),
-    });
+  /** The named materials, each at the version asked for or the current one; leniently,
+   * only those that exist. */
+  async get(ids: (string | MaterialRef)[], user?: Viewer, lenient = false) {
+    // The service reads a bounded number at a time; a work may name more.
+    const chunks: (string | MaterialRef)[][] = [];
+    for (let i = 0; i < ids.length; i += BATCH) chunks.push(ids.slice(i, i + BATCH));
+    const pages = await Promise.all(
+      chunks.map((chunk) =>
+        this.call<Material[]>("/materials/batch", user, {
+          method: "POST",
+          body: JSON.stringify({ ids: chunk, lenient }),
+        }),
+      ),
+    );
+    return pages.flat();
   }
-  styles() {
-    return this.call<StyleMaterial[]>("/styles", undefined);
+  /** The material types the library holds. */
+  types() {
+    return this.call<MaterialType[]>("/types", undefined);
+  }
+  /** Which drawing the app's own editing uses for text, pictures and links. */
+  bindings() {
+    return this.call<Bindings>("/bindings", undefined);
   }
   reserve(input: Reserve, user: string) {
     return this.call<Material>("/materials/reserve", user, {
@@ -132,10 +151,10 @@ export class MaterialsClient {
     });
   }
   /** A picture's file, inked in `color` when it is a recolourable one. */
-  async file(id: string, user?: Viewer, wait = 240, color?: string) {
+  async file(id: string, user?: Viewer, wait = 240, color?: string, version?: number) {
     return new Uint8Array(
       await this.call<ArrayBuffer>(
-        `/files/${encodeURIComponent(id)}?wait=${wait}${color ? "&color=" + encodeURIComponent(color) : ""}`,
+        `/files/${encodeURIComponent(id)}?wait=${wait}${color ? "&color=" + encodeURIComponent(color) : ""}${version ? "&v=" + version : ""}`,
         user,
       ),
     );

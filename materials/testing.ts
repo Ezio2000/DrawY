@@ -5,12 +5,21 @@ import { vi } from "vitest";
 import sharp from "sharp";
 import { Library } from "./library.ts";
 import { createServer } from "./server.ts";
+import { importPack } from "./pack.ts";
+import { curatedPack } from "./curated.ts";
 
-/** Runs a library with the curated seed in a temporary directory and routes requests for
+export { curatedPack };
+/** A library in a temporary directory with the curated pack imported. */
+export function testLibrary() {
+  const dir = mkdtempSync(join(tmpdir(), "drawy-library-"));
+  const library = new Library(dir);
+  importPack(library, curatedPack());
+  return { dir, library };
+}
+/** Runs a library with the curated pack in a temporary directory and routes requests for
  * `base` to it, so clients talk to a real library in tests. */
 export function serveLibrary(base: string) {
-  const dir = mkdtempSync(join(tmpdir(), "drawy-library-"));
-  const library = new Library(dir, new URL("./seed", import.meta.url).pathname);
+  const { dir, library } = testLibrary();
   const app = createServer(library);
   const real = globalThis.fetch;
   /** Sends requests for the library to it, and the rest to `rest`. */

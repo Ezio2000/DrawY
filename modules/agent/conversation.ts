@@ -22,7 +22,7 @@ import { spend, spendFailed } from "./spending.ts";
 
 /** What this code reads a saved conversation as. A conversation from before the current
  * work format is not continued: its tool calls and guides describe another format. */
-export const CONTEXT_FORMAT = 2;
+export const CONTEXT_FORMAT = 3;
 export interface Context {
   /** Resolved once for this run, including connections and prices, and persisted across answers. */
   settings: Settings;

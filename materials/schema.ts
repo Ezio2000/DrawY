@@ -26,21 +26,41 @@ export const originSchema = z.object({
   user: z.string().optional(),
   createdAt: z.number(),
 });
-/** What part a picture plays in a composition. */
-export const roleSchema = z.enum([
-  "object", // one isolated thing, cut out on transparency
-  "figure", // a person or character, cut out
-  "scene", // a complete backdrop or vignette, opaque
-  "icon", // a symbol glyph
-  "texture", // a surface to fill areas with
-]);
-export type Role = z.infer<typeof roleSchema>;
+
+/** How a material is carried out: the payload format the app knows how to run. A picture
+ * is placed, drawing code is called, an effect is applied, a style is followed. The library
+ * can hold any number of material types; each is carried by one of these. */
+export const kindSchema = z.enum(["picture", "drawing", "effect", "style"]);
+export type MaterialKind = z.infer<typeof kindSchema>;
+/** A material type's id: one level, all types alike (object, figure, scene, icon, texture,
+ * drawing, effect, style and any a material pack adds). */
+export const typeIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
+/** A material type the library knows, from its material packs: what it is called and
+ * which payload carries it. */
+export const materialTypeSchema = z.object({
+  id: typeIdSchema,
+  kind: kindSchema,
+  name: namesSchema,
+  about: z.string().default(""),
+});
+export type MaterialType = z.infer<typeof materialTypeSchema>;
+/** The types of picture the app makes itself, by generating or by upload: a pack that
+ * does not declare them still lets pictures be made. */
+export const pictureTypes = ["object", "figure", "scene", "icon", "texture"] as const;
+export type PictureType = (typeof pictureTypes)[number];
 
 /** A material is a ready-made ingredient that gets a better drawing made faster: a picture
  * to place, drawing code to call, an effect to apply or a style to follow. Every material
  * says what it is and when it fits, so an author can find it and judge it. */
 interface Envelope {
   id: string;
+  /** Which content of this id it is: a material pack's update makes a new version, and a
+   * work keeps the version it took. */
+  version: number;
+  /** A digest of the content, the same for the same content. */
+  hash: string;
+  /** Its material type, one of the library's flat list. */
+  type: string;
   name: z.infer<typeof namesSchema>;
   aliases: string[];
   category: string;
@@ -52,15 +72,17 @@ interface Envelope {
   origin: z.infer<typeof originSchema>;
   /** The user it belongs to; public materials have none. */
   owner: string | null;
-  /** A generated picture is reserved first and develops in the background. */
-  status: "developing" | "ready" | "failed";
+  /** A generated picture is reserved first and develops in the background; a withdrawn
+   * one is no longer offered, though works that hold it keep it. */
+  status: "developing" | "ready" | "failed" | "withdrawn";
   error?: string;
   /** How many works use it. */
   uses: number;
+  /** The source of the material pack it came from; null for what users made. */
+  pack: string | null;
 }
 export interface PictureMaterial extends Envelope {
   kind: "picture";
-  role: Role;
   form: {
     width: number;
     height: number;
@@ -76,7 +98,8 @@ export interface PictureMaterial extends Envelope {
     /** An SVG drawn in currentColor that takes the work's ink. */
     recolor: boolean;
   };
-  file: { url: string; mediaType: string; bytes: number };
+  /** `blob` is the content digest a pack's file is kept under. */
+  file: { url: string; mediaType: string; bytes: number; blob?: string };
 }
 /** A parameter of drawing code. The first six types are values a person can change by hand
  * in the app (a choice among its options, a picture by its material id); arrays, objects
@@ -101,6 +124,15 @@ export interface Param {
   default?: unknown;
   description: string;
 }
+export const paramSchema = z.object({
+  type: z.enum(["text", "number", "boolean", "color", "picture", "choice", "array", "object", "effect"]),
+  options: z.array(z.string()).optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  step: z.number().optional(),
+  default: z.unknown().optional(),
+  description: z.string(),
+});
 export interface DrawingMaterial extends Envelope {
   kind: "drawing";
   /** Function-body source receiving the drawing api and returning an Element. */
@@ -132,19 +164,32 @@ export interface StyleMaterial extends Envelope {
   guide: string;
   /** Effects that give hand-drawn parts this style's texture. */
   effects: string[];
-  /** Pictures that show the style: its chosen showcase, then the most used. */
+  /** Pictures that show the style: its chosen showcase, then the most used. A few only,
+   * whatever the size of the library. */
   samples: string[];
-  /** How many ready pictures it has. */
+  /** How many ready public pictures it has. */
   count: number;
 }
 export type Material =
   PictureMaterial | DrawingMaterial | EffectMaterial | StyleMaterial;
-export type MaterialKind = Material["kind"];
-export const kindSchema = z.enum(["picture", "drawing", "effect", "style"]);
+
+/** The parts of a material only reading it in full needs: drawing code and its example,
+ * a style's long instructions. Searching and browsing leave them out. */
+export const BODY = {
+  drawing: ["source", "example"],
+  style: ["guide", "prompt"],
+} as const;
+type Head<M> = M extends DrawingMaterial
+  ? Omit<M, "source" | "example">
+  : M extends StyleMaterial
+    ? Omit<M, "guide" | "prompt">
+    : M;
+/** A material as searching and browsing show it: everything but its body. */
+export type MaterialHead = Head<Material>;
 
 /** Everything the library is told about a new picture; the rest it measures itself. */
 export const describeSchema = z.object({
-  role: roleSchema,
+  type: z.enum(pictureTypes),
   name: namesSchema,
   aliases: z.array(z.string()).default([]),
   category: z.string().default(""),
@@ -168,25 +213,38 @@ export const reserveSchema = describeSchema.extend({
 });
 export type Reserve = z.input<typeof reserveSchema>;
 
+/** The most a search does, whatever the library holds: how long a subject may be, how many
+ * candidates are weighed for one, and how many are returned. */
+export const SEARCH_LIMITS = {
+  subject: 256,
+  subjects: 12,
+  candidates: 256,
+  hits: 24,
+} as const;
 export const searchSchema = z.object({
   /** One entry per thing wanted; each gets its own ranked hits. */
-  subjects: z.array(z.string().min(1)).min(1).max(12),
+  subjects: z.array(z.string().min(1).max(SEARCH_LIMITS.subject)).min(1).max(SEARCH_LIMITS.subjects),
   /** A style family to prefer. */
   style: z.string().optional(),
+  /** Material types to keep, from the library's flat list. */
+  types: z.array(typeIdSchema).optional(),
+  /** Payload formats to keep. */
   kinds: z.array(kindSchema).optional(),
-  roles: z.array(roleSchema).optional(),
-  limit: z.number().int().min(1).max(24).default(4),
+  limit: z.number().int().min(1).max(SEARCH_LIMITS.hits).default(4),
 });
 export type SearchRequest = z.input<typeof searchSchema>;
 export interface Hit {
-  material: Material;
+  material: MaterialHead;
   score: number;
-  /** exact: it is this thing; close: every word of the request matches; related: part does. */
+  /** exact: it is this thing by name; close: every word of the request is in its own words;
+   * related: part of it is. */
   match: "exact" | "close" | "related";
 }
 export interface SearchResult {
   subject: string;
   hits: Hit[];
+  /** Words of the request no material in the library has: what the hits cannot be. */
+  unknown: string[];
 }
 /** Who a request is for: a user sees public materials and their own; one allowed to see
  * all sees everyone's too. Without a user, only public materials. */
@@ -200,8 +258,26 @@ export const viewerOf = (v: Viewer) =>
 export const shelfSchema = z.enum(["public", "mine", "others"]);
 export type Shelf = z.infer<typeof shelfSchema>;
 export interface MaterialPage {
-  items: Material[];
+  items: MaterialHead[];
   total: number;
   page: number;
   pages: number;
 }
+/** A material named with the version wanted; without one, the current. */
+export interface MaterialRef {
+  id: string;
+  version?: number;
+}
+
+/** What the app's own editing asks of the library: the drawing that sets words, the one
+ * that places a picture, and the one that joins two parts. A material pack names them, so
+ * the app knows these capabilities and not the names of the drawings. */
+export const capabilities = ["text", "picture", "link"] as const;
+export type Capability = (typeof capabilities)[number];
+export type Bindings = Record<Capability, string>;
+/** What each capability's drawing must accept: the data the app writes into it. */
+export const capabilityContract: Record<Capability, { use: "module" | "link"; params: Record<string, Param["type"]> }> = {
+  text: { use: "module", params: { text: "text", size: "number" } },
+  picture: { use: "module", params: { material: "picture" } },
+  link: { use: "link", params: {} },
+};

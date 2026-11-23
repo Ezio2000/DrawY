@@ -87,32 +87,40 @@ export const settleSchema = z.object({
 });
 export const findSchema = z.object({
   subjects: z
-    .array(z.string().min(1))
+    .array(z.string().min(1).max(256))
     .min(1)
     .max(12)
-    .describe("One subject per entry, in Chinese or English"),
-  kinds: z
-    .array(z.enum(["picture", "drawing", "effect", "style"]))
+    .describe("One thing wanted per entry, in Chinese or English: an object, a kind of diagram or chart, a look, a texture"),
+  types: z
+    .array(z.string().regex(/^[a-z][a-z0-9-]*$/))
     .optional()
-    .describe("Leave out to search every kind"),
+    .describe(
+      "Material types to keep: pictures by what they are (object, figure, scene, icon, texture), drawing (code for marks, charts and diagrams), effect, style. Leave out to search every type",
+    ),
   style: z.string().optional().describe("A style id to prefer; defaults to the brief's style"),
+  cards: z
+    .boolean()
+    .optional()
+    .describe(
+      "Also return the card of each subject's best drawing, style or effect, saving a read_materials turn: set it when you are searching for forms you already mean to use",
+    ),
 });
 export const generateSchema = z.object({
   images: z.array(pictureRequestSchema).min(1).max(8),
 });
-export const guideSchema = z
-  .object({
-    topics: z
-      .array(z.enum(guideTopics))
-      .optional()
-      .describe("Guides to read, from the list under # Guides in your instructions"),
-    drawings: z
-      .array(z.string().min(1))
-      .max(12)
-      .optional()
-      .describe("Library drawing ids whose cards to read, from the list under # Library"),
-  })
-  .refine((g) => g.topics?.length || g.drawings?.length, "至少要指定一个指南或画法");
+export const guideSchema = z.object({
+  topics: z
+    .array(z.enum(guideTopics))
+    .min(1)
+    .describe("Guides to read, from the list under # Guides in your instructions"),
+});
+export const readSchema = z.object({
+  ids: z
+    .array(z.string().min(1))
+    .min(1)
+    .max(12)
+    .describe("Ids of materials found or held: drawings, styles, effects or pictures"),
+});
 /** What write_work takes: an edit, whether it finishes the write refused before it, and an
  * optional view to inspect the saved revision in the same turn. */
 export const writeSchema = workEditSchema.extend({
@@ -140,17 +148,22 @@ export const tools = [
   ),
   fn(
     "set_brief",
-    "Settle the work's brief before drawing, or change it when the user changes direction or the concept has to change. It decides what the figure says, not where things go, so call it before working out any layout. Each basis quotes the user's own words verbatim, and the call fails on a quote it cannot find; the ideas and the concept chosen from them are your own and quote nothing. Returns the revision, the style's tokens, guide and effects, and library pictures found for the cast, with thumbnails.",
+    "Settle the work's brief before drawing, or change it when the user changes direction or the concept has to change. It decides what the figure says, not where things go, so call it before working out any layout. Each basis quotes the user's own words verbatim, and the call fails on a quote it cannot find; the ideas and the concept chosen from them are your own and quote nothing. style takes a style id or a few words describing the look, and the closest library style is chosen. Returns the revision, the chosen style with its tokens, guide and effects (and the next closest styles, to switch to by id), and library pictures found for the cast, with thumbnails.",
     schema(settleSchema),
   ),
   fn(
     "find_materials",
-    "Search the library beyond what set_brief found: pictures (objects, figures, scenes, icons), drawing code, effects and styles. Each subject gets its own ranked hits, with thumbnails of the best pictures, and says so when nothing matches directly: then generate that picture or try a synonym.",
+    "Search the material library, which is far larger than anything listed to you: pictures (objects, figures, scenes, icons, textures), drawings (code for marks, charts, diagrams and maps), effects and styles. Each subject gets a few ranked hits with a short description and how well it matches (exact: it is that thing; close: every word of the subject is in its own words; related: only part is), with thumbnails of the best pictures, and says so when nothing matches directly: then generate that picture or try other words. With cards: true, the best drawing, style or effect of each subject comes with its card, as read_materials would give it. Put every subject in one call.",
     schema(findSchema),
   ),
   fn(
+    "read_materials",
+    "Read the cards of materials found or held, before using them: a drawing's parameters, default size and example data; a style's tokens, guide and effects; a picture's anchors and visible content; an effect's use. Read every drawing you will use except the app's own text, picture and link drawings, alongside other calls. It changes nothing in the work. A card you have read stays above, so asking again only returns a note that it is.",
+    schema(readSchema),
+  ),
+  fn(
     "draw_guide",
-    "Read instructions and library drawing cards on demand. topics returns the guides listed under # Guides in your instructions, each holding rules you do not otherwise have; drawings returns each library drawing's description, parameters, default size and example data. It changes nothing in the work. Ask for everything you expect to need in one call, alongside other calls when you can. What you read stays in the conversation, so asking again only returns a note that it is above.",
+    "Read the guides listed under # Guides in your instructions, each holding rules you do not otherwise have. It changes nothing in the work. Ask for every guide you expect to need in one call, alongside other calls when you can. What you read stays in the conversation, so asking again only returns a note that it is above.",
     schema(guideSchema),
   ),
   fn(

@@ -34,6 +34,9 @@ const exact: Record<string, string> = {
   "邀请码已被使用，不能删除": "A used invite code can't be removed",
   "一次可以生成 1 到 50 个邀请码": "You can make 1 to 50 invite codes at a time",
   "只有画法素材有预览": "Only drawing materials have previews",
+  素材库里还没有风格: "The material library has no styles yet",
+  "素材库还没有告诉应用用哪些画法编辑，请稍后再试":
+    "The material library hasn't said which drawings editing uses yet; try again shortly",
   "请在模型设置中配置生图凭证":
     "Set up the image model's credentials in Settings",
   "请先配置模型凭证": "Set up the model's credentials in Settings first",
@@ -128,7 +131,11 @@ const patterns: [RegExp, (...m: string[]) => string][] = [
   [/^没有这块街道数据: (.*)$/, (tile) => "No street tile " + tile],
   [/^街道数据读取失败: ([\s\S]*)$/, (d) => "Street data could not be read: " + d],
   [/^(\S+) 不是图片素材$/, (id) => `${id} is not a picture`],
-  [/^未知风格 (\S+)，可用：(.*)$/, (id, all) => `Unknown style ${id}; available: ${all}`],
+  [/^未知风格 (\S+)：/, (id) => `Unknown style ${id}; search for styles to find one`],
+  [/^没有这份数据: (.*)$/, (name) => "No data named " + name],
+  [/^素材 (\S+) 没有版本 (\d+)$/, (id, v) => `Material ${id} has no version ${v}`],
+  [/^素材库没有为 (\S+) 指定画法$/, (c) => `The material library names no drawing for ${c}`],
+  [/^未知图片类型 (\S+)$/, (t) => `Unknown picture type ${t}`],
   [/^已达到本轮 (\d+) 次生成上限$/, (n) => `Reached this run's limit of ${n} generations`],
 ];
 

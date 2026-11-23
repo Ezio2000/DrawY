@@ -26,7 +26,7 @@ import {
 import type { Work } from "../../../modules/contracts/index.ts";
 import type { StyleMaterial } from "@drawy/materials/schema";
 import { useLocale } from "./ui/locale.tsx";
-import { styleList } from "./Composer.tsx";
+import { stylePage } from "./Composer.tsx";
 import { Code } from "./EditCode.tsx";
 import { hex, Picker } from "./EditControls.tsx";
 import type { Change } from "./session/work.ts";
@@ -56,8 +56,15 @@ const isColour = (v: string) =>
 export function Look({ work, change }: { work: Work; change: Change }) {
   const t = useT(),
     locale = useLocale();
-  const [styles, setStyles_] = useState<StyleMaterial[]>([]);
-  useEffect(() => void styleList().then(setStyles_, () => {}), []);
+  const [styles, setStyles_] = useState<StyleMaterial[]>([]),
+    [shown, setShown] = useState({ page: 0, pages: 1 });
+  /** The next page of the library's styles, after those offered. */
+  const more = (page: number) =>
+    void stylePage(page).then((r) => {
+      setStyles_((old) => [...old, ...r.items.filter((st) => !old.some((o) => o.id === st.id))]);
+      setShown({ page, pages: r.pages });
+    }, () => {});
+  useEffect(() => more(1), []);
   const names = t.edit.tokens as Record<string, string>;
   const order = ["ink", "accent", "accent2", "muted", "paper", "stroke", "font"];
   const tokens = Object.keys(work.style).sort(
@@ -135,6 +142,11 @@ export function Look({ work, change }: { work: Work; change: Change }) {
                 <span>{s.name[locale]}</span>
               </button>
             ))}
+            {shown.page < shown.pages && (
+              <button onClick={() => more(shown.page + 1)}>
+                <span>{t.composer.moreStyles}</span>
+              </button>
+            )}
           </div>
         </div>
       )}

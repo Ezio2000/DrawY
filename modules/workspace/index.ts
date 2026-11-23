@@ -14,7 +14,7 @@ import {
   stepBefore,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
-import { take, used, styleOf } from "../materials/index.ts";
+import { take, used, resolveStyle } from "../materials/index.ts";
 import { layOn, readEdit } from "../editing/apply.ts";
 import { syntaxError } from "../editing/shared.ts";
 export { forAuthor, shortModule, shortLink } from "./author.ts";
@@ -134,7 +134,9 @@ export async function setBrief(
         `brief.basis.${part}「${quote}」不是用户说过的话。依据必须逐字引用用户的请求、回答或长期偏好；用户没有说清时，先用 ask_user 询问`,
       );
   }
-  const style = await styleOf(brief.style);
+  // A brief may name its style by id or by a few words; the work keeps the id.
+  const { style, chosen, others } = await resolveStyle(brief.style, store.viewer, brief.register);
+  brief.style = style.id;
   const work = structuredClone(store.work(workId));
   if (work.brief?.style !== brief.style) work.style = { ...style.tokens };
   if (!work.brief && !work.named) {
@@ -142,7 +144,7 @@ export async function setBrief(
     work.scenes[work.rootSceneId].title = brief.subject;
   }
   work.brief = brief;
-  return { work: store.commit(work, work.revision, cause), style };
+  return { work: store.commit(work, work.revision, cause), style, chosen, others };
 }
 /** What keeps a work from being whole: every reference that leads nowhere, by the record
  * that holds it, so a part is refused now instead of drawing an error later. `pending` are
