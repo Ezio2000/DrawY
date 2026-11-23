@@ -655,7 +655,7 @@ it("shows guests the home page with its works drawn live, and no sign-in wall", 
   const range = guestPage.getByRole("navigation", { name: "Switch pictures" });
   const ticks = range.locator("div").first().getByRole("button");
   const rows = await ticks.evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().top));
-  expect(rows).toHaveLength(10);
+  expect(rows).toHaveLength(11);
   expect(new Set(rows).size).toBe(1);
   await ticks.last().click();
   const board = guestPage.locator('[class*="l-story-slot"]:not([inert]) [data-shown]');
@@ -665,7 +665,7 @@ it("shows guests the home page with its works drawn live, and no sign-in wall", 
   await guestPage.keyboard.press("Escape");
   await board.getByText("造灯塔的一家人", { exact: true }).first().waitFor();
   await guestPage.getByRole("navigation", { name: "切换作品" }).getByRole("button").first().click();
-  await guestPage.waitForSelector("#l-chapter-night[data-on]");
+  await guestPage.waitForSelector("#l-chapter-reference[data-on]");
   await guest.close();
 });
 
