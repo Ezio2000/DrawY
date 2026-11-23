@@ -1,4 +1,4 @@
-import { SceneRenderer } from "../runtime/scene.ts";
+import { SceneRenderer, type PatchResult } from "../runtime/scene.ts";
 import { fit, union, zoom, type Camera } from "../contracts/geometry.ts";
 import { shownName } from "../contracts/index.ts";
 import { plan, play, gesture, hatching } from "./ink.ts";
@@ -609,10 +609,12 @@ export class Canvas {
   }
   /** Patches being drawn: a module laid out by one is not drawn until it is done. */
   private patching = 0;
+  /** Latest patchable update received while a patch is already in flight. */
+  private queued?: { work: Work; scene: Scene; quiet: boolean };
   /** Whether the first drawing of the scene is still being made. */
   private mounting = true;
   private arrived() {
-    if (this.mounting || this.patching || this.pending) return;
+    if (this.mounting || this.patching || this.pending || this.queued) return;
     const shown = this.renderer.work.revision;
     for (const wait of [...this.awaited]) {
       if (wait.ids.every((id) => this.renderer.instances.has(id))) wait.done("drawn");
@@ -626,31 +628,52 @@ export class Canvas {
       error: (e) => this.options.error(e),
     });
   }
-  /** Draws another revision of the scene off screen, then swaps it in: new modules unfold,
-   * redrawn ones settle, moved ones glide and removed ones fade. A quiet update, for a
-   * change the person made by hand, swaps it in as it is. */
+  /** Draws another revision of the scene: when the scene, look, script and non-picture
+   * materials are unchanged, patches only the changed modules/links/pictures in place so
+   * untouched parts never flash or reload. Otherwise draws off screen and swaps it in. */
   update(work: Work, scene: Scene, quiet = false) {
-    // A change the person made is laid over what is drawn, redrawing only what changed.
-    if (quiet && !this.pending && this.renderer.patchable(work, scene)) {
+    if (!this.mounting && !this.pending && this.renderer.patchable(work, scene)) {
+      if (this.patching > 0) {
+        this.queued = {
+          work,
+          scene,
+          quiet: this.queued ? this.queued.quiet && quiet : quiet,
+        };
+        return;
+      }
       const renderer = this.renderer;
+      const animate = !quiet && !!this.options.motion;
       this.patching++;
       void renderer
-        .patch(work, scene)
+        .patch(work, scene, { detachLeaving: animate, hideNew: animate })
         .then(
-          () => {
-            if (this.renderer !== renderer) return;
+          (result) => {
+            if (this.renderer !== renderer) {
+              for (const host of result.leaving) host.remove();
+              return;
+            }
             this.refresh();
+            if (this.automatic && !quiet && result.layoutChanged) this.fit(true);
+            if (!quiet) this.unfoldPatch(renderer, result);
+            else for (const host of result.leaving) host.remove();
             this.options.shown?.(scene);
           },
           (e) => this.options.error(String(e)),
         )
         .finally(() => {
           this.patching--;
-          this.arrived();
+          if (this.queued && !this.abort.signal.aborted) {
+            const next = this.queued;
+            this.queued = undefined;
+            this.update(next.work, next.scene, next.quiet);
+          } else {
+            this.arrived();
+          }
         });
       this.refresh();
       return;
     }
+    this.queued = undefined;
     this.pending?.dispose();
     const next = this.renderFor(work, scene);
     this.pending = next;
@@ -978,6 +1001,97 @@ export class Canvas {
           !done.has(l.to.moduleId))
       )
         continue;
+      const ready = Math.max(
+        done.get(l.from.moduleId) ?? 0,
+        done.get(l.to.moduleId) ?? 0,
+      );
+      play(plan(host), Math.max(0, ready - 150), pace);
+    }
+  }
+  /** Plays unfold/move/develop/fade transitions for an in-place `SceneRenderer.patch`. */
+  private unfoldPatch(renderer: SceneRenderer, result: PatchResult) {
+    for (const m of result.inked) {
+      const host = renderer.host("module", m.id);
+      if (host) host.style.visibility = "";
+    }
+    for (const id of result.drawnLinks) {
+      const host = renderer.host("link", id);
+      if (host) host.style.visibility = "";
+    }
+    if (result.leaving.length) {
+      if (this.options.motion) {
+        for (const host of result.leaving) {
+          Object.assign(host.style, {
+            visibility: "visible",
+            pointerEvents: "none",
+          });
+          host.animate(
+            [{}, { opacity: 0, filter: "blur(6px)", transform: "scale(.98)" }],
+            { duration: 420, easing: "ease-in", fill: "forwards" },
+          );
+        }
+        setTimeout(() => {
+          for (const host of result.leaving) host.remove();
+        }, 440);
+      } else {
+        for (const host of result.leaving) host.remove();
+      }
+    }
+    if (!this.options.motion) {
+      for (const m of renderer.instances.values()) this.erase(m.id, 0);
+      return;
+    }
+    for (const moved of result.moved) {
+      const host = renderer.host("module", moved.id);
+      if (!host) continue;
+      host.animate(
+        [
+          { transform: `translate(${moved.dx}px,${moved.dy}px)` },
+          { transform: "none" },
+        ],
+        { duration: 900, easing: easeOut },
+      );
+    }
+    const inked = result.inked.filter((m) => !!renderer.host("module", m.id));
+    const plans = inked.map((m) => plan(renderer.host("module", m.id)!)),
+      starts: number[] = [];
+    let t = 0;
+    for (const p of plans) {
+      starts.push(t);
+      t += p.time * 0.6;
+    }
+    const end = Math.max(1, ...plans.map((p, i) => starts[i] + p.time)),
+      budget = result.hadModulesBefore ? 4500 : 7000,
+      pace = Math.min(1, budget / end),
+      done = new Map<string, number>();
+    inked.forEach((m, i) => {
+      play(plans[i], starts[i] * pace, pace);
+      done.set(m.id, (starts[i] + plans[i].time) * pace);
+      this.erase(m.id, starts[i] * pace);
+    });
+    for (const m of renderer.instances.values())
+      if (!done.has(m.id)) this.erase(m.id, 0);
+    for (const { moduleId, materialId } of result.developed) {
+      if (done.has(moduleId)) continue;
+      for (const frame of renderer
+        .host("module", moduleId)
+        ?.shadowRoot?.querySelectorAll<HTMLElement>(
+          `[data-material="${CSS.escape(materialId)}"]`,
+        ) ?? []) {
+        frame.querySelector("img")?.animate(
+          [
+            { opacity: 0, filter: "blur(12px) saturate(0) brightness(1.12)" },
+            { opacity: 0.85, offset: 0.4 },
+            { opacity: 1, filter: "none" },
+          ],
+          { duration: 1600, easing: easeOut },
+        );
+      }
+    }
+    for (const id of result.drawnLinks) {
+      const l = renderer.links.get(id);
+      const host = renderer.host("link", id);
+      if (!l || !host) continue;
       const ready = Math.max(
         done.get(l.from.moduleId) ?? 0,
         done.get(l.to.moduleId) ?? 0,
@@ -2596,6 +2710,7 @@ export class Canvas {
     }
   }
   dispose() {
+    this.queued = undefined;
     for (const wait of [...this.awaited]) wait.done("gone");
     cancelAnimationFrame(this.gliding);
     clearTimeout(this.settling);

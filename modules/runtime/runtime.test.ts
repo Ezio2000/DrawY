@@ -203,8 +203,9 @@ it("draws a revision swapped in under a view that already fits it at that view",
     const view = window.drawyView,
       work = structuredClone(window.drawyData.work),
       before = view.renderer;
-    // Same extent, so the automatic view has nowhere to glide.
+    // Same extent, so the automatic view has nowhere to glide; style change forces a swap.
     work.revision += 1;
+    work.style = { ...work.style, ink: "#222222" };
     work.scenes.root.modules[0].data = { ...work.scenes.root.modules[0].data, text: "新" };
     view.update(work, work.scenes.root);
     while (view.renderer === before) await new Promise((r) => setTimeout(r, 20));
@@ -1428,4 +1429,178 @@ it("tints recolourable picture icons with the picture drawing's color parameter"
     document.querySelector('[data-module-id="icon"]')?.shadowRoot?.querySelector("img")?.getAttribute("src"),
   );
   expect(src).toBe("/materials/files/line-apple?color=%23275DAD");
+});
+
+it("patches untouched modules in place on AI updates and developing-to-ready picture transitions", async () => {
+  const pictureSource = readFileSync(new URL("../../content/seed/drawings/picture.js", import.meta.url), "utf8");
+  const svgData = (fill: string) =>
+    `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="${fill}"/></svg>`)}`;
+  work.drawings.picture = { id: "picture", name: "图片", defaults: {}, source: pictureSource };
+  work.drawings.card = {
+    id: "card",
+    name: "卡片",
+    defaults: {},
+    source: "return api.html(`<div class='card'>${api.data.text}</div>`)",
+  };
+  work.materials["pic-ready"] = {
+    id: "pic-ready",
+    kind: "picture",
+    name: "已就绪图",
+    type: "icon",
+    style: "colored-pencil",
+    url: svgData("#317369"),
+    width: 64,
+    height: 64,
+    content: { x: 0, y: 0, width: 1, height: 1 },
+    anchors: {},
+    opaque: false,
+    recolor: false,
+    status: "ready",
+  };
+  work.materials["pic-dev"] = {
+    id: "pic-dev",
+    kind: "picture",
+    name: "生成中图",
+    type: "icon",
+    style: "colored-pencil",
+    url: svgData("#c8553d"),
+    width: 64,
+    height: 64,
+    content: { x: 0, y: 0, width: 1, height: 1 },
+    anchors: {},
+    opaque: false,
+    recolor: false,
+    status: "developing",
+  };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      { id: "steady", label: "不变", drawingId: "card", data: { text: "steady" }, bounds: { x: 40, y: 40, width: 120, height: 60 } },
+      { id: "pic1", label: "图1", drawingId: "picture", data: { material: "pic-ready" }, bounds: { x: 200, y: 40, width: 64, height: 64 } },
+      { id: "pic2", label: "图2", drawingId: "picture", data: { material: "pic-dev" }, bounds: { x: 300, y: 40, width: 64, height: 64 } },
+      { id: "mover", label: "平移", drawingId: "card", data: { text: "move" }, bounds: { x: 40, y: 160, width: 120, height: 60 } },
+    ],
+    links: [],
+    checks: [],
+  };
+  delete work.scenes.root.interaction;
+  await open();
+
+  // Capture existing DOM references before updates.
+  await page.evaluate(() => {
+    const w = window as unknown as Record<string, unknown>;
+    const pick = (id: string) => {
+      const host = document.querySelector(`[data-module-id="${id}"]`)!;
+      return { host, inner: host.shadowRoot!.lastElementChild! };
+    };
+    w.__before = {
+      renderer: window.drawyView.renderer,
+      steady: pick("steady"),
+      pic1: pick("pic1"),
+      pic2: pick("pic2"),
+      mover: pick("mover"),
+    };
+  });
+
+  // 1) Picture transitions from developing -> ready on the same revision (quiet = false).
+  await page.evaluate(async () => {
+    const next = structuredClone(window.drawyData.work);
+    const pic = next.materials["pic-dev"];
+    if (pic.kind === "picture") {
+      pic.status = "ready";
+      pic.width = 80;
+      pic.height = 80;
+    }
+    window.drawyView.update(next, next.scenes.root, false);
+    await window.drawyView.drawn(["pic2"], next.revision);
+  });
+
+  const afterDevelop = await page.evaluate(() => {
+    const w = window as unknown as {
+      __before: {
+        renderer: unknown;
+        steady: { host: Element; inner: Element };
+        pic1: { host: Element; inner: Element };
+        pic2: { host: Element; inner: Element };
+        mover: { host: Element; inner: Element };
+      };
+    };
+    const sameInner = (id: string, prev: { host: Element; inner: Element }) => {
+      const host = document.querySelector(`[data-module-id="${id}"]`)!;
+      return host === prev.host && host.shadowRoot!.lastElementChild === prev.inner;
+    };
+    return {
+      errors: window.drawyErrors,
+      sameRenderer: window.drawyView.renderer === w.__before.renderer,
+      steadyUnchanged: sameInner("steady", w.__before.steady),
+      pic1Unchanged: sameInner("pic1", w.__before.pic1),
+      pic2Redrawn:
+        document.querySelector('[data-module-id="pic2"]') === w.__before.pic2.host &&
+        document.querySelector('[data-module-id="pic2"]')!.shadowRoot!.lastElementChild !== w.__before.pic2.inner,
+      pic2DevelopingAttr: document
+        .querySelector('[data-module-id="pic2"]')!
+        .shadowRoot!.querySelector("[data-developing]") !== null,
+    };
+  });
+  expect(afterDevelop).toEqual({
+    errors: [],
+    sameRenderer: true,
+    steadyUnchanged: true,
+    pic1Unchanged: true,
+    pic2Redrawn: true,
+    pic2DevelopingAttr: false,
+  });
+
+  // 2) AI revision update (quiet = false) edits one module and moves another without recreating untouched ones.
+  await page.evaluate(async () => {
+    const next = structuredClone(window.drawyData.work);
+    next.revision += 1;
+    const pic = next.materials["pic-dev"];
+    if (pic.kind === "picture") {
+      pic.status = "ready";
+      pic.width = 80;
+      pic.height = 80;
+    }
+    const steady = next.scenes.root.modules.find((m) => m.id === "steady")!;
+    steady.data = { text: "updated" };
+    const mover = next.scenes.root.modules.find((m) => m.id === "mover")!;
+    mover.bounds = { ...mover.bounds, x: 80, y: 200 };
+    window.drawyView.update(next, next.scenes.root, false);
+    await window.drawyView.drawn(["steady", "mover"], next.revision);
+  });
+
+  const afterRevision = await page.evaluate(() => {
+    const w = window as unknown as {
+      __before: {
+        renderer: unknown;
+        pic1: { host: Element; inner: Element };
+        mover: { host: Element; inner: Element };
+      };
+    };
+    const steadyText = document
+      .querySelector('[data-module-id="steady"]')!
+      .shadowRoot!.querySelector(".card")!.textContent;
+    const moverHost = document.querySelector<HTMLElement>('[data-module-id="mover"]')!;
+    const pic1Host = document.querySelector('[data-module-id="pic1"]')!;
+    return {
+      errors: window.drawyErrors,
+      sameRenderer: window.drawyView.renderer === w.__before.renderer,
+      steadyText,
+      pic1Unchanged:
+        pic1Host === w.__before.pic1.host &&
+        pic1Host.shadowRoot!.lastElementChild === w.__before.pic1.inner,
+      moverMovedInPlace:
+        moverHost === w.__before.mover.host &&
+        moverHost.shadowRoot!.lastElementChild === w.__before.mover.inner &&
+        moverHost.style.left === "80px" &&
+        moverHost.style.top === "200px",
+    };
+  });
+  expect(afterRevision).toEqual({
+    errors: [],
+    sameRenderer: true,
+    steadyText: "updated",
+    pic1Unchanged: true,
+    moverMovedInPlace: true,
+  });
 });

@@ -62,7 +62,29 @@ export interface PictureInfo {
   anchors: Picture["anchors"];
 }
 type Listener = (value: unknown) => unknown;
-type View = { host: HTMLElement; cleanup: (() => void)[]; revision: number };
+type View = {
+  host: HTMLElement;
+  cleanup: (() => void)[];
+  revision: number;
+  materials: Set<string>;
+  usesPictures: boolean;
+};
+export interface PatchResult {
+  /** Modules newly added or whose drawing, data, or size changed. */
+  inked: Instance[];
+  /** Modules that only moved without redrawing, with their previous offset from the new spot. */
+  moved: { id: string; dx: number; dy: number }[];
+  /** Pictures that just finished developing in modules that were not otherwise inked. */
+  developed: { moduleId: string; materialId: string }[];
+  /** Links that are new or whose endpoint modules were inked. */
+  drawnLinks: string[];
+  /** Hosts detached for leaving modules when `detachLeaving` was requested. */
+  leaving: HTMLElement[];
+  /** Whether the scene already had drawn modules before this patch. */
+  hadModulesBefore: boolean;
+  /** Whether any module was added, removed, moved, or resized. */
+  layoutChanged: boolean;
+}
 const execute = (source: string, api: object): Promise<unknown> =>
   new Function("api", `return (async()=>{${source}\n})()`)(api);
 function svg(source: string) {
@@ -356,12 +378,20 @@ export class SceneRenderer {
             "position:absolute;pointer-events:" +
             (kind === "module" ? "auto" : "none");
           host.attachShadow({ mode: "open" });
-          view = { host, cleanup: [], revision: 0 };
+          view = {
+            host,
+            cleanup: [],
+            revision: 0,
+            materials: new Set(),
+            usesPictures: false,
+          };
           this.views.set(key, view);
           this.element.append(host);
         }
         const { host } = view;
         const revision = ++view.revision;
+        view.materials = new Set();
+        view.usesPictures = false;
         Object.assign(host.style, {
           left: bounds.x + "px",
           top: bounds.y + "px",
@@ -379,6 +409,18 @@ export class SceneRenderer {
           push: (fn: () => void) => (stale() ? fn() : cleanup.push(fn)),
         };
         const effects = new Set<string>();
+        const pictures = () =>
+          new Proxy(this.pictures, {
+            get(target, prop, receiver) {
+              if (typeof prop === "string" && prop in target)
+                view.materials.add(prop);
+              return Reflect.get(target, prop, receiver);
+            },
+            ownKeys(target) {
+              view.usesPictures = true;
+              return Reflect.ownKeys(target);
+            },
+          });
         const apiFor = (
           data: Record<string, unknown>,
           size: { width: number; height: number },
@@ -390,8 +432,13 @@ export class SceneRenderer {
           svg,
           html,
           mermaid,
-          material: (id, options) => this.picture(id, size, options),
-          materials: this.pictures,
+          material: (mid, options) => {
+            view.materials.add(mid);
+            return this.picture(mid, size, options);
+          },
+          get materials() {
+            return pictures();
+          },
           draw: (id, data = {}, at = size) => {
             const m = drawingOf(this.work, id);
             if (!m) throw Error(`画法 ${id} 不在作品中：在 drawings 里定义它，或用库里画法素材的 id`);
@@ -569,8 +616,9 @@ export class SceneRenderer {
     return this.drawLink(l);
   }
   /** Whether another revision of the scene can be laid over this one in place: the same
-   * scene, look and script, with the materials both hold unchanged. Anything else is
-   * drawn afresh. */
+   * scene, look and script, with non-picture materials both hold unchanged. Picture
+   * materials (such as developing -> ready) are patched on only the modules using them.
+   * Anything else is drawn afresh. */
   patchable(work: Work, scene: Scene) {
     if (this.disposed || scene.id !== this.scene.id) return false;
     if (JSON.stringify(work.style) !== JSON.stringify(this.work.style))
@@ -578,7 +626,8 @@ export class SceneRenderer {
     if ((scene.interaction ?? "") !== (this.scene.interaction ?? "")) return false;
     for (const [id, m] of Object.entries(work.materials)) {
       const was = this.work.materials[id];
-      if (was && JSON.stringify(was) !== JSON.stringify(m)) return false;
+      if (!was || JSON.stringify(was) === JSON.stringify(m)) continue;
+      if (was.kind !== "picture" || m.kind !== "picture") return false;
     }
     return true;
   }
@@ -600,12 +649,16 @@ export class SceneRenderer {
     }
   }
   /** Lays another revision of the scene over this one in place: modules whose drawing,
-   * data and size are unchanged stay as they are drawn (moved if they moved), the rest are
-   * drawn again, those gone are taken out and new ones drawn; the stacking follows the new
-   * order. For a change the person made, which should show at once. Call only when
-   * `patchable` says so. */
-  async patch(work: Work, scene: Scene) {
+   * data, size and referenced pictures are unchanged stay as they are drawn (moved if they
+   * moved), the rest are drawn again, those gone are taken out and new ones drawn; the
+   * stacking follows the new order. Call only when `patchable` says so. */
+  async patch(
+    work: Work,
+    scene: Scene,
+    options?: { detachLeaving?: boolean; hideNew?: boolean },
+  ): Promise<PatchResult> {
     const before = this.work;
+    const hadModulesBefore = this.instances.size > 0;
     const look = (w: Work, m: Instance) =>
       JSON.stringify([
         m.drawingId,
@@ -614,28 +667,87 @@ export class SceneRenderer {
         m.bounds.height,
         w.drawings[m.drawingId] ?? null,
       ]);
+    const changedPictures = new Set<string>();
+    const developedPictures = new Set<string>();
+    for (const [id, m] of Object.entries(work.materials)) {
+      const was = before.materials[id];
+      if (was?.kind === "picture" && m.kind === "picture" && JSON.stringify(was) !== JSON.stringify(m)) {
+        changedPictures.add(id);
+        if (was.status === "developing" && m.status === "ready")
+          developedPictures.add(id);
+      }
+    }
     const kept = new Map(scene.modules.map((m) => [m.id, m]));
-    for (const id of [...this.instances.keys()])
-      if (!kept.has(id)) this.forget("module", id);
+    const leaving: HTMLElement[] = [];
+    let layoutChanged = false;
+    for (const id of [...this.instances.keys()]) {
+      if (!kept.has(id)) {
+        layoutChanged = true;
+        const host = this.forget("module", id, options?.detachLeaving);
+        if (host) leaving.push(host);
+      }
+    }
     const linked = new Set(scene.links.map((l) => l.id));
     for (const id of [...this.links.keys()])
       if (!linked.has(id)) this.forget("link", id);
     this.work = work;
     this.scene = scene;
     const jobs: Promise<unknown>[] = [];
+    const inked: Instance[] = [];
+    const inkedIds = new Set<string>();
+    const moved: { id: string; dx: number; dy: number }[] = [];
+    const geometryChanged = new Set<string>();
+    const developed: { moduleId: string; materialId: string }[] = [];
     for (const next of scene.modules) {
       const was = this.instances.get(next.id),
-        host = this.views.get("module:" + next.id)?.host;
+        view = this.views.get("module:" + next.id),
+        host = view?.host;
       const m = structuredClone(next);
       this.instances.set(m.id, m);
+      if (
+        !was ||
+        was.bounds.x !== m.bounds.x ||
+        was.bounds.y !== m.bounds.y ||
+        was.bounds.width !== m.bounds.width ||
+        was.bounds.height !== m.bounds.height
+      ) {
+        layoutChanged = true;
+        geometryChanged.add(m.id);
+      }
       if (!was || !host || look(before, was) !== look(work, m)) {
+        inked.push(m);
+        inkedIds.add(m.id);
+        jobs.push(this.drawModule(m));
+        if (options?.hideNew && !host) {
+          const created = this.views.get("module:" + m.id)?.host;
+          if (created) created.style.visibility = "hidden";
+        }
+        continue;
+      }
+      const usedChanged =
+        changedPictures.size > 0 &&
+        (view.usesPictures ||
+          [...view.materials].some((id) => changedPictures.has(id)));
+      if (usedChanged) {
+        const usedDeveloped = [...view.materials].filter((id) =>
+          developedPictures.has(id),
+        );
+        for (const materialId of usedDeveloped)
+          developed.push({ moduleId: m.id, materialId });
         jobs.push(this.drawModule(m));
         continue;
       }
-      Object.assign(host.style, {
-        left: m.bounds.x + "px",
-        top: m.bounds.y + "px",
-      });
+      if (was.bounds.x !== m.bounds.x || was.bounds.y !== m.bounds.y) {
+        moved.push({
+          id: m.id,
+          dx: was.bounds.x - m.bounds.x,
+          dy: was.bounds.y - m.bounds.y,
+        });
+        Object.assign(host.style, {
+          left: m.bounds.x + "px",
+          top: m.bounds.y + "px",
+        });
+      }
       host.title = labelOf(m);
       host.toggleAttribute("data-explorable", !!m.target);
     }
@@ -650,24 +762,72 @@ export class SceneRenderer {
     if (shown.some((el, i) => el !== hosts[i]))
       for (const host of hosts) this.element.append(host);
     this.relayer();
-    for (const l of scene.links) this.links.set(l.id, structuredClone(l));
-    // Links are cheap and follow their modules wherever they went.
-    jobs.push(this.drawLinks());
+    const linkLook = (w: Work, l: Link) =>
+      JSON.stringify([
+        l.drawingId,
+        l.data,
+        l.from,
+        l.to,
+        w.drawings[l.drawingId] ?? null,
+      ]);
+    const drawnLinks: string[] = [];
+    for (const nextLink of scene.links) {
+      const prevLink = this.links.get(nextLink.id);
+      const linkView = this.views.get("link:" + nextLink.id);
+      const l = structuredClone(nextLink);
+      this.links.set(l.id, l);
+      const endpointsInked =
+        inkedIds.has(l.from.moduleId) || inkedIds.has(l.to.moduleId);
+      const endpointsChanged =
+        endpointsInked ||
+        geometryChanged.has(l.from.moduleId) ||
+        geometryChanged.has(l.to.moduleId);
+      const linkChanged =
+        !prevLink || !linkView || linkLook(before, prevLink) !== linkLook(work, l);
+      const linkPicturesChanged =
+        changedPictures.size > 0 &&
+        !!linkView &&
+        (linkView.usesPictures ||
+          [...linkView.materials].some((id) => changedPictures.has(id)));
+      if (linkChanged || endpointsChanged || linkPicturesChanged) {
+        jobs.push(this.drawLink(l));
+        if (!prevLink || endpointsInked) {
+          drawnLinks.push(l.id);
+          if (options?.hideNew && !prevLink) {
+            const created = this.views.get("link:" + l.id)?.host;
+            if (created) created.style.visibility = "hidden";
+          }
+        }
+      }
+    }
     await Promise.all(jobs);
     await this.settled();
+    return {
+      inked,
+      moved,
+      developed,
+      drawnLinks,
+      leaving,
+      hadModulesBefore,
+      layoutChanged,
+    };
   }
-  /** Takes a drawn module or link out. */
-  private forget(kind: "module" | "link", id: string) {
+  /** Takes a drawn module or link out; when `keepHost` is set the DOM element is left on
+   * screen for a fade-out animation and returned to the caller to remove. */
+  private forget(kind: "module" | "link", id: string, keepHost = false) {
     const view = this.views.get(kind + ":" + id);
+    let kept: HTMLElement | undefined;
     if (view) {
       // A drawing still running for it sees it is gone and stops what it started.
       view.revision++;
       for (const fn of view.cleanup.splice(0)) fn();
-      view.host.remove();
+      if (keepHost) kept = view.host;
+      else view.host.remove();
       this.views.delete(kind + ":" + id);
     }
     if (kind === "module") this.instances.delete(id);
     else this.links.delete(id);
+    return kept;
   }
   dispose() {
     this.disposed = true;
