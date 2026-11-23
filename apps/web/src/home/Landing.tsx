@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { ChevronLeft } from "lucide-react";
+import { ArrowRight, Check, ChevronLeft, ImagePlus, Pause, Play, RotateCcw } from "lucide-react";
 import type { Work } from "../../../../modules/contracts/index.ts";
 import { Composer, Unconnected } from "../Composer.tsx";
 import { useAccount } from "../account.tsx";
@@ -43,7 +43,11 @@ export function Landing({
     asking.draft.hand(text);
     page.current?.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
   };
-  const intro = useRef<HTMLDivElement>(null);
+  const story = useRef<HTMLElement>(null);
+  const styleDemo = useRef<HTMLElement>(null);
+  const styleFile = useRef<HTMLInputElement>(null);
+  const openStyleDemo = () =>
+    styleDemo.current?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth" });
   return (
     <div className={cx("l-page")} ref={page}>
       <Hero
@@ -51,11 +55,27 @@ export function Landing({
         feedback={feedback}
         go={go}
         ask={ask}
-        more={() => intro.current?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth" })}
+        showStyleDemo={openStyleDemo}
+        more={() => story.current?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth" })}
       />
       {/* What DrawY draws, apart from where one asks it: a sheet laid over the desk below. */}
-      <div className={cx("l-intro")} ref={intro}>
-        <Story />
+      <div className={cx("l-intro")}>
+        <StyleReference section={styleDemo} upload={() => styleFile.current?.click()} />
+        <input
+          ref={styleFile}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = "";
+            if (!file?.type.startsWith("image/")) return;
+            if (!asking.draft.get().text.trim()) ask(l.styleDemo.starter);
+            else page.current?.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
+            void feedback.attempt(() => asking.upload([file]));
+          }}
+        />
+        <Story band={story} />
         <Ticker words={l} ask={ask} />
         <Features words={l} />
         <Questions words={l} />
@@ -74,12 +94,14 @@ function Hero({
   feedback,
   go,
   ask,
+  showStyleDemo,
   more,
 }: {
   asking: Asking;
   feedback: Feedback;
   go: (path: string) => void;
   ask: (text: string) => void;
+  showStyleDemo: () => void;
   /** Takes the reader down to what DrawY draws. */
   more: () => void;
 }) {
@@ -142,10 +164,170 @@ function Hero({
           {l.blank}
         </button>
       </div>
+      <button type="button" className={cx("l-style-link")} onClick={showStyleDemo}>
+        <ImagePlus size={16} aria-hidden />
+        {l.styleDemo.link}
+        <ArrowRight size={14} aria-hidden />
+      </button>
       <button className={cx("l-more")} onClick={more}>
         {l.more}
         <Hand.Down size={17} />
       </button>
+    </section>
+  );
+}
+
+// The finished work is DrawY's own export. Only its appearance is replayed here.
+const styleReplayTick = 40;
+const styleTypeStart = 400;
+const styleDrawStart = 1_920;
+const styleReplayEnd = 4_640;
+
+function StyleReference({
+  section,
+  upload,
+}: {
+  section: RefObject<HTMLElement | null>;
+  upload: () => void;
+}) {
+  const words = useT().landing.styleDemo;
+  const resultCanvas = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [resultVisible, setResultVisible] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [work, setWork] = useState<Work>();
+  const [unavailable, setUnavailable] = useState(false);
+  const reduce = reducedMotion();
+  const finished = reduce || elapsed >= styleReplayEnd;
+  const stage = finished ? 3 : elapsed >= styleDrawStart ? 2 : elapsed >= styleTypeStart ? 1 : 0;
+  const drawingTime = Math.max(0, elapsed - styleDrawStart);
+  const progress = (start: number, duration: number) => Math.min(1, Math.max(0, (drawingTime - start) / duration));
+  const transfer = progress(0, 800);
+  const typedLength = stage >= 2
+    ? words.request.length
+    : Math.floor(words.request.length * Math.max(0, (elapsed - styleTypeStart) / (styleDrawStart - styleTypeStart)));
+
+  useEffect(() => {
+    const element = section.current;
+    const canvas = resultCanvas.current;
+    if (!element || !canvas) return;
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), {
+      rootMargin: "0px 0px -38% 0px",
+    });
+    const resultObserver = new IntersectionObserver(
+      ([entry]) => setResultVisible(entry.isIntersecting),
+      { threshold: 0.25 },
+    );
+    observer.observe(element);
+    resultObserver.observe(canvas);
+    return () => {
+      observer.disconnect();
+      resultObserver.disconnect();
+    };
+  }, [section]);
+
+  useEffect(() => {
+    if (!visible || work || unavailable) return;
+    const controller = new AbortController();
+    void fetch("/style-reference-record-player.json", { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw Error("Preview unavailable");
+        return response.json() as Promise<Work>;
+      })
+      .then((result) => { if (!controller.signal.aborted) setWork(result); })
+      .catch(() => { if (!controller.signal.aborted) setUnavailable(true); });
+    return () => controller.abort();
+  }, [visible, work, unavailable]);
+
+  useEffect(() => {
+    if (!visible || !work || paused || finished || (stage === 2 && !resultVisible)) return;
+    const timer = window.setInterval(() => {
+      setElapsed((time) => Math.min(styleReplayEnd, time + styleReplayTick));
+    }, styleReplayTick);
+    return () => window.clearInterval(timer);
+  }, [visible, work, paused, finished, stage, resultVisible]);
+
+  return (
+    <section ref={section} className={cx("l-drafting-band", "l-style-demo")} aria-labelledby="l-style-title">
+      <div className={cx("l-style-copy")}>
+        <h2 id="l-style-title" className={cx("l-display")} data-size="section">{words.title}</h2>
+        <button type="button" className={cx("l-style-upload")} onClick={upload}>
+          <ImagePlus size={17} aria-hidden />
+          {words.upload}
+        </button>
+      </div>
+      <div
+        className={cx("l-style-pair")}
+        data-stage={stage}
+        style={{
+          "--style-case-progress": progress(380, 570),
+          "--style-drive-progress": progress(640, 590),
+          "--style-record-progress": progress(930, 620),
+          "--style-arm-progress": progress(1_220, 570),
+          "--style-color-progress": progress(1_050, 1_150),
+        } as CSSProperties}
+      >
+        <div className={cx("l-style-request")}>
+          <figure>
+            <figcaption>
+              <span>{words.reference}</span>
+              <strong>{words.referenceSubject}</strong>
+              <span className={cx("l-style-selected")} aria-hidden><Check size={12} /></span>
+            </figcaption>
+            <div className={cx("l-style-picture")}>
+              <img
+                src="/style-reference-lighthouse.webp"
+                alt={words.referenceAlt}
+                width={443}
+                height={629}
+                loading="lazy"
+              />
+            </div>
+          </figure>
+          <div className={cx("l-style-message")}>
+            <span className={cx("l-style-stage")} aria-hidden>{words.stages[stage]}</span>
+            <p aria-hidden>{words.request.slice(0, typedLength)}</p>
+            <span className={cx("l-style-screen-reader")}>{words.request}</span>
+          </div>
+        </div>
+        {stage === 2 && (
+          <svg className={cx("l-style-flow")} viewBox="0 0 100 70" aria-hidden="true">
+            <g opacity={1 - progress(730, 620)} strokeDasharray={1} strokeDashoffset={1 - transfer}>
+              <path d="M3 33Q47 13 97 35" pathLength={1} stroke="#807263" strokeWidth={1} />
+              <path d="M3 39Q44 62 97 35" pathLength={1} stroke="#b34430" strokeWidth={1.5} />
+            </g>
+          </svg>
+        )}
+        <figure className={cx("l-style-result")}>
+          <figcaption className={cx("l-style-toolbar")}>
+            <div className={cx("l-style-label")}>
+              <span>{words.output}</span>
+              <strong>{words.outputSubject}</strong>
+            </div>
+            {!reduce && work && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (finished) setElapsed(0);
+                  else setPaused(!paused);
+                }}
+                className={cx("l-style-replay")}
+              >
+                {finished ? <RotateCcw size={14} aria-hidden /> : paused ? <Play size={14} aria-hidden /> : <Pause size={14} aria-hidden />}
+                {finished ? words.replay : paused ? words.resume : words.pause}
+              </button>
+            )}
+          </figcaption>
+          <div className={cx("l-style-canvas")} ref={resultCanvas}>
+            {work ? (
+              <div className={cx("l-style-artwork")} inert={!finished}>
+                <LiveWork work={work} label={words.outputAlt} />
+              </div>
+            ) : unavailable && <span className={cx("l-style-blank")}>{words.unavailable}</span>}
+          </div>
+        </figure>
+      </div>
     </section>
   );
 }
@@ -260,10 +442,9 @@ function scrollToChapter(item: HTMLElement) {
  * until the sheet has gone over the top. The turn follows the scrolling rather than a timer,
  * so scrolling back lays the sheet down again. The band's dots drift by a little slower than
  * the page. */
-function Story() {
+function Story({ band }: { band: RefObject<HTMLElement | null> }) {
   const l = useT().landing;
   const locale = useLocale();
-  const band = useRef<HTMLElement>(null);
   const items = useRef<(HTMLElement | null)[]>([]);
   const slots = useRef<(HTMLDivElement | null)[]>([]);
   const shades = useRef<(HTMLElement | null)[]>([]);
@@ -370,7 +551,7 @@ function Story() {
   /** Which chapter each board holds: `from` in one, the chapter after it in the other. */
   const held = [0, 1].map((s) => (s === from % 2 ? from : from + 1 < chapters.length ? from + 1 : from - 1));
   return (
-    <section className={cx("l-story")} aria-labelledby="l-story-title" ref={band}>
+    <section className={cx("l-drafting-band", "l-story")} aria-labelledby="l-story-title" ref={band}>
       <header className={cx("l-section-head")}>
         <h2 id="l-story-title" className={cx("l-display")} data-size="section">
           {l.storyTitle}
