@@ -201,9 +201,11 @@ export function readPack(dir: string, library: Library) {
           if (d.params[param]?.type !== type) problems.push(`绑定 ${capability}: ${id} 缺少 ${type} 参数 ${param}`);
       }
     }
+  // A pack keeps withdrawing what it once offered; a library that never held it has nothing
+  // to withdraw.
   for (const id of manifest.withdraw) {
     const held = existing(id);
-    if (!held || held.pack !== manifest.source) problems.push(`撤下的素材不属于本素材源: ${id}`);
+    if (held && held.pack !== manifest.source) problems.push(`撤下的素材不属于本素材源: ${id}`);
   }
   const files = new Map<string, Buffer>();
   for (const m of materials)
@@ -294,6 +296,8 @@ export function importPack(library: Library, dir: string): ImportReport {
       else report.added++;
     }
     for (const id of manifest.withdraw) {
+      const held = catalog.head(id);
+      if (!held || held.status === "withdrawn") continue;
       catalog.stand(id, { status: "withdrawn" });
       report.withdrawn++;
     }

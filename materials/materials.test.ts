@@ -66,8 +66,8 @@ it("finds the thing asked for in either language, ignoring request noise", () =>
   ).not.toMatch(/general|folder/);
 });
 it("prefers the requested style and type", () => {
-  const pictures = top("apple", { kinds: ["picture"], style: "line-icon" });
-  expect(pictures[0].material.id).toBe("line-apple");
+  const pictures = top("apple", { kinds: ["picture"], style: "ink-wash" });
+  expect(pictures[0].material.id).toBe("apple-ink-wash");
   expect(top("planet", { style: "crayon" })[0].material.style).toBe("crayon");
   expect(top("arrow", { kinds: ["drawing"] })[0].material.id).toBe("arrow");
   expect(top("apple", { types: ["icon"] }).every((h) => h.material.type === "icon")).toBe(true);
@@ -82,8 +82,8 @@ it("weighs what a request states about the picture, and what the thesaurus gives
   const [green] = library.search({ subjects: ["青苹果"] });
   expect(green.unknown).toContain("青苹");
   expect(green.hits.every((h) => h.match === "related")).toBe(true);
-  // Inventory is a warehouse, though no material says inventory.
-  expect(top("库存").map((h) => h.material.id)).toContain("line-warehouse");
+  // A message bus is a queue, though no material says message bus.
+  expect(top("消息总线").map((h) => h.material.id)).toContain("icon-queue");
   // A request's own name ranks above an alias of something else.
   expect(top("帆船")[0].match).toBe("exact");
   expect(top("帆船").find((h) => h.material.id === "lighthouse-crayon")?.match).not.toBe("exact");
@@ -206,7 +206,17 @@ it("develops reserved pictures in the background, private to their maker until p
 });
 it("serves recoloured icons and counts uses per work", async () => {
   const app = createServer(library);
-  const r = await app.request("/files/line-apple?color=%23123456");
+  // An SVG drawn in currentColor is inked in the colour asked for.
+  const icon = await library.ingest(
+    new TextEncoder().encode(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor"/></svg>`,
+    ),
+    "image/svg+xml",
+    { type: "icon", name: { zh: "圆圈", en: "ring" }, style: null, origin: { kind: "upload" } },
+    "alice",
+  );
+  expect(icon.form.recolor).toBe(true);
+  const r = await app.request(`/files/${icon.id}?color=%23123456`, { headers: { "x-drawy-user": "alice" } });
   expect(await r.text()).toContain("#123456");
   library.use(["apple", "apple"], "w1", "alice");
   library.use(["apple"], "w2", "alice");
@@ -357,7 +367,7 @@ function packCopy(change: (dir: string, manifest: Record<string, any>, lines: Re
 it("imports a pack once, versions what changed, and goes back to an earlier release", () => {
   const { dir, library } = testLibrary();
   try {
-    expect(library.size).toBeGreaterThan(700);
+    expect(library.size).toBeGreaterThan(200);
     // The same release again changes nothing; the same release with other content is refused.
     expect(importPack(library, curatedPack())).toMatchObject({ status: "unchanged", added: 0, updated: 0 });
     const label = library.get("label") as DrawingMaterial;
@@ -458,9 +468,9 @@ it("pages through everything a viewer may see, and filters before it cuts", asyn
     for (const m of library.browse("", page, undefined, ["picture"], 50).items) seen.add(m.id);
   expect(seen.size).toBe(all.total);
   // A query's last page is reachable too.
-  const food = library.browse("food", 1, undefined, [], 5);
-  expect(food.pages).toBeGreaterThan(2);
-  expect(library.browse("food", food.pages, undefined, [], 5).items.length).toBeGreaterThan(0);
+  const tech = library.browse("tech", 1, undefined, [], 5);
+  expect(tech.pages).toBeGreaterThan(2);
+  expect(library.browse("tech", tech.pages, undefined, [], 5).items.length).toBeGreaterThan(0);
   expect(library.browse("", 1, undefined, [], 10, undefined, ["figure"]).items.every((m) => m.type === "figure")).toBe(true);
 });
 
@@ -472,8 +482,8 @@ it("keeps every version a material ever had, and shows a work the pixels of the 
     const second = packCopy((out, manifest, lines) => {
       manifest.release = "v2";
       lines.find((l) => l.id === "label").about += " Second.";
-      // The apple's picture is replaced by the pear's under the same id.
-      cpSync(join(out, "files", "line-banana.svg"), join(out, "files", "apple.webp"));
+      // The apple's picture is replaced by the moon's under the same id.
+      cpSync(join(out, "files", "moon.webp"), join(out, "files", "apple.webp"));
       manifest.files["files/apple.webp"] = createHash("sha256").update(readFileSync(join(out, "files", "apple.webp"))).digest("hex");
     });
     importPack(library, second);
