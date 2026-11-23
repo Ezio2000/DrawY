@@ -56,6 +56,8 @@ export class Revisions {
   }
 
   private async fetch() {
+    // The blank sheet is not saved yet, so the server has no revisions for it.
+    if (this.ctx.id === "_blank") return;
     const asked = ++this.asked;
     try {
       const rows = await api<RevisionSummary[]>("/works/" + this.ctx.id + "/revisions");
