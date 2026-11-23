@@ -86,7 +86,7 @@ export class Runs {
     }
     // Back from a dropped connection: what the server says now is what was missed; a run
     // started since the request went out is kept.
-    if (!this.loaded) return;
+    if (event.type !== "connected" || !this.loaded) return;
     void Promise.all([
       api<Work>("/works/" + this.ctx.id),
       api<Run[]>("/works/" + this.ctx.id + "/runs"),

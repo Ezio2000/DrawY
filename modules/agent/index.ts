@@ -1,4 +1,4 @@
-import { DomainError, id, type Run, type Settings, type Step } from "../contracts/index.ts";
+import { DomainError, id, type Run, type ServerEvent, type Settings, type Step } from "../contracts/index.ts";
 import { MIN_TEXT } from "../contracts/geometry.ts";
 import type { UserStore } from "../storage/index.ts";
 import { bindings, library, look, useOf } from "../materials/index.ts";
@@ -55,7 +55,7 @@ export class Agent {
   private heldForText = new Set<string>();
   /** Pictures each run has asked for, developing in the background. */
   private developments = new Map<string, Execution["developments"]>();
-  constructor(public publish: (user: string, event: object) => void) {}
+  constructor(public publish: (user: string, event: Extract<ServerEvent, { type: "run" | "work" }>) => void) {}
   emit(store: UserStore, run: Run) {
     store.saveRun(run);
     this.publish(store.userId, { type: "run", run });

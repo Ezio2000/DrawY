@@ -7,6 +7,7 @@ import {
   MEMBER,
   historyOf,
   type WorkProgress,
+  type WorkSummary,
   defaultCatalog,
   emptySettings,
   modelCatalogSchema,
@@ -290,6 +291,14 @@ export class UserStore {
       .prepare("SELECT data FROM works WHERE user_id=? ORDER BY rowid DESC")
       .all(this.userId)
       .map((r) => JSON.parse(r.data as string));
+  }
+  /** List metadata in creation order, or the current row for one changed work. */
+  summaries(workId?: string): WorkSummary[] {
+    const fields = "SELECT id, json_extract(data,'$.title') AS title, json_extract(data,'$.revision') AS revision, json_extract(data,'$.updatedAt') AS updatedAt FROM works WHERE user_id=?";
+    const rows = workId === undefined
+      ? this.storage.db.prepare(fields + " ORDER BY rowid DESC").all(this.userId)
+      : this.storage.db.prepare(fields + " AND id=?").all(this.userId, workId);
+    return (rows as Omit<WorkSummary, "progress">[]).map((row) => ({ ...row, progress: this.progress(row.id) }));
   }
   work(workId: string) {
     return this.one<Work>(

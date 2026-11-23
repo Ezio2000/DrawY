@@ -1,14 +1,15 @@
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { X, ImagePlus } from "lucide-react";
 import { Spinner, Tooltips, Presence, UndoToast } from "./ui/primitives.tsx";
 import { useLocale, LocaleContext } from "./ui/locale.tsx";
 import { Dialog } from "./ui/dialogs.tsx";
 import type { Material } from "@drawy/materials/schema";
 import { loadBindings } from "./bindings.ts";
-import { blankStyle, type SettingsChange, type Work } from "../../../modules/contracts/index.ts";
-import { api, type Models, type Summary, type User } from "./api.ts";
+import { blankStyle, type SettingsChange, type Work, type WorkSummary } from "../../../modules/contracts/index.ts";
+import { api, type Models, type User } from "./api.ts";
 import { AccountContext } from "./account.tsx";
 import { cx } from "./cx.ts";
+import { Recents } from "./recents.ts";
 import { Rail } from "./Rail.tsx";
 import { AuthDialog } from "./Auth.tsx";
 import { chosen } from "./Composer.tsx";
@@ -24,7 +25,6 @@ import { useRequest } from "./session/request.ts";
 import { useSelect } from "./session/store.ts";
 import {
   WorkSession,
-  live,
   useWorkSession,
   type Ask,
   type SessionHost,
@@ -70,21 +70,17 @@ export function App() {
   const [user, U] = useState<User | null | undefined>(),
     [path, setPath] = useState(location.pathname),
     [open, O] = useState(false),
-    // Whether the list of works has arrived, so the home page does not say there are none
-    // before it knows.
-    [listed, setListed] = useState(false),
-    [works, L] = useState<Summary[]>([]),
     // The labels to draw with; until the chosen one is connected, nothing can be drawn.
     [models, setModels] = useState<Models>(),
     [picking, setPicking] = useState(false),
     // A request from the home page on its way, making the work it is for.
     [starting, setStarting] = useState(false),
     [dragging, setDragging] = useState(false),
-    [trash, setTrash] = useState<Summary>(),
+    [trash, setTrash] = useState<WorkSummary>(),
     [authPrompt, setAuthPrompt] = useState<AuthReason>();
   const page = pageOf(path);
   const shells = useShell();
-  const deleting = useRef<{ id: string; timer: ReturnType<typeof setTimeout> }>(undefined);
+  const deleting = useRef<{ id: string; timer: ReturnType<typeof setTimeout>; commit: () => Promise<void> }>(undefined);
   const pendingAuth = useRef<(() => void) | undefined>(undefined);
   const pendingMaterialize = useRef<((session: WorkSession | undefined) => void) | undefined>(undefined);
   const language = useRef({ t, locale });
@@ -92,6 +88,9 @@ export function App() {
   const draft = useRequest();
   const [feedback] = useState(() => new Feedback(() => language.current.t));
   const { attempt } = feedback;
+  const recents = useMemo(() => new Recents(feedback.fail), [user?.id, feedback]);
+  useEffect(() => user ? recents.follow(user.id) : undefined, [user?.id, recents]);
+  useEffect(() => recents.show(open && !!user), [open, user?.id, recents]);
 
   const requireAuth = (reason: AuthReason, then?: () => void) => {
     pendingAuth.current = then;
@@ -115,15 +114,9 @@ export function App() {
     else window.history.pushState(null, "", to);
     setPath(to);
   });
-  const refreshList = () =>
-    api<Summary[]>("/works").then((w) => {
-      L(w);
-      setListed(true);
-    });
   // What the open work needs from the app; the calls go to what the app is now.
   const now = useRef({
     go,
-    refreshList,
     user,
     whole: shells.whole,
     begin: undefined as unknown as (w: Work) => WorkSession,
@@ -136,7 +129,6 @@ export function App() {
       window.history.replaceState(null, "", to);
       setPath(to);
     },
-    listed: () => now.current.refreshList(),
     spent: () => U((u) => (u && u.quota !== null ? { ...u, quota: Math.max(0, u.quota - 1) } : u)),
     listen: (listener) => {
       const u = now.current.user;
@@ -149,7 +141,6 @@ export function App() {
   useEffect(() => () => blankSession.dispose(), [blankSession]);
   now.current = {
     go,
-    refreshList,
     user,
     whole: shells.whole,
     begin,
@@ -169,7 +160,6 @@ export function App() {
       });
       const made = now.current.begin(w);
       now.current.go("/a/" + w.id);
-      void now.current.refreshList();
       return made;
     },
   };
@@ -293,26 +283,6 @@ export function App() {
   useEffect(() => {
     if (user) void loadBindings().catch(() => {});
   }, [user?.id]);
-  // The list of works follows the server: a work saved anew, a run starting or ending.
-  useEffect(() => {
-    if (!user) return;
-    void attempt(refreshList);
-    return listen(user.id, {
-      event: (event) => {
-        if (event.type === "connected" || event.type === "work") void refreshList();
-        if (event.type !== "run") return;
-        const run = event.run;
-        L((list) =>
-          list.map((w) =>
-            w.id === run.workId && w.progress.run !== run.status
-              ? { ...w, progress: { ...w.progress, run: run.status } }
-              : w,
-          ),
-        );
-        if (!live(run)) void refreshList();
-      },
-    });
-  }, [user?.id]);
   useEffect(() => {
     if (!user || (page !== "home" && page !== "new" && page !== "work")) return;
     void api<Models>("/models").then(setModels, () => {});
@@ -334,32 +304,35 @@ export function App() {
   }, [open]);
 
   /** Deletes for real a few seconds later, unless the user takes it back. */
-  function remove(w: Summary) {
+  const remove = useCallback((w: WorkSummary) => {
+    const previous = deleting.current;
+    if (previous) {
+      clearTimeout(previous.timer);
+      void attempt(previous.commit);
+    }
+    if (workIdOf(location.pathname) === w.id) go("/");
+    recents.hide(w.id, true);
+    setTrash(w);
+    const commit = async () => {
+      try {
+        await api("/works/" + w.id, "DELETE");
+        recents.change({ type: "removed", id: w.id });
+      } finally {
+        recents.hide(w.id, false);
+      }
+    };
+    deleting.current = { id: w.id, commit, timer: setTimeout(() => {
+      deleting.current = undefined;
+      setTrash(undefined);
+      void attempt(commit);
+    }, 5000) };
+  }, [go, recents, attempt]);
+  function keep() {
     const pending = deleting.current;
     if (pending) {
-      // The earlier one can no longer be taken back: take it out of the list
-      // now, or it reappears once `trash` moves on to this work.
       clearTimeout(pending.timer);
-      L((old) => old.filter((o) => o.id !== pending.id));
-      void api("/works/" + pending.id, "DELETE").catch(() => refreshList());
+      recents.hide(pending.id, false);
     }
-    if (workIdOf(path) === w.id) go("/");
-    setTrash(w);
-    deleting.current = {
-      id: w.id,
-      timer: setTimeout(() => {
-        deleting.current = undefined;
-        L((old) => old.filter((o) => o.id !== w.id));
-        setTrash(undefined);
-        void attempt(async () => {
-          await api("/works/" + w.id, "DELETE");
-          await refreshList();
-        });
-      }, 5000),
-    };
-  }
-  function keep() {
-    clearTimeout(deleting.current?.timer);
     deleting.current = undefined;
     setTrash(undefined);
   }
@@ -368,7 +341,6 @@ export function App() {
     setPicking(false);
     if (page !== "work" && page !== "home" && page !== "new") go("/");
   }
-  const shownWorks = works.filter((w) => w.id !== trash?.id);
   const droppable = page === "home" || page === "new" || page === "work";
   const authReasons: Record<AuthReason, string> = {
     send: t.auth.whySend,
@@ -398,7 +370,7 @@ export function App() {
                 open={open}
                 setOpen={O}
                 page={page}
-                works={shownWorks}
+                recents={recents}
                 current={session?.id}
                 go={go}
                 remove={remove}
@@ -406,10 +378,15 @@ export function App() {
                 onLogin={() => requireAuth("general")}
                 logout={() =>
                   void attempt(async () => {
+                    const pending = deleting.current;
+                    if (pending) {
+                      clearTimeout(pending.timer);
+                      deleting.current = undefined;
+                      setTrash(undefined);
+                      await pending.commit();
+                    }
                     await api("/auth/logout", "POST");
                     forgetSettings();
-                    L([]);
-                    setListed(false);
                     setModels(undefined);
                     U(null);
                     go("/");

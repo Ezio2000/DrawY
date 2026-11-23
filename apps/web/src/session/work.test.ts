@@ -76,7 +76,6 @@ beforeEach(() => {
     go(path, how) {
       host.went.push(how + " " + path);
     },
-    listed: async () => {},
     spent: () => {},
     listen: (listener) => {
       events = listener.event;

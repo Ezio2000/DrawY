@@ -1,4 +1,5 @@
-import type { Run, Work } from "../../../modules/contracts/index.ts";
+import type { ServerEvent } from "../../../modules/contracts/index.ts";
+export type { ServerEvent } from "../../../modules/contracts/index.ts";
 
 const RETRY = 3000;
 /** How long a stream may go without a word before it is taken to be dead: the server pings
@@ -7,10 +8,6 @@ const QUIET = 45_000;
 
 /** What the server tells a signed-in user's pages as it happens: `connected` each time the
  * stream (re)opens, so whatever was missed while it was down can be fetched again. */
-export type ServerEvent =
-  | { type: "connected" }
-  | { type: "work"; work: Work }
-  | { type: "run"; run: Run };
 export interface Listener {
   event(event: ServerEvent): void;
   offline?(offline: boolean): void;

@@ -10,6 +10,8 @@ import {
   emptySettings,
   defaultCatalog,
   type Work,
+  type Run,
+  type ServerEvent,
 } from "../contracts/index.ts";
 import { register, login, createInvites } from "../identity/index.ts";
 import { createApp } from "../../apps/server/app.ts";
@@ -537,6 +539,53 @@ describe("user owned works", () => {
   });
 });
 describe("over HTTP, by role", () => {
+  it("streams one current sidebar summary for a run transition, including a late update to an older run", async () => {
+    const { app, agent } = createApp(db);
+    const user = await signup(caller(app), "artist");
+    const store = db.scoped(user.id);
+    const work = createWork(store, "A work");
+    const response = await app.request("/api/events", { headers: { cookie: user.cookie } });
+    const stream = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+    let buffered = "";
+    async function next(): Promise<ServerEvent> {
+      while (!buffered.includes("\n\n")) {
+        const { done, value } = await stream.read();
+        if (done) throw Error("event stream ended");
+        buffered += value;
+      }
+      const end = buffered.indexOf("\n\n");
+      const message = buffered.slice(0, end);
+      buffered = buffered.slice(end + 2);
+      return JSON.parse(message.slice("data: ".length));
+    }
+    const run: Run = {
+      id: "first", workId: work.id, sceneId: work.rootSceneId, startedAt: 1,
+      steps: [{ kind: "message", role: "user", text: "Draw a map" }], observations: [], status: "running",
+    };
+    try {
+      expect(await next()).toEqual({ type: "connected" });
+      agent.emit(store, run);
+      expect((await next()).type).toBe("run");
+      expect(await next()).toMatchObject({ type: "summary", summary: { id: work.id, progress: { run: "running", prompt: "Draw a map" } } });
+      run.steps.push({ kind: "thinking", text: "Planning" });
+      agent.emit(store, run);
+      expect((await next()).type).toBe("run");
+      run.status = "completed";
+      agent.emit(store, run);
+      expect((await next()).type).toBe("run");
+      expect(await next()).toMatchObject({ type: "summary", summary: { progress: { run: "completed" } } });
+      agent.emit(store, { ...run, id: "second", startedAt: 2, status: "waiting" });
+      expect((await next()).type).toBe("run");
+      expect(await next()).toMatchObject({ type: "summary", summary: { progress: { run: "waiting" } } });
+      run.status = "cancelled";
+      agent.emit(store, run);
+      expect((await next()).type).toBe("run");
+      expect(await next()).toMatchObject({ type: "summary", summary: { progress: { run: "waiting" } } });
+    } finally {
+      await stream.cancel();
+    }
+  });
+
   it("lets the first account set the app up, admits each later one with an unused invite, and keeps it signed in until it signs out", async () => {
     const { app } = createApp(db),
       call = caller(app);

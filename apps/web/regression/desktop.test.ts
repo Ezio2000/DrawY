@@ -564,3 +564,113 @@ it("opens the blank canvas for guests and prompts sign-in only when sending, the
   await guestPage.waitForURL(/\/a\//);
   await guest.close();
 });
+
+it("loads the sidebar on demand, keeps its scroll, and updates only the changed work across a snapshot", async () => {
+  for (let i = 0; i < 32; i++) await api("/works", "POST", { title: "Rail " + i });
+  const first = await api("/works", "POST", { title: "Original title" });
+  const removed = await api("/works", "POST", { title: "Removed while loading" });
+  const requests: string[] = [];
+  let release!: () => void;
+  const held = new Promise<void>((done) => { release = done; });
+  let captured!: () => void;
+  const snapshot = new Promise<void>((done) => { captured = done; });
+  await page.route(/\/api\/works(?:\?.*)?$/, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    requests.push(route.request().url());
+    const response = await route.fetch();
+    if (requests.length === 1) {
+      captured();
+      await held;
+    }
+    await route.fulfill({ response });
+  });
+  // The tab is listening before the shelf is opened.
+  await cdp.send("Network.enable");
+  const connected = new Promise<void>((resolve) => {
+    cdp.on("Network.eventSourceMessageReceived", (event) => {
+      if (event.eventName === "message" && JSON.parse(event.data).type === "connected") resolve();
+    });
+  });
+  await page.goto(base + "/new");
+  await connected;
+  const nav = page.locator("nav[data-open]");
+  const list = nav.locator("ul");
+  const toggle = (name: string) => nav.getByRole("button", { name, exact: true }).click();
+  expect(requests).toHaveLength(0);
+  expect(await nav.locator("li").count()).toBe(0);
+  await toggle("Open sidebar");
+  await snapshot;
+  await api("/works/" + first.id, "PATCH", { title: "Renamed during load" });
+  await api("/works/" + removed.id, "DELETE");
+  const added = await api("/works", "POST", { title: "Created during load" });
+  release();
+  await nav.getByText("Renamed during load", { exact: true }).waitFor();
+  await nav.getByText("Created during load", { exact: true }).waitFor();
+  expect(await nav.getByText("Removed while loading").count()).toBe(0);
+  expect(requests.map((url) => new URL(url).search)).toEqual(["?covers=0"]);
+
+  const before = (await renders())["rail-row"];
+  await api("/works/" + added.id, "PATCH", { title: "One changed row" });
+  await nav.getByText("One changed row", { exact: true }).waitFor();
+  expect((await renders())["rail-row"] - before).toBe(1);
+  const user = { kind: "message", role: "user", text: "A new prompt" } as const;
+  const [summary] = (await api("/works?covers=0")).filter((row: { id: string }) => row.id === added.id);
+  const progress = { ...summary.progress, prompt: user.text };
+  await tell({ type: "summary", summary: { ...summary, progress: { ...progress, run: "running" } } });
+  await nav.locator('button[title="A new prompt"]').getByText("Drawing…").waitFor();
+  const drawn = (await renders())["rail-row"];
+  await tell({ type: "run", run: run(added.id, "ongoing", "running", [user, { kind: "thinking", text: "Thinking" }]) });
+  await tell({ type: "summary", summary: { ...summary, progress: { ...progress, run: "completed" } } });
+  await expect.poll(() => nav.getByText("Drawing…").count()).toBe(0);
+  expect((await renders())["rail-row"] - drawn).toBe(1);
+
+  await list.evaluate((el) => { el.scrollTop = 250; });
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(250);
+  await toggle("Close sidebar");
+  expect(await nav.locator("li").count()).toBe(0);
+  await api("/works/" + first.id, "PATCH", { title: "Changed while closed" });
+  await toggle("Open sidebar");
+  await nav.getByText("Changed while closed", { exact: true }).waitFor();
+  expect(await list.evaluate((el) => el.scrollTop)).toBe(250);
+  expect(requests).toHaveLength(1);
+
+  await toggle("Close sidebar");
+  await tell({ type: "connected" });
+  await settled();
+  expect(requests).toHaveLength(1);
+  await toggle("Open sidebar");
+  await expect.poll(() => requests.length).toBe(2);
+}, 20_000);
+
+it("requests covers only in work records and restores the sidebar row on undo or a failed deletion", async () => {
+  const work = await api("/works", "POST", { title: "Undo this deletion" });
+  let lists = 0;
+  page.on("request", (req) => {
+    if (req.method() === "GET" && new URL(req.url()).pathname === "/api/works") lists++;
+  });
+  await page.goto(base + "/traces");
+  await page.getByRole("button", { name: "Runs", exact: true }).waitFor();
+  expect(lists).toBe(0);
+  const withCovers = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/works");
+  await page.getByRole("button", { name: "Works", exact: true }).click();
+  const recordRows = await (await withCovers).json();
+  expect(recordRows.find((row: { id: string }) => row.id === work.id)).toHaveProperty("cover");
+  const nav = page.locator("nav[data-open]");
+  const withoutCovers = page.waitForResponse((r) => r.url().endsWith("/api/works?covers=0"));
+  await nav.getByRole("button", { name: "Open sidebar" }).click();
+  const railRows = await (await withoutCovers).json();
+  expect(railRows.find((row: { id: string }) => row.id === work.id)).not.toHaveProperty("cover");
+  const row = nav.locator("li").filter({ hasText: work.title });
+  const remove = nav.getByRole("button", { name: "Delete " + work.title, exact: true });
+  await row.hover();
+  await remove.click();
+  expect(await row.count()).toBe(0);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await row.waitFor();
+  await page.route("**/api/works/" + work.id, (route) => route.fulfill({ status: 409, json: { error: "Work is busy" } }));
+  await row.hover();
+  await remove.click();
+  await row.waitFor({ timeout: 10_000 });
+  await page.getByText("Work is busy", { exact: true }).waitFor();
+  expect(lists).toBe(2);
+}, 20_000);
