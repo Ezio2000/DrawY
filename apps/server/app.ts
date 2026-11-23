@@ -74,13 +74,11 @@ function dataUrl(bytes: Uint8Array) {
 /** A run as an account may see it: which models made it is for those who manage models;
  * everyone else sees the label they picked. */
 function showRun(run: Run, user: Account): Run {
-  if (user.permissions.includes("models.manage")) return run;
-  const { services, prices, usage, ...publicRun } = run;
-  if (!services) return publicRun;
-  const label = services.label ?? "";
+  if (!run.services || user.permissions.includes("models.manage")) return run;
+  const label = run.services.label ?? "";
   return {
-    ...publicRun,
-    services: { label, author: label, model: "", search: services.search, image: "" },
+    ...run,
+    services: { label, author: label, model: "", search: run.services.search, image: "" },
   };
 }
 export function createApp(storage: Storage) {
@@ -579,7 +577,7 @@ export function createApp(storage: Storage) {
   // Each trace is its run's, so it carries what the run cost.
   const costed = (store: UserStore, trace: TraceSummary) => {
     const run = store.runCost(trace.id);
-    return { ...trace, cost: run && costOf(run.usage, run.prices), services: run?.services, firstCached: run?.usage?.firstCached };
+    return { ...trace, cost: run && costOf(run.usage, run.prices), services: run?.services };
   };
   app.get("/api/traces", (c) => {
     const store = readable(c);

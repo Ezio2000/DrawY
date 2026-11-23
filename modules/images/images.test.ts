@@ -7,7 +7,7 @@ import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { develop } from "./index.ts";
 import { library as client, useOf } from "../materials/index.ts";
-import { settingsFor, type ImageRole, type ModelCatalog } from "../contracts/index.ts";
+import type { ImageRole, ModelCatalog } from "../contracts/index.ts";
 import { serveLibrary, picture, solid } from "@drawy/materials/testing";
 
 let dir: string, db: Storage, library: ReturnType<typeof serveLibrary>;
@@ -37,7 +37,7 @@ const author = (connection: Partial<ImageRole> = {}) => {
       },
     ],
   });
-  return { store, role: settingsFor(db.models(), store.ownSettings()).image };
+  return { store, role: store.settings().image };
 };
 /** What the picture service answers with one picture. */
 const painted = (png: Buffer, usage?: object) =>

@@ -7,44 +7,6 @@ import { Spinner } from "./ui/primitives.tsx";
 
 export const newId = (prefix: string) => prefix + "-" + crypto.randomUUID().slice(0, 8);
 
-/** Some of a few, as chips that toggle, kept in the order given. */
-export function Chips<V extends string>({
-  label,
-  options,
-  value,
-  name,
-  pick,
-  required,
-}: {
-  label: string;
-  options: readonly V[];
-  value: readonly V[];
-  name: (v: V) => string;
-  pick: (v: V[]) => void;
-  required?: boolean;
-}) {
-  return (
-    <div className={cx("chips")} role="group" aria-label={label}>
-      {options.map((v) => (
-        <button
-          key={v}
-          aria-pressed={value.includes(v)}
-          disabled={required && value.length === 1 && value[0] === v}
-          onClick={() =>
-            pick(
-              value.includes(v)
-                ? value.filter((x) => x !== v)
-                : options.filter((x) => x === v || value.includes(x)),
-            )
-          }
-        >
-          {name(v)}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** One setting: what it is and why it matters on the left, its control on the right. */
 export function Row({
   label,

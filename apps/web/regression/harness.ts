@@ -103,6 +103,7 @@ beforeAll(async () => {
     menu.labels = menu.labels.length
       ? menu.labels.map((l: object) => ({ ...l, ready: true }))
       : [{ id: "default", name: "Default", description: "", ready: true }];
+    menu.chosen = { label: menu.labels[0].id };
     await route.fulfill({ json: menu });
   });
 }, 120_000);

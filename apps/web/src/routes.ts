@@ -12,7 +12,7 @@ export const pageOf = (path: string): Page =>
       ? "new"
       : path === "/library"
       ? "library"
-      : path === "/settings" || path.startsWith("/settings/")
+      : path === "/settings"
         ? "settings"
         : path.startsWith("/traces")
           ? "traces"
