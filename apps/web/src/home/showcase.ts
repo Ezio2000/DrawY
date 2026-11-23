@@ -7,6 +7,7 @@ import type { Locale } from "../ui/locale.tsx";
  * here as each version came back. Each is loaded only when the page first needs it. */
 
 export type ShowcaseId =
+  | "reference"
   | "night"
   | "styles"
   | "inside"
@@ -26,7 +27,32 @@ export function loadShowcase(id: ShowcaseId, locale: Locale): Promise<Work[]> {
   const key = `./showcase/${id}.${locale === "en" ? "en" : "zh"}.json`;
   let versions = loaded.get(key);
   if (!versions) {
-    versions = files[key]().then((file) =>
+    versions = id === "reference" ? import("./record-player.json").then(({ default: exported }) => {
+      const work = exported as Work;
+      if (locale !== "en") return [work];
+      const labels: Record<string, string> = {
+        feet: "Isolation feet",
+        case: "Walnut case",
+        drive: "Motor and spindle",
+        belt: "Drive belt",
+        record: "Record and platter",
+        arm: "Tonearm",
+      };
+      const scene = work.scenes[work.rootSceneId];
+      const title = "Vintage record player";
+      return [{
+        ...work,
+        title,
+        scenes: { ...work.scenes, [scene.id]: {
+          ...scene, title, modules: scene.modules.map((module) => ({ ...module, label: labels[module.id] ?? module.label })),
+        } },
+        details: { ...work.details, "belt-note": {
+          ...work.details["belt-note"],
+          title: "Belt drive",
+          html: "<p>A small motor pulley drives the belt, which turns a larger wheel on the platter’s spindle. Rubber mounts help keep motor vibration out of the cabinet.</p>",
+        } },
+      }];
+    }) : files[key]().then((file) =>
       file.versions.map((v) => ({
         ...v,
         materials: Object.fromEntries(v.materials.map((m) => [m, file.materials[m]])),

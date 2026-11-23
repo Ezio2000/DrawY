@@ -1,0 +1,195 @@
+{
+  "id": "2ff18cee-73d4-4895-a460-c78593a1198f",
+  "title": "老式唱片机的剖面",
+  "rootSceneId": "root",
+  "drawings": {
+    "foot-svg": {
+      "id": "foot-svg",
+      "name": "灰蓝隔振脚",
+      "source": "const {rubber} = api.data;\nconst foot = (x,y) => `<g transform='translate(${x} ${y})'>\n  <path fill='#a39d92' d='M-38 0H38L35 21Q34 27 0 29Q-34 28-35 22Z'/>\n  <path fill='${rubber}' d='M-35 17Q0 24 35 17L32 32Q27 37 0 38Q-28 37-32 33Z'/>\n  <path fill='none' stroke='#d1cebf' stroke-width='.6' d='M-30 26Q0 33 30 26M-29 29Q0 36 29 29'/>\n</g>`;\nreturn api.svg(`<svg viewBox='84 391 549 66' xmlns='http://www.w3.org/2000/svg'>\n<g stroke='${api.theme.ink}' stroke-width='.85' stroke-linejoin='round'>${foot(133,415)}${foot(577,415)}</g>\n</svg>`);",
+      "defaults": {
+        "rubber": "#7c8585"
+      }
+    },
+    "case-svg": {
+      "id": "case-svg",
+      "name": "胡桃木剖开机身",
+      "source": "const {walnut,deck,section,inside,side} = api.data;\nconst edge = api.theme.ink;\nconst cabinet = 'M43 295H642V417L634 425H51L43 418Z';\nconst right = 'M642 295L722 48V170L716 185L642 417Z';\nconst top = 'M43 295L107 48H722L642 295H609L571 231H149L102 295Z';\nconst wave = Array.from({length:17}, (_,i) => {\n  const y = 299 + i * 7.4;\n  const n = i % 4;\n  return `<path d='M45 ${y}C144 ${y-6+n} 193 ${y+5} 281 ${y+1}S418 ${y-5} 489 ${y}S596 ${y+5-n} 642 ${y-1}'/>`;\n}).join('');\nconst sideGrain = Array.from({length:13}, (_,i) => {\n  const y = 298 + i * 8.6;\n  return `<path d='M643 ${y}Q684 ${y-108+i%3} 722 ${y-246}'/>`;\n}).join('');\nreturn api.svg(`<svg viewBox='34 40 699 392' xmlns='http://www.w3.org/2000/svg'>\n<defs>\n  <pattern id='case-hatch' width='6' height='6' patternUnits='userSpaceOnUse'><path d='M-1 5L5-1M4 6L6 4' fill='none' stroke='#746658' stroke-width='.49' opacity='.65'/></pattern>\n  <clipPath id='case-front-grain'><path d='${cabinet}'/></clipPath>\n  <clipPath id='case-side-grain'><path d='${right}'/></clipPath>\n</defs>\n<g stroke='${edge}' stroke-width='.95' stroke-linejoin='round'>\n  <path fill='${side}' d='${right}'/>\n  <g clip-path='url(#case-side-grain)' stroke='#665e54' stroke-width='.58' opacity='.44' fill='none'>${sideGrain}</g>\n  <path fill='${walnut}' d='${cabinet}'/>\n  <g clip-path='url(#case-front-grain)' stroke='#695e53' stroke-width='.53' opacity='.45' fill='none'>${wave}</g>\n  <path fill='${inside}' d='M99 295L149 231H571L610 295V402H99Z'/>\n  <path fill='#a39a8b' d='M145 237H575L594 259H130Z' stroke-width='.65'/>\n  <path fill='#9c9b91' d='M120 379H581L610 401H100Z' stroke-width='.7'/>\n  <path fill='#989185' d='M99 295L149 231L145 252L119 304V379L99 401Z' stroke-width='.7'/>\n  <path fill='#9f9687' d='M571 231L609 295V401L581 379V308L568 258Z' stroke-width='.7'/>\n  <path fill='none' stroke='#706a60' stroke-width='.54' d='M135 264H563M130 270H568M121 374H579M146 386H554M157 391H567'/>\n  <path fill='${deck}' d='${top}'/>\n  <path fill='none' stroke='#f4eee1' stroke-width='.9' d='M49 291L110 52H715L639 290H614'/>\n  <path fill='none' stroke='#8e8172' stroke-width='.5' d='M119 57H703M68 286H98M74 214L110 76M604 271L649 271M581 225L612 257'/>\n  <path fill='none' stroke='#a99a86' opacity='.56' stroke-width='.42' d='M115 63Q162 59 203 62T254 61M564 64Q617 60 657 63M608 190Q645 189 668 187M609 193Q640 191 659 192M62 283Q74 280 89 281'/>\n  <path fill='#827666' d='M99 295L149 231H571L609 295L603 298L567 240H153L108 299Z' stroke-width='.7'/>\n  <path fill='${section}' d='M88 295H108V395H601V295H619V412H88Z'/>\n  <path fill='url(#case-hatch)' stroke='none' d='M89 296H107V396H602V296H618V411H89Z'/>\n  <path fill='none' stroke='#f0e5d0' stroke-width='.72' d='M91 299V408H615V298'/>\n  <path fill='none' stroke='#5d554b' stroke-width='.78' d='M43 418H635L642 411M650 284L718 74M650 397L712 201'/>\n  <g stroke-width='.67' fill='#c6c2b6'>\n    <ellipse cx='82' cy='273' rx='4.2' ry='2.2'/><ellipse cx='652' cy='251' rx='4.2' ry='2.2'/><ellipse cx='151' cy='83' rx='4.2' ry='2.2'/><ellipse cx='682' cy='83' rx='4.2' ry='2.2'/>\n    <path fill='none' d='M80 274l4-2M650 252l4-2M149 84l4-2M680 84l4-2'/>\n  </g>\n  <g transform='translate(668 196) skewX(-18)'>\n    <path fill='#a29e94' d='M-8 9H7V26H-8Z'/><rect x='-6' y='10' width='11' height='12' rx='1.8' fill='#5c605e' stroke-width='.65'/><path stroke='${api.theme.accent}' stroke-width='1.25' d='M-3 13H2'/>\n  </g>\n</g>\n</svg>`);",
+      "defaults": {
+        "walnut": "#ab9a87",
+        "deck": "#ddd4c5",
+        "section": "#dbcbaf",
+        "inside": "#b9b1a1",
+        "side": "#918476"
+      }
+    },
+    "drive-svg": {
+      "id": "drive-svg",
+      "name": "转轴、马达和阻尼垫",
+      "source": "const {metal,motor,pads} = api.data;\nconst pad = (x,y,scale=1) => `<g transform='translate(${x} ${y}) scale(${scale})'>\n  <path fill='${pads}' d='M-14-4H14V7L10 10H-10L-14 7Z'/><ellipse cy='-4' rx='14' ry='4' fill='#8e9998'/>\n  <path fill='none' stroke='#b2b9b4' stroke-width='.53' d='M-11 2Q0 6 11 2M-11 5Q0 9 11 5'/>\n</g>`;\nreturn api.svg(`<svg viewBox='224 247 367 154' xmlns='http://www.w3.org/2000/svg'>\n<g stroke='${api.theme.ink}' stroke-width='.88' stroke-linejoin='round'>\n  <path fill='#8b8c84' d='M244 369L305 353H355L386 370L369 381H255Z'/>\n  <path fill='#a6a59b' d='M244 369L255 375H369L386 370V376L369 383H255L244 376Z'/>\n  ${pad(268,375,.79)}${pad(365,375,.79)}\n  <path fill='${metal}' d='M315 254H330V356Q321 361 315 356Z'/>\n  <path fill='none' stroke='#e5e8df' stroke-width='1' d='M318 280V327'/>\n  <path fill='#798889' d='M304 325H341V358C341 369 304 369 304 358Z'/>\n  <ellipse fill='${metal}' cx='322.5' cy='325' rx='18.5' ry='6.1'/>\n  <ellipse fill='#687475' cx='322.5' cy='325' rx='8.2' ry='2.8'/>\n  <path fill='${metal}' d='M316 301H329V325Q323 329 316 325Z'/>\n  <path fill='none' stroke='#bcc4be' stroke-width='.65' d='M309 334V357M312 337V360M332 336V361M336 332V357'/>\n  <path fill='#92988e' d='M452 367L484 354H552L578 369L561 380H463Z'/>\n  ${pad(475,376)}${pad(555,376)}\n  <path fill='${motor}' d='M479 305Q518 290 552 305V357C554 382 477 382 479 357Z'/>\n  <path fill='#a5afad' d='M479 306V313C479 333 552 333 552 313V306Z'/>\n  <ellipse fill='#bdc3ba' cx='515.5' cy='305' rx='36.5' ry='14.3'/>\n  <ellipse fill='#929f9d' cx='516' cy='304' rx='16' ry='6.4'/>\n  <path fill='${metal}' d='M511 280H521V303Q516 307 511 303Z'/>\n  <path fill='none' stroke='#5d6c6d' stroke-width='1.3' d='M487 325V351M495 329V357M505 332V361M516 332V362M528 332V361M539 329V357M546 324V351'/>\n  <path fill='none' stroke='#c1cbc5' stroke-width='.58' d='M488.6 326V350M496.6 331V355M506.6 334V359M517.6 334V360M529.6 334V359M540.6 331V355'/>\n  <path fill='none' stroke='#61605a' stroke-width='.82' d='M480 344C456 341 468 368 449 369S427 364 414 369'/>\n  <path fill='none' stroke='#8d7464' stroke-width='.71' d='M481 348C459 344 471 373 448 372S424 367 411 373'/>\n  <path fill='#c7b79a' d='M411 366L419 368V374L411 372Z'/>\n</g>\n</svg>`);",
+      "defaults": {
+        "metal": "#aeb9b9",
+        "motor": "#899b9f",
+        "pads": "#626d6d"
+      }
+    },
+    "belt-svg": {
+      "id": "belt-svg",
+      "name": "水平皮带与大小皮带轮",
+      "source": "const {belt,alloy} = api.data;\nreturn api.svg(`<svg viewBox='246 243 312 66' xmlns='http://www.w3.org/2000/svg'>\n<g stroke='${api.theme.ink}' stroke-width='.85' stroke-linejoin='round'>\n  <path fill='${alloy}' d='M253 273C253 247 392 247 392 273V283C392 312 253 312 253 283Z'/>\n  <ellipse fill='#a7b1ae' cx='322.5' cy='273' rx='69.5' ry='24'/>\n  <ellipse fill='none' stroke='#6c7879' stroke-width='.6' cx='322.5' cy='273' rx='58' ry='18.4'/>\n  <ellipse fill='#bdc4bd' cx='322.5' cy='271' rx='14' ry='6'/>\n  <path fill='${alloy}' d='M490 273C490 259 542 259 542 273V281C542 296 490 296 490 281Z'/>\n  <ellipse fill='#bac4bf' cx='516' cy='273' rx='26' ry='10.5'/>\n  <ellipse fill='#7b898b' cx='516' cy='273' rx='11' ry='4.5'/>\n  <path fill='${belt}' fill-rule='evenodd' d='M322 250L517 262C555 264 557 283 517 287L329 303C221 303 228 250 322 250Z M322 255C241 255 234 298 328 298L516 282C549 279 548 268 516 267Z'/>\n  <path fill='none' stroke='#a4a49a' stroke-width='.6' d='M259 280C258 293 289 301 328 300L516 284C534 283 543 278 543 274'/>\n</g>\n</svg>`);",
+      "defaults": {
+        "belt": "#565a57",
+        "alloy": "#8f9c9e"
+      }
+    },
+    "record-svg": {
+      "id": "record-svg",
+      "name": "黑胶、承盘与唱片纹路",
+      "source": "const {vinyl,labelColor,rim} = api.data;\nconst cx=321, cy=159;\nconst grooves = Array.from({length:43}, (_,i) => {\n  const r = 90+i*3.36;\n  const opacity = i%9===0 ? .32 : i%3===0 ? .21 : .125;\n  return `<ellipse cx='${cx}' cy='${cy}' rx='${r.toFixed(2)}' ry='${(r*.431).toFixed(2)}' opacity='${opacity}'/>`;\n}).join('');\nconst arc = (r,a,b) => {\n  const xy = t => [cx+r*Math.cos(t),cy+r*.431*Math.sin(t)].map(v=>v.toFixed(2)).join(' ');\n  return `M${xy(a)} A${r} ${r*.431} 0 0 1 ${xy(b)}`;\n};\nconst highlights = Array.from({length:28}, (_,i) => `<path d='${arc(100+4.72*i, 2.46+i*.006, 2.98+i*.008)}' opacity='${(i%7===0?.25:.11)}'/>`).join('');\nconst cuts = Array.from({length:59}, (_,i) => {\n  const a=.17+i*.0478;\n  const x=cx+240*Math.cos(a), y=cy+105*Math.sin(a)+12;\n  return `<path d='M${x.toFixed(1)} ${y.toFixed(1)}l-.13 4.8'/>`;\n}).join('');\nreturn api.svg(`<svg viewBox='80 54 486 230' xmlns='http://www.w3.org/2000/svg'>\n<g stroke='${api.theme.ink}' stroke-width='.87'>\n  <path fill='#665f56' opacity='.21' stroke='none' d='M83 166C88 220 195 279 325 280C454 279 562 237 561 166Z'/>\n  <path fill='${rim}' d='M82 159H560V175A239 105 0 0 1 82 175Z'/>\n  <path fill='none' stroke='#d2d1c4' stroke-width='.86' d='M83 169A238 106 0 0 0 559 169'/>\n  <path fill='none' stroke='#5b6668' stroke-width='.64' d='M82 172A239 106 0 0 0 560 172'/>\n  <g stroke='#596164' stroke-width='.64' opacity='.83'>${cuts}</g>\n  <path fill='#292b2a' d='M86 159H556V164A235 102 0 0 1 86 164Z'/>\n  <ellipse cx='321' cy='159' rx='235' ry='101.3' fill='${vinyl}' stroke='#333532'/>\n  <g fill='none' stroke='#a2aaa5' stroke-width='.51'>${grooves}</g>\n  <g fill='none' stroke='#cad1c6' stroke-width='.79'>${highlights}</g>\n  <path d='${arc(232, .31, 2.81)}' fill='none' stroke='#838984' stroke-width='.67' opacity='.75'/>\n  <ellipse cx='321' cy='159' rx='82' ry='35.5' fill='#2d3231' stroke='#252827' stroke-width='.7'/>\n  <ellipse cx='321' cy='159' rx='75' ry='32.4' fill='${labelColor}' stroke='#565e5d' stroke-width='.76'/>\n  <ellipse cx='321' cy='159' rx='68' ry='29.1' fill='none' stroke='#d8dcd0' stroke-width='.6'/>\n  <ellipse cx='321' cy='159' rx='59' ry='25.3' fill='none' stroke='#647779' opacity='.65' stroke-width='.48'/>\n  <path d='${arc(49, .31, 2.81)}' fill='none' stroke='#dce1d8' stroke-width='.66'/>\n  <ellipse cx='321' cy='159' rx='18' ry='7.7' fill='#b3bfb9' stroke='#778787' stroke-width='.53'/>\n  <ellipse cx='321' cy='159' rx='6.8' ry='3.1' fill='#414949' stroke-width='.55'/>\n  <path fill='#b9c3bf' d='M317.6 158.5V149.8Q321 146.2 324.4 149.8V158.5Q321 161.2 317.6 158.5Z'/>\n  <path fill='none' stroke='#e0e3d8' stroke-width='.67' d='M319 150V157.8'/>\n</g>\n</svg>`);",
+      "defaults": {
+        "vinyl": "#393b3a",
+        "labelColor": "#9eadae",
+        "rim": "#8b9697"
+      }
+    },
+    "arm-svg": {
+      "id": "arm-svg",
+      "name": "S 形唱臂与朱红唱头",
+      "source": "const {metal,head,dark} = api.data;\nconst ink = api.theme.ink;\nconst tube = 'M625 116C615 128 609 155 595 166C580 176 543 174 522 181L507 193';\nreturn api.svg(`<svg viewBox='481 79 191 156' xmlns='http://www.w3.org/2000/svg'>\n<g stroke='${ink}' stroke-width='.9' stroke-linejoin='round' stroke-linecap='round'>\n  <path fill='#918b7e' opacity='.25' stroke='none' d='M559 196C580 189 612 159 638 146L644 150C609 177 582 187 560 199Z'/>\n  <path fill='${dark}' d='M596 130H657V139C657 158 596 158 596 139Z'/>\n  <ellipse fill='#9ca5a1' cx='626.5' cy='130' rx='30.5' ry='13.5'/>\n  <ellipse fill='#bdc4bc' cx='626.5' cy='129' rx='22' ry='10'/>\n  <path fill='${metal}' d='M611 114H640V129C640 138 611 138 611 129Z'/>\n  <ellipse cx='625.5' cy='114' rx='14.5' ry='7.1' fill='#c3cbc4'/>\n  <path fill='${dark}' d='M618 106C623 98 629 91 638 86L649 96L634 114Z'/>\n  <path fill='${metal}' d='M630 93L641 84C648 78 664 88 661 96L651 107C646 113 626 99 630 93Z'/>\n  <ellipse transform='rotate(34 641 100)' cx='641' cy='100' rx='13.1' ry='6.9' fill='#818f90'/>\n  <path fill='none' stroke='#d0d7cd' stroke-width='.72' d='M634 90Q649 90 655 101M638 86Q652 87 659 97'/>\n  <path fill='#8e9b9b' d='M619 110Q627 105 633 111L632 119Q627 124 619 120Z'/>\n  <path fill='none' stroke='${ink}' stroke-width='9' d='${tube}'/>\n  <path fill='none' stroke='${metal}' stroke-width='7.05' d='${tube}'/>\n  <path fill='none' stroke='#d7ded4' stroke-width='1.24' transform='translate(-.8 -1.5)' d='${tube}'/>\n  <g transform='translate(-13 -4)'>\n  <path fill='${dark}' d='M526 189L533 195L522 205L515 198Z'/>\n  <path fill='${metal}' d='M519 195L531 204L510 220L491 211L494 205Z'/>\n  <path fill='#788585' d='M491 211L510 220L531 204L528 211L509 226L491 217Z'/>\n  <path fill='${head}' d='M493 215L508 222L519 215L516 223L507 229L493 223Z'/>\n  <path fill='#c97357' stroke='none' d='M495 217L507 223L516 218L507 225L495 220Z'/>\n  <ellipse cx='511' cy='203' rx='2.8' ry='1.6' fill='#dce0d4' stroke-width='.62'/>\n  <ellipse cx='503' cy='208' rx='2.8' ry='1.6' fill='#dce0d4' stroke-width='.62'/>\n  <path fill='none' d='M500 225L501 228L497 231' stroke-width='.69'/><circle fill='${ink}' cx='497' cy='231' r='.7' stroke='none'/>\n  </g>\n  <path fill='${dark}' d='M638 163L639 148H642L643 163Z'/><ellipse fill='#a4aaa1' cx='640.5' cy='163' rx='6.7' ry='2.5'/>\n  <path fill='none' stroke-width='1.05' d='M637 147V151Q640 155 645 151V147'/>\n</g>\n</svg>`);",
+      "defaults": {
+        "metal": "#aab8b9",
+        "head": "#aa4b39",
+        "dark": "#586264"
+      }
+    }
+  },
+  "scenes": {
+    "root": {
+      "id": "root",
+      "title": "老式皮带驱动唱片机的彩色剖面插画",
+      "parentId": null,
+      "modules": [
+        {
+          "id": "feet",
+          "bounds": {
+            "x": 84,
+            "y": 391,
+            "width": 549,
+            "height": 66
+          },
+          "drawingId": "foot-svg",
+          "data": {},
+          "label": "隔振脚"
+        },
+        {
+          "id": "case",
+          "bounds": {
+            "x": 34,
+            "y": 40,
+            "width": 699,
+            "height": 392
+          },
+          "drawingId": "case-svg",
+          "data": {},
+          "label": "胡桃木机身与剖切面"
+        },
+        {
+          "id": "drive",
+          "bounds": {
+            "x": 224,
+            "y": 247,
+            "width": 367,
+            "height": 154
+          },
+          "drawingId": "drive-svg",
+          "data": {},
+          "label": "马达、转轴与阻尼垫"
+        },
+        {
+          "id": "belt",
+          "bounds": {
+            "x": 246,
+            "y": 250,
+            "width": 312,
+            "height": 66
+          },
+          "drawingId": "belt-svg",
+          "data": {},
+          "label": "皮带与皮带轮",
+          "target": {
+            "kind": "detail",
+            "id": "belt-note"
+          }
+        },
+        {
+          "id": "record",
+          "bounds": {
+            "x": 80,
+            "y": 54,
+            "width": 486,
+            "height": 230
+          },
+          "drawingId": "record-svg",
+          "data": {},
+          "label": "黑胶唱片与承盘"
+        },
+        {
+          "id": "arm",
+          "bounds": {
+            "x": 481,
+            "y": 79,
+            "width": 191,
+            "height": 156
+          },
+          "drawingId": "arm-svg",
+          "data": {},
+          "label": "唱臂与朱红唱头"
+        }
+      ],
+      "links": [],
+      "checks": []
+    }
+  },
+  "details": {
+    "belt-note": {
+      "id": "belt-note",
+      "title": "皮带传动",
+      "html": "<p>马达带动小皮带轮，皮带再带动与承盘同轴的大轮，让唱片随承盘一起转动。机内的弹性阻尼垫可减少马达振动向机身传递。</p>"
+    }
+  },
+  "brief": {
+    "subject": "老式皮带驱动唱片机的彩色剖面插画",
+    "intent": "形体一眼可认，近看可读出皮带传动与木底座的层次，贴合参考图工程插画质地",
+    "audience": "欣赏工程剖面图和复古家用器物的读者",
+    "concept": "用偏左的大椭圆黑胶主导上半部，右后的唱臂斜指向盘缘。下方胡桃木正面打开一扇长剖口，中央主轴和偏右马达由一条可辨的皮带闭环相接。",
+    "register": "formal",
+    "style": "duotone-icon",
+    "direction": "极细暖石墨边线，低饱和胡桃暖灰与微灰蓝，少量朱红，近白纸，不加背景或字",
+    "cast": [
+      "黑胶唱片",
+      "老式唱臂",
+      "胡桃木唱片机底座",
+      "皮带轮",
+      "马达",
+      "转轴",
+      "阻尼垫"
+    ],
+    "basis": {
+      "subject": "画一台老式唱片机的剖面彩图",
+      "intent": "露出皮带轮、马达、转轴、阻尼垫",
+      "register": "工程图册插画质感"
+    }
+  },
+  "materials": {},
+  "style": {
+    "ink": "#514d47",
+    "muted": "#889699",
+    "accent": "#a54231",
+    "accent2": "#8eaebd",
+    "paper": "#fdfdfb",
+    "stroke": "0.92",
+    "font": "\"PingFang SC\",\"Noto Sans CJK SC\",\"Source Han Sans SC\",\"Microsoft YaHei\",system-ui,sans-serif"
+  },
+  "revision": 5,
+  "updatedAt": 1795418725287
+}

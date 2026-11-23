@@ -43,7 +43,7 @@ export function Landing({
     asking.draft.hand(text);
     page.current?.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
   };
-  const intro = useRef<HTMLDivElement>(null);
+  const story = useRef<HTMLElement>(null);
   return (
     <div className={cx("l-page")} ref={page}>
       <Hero
@@ -51,11 +51,11 @@ export function Landing({
         feedback={feedback}
         go={go}
         ask={ask}
-        more={() => intro.current?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth" })}
+        more={() => story.current?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth" })}
       />
       {/* What DrawY draws, apart from where one asks it: a sheet laid over the desk below. */}
-      <div className={cx("l-intro")} ref={intro}>
-        <Story />
+      <div className={cx("l-intro")}>
+        <Story band={story} />
         <Ticker words={l} ask={ask} />
         <Features words={l} />
         <Questions words={l} />
@@ -89,8 +89,14 @@ function Hero({
   const request = useSelect(asking.draft, (r) => r);
   // An empty box types out, one after another, what the works further down were asked.
   const [inBox, setInBox] = useState(false);
-  const asks = useMemo(() => l.chapters.map((c) => c.ask), [l]);
-  const typed = useCycledTyping(asks, inBox || request.text !== "");
+  const examples = useMemo(() => {
+    const [reference, ...rest] = l.chapters;
+    return [...rest.slice(0, 2), reference, ...rest.slice(2)];
+  }, [l.chapters]);
+  const asks = useMemo(() => examples.map((c) => c.ask), [examples]);
+  const occupied = inBox || request.text !== "" || request.attachments.length > 0 || request.uploading > 0;
+  const typed = useCycledTyping(asks, occupied);
+  const showReference = !occupied && examples[typed.index] === l.chapters[0];
   return (
     <section className={cx("l-hero")} aria-labelledby="l-hero-title">
       <h1 id="l-hero-title" className={cx("l-display")}>
@@ -101,6 +107,7 @@ function Hero({
       <p className={cx("l-lead")}>{l.lead}</p>
       <div
         className={cx("l-ask")}
+        data-reference={showReference || undefined}
         // Focus alone, which the box may take by itself, does not stop it: a press or a key does.
         onPointerDown={() => setInBox(true)}
         onKeyDown={() => setInBox(true)}
@@ -114,7 +121,7 @@ function Hero({
           detach={asking.draft.detach}
           uploading={request.uploading}
           focus={request.asked}
-          placeholder={inBox ? t.home.placeholder : typed}
+          placeholder={occupied ? t.home.placeholder : typed.text}
           style={request.style}
           setStyle={user ? asking.draft.setStyle : undefined}
           working={false}
@@ -128,6 +135,13 @@ function Hero({
           quota={user?.quota}
           spent={asking.blocked === "spent"}
         />
+        {showReference && (
+          <img
+            className={cx("l-ask-reference")}
+            src={referenceImage}
+            alt={l.referenceAlt}
+          />
+        )}
       </div>
       <div className={cx("l-tries")}>
         <span>{l.tryOne}</span>
@@ -223,7 +237,9 @@ function Ticker({ words, ask }: { words: Words; ask: (text: string) => void }) {
 /** The story's chapters, the work each shows: one lighthouse, asked about further and
  * further, from a painting of it to the family who built it — the freest picture first,
  * the most orderly last. */
+const referenceImage = "/style-reference-lighthouse.webp";
 const chapters: ShowcaseId[] = [
+  "reference",
   "night",
   "styles",
   "inside",
@@ -260,10 +276,9 @@ function scrollToChapter(item: HTMLElement) {
  * until the sheet has gone over the top. The turn follows the scrolling rather than a timer,
  * so scrolling back lays the sheet down again. The band's dots drift by a little slower than
  * the page. */
-function Story() {
+function Story({ band }: { band: RefObject<HTMLElement | null> }) {
   const l = useT().landing;
   const locale = useLocale();
-  const band = useRef<HTMLElement>(null);
   const items = useRef<(HTMLElement | null)[]>([]);
   const slots = useRef<(HTMLDivElement | null)[]>([]);
   const shades = useRef<(HTMLElement | null)[]>([]);
@@ -370,7 +385,7 @@ function Story() {
   /** Which chapter each board holds: `from` in one, the chapter after it in the other. */
   const held = [0, 1].map((s) => (s === from % 2 ? from : from + 1 < chapters.length ? from + 1 : from - 1));
   return (
-    <section className={cx("l-story")} aria-labelledby="l-story-title" ref={band}>
+    <section className={cx("l-drafting-band", "l-story")} aria-labelledby="l-story-title" ref={band}>
       <header className={cx("l-section-head")}>
         <h2 id="l-story-title" className={cx("l-display")} data-size="section">
           {l.storyTitle}
@@ -402,6 +417,7 @@ function Story() {
             {held.map((k, s) => {
               const work = loaded[chapters[k]];
               const scene = scenes[k];
+              const isReference = chapters[k] === "reference";
               const go = (id: string) => setScenes((m) => ({ ...m, [k]: id }));
               return (
                 <div
@@ -413,13 +429,17 @@ function Story() {
                   inert={k !== at}
                 >
                   <Sheet work={work} scene={scene} setScene={go}>
-                    <LiveWork
-                      work={work}
-                      scene={scene}
-                      open={go}
-                      label={work?.title}
-                      insets={margins(!!work && !!scene && scene !== work.rootSceneId)}
-                    />
+                    {isReference ? (
+                      <ReferenceSheet work={work} active={k === at} />
+                    ) : (
+                      <LiveWork
+                        work={work}
+                        scene={scene}
+                        open={go}
+                        label={work?.title}
+                        insets={margins(!!work && !!scene && scene !== work.rootSceneId)}
+                      />
+                    )}
                   </Sheet>
                   {/* The shadow of the sheet being turned, on the one beneath. */}
                   <i
@@ -441,6 +461,49 @@ function Story() {
         </div>
       </div>
     </section>
+  );
+}
+
+/** Start the drawing when its page is visible, including a turn back to the first page. */
+function ReferenceSheet({ work, active }: { work?: Work; active: boolean }) {
+  const l = useT().landing;
+  const sheet = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => setVisible(entry.intersectionRatio >= 0.35),
+      { threshold: 0.35 },
+    );
+    observer.observe(sheet.current!);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div ref={sheet} className={cx("l-reference-sheet")} data-drawing={active && visible && !!work || undefined}>
+      <p className={cx("l-reference-prompt")}>
+        <span>{l.referencePrompt}</span>
+        <q>{l.chapters[0].ask}</q>
+      </p>
+      <figure>
+        <figcaption>{l.referenceCaption}</figcaption>
+        <img src={referenceImage} alt={l.referenceAlt} loading="lazy" />
+      </figure>
+      <svg className={cx("l-reference-arrow")} viewBox="0 0 88 42" fill="none" aria-hidden="true">
+        <path d="M4 27C30 7 51 33 80 16" stroke="#b34430" strokeWidth="2.5" strokeLinecap="round" pathLength="1" />
+        <path d="m64 13 16 3-8 13" stroke="#b34430" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" pathLength="1" />
+      </svg>
+      <figure>
+        <figcaption>{l.referenceResult}</figcaption>
+        <div className={cx("l-reference-result")}>
+          <LiveWork work={work} label={work?.title} />
+        </div>
+      </figure>
+      <div className={cx("l-reference-notes")}>
+        <span>{l.referenceShared}</span>
+        <ul>
+          {l.referenceTraits.map((trait) => <li key={trait}><i aria-hidden />{trait}</li>)}
+        </ul>
+      </div>
+    </div>
   );
 }
 

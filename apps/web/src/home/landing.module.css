@@ -153,6 +153,7 @@
 }
 
 .l-ask {
+  position: relative;
   width: 100%;
   max-width: 760px;
   margin: 40px auto 0;
@@ -384,6 +385,9 @@
    pad seems to float over it. */
 .l-story {
   padding: clamp(72px, 11vh, 120px) 0 clamp(64px, 10vh, 112px);
+}
+
+.l-drafting-band {
   background:
     linear-gradient(rgba(51, 102, 214, 0.06) 1px, transparent 1px) 0 var(--drift, 0) / 24px 24px,
     linear-gradient(90deg, rgba(51, 102, 214, 0.06) 1px, transparent 1px) 0 0 / 24px 24px,
@@ -969,4 +973,154 @@
   .l-faq details::details-content {
     transition: none;
   }
+}
+
+.l-ask-reference {
+  position: absolute;
+  z-index: 3;
+  inset-block-start: 16px;
+  inset-inline-start: 22px;
+  box-sizing: border-box;
+  width: 42px;
+  height: 42px;
+  padding: 2px;
+  object-fit: contain;
+  background: var(--bg-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.l-ask.l-ask[data-reference] textarea[aria-label] {
+  padding-top: 50px;
+}
+
+.l-reference-sheet {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 2.8fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: clamp(6px, 1.2vw, 18px);
+  height: 100%;
+  padding: clamp(20px, 3vw, 42px) clamp(9px, 2.4vw, 28px) clamp(9px, 2.4vw, 28px);
+  color: var(--text-2);
+}
+
+.l-reference-prompt {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  margin: 0;
+  padding-block-end: clamp(4px, 1vw, 12px);
+  border-bottom: 1px dashed var(--line-strong);
+  font-size: clamp(11px, 1.3vw, 17px);
+}
+
+.l-reference-prompt span,
+.l-reference-notes > span { color: var(--text-3); font-size: 0.85em; }
+.l-reference-prompt q { color: var(--text); font-weight: 600; }
+
+.l-reference-sheet figure {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 6px;
+  min-height: 0;
+  margin: 0;
+}
+
+.l-reference-sheet img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+  filter: brightness(1.04) contrast(1.04);
+}
+
+.l-reference-sheet figcaption {
+  display: grid;
+  align-items: end;
+  min-height: 2.5em;
+  color: var(--text-2);
+  font-size: clamp(10px, 1.1vw, 14px);
+  font-weight: 600;
+  text-align: center;
+}
+
+.l-reference-result { position: relative; }
+
+.l-reference-arrow {
+  align-self: center;
+  width: clamp(36px, 5vw, 84px);
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .l-reference-sheet[data-drawing] .l-reference-arrow path {
+    stroke-dasharray: 1;
+    animation: l-reference-stroke 460ms var(--ease) both;
+  }
+
+  .l-reference-sheet[data-drawing] .l-reference-arrow path + path {
+    animation-duration: 260ms;
+    animation-delay: 380ms;
+  }
+
+  .l-reference-sheet[data-drawing] .l-reference-result [data-module-id] {
+    animation: l-reference-develop 650ms var(--ease) both;
+    animation-delay: var(--reference-delay, 340ms);
+  }
+
+  .l-reference-result :is([data-module-id="drive"], [data-module-id="belt"]) { --reference-delay: 580ms; }
+  .l-reference-result [data-module-id="record"] { --reference-delay: 780ms; }
+  .l-reference-result [data-module-id="arm"] { --reference-delay: 980ms; }
+
+  .l-reference-sheet[data-drawing] .l-reference-result [data-target] {
+    animation: l-reference-mark 240ms ease 1450ms both;
+  }
+}
+
+@keyframes l-reference-stroke {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes l-reference-develop {
+  from { opacity: 0; filter: grayscale(1); }
+  38% { opacity: 0.72; filter: grayscale(1); }
+  to { opacity: 1; filter: grayscale(0); }
+}
+
+@keyframes l-reference-mark { from { opacity: 0; } to { opacity: 1; } }
+
+.l-reference-notes {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: clamp(10px, 1.15vw, 14px);
+}
+
+.l-reference-notes ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px clamp(9px, 1.6vw, 24px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.l-reference-notes li { display: flex; align-items: center; gap: 5px; }
+.l-reference-notes i { width: 0.9em; height: 0.65em; color: #8a7c6a; }
+.l-reference-notes li:nth-child(1) i {
+  background: linear-gradient(currentColor, currentColor) center / 100% 1px no-repeat;
+}
+.l-reference-notes li:nth-child(2) i {
+  background: repeating-linear-gradient(135deg, transparent 0 2px, currentColor 2px 3px);
+}
+.l-reference-notes li:nth-child(3) i {
+  background: radial-gradient(circle, #b34430 0 2.5px, transparent 3px);
 }

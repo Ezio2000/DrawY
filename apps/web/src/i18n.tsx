@@ -102,6 +102,12 @@ const zh = {
   },
   // The home page: the range of what DrawY draws, told through works it made
   landing: {
+    referenceAlt: "淡彩剖面图里的礁石灯塔",
+    referenceCaption: "上传参考图 · 灯塔剖面",
+    referencePrompt: "示例提示词",
+    referenceResult: "按画风生成 · 老式唱片机",
+    referenceShared: "沿用的画法",
+    referenceTraits: ["细墨线勾边", "排线标出剖切面", "塔顶与唱针都点朱红"],
     title: ["想要什么样的图，", "说一句，就画出来。"],
     lead: "画好了还能点开看、拖一拖、接着改。",
     more: "看看能画些什么",
@@ -123,10 +129,16 @@ const zh = {
       "火山是怎么喷发的？",
       "一封邮件是怎样送到的？",
     ],
-    storyTitle: "一座灯塔，十种画法",
-    storyLead: "从一幅画开始，一路问下去。每一张都能点、能拖，动手试试吧。",
+    storyTitle: "从一座灯塔开始",
+    storyLead: "从一幅画开始，一路问下去。翻一页，试试点开细节或动手改图。",
     chaptersNav: "切换作品",
     chapters: [
+      {
+        kind: "参考图",
+        title: "借画风，换个题材",
+        text: "上传一张图，再说你想画什么。DrawY 会沿用参考图的画法，画出新内容。",
+        ask: "照这张灯塔的画风，画一台老式唱片机。",
+      },
       {
         kind: "海报",
         title: "先画一幅画",
@@ -1478,6 +1490,12 @@ const en: Words = {
     all: "See all",
   },
   landing: {
+    referenceAlt: "A lightly colored lighthouse cutaway",
+    referenceCaption: "Uploaded reference · Lighthouse cutaway",
+    referencePrompt: "Example prompt",
+    referenceResult: "Drawn in that style · Vintage record player",
+    referenceShared: "What carries over",
+    referenceTraits: ["Fine ink outlines", "Hatched cut surfaces", "Vermilion on the lantern and stylus"],
     title: ["Whatever picture you need,", "say it and it's drawn."],
     lead: "Then click into it, drag things about and keep changing it.",
     more: "See what it can draw",
@@ -1499,10 +1517,16 @@ const en: Words = {
       "How does a volcano erupt?",
       "How does an email arrive?",
     ],
-    storyTitle: "One lighthouse, drawn ten ways",
-    storyLead: "Start with a picture and keep asking. Every one of these can be clicked and dragged — have a go.",
+    storyTitle: "It starts with a lighthouse",
+    storyLead: "Start with a picture and keep asking. Turn the page to explore details or try editing a drawing.",
     chaptersNav: "Switch pictures",
     chapters: [
+      {
+        kind: "Style reference",
+        title: "Borrow a style",
+        text: "Upload an image and describe what you want to draw. DrawY uses the reference style for your new subject.",
+        ask: "Draw a vintage record player in the style of this lighthouse.",
+      },
       {
         kind: "Poster",
         title: "First, a picture",
