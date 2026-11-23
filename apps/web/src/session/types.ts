@@ -70,8 +70,6 @@ export interface SessionHost {
   /** Goes to an address: as a new entry in the browser's history, or in place of the
    * address when it names a scene the work no longer has. */
   go(path: string, how: "push" | "replace"): void;
-  /** The list of works may have changed: a request was made or the work renamed. */
-  listed(): Promise<unknown>;
   /** A request was made, taking one from the allowance. */
   spent(): void;
   /** The server's events for this user, and whether they cannot be heard. */

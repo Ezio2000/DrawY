@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { PanelMark } from "./ui/brand/hand.tsx";
 import * as Hand from "./ui/brand/icons.tsx";
 import { useLocale } from "./ui/locale.tsx";
@@ -8,13 +8,18 @@ import { useDismiss } from "./popover.ts";
 import { Brand } from "./Title.tsx";
 import { readSettings } from "./Settings.tsx";
 import { LanguageSwitch, useT } from "./i18n.tsx";
-import type { Summary, User } from "./api.ts";
+import { counted } from "./probe.ts";
+import { Spinner } from "./ui/primitives.tsx";
+import { useStore } from "./session/store.ts";
+import type { Recents } from "./recents.ts";
+import type { WorkSummary } from "../../../modules/contracts/index.ts";
+import type { User } from "./api.ts";
 import { ago } from "./time.ts";
 import type { Words } from "./i18n.tsx";
 
 /** Where a work has got to, in a few words: drawing, waiting for an answer, stopped, or
  * the version it is at. */
-export function progressOf(w: Summary, t: Words) {
+export function progressOf(w: WorkSummary, t: Words) {
   const p = w.progress;
   const where =
     (p.blank ? t.rail.blank : t.rail.version(p.version)) +
@@ -76,7 +81,7 @@ export function Rail({
   open,
   setOpen,
   page,
-  works,
+  recents,
   current,
   go,
   remove,
@@ -88,10 +93,10 @@ export function Rail({
   open: boolean;
   setOpen: (open: boolean) => void;
   page: string;
-  works: Summary[];
+  recents: Recents;
   current?: string;
   go: (path: string) => void;
-  remove: (work: Summary) => void;
+  remove: (work: WorkSummary) => void;
   /** The work pages there are for each kind of device, and the one picked. */
   shells: Shells;
   logout: () => void;
@@ -101,10 +106,10 @@ export function Rail({
   const [account, setAccount] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
   useDismiss(account, () => setAccount(false), accountRef);
-  const nav = (path: string) => {
+  const nav = useCallback((path: string) => {
     go(path);
     setOpen(false);
-  };
+  }, [go, setOpen]);
   const link = (
     path: string,
     label: string,
@@ -139,45 +144,9 @@ export function Rail({
       </div>
       {link("/", t.rail.home, Hand.Home, page === "home")}
       {link("/library", t.rail.library, Hand.Library, page === "library")}
-      {user ? (
-        <section className={cx("rail-recents")} inert={!open}>
-          <h2>{t.rail.recents}</h2>
-          <ul>
-            {works.map((w) => {
-              const state = progressOf(w, t);
-              return (
-              <li
-                className={cx("rail-work")}
-                data-current={w.id === current || undefined}
-                key={w.id}
-              >
-                <button
-                  className={cx("rail-work-open")}
-                  title={w.progress.prompt || undefined}
-                  onClick={() => nav("/a/" + w.id)}
-                >
-                  <span>{w.title}</span>
-                  <small data-tone={state.tone || undefined}>
-                    {state.tone && <i />}
-                    {state.text}
-                  </small>
-                </button>
-                <button
-                  className={cx("rail-work-remove")}
-                  aria-label={t.rail.removeWork(w.title)}
-                  data-tip={t.rail.remove}
-                  onClick={() => remove(w)}
-                >
-                  <Hand.Trash size={16} />
-                </button>
-              </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : (
-        <div className={cx("rail-recents")} aria-hidden />
-      )}
+      <section className={cx("rail-recents")} inert={!open}>
+        {open && user && <RecentList recents={recents} current={current} nav={nav} remove={remove} />}
+      </section>
       <div className={cx("rail-foot")} ref={accountRef}>
         {user ? (
           <>
@@ -249,6 +218,39 @@ export function Rail({
     </nav>
   );
 }
+
+type RowActions = { nav: (path: string) => void; remove: (work: WorkSummary) => void };
+
+function RecentList({ recents, current, nav, remove }: RowActions & { recents: Recents; current?: string }) {
+  const t = useT(), { rows, loading } = useStore(recents);
+  const list = useRef<HTMLUListElement>(null);
+  useLayoutEffect(() => {
+    if (list.current) list.current.scrollTop = recents.scrollTop;
+  }, [recents]);
+  return <>
+    <h2>{t.rail.recents}</h2>
+    <ul ref={list} aria-busy={loading} onScroll={(e) => { recents.scrollTop = e.currentTarget.scrollTop; }}>
+      {loading && <li><Spinner /></li>}
+      {rows.map((work) => <WorkRow key={work.id} work={work} current={work.id === current} nav={nav} remove={remove} />)}
+    </ul>
+  </>;
+}
+
+const WorkRow = memo(function WorkRow({ work, current, nav, remove }: RowActions & { work: WorkSummary; current: boolean }) {
+  counted("rail-row");
+  const t = useT(), state = progressOf(work, t);
+  return (
+    <li className={cx("rail-work")} data-current={current || undefined}>
+      <button className={cx("rail-work-open")} title={work.progress.prompt || undefined} onClick={() => nav("/a/" + work.id)}>
+        <span>{work.title}</span>
+        <small data-tone={state.tone || undefined}>{state.tone && <i />}{state.text}</small>
+      </button>
+      <button className={cx("rail-work-remove")} aria-label={t.rail.removeWork(work.title)} data-tip={t.rail.remove} onClick={() => remove(work)}>
+        <Hand.Trash size={16} />
+      </button>
+    </li>
+  );
+});
 
 /** Picks the work page by hand, in turn: the one the device fits, then each there is;
  * the pick is remembered on this browser. */

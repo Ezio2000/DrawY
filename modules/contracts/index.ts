@@ -233,6 +233,17 @@ export interface WorkProgress {
   /** Hand edits made on it that are not saved as a version yet. */
   unsaved?: number;
 }
+/** A row in the account's list of works. Covers are requested by the records page. */
+export interface WorkSummary extends Pick<Work, "id" | "title" | "revision" | "updatedAt"> {
+  progress: WorkProgress;
+}
+export type ServerEvent =
+  | { type: "connected" }
+  | { type: "run"; run: Run }
+  | { type: "work"; work: Work }
+  | { type: "summary"; summary: WorkSummary }
+  | { type: "removed"; id: string };
+
 /** What people count as one version of a work: everything one request to the author
  * saved (only how it ended matters), hand edits saved as one, or the blank start.
  * Numbered from the oldest, the blank start being 0, so the numbers follow the requests

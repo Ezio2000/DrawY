@@ -135,6 +135,5 @@ export class Revisions {
       return;
     }
     this.take(await api<Work>("/works/" + this.ctx.id, "PATCH", { title }));
-    await this.ctx.host.listed();
   }
 }

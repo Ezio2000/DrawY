@@ -85,16 +85,34 @@ export function TraceView() {
   useEffect(() => {
     if (can("accounts.manage")) void api<Account[]>("/admin/accounts").then(setAccounts, (e) => setError(e.message));
   }, []);
-  const refresh = () =>
-    Promise.all([api<Costed[]>(forAccount("/traces", account)), api<Summary[]>(forAccount("/works", account))])
-      .then(([l, ws]) => {
-        setList(l);
-        setWorks(ws);
-        setSelected((s) => s ?? l[0]?.id);
-        setWork((id) => id ?? ws[0]?.id);
-      })
-      .catch((e) => setError(e.message));
-  useEffect(() => void refresh(), [account]);
+  const [attempt, setAttempt] = useState(0);
+  const refresh = () => {
+    if (tab === "works") setWorks(undefined);
+    else setList(undefined);
+    setAttempt((n) => n + 1);
+  };
+  useEffect(() => {
+    if ((tab === "works" ? works : list) !== undefined) return;
+    let active = true;
+    setError("");
+    const load = async () => {
+      if (tab === "works") {
+        const rows = await api<Summary[]>(forAccount("/works", account));
+        if (active) {
+          setWorks(rows);
+          setWork((id) => rows.some((row) => row.id === id) ? id : rows[0]?.id);
+        }
+      } else {
+        const rows = await api<Costed[]>(forAccount("/traces", account));
+        if (active) {
+          setList(rows);
+          setSelected((id) => id ?? rows[0]?.id);
+        }
+      }
+    };
+    void load().catch((e) => { if (active) setError(e.message); });
+    return () => { active = false; };
+  }, [account, tab, works, list, attempt]);
   useEffect(() => {
     history.replaceState(null, "", forAccount("/traces" + (selected ? "/" + selected : ""), account));
     if (!selected) return;
@@ -130,7 +148,7 @@ export function TraceView() {
           <button
             aria-label={w.refresh}
             data-tip={w.refresh}
-            onClick={() => void refresh()}
+            onClick={refresh}
           >
             <RefreshCw size={14} />
           </button>

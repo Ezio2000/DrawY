@@ -20,6 +20,7 @@ import {
   type Account,
   type Run,
   type Work,
+  type ServerEvent,
   menuFor,
   costOf,
   type Permission,
@@ -82,16 +83,24 @@ function showRun(run: Run, user: Account): Run {
 }
 export function createApp(storage: Storage) {
   const app = new Hono<Env>();
-  const listeners = new Map<string, Set<(event: object) => void>>();
-  const publish = (user: string, event: object) => {
+  const listeners = new Map<string, Set<(event: ServerEvent) => void>>();
+  // The agent streams the same run as its steps grow. Only a status transition changes its list row.
+  const sentStatus = new WeakMap<Run, Run["status"]>();
+  const publish = (user: string, event: Extract<ServerEvent, { type: "run" | "work" | "removed" }>) => {
     const fns = listeners.get(user);
     if (!fns?.size) return;
-    const e = event as { type?: string; run?: Run };
-    const shown =
-      e.type === "run" && e.run
-        ? { ...e, run: showRun(e.run, storage.account(user)) }
-        : event;
+    const shown = event.type === "run"
+      ? { ...event, run: showRun(event.run, storage.account(user)) }
+      : event;
     fns.forEach((fn) => fn(shown));
+    if (event.type === "removed") return;
+    if (event.type === "run") {
+      if (sentStatus.get(event.run) === event.run.status) return;
+      sentStatus.set(event.run, event.run.status);
+    }
+    const id = event.type === "work" ? event.work.id : event.run.workId;
+    const [summary] = storage.scoped(user).summaries(id);
+    if (summary) fns.forEach((fn) => fn({ type: "summary", summary }));
   };
   const agent = new Agent(publish);
   /** Tells the user's pages of a work saved by hand, and answers with it. */
@@ -252,22 +261,17 @@ export function createApp(storage: Storage) {
   });
   app.get("/api/works", (c) => {
     const store = readable(c);
-    return c.json(
-      store.works().map(({ id, title, revision, updatedAt }) => ({
-        id,
-        title,
-        revision,
-        updatedAt,
-        cover: store.cover(id),
-        progress: store.progress(id),
-      })),
-    );
+    const rows = store.summaries();
+    return c.json(c.req.query("covers") === "0" ? rows : rows.map((row) => ({ ...row, cover: store.cover(row.id) })));
   });
   app.post("/api/works", async (c) => {
     const { title } = z
       .object({ title: z.string().min(1) })
       .parse(await c.req.json());
-    return c.json(createWork(c.get("store"), title));
+    const store = c.get("store");
+    const work = createWork(store, title);
+    publish(store.userId, { type: "work", work });
+    return c.json(work);
   });
   app.get("/api/works/:id", async (c) => {
     const store = readable(c);
@@ -283,6 +287,7 @@ export function createApp(storage: Storage) {
     const store = c.get("store");
     if (store.busy(c.req.param("id"))) throw new DomainError("请先取消当前任务", 409);
     store.delete(c.req.param("id"));
+    publish(store.userId, { type: "removed", id: c.req.param("id") });
     return c.json({ ok: true });
   });
   app.get("/api/works/:id/revisions", (c) =>
@@ -611,7 +616,7 @@ export function createApp(storage: Storage) {
       const userId = c.get("user").id;
       const set = listeners.get(userId) || new Set();
       listeners.set(userId, set);
-      const write = (event: object) => {
+      const write = (event: ServerEvent) => {
         void stream.writeSSE({ data: JSON.stringify(event) });
       };
       set.add(write);

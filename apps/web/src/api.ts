@@ -1,5 +1,5 @@
 import { pageLocale } from "./ui/locale.tsx";
-import type { Account, ModelMenu, WorkProgress } from "../../../modules/contracts/index.ts";
+import type { Account, ModelMenu, WorkSummary } from "../../../modules/contracts/index.ts";
 export async function api<T = any>(
   path: string,
   method = "GET",
@@ -25,15 +25,8 @@ export async function api<T = any>(
   return r.json();
 }
 /** A work as lists show it. */
-export interface Summary {
-  id: string;
-  title: string;
-  revision: number;
-  updatedAt: number;
-  /** The latest overview the author took of it. */
+export interface Summary extends WorkSummary {
   cover: string | null;
-  /** Its latest request and the version it is at. */
-  progress: WorkProgress;
 }
 export type User = Account;
 /** What the user can draw, search and paint with, and what they picked of each. */

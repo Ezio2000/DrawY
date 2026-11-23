@@ -59,7 +59,6 @@ export class Sending {
       // A new request took one from the allowance; an answer did not.
       if (!answering) this.ctx.host.spent();
       ask.sent?.();
-      await this.ctx.host.listed();
     } finally {
       this.sending = false;
       this.ctx.changed();
