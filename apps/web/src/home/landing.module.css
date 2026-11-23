@@ -1049,9 +1049,47 @@
 
 .l-reference-arrow {
   align-self: center;
-  width: clamp(10px, 1.5vw, 18px);
-  color: #a74432;
+  width: clamp(36px, 5vw, 84px);
+  overflow: visible;
 }
+
+@media (prefers-reduced-motion: no-preference) {
+  .l-reference-sheet[data-drawing] .l-reference-arrow path {
+    stroke-dasharray: 1;
+    animation: l-reference-stroke 460ms var(--ease) both;
+  }
+
+  .l-reference-sheet[data-drawing] .l-reference-arrow path + path {
+    animation-duration: 260ms;
+    animation-delay: 380ms;
+  }
+
+  .l-reference-sheet[data-drawing] .l-reference-result [data-module-id] {
+    animation: l-reference-develop 650ms var(--ease) both;
+    animation-delay: var(--reference-delay, 340ms);
+  }
+
+  .l-reference-result :is([data-module-id="drive"], [data-module-id="belt"]) { --reference-delay: 580ms; }
+  .l-reference-result [data-module-id="record"] { --reference-delay: 780ms; }
+  .l-reference-result :is([data-module-id="arm"], [data-module-id="leaders"]) { --reference-delay: 980ms; }
+
+  .l-reference-sheet[data-drawing] .l-reference-result [data-target] {
+    animation: l-reference-mark 240ms ease 1450ms both;
+  }
+}
+
+@keyframes l-reference-stroke {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes l-reference-develop {
+  from { opacity: 0; filter: grayscale(1); }
+  38% { opacity: 0.72; filter: grayscale(1); }
+  to { opacity: 1; filter: grayscale(0); }
+}
+
+@keyframes l-reference-mark { from { opacity: 0; } to { opacity: 1; } }
 
 .l-reference-notes {
   grid-column: 1 / -1;

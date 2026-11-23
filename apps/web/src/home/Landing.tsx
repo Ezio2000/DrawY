@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { ArrowRight, ChevronLeft } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import type { Work } from "../../../../modules/contracts/index.ts";
 import { Composer, Unconnected } from "../Composer.tsx";
 import { useAccount } from "../account.tsx";
@@ -430,29 +430,7 @@ function Story({ band }: { band: RefObject<HTMLElement | null> }) {
                 >
                   <Sheet work={work} scene={scene} setScene={go}>
                     {isReference ? (
-                      <div className={cx("l-reference-sheet")}>
-                        <p className={cx("l-reference-prompt")}>
-                          <span>{l.referencePrompt}</span>
-                          <q>{l.chapters[k].ask}</q>
-                        </p>
-                        <figure>
-                          <figcaption>{l.referenceCaption}</figcaption>
-                          <img src={referenceImage} alt={l.referenceAlt} loading="lazy" />
-                        </figure>
-                        <ArrowRight className={cx("l-reference-arrow")} size={18} aria-hidden />
-                        <figure>
-                          <figcaption>{l.referenceResult}</figcaption>
-                          <div className={cx("l-reference-result")}>
-                            <LiveWork work={work} label={work?.title} />
-                          </div>
-                        </figure>
-                        <div className={cx("l-reference-notes")}>
-                          <span>{l.referenceShared}</span>
-                          <ul>
-                            {l.referenceTraits.map((trait) => <li key={trait}><i aria-hidden />{trait}</li>)}
-                          </ul>
-                        </div>
-                      </div>
+                      <ReferenceSheet work={work} active={k === at} />
                     ) : (
                       <LiveWork
                         work={work}
@@ -483,6 +461,49 @@ function Story({ band }: { band: RefObject<HTMLElement | null> }) {
         </div>
       </div>
     </section>
+  );
+}
+
+/** Start the drawing when its page is visible, including a turn back to the first page. */
+function ReferenceSheet({ work, active }: { work?: Work; active: boolean }) {
+  const l = useT().landing;
+  const sheet = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => setVisible(entry.intersectionRatio >= 0.35),
+      { threshold: 0.35 },
+    );
+    observer.observe(sheet.current!);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div ref={sheet} className={cx("l-reference-sheet")} data-drawing={active && visible && !!work || undefined}>
+      <p className={cx("l-reference-prompt")}>
+        <span>{l.referencePrompt}</span>
+        <q>{l.chapters[0].ask}</q>
+      </p>
+      <figure>
+        <figcaption>{l.referenceCaption}</figcaption>
+        <img src={referenceImage} alt={l.referenceAlt} loading="lazy" />
+      </figure>
+      <svg className={cx("l-reference-arrow")} viewBox="0 0 88 42" fill="none" aria-hidden="true">
+        <path d="M4 27C30 7 51 33 80 16" stroke="#b34430" strokeWidth="2.5" strokeLinecap="round" pathLength="1" />
+        <path d="m64 13 16 3-8 13" stroke="#b34430" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" pathLength="1" />
+      </svg>
+      <figure>
+        <figcaption>{l.referenceResult}</figcaption>
+        <div className={cx("l-reference-result")}>
+          <LiveWork work={work} label={work?.title} />
+        </div>
+      </figure>
+      <div className={cx("l-reference-notes")}>
+        <span>{l.referenceShared}</span>
+        <ul>
+          {l.referenceTraits.map((trait) => <li key={trait}><i aria-hidden />{trait}</li>)}
+        </ul>
+      </div>
+    </div>
   );
 }
 
