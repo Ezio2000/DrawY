@@ -45,7 +45,7 @@ export const responses: Adapter = {
         tools,
         stream: true,
         store: false,
-        reasoning: { effort: effortFor(role.effort, role.efforts) ?? role.effort, summary: "auto" },
+        ...(role.efforts.length ? { reasoning: { effort: effortFor(role.effort, role.efforts), summary: "auto" } } : {}),
         ...(role.channel === "api" && role.toolLimits && /^gpt-(?:[6-9]|\d{2,})/.test(role.model)
           ? { text: { verbosity: "low" } }
           : {}),

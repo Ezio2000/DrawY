@@ -46,7 +46,7 @@ function Status({ value }: { value: string }) {
   );
 }
 /** A trace with what its run cost and was made with, as the server adds them. */
-type Costed = TraceSummary & { cost?: RunCost; services?: RunServices };
+type Costed = TraceSummary & { cost?: RunCost; services?: RunServices; firstCached?: number };
 
 /** An address as read for `account`: one's own, or another's for those who manage
  * accounts, with any other parameters. */
@@ -329,7 +329,7 @@ function Stat({ label, value, parts }: { label: string; value: ReactNode; parts?
   );
 }
 function Timeline({ trace, spans, account }: { trace: Costed; spans: Span[]; account?: string }) {
-  const w = useT().traces;
+  const t = useT(), w = t.traces;
   const [open, setOpen] = useState<string>();
   const [kinds, setKinds] = useState<Set<Span["kind"]>>(new Set());
   const rows = useMemo(() => {
@@ -359,6 +359,8 @@ function Timeline({ trace, spans, account }: { trace: Costed; spans: Span[]; acc
     v
       ? [
           v.author,
+          spans.some((s) => s.kind === "decision" && (s.attrs.reason === "choice" || s.attrs.reason === "single"))
+            ? t.composer.autoLabel : v.label,
           v.effort && `${w.thinkingEffort} ${v.effort}`,
           v.speed && v.speed !== "default" && v.speed,
           v.search === "off" ? w.noSearch : v.search === "builtin" ? w.builtinSearch : v.searchBy,
@@ -391,6 +393,7 @@ function Timeline({ trace, spans, account }: { trace: Costed; spans: Span[]; acc
                     `${w.costAuthor} ${money(c.author)}`,
                     `${w.costSearch} ${money(c.search)}`,
                     `${w.costImage} ${money(c.image)}`,
+                    ...(c.decision ? [`${w.kinds.decision} ${money(c.decision)}`] : []),
                     ...(c.failed ? [`${w.costFailed} ${money(c.failed)}`] : []),
                   ]
                 : [w.unpriced]
@@ -406,6 +409,7 @@ function Timeline({ trace, spans, account }: { trace: Costed; spans: Span[]; acc
             value={thousands(tk.input)}
             parts={[
               `${w.cached} ${thousands(tk.cached)}`,
+              trace.firstCached !== undefined && w.firstCache(trace.firstCached.toLocaleString()),
               tk.input ? `${w.hit} ${Math.round((tk.cached / tk.input) * 100)}%` : "",
             ]}
           />
@@ -458,7 +462,7 @@ function Timeline({ trace, spans, account }: { trace: Costed; spans: Span[]; acc
                 >
                   <span className={cx("span-name")} style={{ paddingLeft: depth * 16 }}>
                     <i className={cx("span-kind")}>{w.kinds[s.kind]}</i>
-                    <b>{s.name}</b>
+                    {s.kind !== "decision" && <b>{s.name}</b>}
                     {metric(w, s) && <small>{metric(w, s)}</small>}
                     {s.error && <em>{s.error.slice(0, 80)}</em>}
                   </span>
@@ -548,6 +552,7 @@ const usageOf = (a: Item) => {
 /** A few words on what a span did, shown in its row. */
 function metric(w: Words, s: Span) {
   const a = s.attrs as Item;
+  if (s.kind === "decision") return [a.writer, a.effort, w.routeReasons[a.reason], a.cost !== undefined && money(a.cost)].filter(Boolean).join(" · ");
   if ((s.kind === "turn" || s.kind === "compact") && a.usage) {
     const u = usageOf(a);
     return w.metric(k(u.input), u.hit, k(u.output));
@@ -737,6 +742,10 @@ function Attributes({
   const parts: ReactNode[] = [];
   if (span.error) parts.push(<Part key="error" title={w.error} value={span.error} />);
   switch (span.kind) {
+    case "decision":
+      if (a.matchedTask) parts.push(<Part key="task" title={w.matchedTask} value={a.matchedTask}><Text text={a.matchedTask} /></Part>);
+      if (a.fallbackError) parts.push(<Part key="fallback" title={w.error} value={a.fallbackError} />);
+      break;
     case "turn": {
       const u = usageOf(a);
       parts.push(

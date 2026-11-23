@@ -40,6 +40,11 @@ const exact: Record<string, string> = {
   "请在模型设置中配置生图凭证":
     "Set up the image model's credentials in Settings",
   "请先配置模型凭证": "Set up the model's credentials in Settings first",
+  "候选模型与思考强度组合重复": "Each drawing model and effort combination can appear only once",
+  "请为每个候选组合填写适用任务": "Describe at least one task for each selected combination",
+  "适用任务的描述不能重复": "Each task description must be distinct",
+  "请选择已有的绘制模型及其开放的思考强度": "Choose an existing drawing model and its supported efforts",
+  "自动选模最多支持 255 条任务描述": "Auto supports up to 255 task descriptions",
   "模型的思考用完了这一轮的输出额度，还没写出内容；可以调低思考强度再试":
     "The model used up this turn's output budget thinking before writing anything. Try a lower thinking effort.",
   "这一轮要写的内容太多，模型的输出被截断了":

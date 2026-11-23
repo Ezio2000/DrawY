@@ -13,6 +13,7 @@ import {
   Ticket,
   Globe,
   Tags,
+  GitBranch,
 } from "lucide-react";
 import { Switch, Spinner } from "./ui/primitives.tsx";
 import * as Hand from "./ui/brand/icons.tsx";
@@ -34,9 +35,11 @@ import { AccountContext, useCan } from "./account.tsx";
 import { ago } from "./time.ts";
 import { Badge, Entry, Group, Head, keep, keptValue, Loaded, read, Row, useLoaded } from "./SettingsParts.tsx";
 import { ImageSection, LabelSection, SearchSection, WriterSection } from "./ModelSettings.tsx";
+import { DecisionSettings } from "./DecisionSettings.tsx";
 
 /** The section each model tab shows. */
 const sections = {
+  decision: DecisionSettings,
   labels: LabelSection,
   author: WriterSection,
   search: SearchSection,
@@ -71,25 +74,14 @@ export function readSettings(can: (p: Permission) => boolean) {
   read("invites", loadInvites).catch(quiet);
 }
 
-type Tab =
-  | "preferences"
-  | "labels"
-  | "author"
-  | "search"
-  | "image"
-  | "accounts"
-  | "invites"
-  | "roles";
-
 /** The user's standing preferences; and, for those whose role allows it, the models
  * everyone draws and paints with, and the accounts and their roles. */
-export function Settings() {
+export function Settings({ path, go }: { path: string; go: (path: string) => void }) {
   const t = useT(),
     can = useCan();
   const w = t.settings;
   const models = can("models.manage"),
     accounts = can("accounts.manage");
-  const [tab, setTab] = useState<Tab>("preferences");
   // What was kept from the last visit shows at once, and is replaced by what is read afresh
   // unless it has been changed in the meantime.
   const [kept] = useState(() => keptValue<Own>("own"));
@@ -141,6 +133,7 @@ export function Settings() {
       ["preferences", UserRound, true],
       ["labels", Tags, models],
       ["author", PenTool, models],
+      ["decision", GitBranch, models],
       ["search", Globe, models],
       ["image", ImageIcon, models],
       ["accounts", Users, accounts],
@@ -148,6 +141,7 @@ export function Settings() {
       ["roles", ShieldCheck, accounts],
     ] as const
   ).filter(([, , shown]) => shown);
+  const tab = tabs.find(([id]) => path === "/settings/" + id)?.[0] ?? "preferences";
   return (
     <div className={cx("page settings")}>
       <header className={cx("page-head")}>
@@ -163,7 +157,7 @@ export function Settings() {
               aria-current={tab === k || undefined}
               // Everyone's own settings first, then what their role lets them run.
               data-break={i === 1 || undefined}
-              onClick={() => setTab(k)}
+              onClick={() => go(k === "preferences" ? "/settings" : "/settings/" + k)}
             >
               <Icon size={16} />
               {t.titles[k]}
@@ -190,7 +184,7 @@ export function Settings() {
             </Group>
           </section>
         )}
-        {(["labels", "author", "search", "image"] as const).map((k) => {
+        {(["labels", "author", "decision", "search", "image"] as const).map((k) => {
           const Section = sections[k];
           return (
             tab === k &&

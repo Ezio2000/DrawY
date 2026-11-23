@@ -70,10 +70,12 @@ export function Presence({
 /** Segmented control whose selection thumb slides between the active buttons. */
 /** An on/off switch. Inside a label, the whole row toggles it. */
 export function Switch({
+  label,
   checked,
   onChange,
   disabled = false,
 }: {
+  label?: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
@@ -82,6 +84,7 @@ export function Switch({
     <button
       type="button"
       role="switch"
+      aria-label={label}
       className={cx("switch")}
       aria-checked={checked}
       disabled={disabled}

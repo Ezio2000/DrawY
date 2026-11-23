@@ -732,6 +732,10 @@ export type Step =
 /** What a run has spent so far: the author's tokens over every model turn, and what the
  * pictures it generated cost the picture model. */
 export interface RunUsage {
+  /** Decisions API input and its USD charge at call time, separate from drawing tokens. */
+  decision?: { model: string; input: number; cached: number; cacheWrite: number; cost: number };
+  /** Cache read reported by the first drawing request with usage. */
+  firstCached?: number;
   input: number;
   /** Input tokens read from the provider's cache, and written to it where that is paid. */
   cached: number;

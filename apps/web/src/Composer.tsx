@@ -273,7 +273,7 @@ export function Composer({
 
 /** The pick a change makes, shown at once while it is saved. */
 export function chosen(m: Models, change: SettingsChange): Models {
-  return change.label ? { ...m, chosen: { label: change.label } } : m;
+  return change.label !== undefined ? { ...m, chosen: { label: change.label } } : m;
 }
 
 /** The one pick a run is made with: a label, named by those who manage models, that stands
@@ -292,18 +292,11 @@ function ModelBar({
   const label =
     models.labels.find((l) => l.id === models.chosen.label) ?? models.labels[0];
   if (!label) return null;
-  const name = (l: { id: string; name: string }) =>
-    l.id === "default" && l.name === "默认" ? w.defaultLabel : l.name;
+  const name = (l: Models["labels"][number]) =>
+    l.id === null ? w.autoLabel : l.id === "default" && l.name === "默认" ? w.defaultLabel : l.name;
   const left = quota !== undefined && quota !== null && (
     <i data-out={quota <= 0 || undefined}>{w.quotaShort(quota)}</i>
   );
-  // One pill, as in Claude's composer: the label in ink, the requests left after it in grey.
-  if (models.labels.length < 2)
-    return left ? (
-      <span className={cx("model-bar")} data-tip={w.quotaHint}>
-        {left}
-      </span>
-    ) : null;
   return <LabelPick models={models} label={label} name={name} left={left} pick={pick} />;
 }
 
@@ -317,7 +310,7 @@ function LabelPick({
 }: {
   models: Models;
   label: Models["labels"][number];
-  name: (l: { id: string; name: string }) => string;
+  name: (l: Models["labels"][number]) => string;
   left: ReactNode;
   pick: (change: SettingsChange) => void;
 }) {
@@ -346,7 +339,7 @@ function LabelPick({
             <p className={cx("models-head")}>{w.labelSection}</p>
             {models.labels.map((l) => (
               <button
-                key={l.id}
+                key={l.id ?? "@auto"}
                 role="menuitemradio"
                 aria-checked={l.id === label.id}
                 disabled={!l.ready}
@@ -584,7 +577,7 @@ export function WorkComposer({
               ? t.composer.working
               : t.composer.continue
       }
-      status={(asking.blocked === "unconnected" && <Unconnected go={go} />) || note || status}
+      status={(!s.waiting && asking.blocked === "unconnected" && <Unconnected go={go} />) || note || status}
       style={request.style}
       setStyle={(session.id === "_blank" && user) || request.style ? draft.setStyle : undefined}
       working={s.working}

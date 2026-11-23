@@ -34,6 +34,8 @@ export function spend(run: Run, usage: Item) {
  * reports its input but not its output, which is then told from what had arrived. */
 export function spendFailed(run: Run, attempt: { usage?: Item; ms: number; chars?: number }) {
   const f = failedOf(run);
+  if (typeof attempt.usage?.input_tokens === "number")
+    run.usage!.firstCached ??= attempt.usage.input_tokens_details?.cached_tokens ?? 0;
   const reported = attempt.usage?.output_tokens ?? 0;
   const estimated = reported ? 0 : Math.ceil((attempt.chars ?? 0) / 3);
   f.attempts++;

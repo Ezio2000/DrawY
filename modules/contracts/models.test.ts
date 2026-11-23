@@ -136,8 +136,8 @@ it("draws with the default models while no label is configured", () => {
     search: { mode: "builtin" },
   });
   expect(menuFor(c, emptySettings())).toEqual({
-    labels: [{ id: "default", name: "默认", description: "", ready: true }],
-    chosen: { label: "default" },
+    labels: [{ id: null, name: "", description: "", ready: true }, { id: "default", name: "默认", description: "", ready: true }],
+    chosen: { label: null },
   });
 });
 
@@ -163,6 +163,7 @@ it("picks a label, never the models in it, settled against what the model offers
   const menu = menuFor(c, careful);
   expect(menu).toEqual({
     labels: [
+      { id: null, name: "", description: "", ready: true },
       { id: "fast", name: "快速", description: "Quick sketches", ready: true },
       { id: "careful", name: "精细", description: "", ready: false },
     ],

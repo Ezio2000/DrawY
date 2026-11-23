@@ -403,17 +403,26 @@ export type Web = string;
 
 // ---- The catalog
 
-/** The models the whole app draws, searches and paints with, set by those who manage
- * models. Each part is configured and picked on its own. */
+/** A separate Decisions endpoint and the drawing models it may select by catalog ID. */
+export interface DecisionConfig {
+  endpoint: string;
+  credential: string;
+  model: string;
+  routes: { writer: string; effort?: Effort; descriptions: string[] }[];
+}
+const defaultDecision = (): DecisionConfig => ({
+  endpoint: "https://api.openai.com/v1/decisions", credential: "", model: "gpt-6-luna", routes: [],
+});
+/** The shared catalog for drawing, search, image generation and Auto routing. */
 export interface ModelCatalog {
+  decision: DecisionConfig;
   writers: WriterProvider[];
   painters: ImageProvider[];
   searches: SearchService[];
   /** The only thing people pick: each label names a whole combination of drawing model,
    * effort, speed, search and picture model, set by those who manage models. */
   labels: ModelLabel[];
-  /** The combination used while no label is configured, and the label anyone who has not
-   * picked uses. */
+  /** The default combination, also used when Auto cannot resolve a request. */
   defaults: { writer: string; image: string; web: Web; label: string };
 }
 /** A combination of models under one name: people pick the name, never what is in it. */
@@ -497,12 +506,28 @@ const knownWeb = (c: { searches: { id: string }[] }, web: Web) =>
 const modelIds = (list: Provider<{ id: string }>[]) => list.flatMap((p) => p.models.map((m) => m.id));
 export const modelCatalogSchema = z
   .object({
+    decision: z.object({
+      endpoint: z.url({ protocol: /^https?$/ }), credential: z.string(), model: z.string().trim().min(1),
+      routes: z.array(z.object({
+        writer: slug, effort: z.enum(efforts).optional(),
+        descriptions: z.array(z.string().trim()).transform((lines) => lines.filter(Boolean))
+          .refine((lines) => lines.length > 0, { message: "请为每个候选组合填写适用任务" }),
+      })).default([]),
+    }).default(defaultDecision),
     writers: z.array(writerProviderSchema),
     painters: z.array(imageProviderSchema),
     searches: z.array(searchServiceSchema),
     labels: z.array(labelSchema).default([]),
     defaults: z.object({ writer: z.string(), image: z.string(), web: z.string(), label: z.string().default("") }),
   })
+  .refine((c) => unique(c.decision.routes.map((r) => r.writer + "/" + (r.effort ?? ""))), { message: "候选模型与思考强度组合重复" })
+  .refine((c) => c.decision.routes.every(({ writer, effort }) => {
+    const model = entries(c.writers).find((x) => x.model.id === writer)?.model;
+    return model && (effort ? model.efforts.includes(effort) : !model.efforts.length);
+  }), { message: "请选择已有的绘制模型及其开放的思考强度" })
+  .refine((c) => unique(c.decision.routes.flatMap((r) => r.descriptions)), { message: "适用任务的描述不能重复" })
+  .refine((c) => c.decision.routes.reduce((n, r) => n + r.descriptions.length, 0) <= 255,
+    { message: "自动选模最多支持 255 条任务描述" })
   .refine((c) => modelIds(c.writers).length > 0, { message: "至少需要一个绘制模型" })
   .refine((c) => modelIds(c.painters).length > 0, { message: "至少需要一个生图模型" })
   .refine((c) => unique(c.writers.map((p) => p.id)), { message: "绘制供应商 ID 重复" })
@@ -522,6 +547,7 @@ export const defaultCatalog = (): ModelCatalog => {
   const writer = defaultWriter(),
     image = defaultImageModel();
   return {
+    decision: defaultDecision(),
     writers: [
       { id: "openai", name: "api", channel: "api", baseUrl: endpointFor("api"), credential: "", models: [writer] },
     ],
@@ -551,8 +577,7 @@ export function labelsOf(catalog: ModelCatalog): ModelLabel[] {
 
 // ---- What each person picks
 
-/** What each person keeps for themselves: their standing preferences and the label they
- * picked, which falls back to the default label when it is not set or gone. */
+/** Standing preferences and a fixed tier selection. Null selects Auto. */
 export interface UserSettings {
   preferences: string;
   label: string | null;
@@ -577,31 +602,9 @@ export function webFor(
   const service = searches.find((s) => s.id === wanted);
   return service && searchReady(service) ? { mode: "service", service } : { mode: "off" };
 }
-/** What a person draws, searches and paints with: what the label they picked holds, or
- * the default label's when they have not or it was taken away, settled against what the
- * model offers. */
-export function picked(catalog: ModelCatalog, own: Pick<UserSettings, "label">) {
+function fixedLabel(catalog: ModelCatalog, own: Pick<UserSettings, "label">) {
   const labels = labelsOf(catalog);
-  const label =
-    labels.find((l) => l.id === own.label) ??
-    labels.find((l) => l.id === catalog.defaults.label) ??
-    labels[0];
-  const writers = entries(catalog.writers),
-    painters = entries(catalog.painters);
-  const w =
-    writers.find((x) => x.model.id === label.writer) ??
-    writers.find((x) => x.model.id === catalog.defaults.writer) ??
-    writers[0];
-  const p =
-    painters.find((x) => x.model.id === label.image) ??
-    painters.find((x) => x.model.id === catalog.defaults.image) ??
-    painters[0];
-  const m = w.model;
-  const effort = effortFor(label.effort ?? m.effort, m.efforts) ?? m.effort;
-  const speed = label.speed && m.speeds.includes(label.speed) ? label.speed : m.speed;
-  const wanted = knownWeb(catalog, label.web) ? label.web : catalog.defaults.web;
-  const search = webFor({ channel: w.provider.channel, ...m }, wanted, catalog.searches);
-  return { label, writer: w, effort, speed, search, painter: p };
+  return labels.find((l) => l.id === own.label) ?? labels.find((l) => l.id === catalog.defaults.label) ?? labels[0];
 }
 
 /** What a run's spending is priced at, fixed when it starts: the drawing model's tokens at
@@ -614,6 +617,7 @@ export interface RunPrices {
 }
 /** What a run cost, in US dollars, by service. */
 export interface RunCost {
+  decision: number;
   author: number;
   search: number;
   image: number;
@@ -644,7 +648,8 @@ export function costOf(usage: RunUsage | undefined, prices: RunPrices | undefine
         (i.textOutput ?? 0) * p.textOutput) /
         1e6
     : 0;
-  return { author, search, image, failed, total: author + search + image + failed };
+  const decision = u.decision?.cost ?? 0;
+  return { author, search, image, failed, decision, total: author + search + image + failed + decision };
 }
 
 /** What one run is made with: the drawing model with the options picked, how it searches
@@ -652,6 +657,7 @@ export function costOf(usage: RunUsage | undefined, prices: RunPrices | undefine
 export interface Settings {
   /** The label picked, by name: all that people who do not manage models are shown. */
   label: string;
+  writerProviderId: string;
   author: Role;
   authorName: string;
   search: { mode: SearchMode; service?: SearchService };
@@ -661,12 +667,26 @@ export interface Settings {
   preferences: string;
 }
 export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings {
-  const { label, writer, effort, speed, search, painter } = picked(catalog, own);
+  const label = fixedLabel(catalog, own);
+  const writer = entries(catalog.writers).find((entry) => entry.model.id === label.writer)!;
+  return drawingSettings(catalog, own.preferences, writer, label);
+}
+
+/** Resolve the same service options and prices for a fixed tier or a Decision candidate. */
+function drawingSettings(
+  catalog: ModelCatalog, preferences: string, writer: { provider: WriterProvider; model: WriterModel },
+  selection: Pick<ModelLabel, "name" | "effort" | "speed" | "web" | "image">,
+): Settings {
   const { provider: p, model: m } = writer;
+  const effort = effortFor(selection.effort ?? m.effort, m.efforts) ?? m.effort;
+  const speed = selection.speed && m.speeds.includes(selection.speed) ? selection.speed : m.speed;
+  const search = webFor({ channel: p.channel, ...m }, selection.web, catalog.searches);
+  const painter = entries(catalog.painters).find((entry) => entry.model.id === selection.image)!;
   const rate = m.speedRates[speed] ?? speedRates[speed];
   const scaled = (n: number) => n * rate;
   return {
-    label: label.name,
+    label: selection.name,
+    writerProviderId: p.id,
     author: {
       channel: p.channel,
       baseUrl: p.baseUrl,
@@ -705,7 +725,7 @@ export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings 
       page: search.mode === "service" ? search.service!.prices.page : 0,
       image: painter.model.prices,
     },
-    preferences: own.preferences,
+    preferences,
   };
 }
 
@@ -713,7 +733,7 @@ export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings 
 
 /** A label as the picker shows it: its name and what it is for, nothing of what is in it. */
 export interface LabelChoice {
-  id: string;
+  id: string | null;
   name: string;
   description: string;
   /** Whether its drawing model is connected and can call tools, so it can draw. */
@@ -722,20 +742,43 @@ export interface LabelChoice {
 /** Everything a person may pick from, without models, credentials or prices. */
 export interface ModelMenu {
   labels: LabelChoice[];
-  chosen: { label: string };
+  chosen: Pick<UserSettings, "label">;
 }
+export const readyWriter = (p: WriterProvider, m: WriterModel) => !!p.credential && m.tools;
+
+export function decisionCandidates(catalog: ModelCatalog) {
+  const writers = entries(catalog.writers);
+  return catalog.decision.routes.flatMap(({ writer, effort, descriptions }) => {
+    const entry = writers.find((x) => x.model.id === writer);
+    return entry && readyWriter(entry.provider, entry.model) ? [{ ...entry, effort, descriptions }] : [];
+  });
+}
+
+export function decisionSettings(
+  catalog: ModelCatalog, preferences: string, candidate: ReturnType<typeof decisionCandidates>[number],
+) {
+  return drawingSettings(catalog, preferences, candidate, {
+    name: "Auto", effort: candidate.effort, image: catalog.defaults.image, web: catalog.defaults.web,
+  });
+}
+
 export function menuFor(catalog: ModelCatalog, own: Pick<UserSettings, "label">): ModelMenu {
   const writers = entries(catalog.writers);
+  const labels = labelsOf(catalog).map((l) => {
+    const w = writers.find((x) => x.model.id === l.writer);
+    return {
+      id: l.id,
+      name: l.name,
+      description: l.description,
+      ready: !!w && readyWriter(w.provider, w.model),
+    };
+  });
+  const candidates = decisionCandidates(catalog);
+  const fallback = fixedLabel(catalog, { label: null });
+  const autoReady = candidates.length === 1 || (candidates.length > 1 && !!catalog.decision.credential) ||
+    labels.some((l) => l.id === fallback.id && l.ready);
   return {
-    labels: labelsOf(catalog).map((l) => {
-      const w = writers.find((x) => x.model.id === l.writer);
-      return {
-        id: l.id,
-        name: l.name,
-        description: l.description,
-        ready: !!w && !!w.provider.credential && w.model.tools,
-      };
-    }),
-    chosen: { label: picked(catalog, own).label.id },
+    labels: [{ id: null, name: "", description: "", ready: autoReady }, ...labels],
+    chosen: { label: labels.some((l) => l.id === own.label) ? own.label : null },
   };
 }
