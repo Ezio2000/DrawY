@@ -978,21 +978,21 @@
 .l-ask-reference {
   position: absolute;
   z-index: 3;
-  inset-block-start: 10px;
-  inset-inline-end: 12px;
+  inset-block-start: 16px;
+  inset-inline-start: 22px;
   box-sizing: border-box;
-  width: 45px;
-  height: 51px;
+  width: 42px;
+  height: 42px;
   padding: 2px;
   object-fit: contain;
-  background: var(--l-paper);
-  border: 1px solid var(--line);
-  border-radius: 5px;
+  background: var(--bg-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  border-radius: 8px;
   pointer-events: none;
 }
 
 .l-ask.l-ask[data-reference] textarea[aria-label] {
-  padding-inline-end: 68px;
+  padding-top: 50px;
 }
 
 .l-reference-sheet {
@@ -1036,9 +1036,13 @@
   min-height: 0;
   object-fit: contain;
   mix-blend-mode: multiply;
+  filter: brightness(1.04) contrast(1.04);
 }
 
 .l-reference-sheet figcaption {
+  display: grid;
+  align-items: end;
+  min-height: 2.5em;
   color: var(--text-2);
   font-size: clamp(10px, 1.1vw, 14px);
   font-weight: 600;
@@ -1071,7 +1075,7 @@
 
   .l-reference-result :is([data-module-id="drive"], [data-module-id="belt"]) { --reference-delay: 580ms; }
   .l-reference-result [data-module-id="record"] { --reference-delay: 780ms; }
-  .l-reference-result :is([data-module-id="arm"], [data-module-id="leaders"]) { --reference-delay: 980ms; }
+  .l-reference-result [data-module-id="arm"] { --reference-delay: 980ms; }
 
   .l-reference-sheet[data-drawing] .l-reference-result [data-target] {
     animation: l-reference-mark 240ms ease 1450ms both;

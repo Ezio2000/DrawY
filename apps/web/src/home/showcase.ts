@@ -37,7 +37,6 @@ export function loadShowcase(id: ShowcaseId, locale: Locale): Promise<Work[]> {
         belt: "Drive belt",
         record: "Record and platter",
         arm: "Tonearm",
-        leaders: "Leader lines",
       };
       const scene = work.scenes[work.rootSceneId];
       const title = "Vintage record player";

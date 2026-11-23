@@ -61,14 +61,6 @@
         "head": "#aa4b39",
         "dark": "#586264"
       }
-    },
-    "leader-svg": {
-      "id": "leader-svg",
-      "name": "细短无字引线",
-      "source": "return api.svg(`<svg viewBox='14 312 668 147' xmlns='http://www.w3.org/2000/svg'>\n<g fill='none' stroke='${api.data.line}' stroke-width='.63' stroke-linecap='round' stroke-linejoin='round'>\n  <path d='M19 337H33L57 346'/><path d='M679 380H668L652 389'/><path d='M421 452V446L400 424'/>\n</g>\n<g fill='${api.theme.ink}'><circle cx='57' cy='346' r='1.42'/><circle cx='652' cy='389' r='1.42'/><circle cx='400' cy='424' r='1.42'/></g>\n</svg>`);",
-      "defaults": {
-        "line": "#8b8174"
-      }
     }
   },
   "scenes": {
@@ -152,18 +144,6 @@
           "drawingId": "arm-svg",
           "data": {},
           "label": "唱臂与朱红唱头"
-        },
-        {
-          "id": "leaders",
-          "bounds": {
-            "x": 14,
-            "y": 312,
-            "width": 668,
-            "height": 147
-          },
-          "drawingId": "leader-svg",
-          "data": {},
-          "label": "无字引线"
         }
       ],
       "links": [],
