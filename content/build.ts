@@ -78,9 +78,10 @@ export function build(out: string, named?: string) {
   copy(join(here, "LICENSE"), "LICENSE");
   const types = read<object[]>("types.json"),
     synonyms = read<string[][]>("synonyms.json"),
-    bindings = { text: "label", picture: "picture", link: "arrow" };
+    bindings = { text: "label", picture: "picture", link: "arrow" },
+    withdraw = read<string[]>("withdrawn.json");
   const content = createHash("sha256")
-    .update(JSON.stringify([Object.entries(files).sort(), types, synonyms, bindings, data]))
+    .update(JSON.stringify([Object.entries(files).sort(), types, synonyms, bindings, data, withdraw]))
     .digest("hex");
   const release = named ?? `${new Date().toISOString().slice(0, 10).replaceAll("-", ".")}-${content.slice(0, 10)}`;
   const manifest = {
@@ -93,7 +94,7 @@ export function build(out: string, named?: string) {
     bindings,
     data,
     synonyms,
-    withdraw: [],
+    withdraw,
     license: "LICENSE",
   };
   writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest, null, 1));

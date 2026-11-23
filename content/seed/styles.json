@@ -424,57 +424,6 @@
     ]
   },
   {
-    "id": "line-icon",
-    "kind": "style",
-    "name": {
-      "zh": "线性图标",
-      "en": "Line icon"
-    },
-    "aliases": [
-      "线性图标",
-      "图标",
-      "技术架构",
-      "系统图",
-      "line icon",
-      "outline icon",
-      "architecture",
-      "system diagram"
-    ],
-    "category": "style",
-    "about": "Monoline glyphs on a 24-unit grid with round caps, drawn in the work's ink colour; symbols for systems, data and everyday things. For technical architecture and process diagrams.",
-    "tags": [
-      "icon",
-      "line",
-      "technical",
-      "architecture",
-      "formal"
-    ],
-    "style": "line-icon",
-    "origin": {
-      "kind": "curated",
-      "createdAt": 1793404800000
-    },
-    "register": "formal",
-    "prompt": "Minimal monoline icon, uniform round-capped strokes, no fill, no text.",
-    "tokens": {
-      "ink": "#2b2f33",
-      "muted": "#7a8086",
-      "accent": "#d97757",
-      "accent2": "#4a7fa8",
-      "paper": "#ffffff",
-      "stroke": "1.5",
-      "font": "\"PingFang SC\",\"Noto Sans CJK SC\",\"Source Han Sans SC\",\"Microsoft YaHei\",system-ui,sans-serif"
-    },
-    "guide": "Icons inked in the ink token at 40–64 units, lines and arrows at the same visual weight as the icon strokes (1.5 units), one accent colour for the path that matters; components named by short sans labels under the icon; group with spacing, not boxes.",
-    "effects": [],
-    "samples": [
-      "line-microscope",
-      "line-server",
-      "line-leaf",
-      "line-rocket"
-    ]
-  },
-  {
     "id": "duotone-icon",
     "kind": "style",
     "name": {

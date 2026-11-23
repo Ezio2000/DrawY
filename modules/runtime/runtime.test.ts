@@ -52,6 +52,13 @@ beforeAll(async () => {
     } else if (url.pathname.startsWith("/materials/files/")) {
       const id = url.pathname.split("/").at(-1)!;
       const send = () => {
+        // A user's icon drawn in currentColor, so it can be inked.
+        if (id === "u-ring") {
+          res.setHeader("content-type", "image/svg+xml");
+          return res.end(
+            `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor"/></svg>`,
+          );
+        }
         // Curated icons are SVG; the rest are WebP.
         const svg = new URL(
           `../../content/seed/files/${id}.svg`,
@@ -1394,13 +1401,13 @@ it("draws links from ends they hold, following their modules, and every drawing 
 it("tints recolourable picture icons with the picture drawing's color parameter", async () => {
   const pictureSource = readFileSync(new URL("../../content/seed/drawings/picture.js", import.meta.url), "utf8");
   work.drawings.picture = { id: "picture", name: "图片", defaults: {}, source: pictureSource };
-  work.materials["line-apple"] = {
-    id: "line-apple",
+  work.materials["u-ring"] = {
+    id: "u-ring",
     kind: "picture",
-    name: "苹果图标",
+    name: "圆圈图标",
     type: "icon",
-    style: "line-icon",
-    url: "/materials/files/line-apple",
+    style: null,
+    url: "/materials/files/u-ring",
     width: 24,
     height: 24,
     content: { x: 0, y: 0, width: 1, height: 1 },
@@ -1416,7 +1423,7 @@ it("tints recolourable picture icons with the picture drawing's color parameter"
         id: "icon",
         label: "图标",
         drawingId: "picture",
-        data: { material: "line-apple", color: "#275DAD" },
+        data: { material: "u-ring", color: "#275DAD" },
         bounds: { x: 40, y: 40, width: 64, height: 64 },
       },
     ],
@@ -1428,7 +1435,7 @@ it("tints recolourable picture icons with the picture drawing's color parameter"
   const src = await page.evaluate(() =>
     document.querySelector('[data-module-id="icon"]')?.shadowRoot?.querySelector("img")?.getAttribute("src"),
   );
-  expect(src).toBe("/materials/files/line-apple?color=%23275DAD");
+  expect(src).toBe("/materials/files/u-ring?color=%23275DAD");
 });
 
 it("patches untouched modules in place on AI updates and developing-to-ready picture transitions", async () => {

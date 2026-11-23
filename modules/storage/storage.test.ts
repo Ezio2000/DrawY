@@ -808,6 +808,14 @@ describe("exported pages", () => {
     const store = db.scoped(id),
       work = createWork(store, "export"),
       content = fixture();
+    const icon = await library.library.ingest(
+      new TextEncoder().encode(
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor"/></svg>`,
+      ),
+      "image/svg+xml",
+      { type: "icon", name: { zh: "圆圈", en: "ring" }, style: null, origin: { kind: "upload" } },
+      id,
+    );
     store.commit({ ...store.work(work.id), brief: content.brief }, 1, { kind: "edit" });
     await writeWork(
       store,
@@ -820,7 +828,7 @@ describe("exported pages", () => {
           {
             id: "icons",
             title: "icons",
-            html: `<img src="/materials/files/line-activity"><img src="/materials/files/line-activity?color=%23ff0000"><img src="/materials/files/line-activity?wait=0&amp;color=%2300aa00">`,
+            html: `<img src="/materials/files/${icon.id}"><img src="/materials/files/${icon.id}?color=%23ff0000"><img src="/materials/files/${icon.id}?wait=0&amp;color=%2300aa00">`,
           },
         ],
       }, { cause: { kind: "edit" } });
