@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { ChevronLeft } from "lucide-react";
+import { ArrowRight, Check, ChevronLeft, ImagePlus, Pause, Play, RotateCcw } from "lucide-react";
 import type { Work } from "../../../../modules/contracts/index.ts";
 import { Composer, Unconnected } from "../Composer.tsx";
 import { useAccount } from "../account.tsx";
@@ -43,7 +43,11 @@ export function Landing({
     asking.draft.hand(text);
     page.current?.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
   };
-  const intro = useRef<HTMLDivElement>(null);
+  const story = useRef<HTMLElement>(null);
+  const styleDemo = useRef<HTMLElement>(null);
+  const styleFile = useRef<HTMLInputElement>(null);
+  const openStyleDemo = () =>
+    styleDemo.current?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth" });
   return (
     <div className={cx("l-page")} ref={page}>
       <Hero
@@ -51,11 +55,27 @@ export function Landing({
         feedback={feedback}
         go={go}
         ask={ask}
-        more={() => intro.current?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth" })}
+        showStyleDemo={openStyleDemo}
+        more={() => story.current?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth" })}
       />
       {/* What DrawY draws, apart from where one asks it: a sheet laid over the desk below. */}
-      <div className={cx("l-intro")} ref={intro}>
-        <Story />
+      <div className={cx("l-intro")}>
+        <StyleReference section={styleDemo} upload={() => styleFile.current?.click()} />
+        <input
+          ref={styleFile}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = "";
+            if (!file?.type.startsWith("image/")) return;
+            if (!asking.draft.get().text.trim()) ask(l.styleDemo.starter);
+            else page.current?.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
+            void feedback.attempt(() => asking.upload([file]));
+          }}
+        />
+        <Story band={story} />
         <Ticker words={l} ask={ask} />
         <Features words={l} />
         <Questions words={l} />
@@ -74,12 +94,14 @@ function Hero({
   feedback,
   go,
   ask,
+  showStyleDemo,
   more,
 }: {
   asking: Asking;
   feedback: Feedback;
   go: (path: string) => void;
   ask: (text: string) => void;
+  showStyleDemo: () => void;
   /** Takes the reader down to what DrawY draws. */
   more: () => void;
 }) {
@@ -142,10 +164,110 @@ function Hero({
           {l.blank}
         </button>
       </div>
+      <button type="button" className={cx("l-style-link")} onClick={showStyleDemo}>
+        <ImagePlus size={16} aria-hidden />
+        {l.styleDemo.link}
+        <ArrowRight size={14} aria-hidden />
+      </button>
       <button className={cx("l-more")} onClick={more}>
         {l.more}
         <Hand.Down size={17} />
       </button>
+    </section>
+  );
+}
+
+// Replay an actual DrawY run on an abbreviated clock. The upload button uses the real composer.
+const styleReplayTick = 80;
+const styleReplayEnd = 9_000;
+
+function StyleReference({
+  section,
+  upload,
+}: {
+  section: RefObject<HTMLElement | null>;
+  upload: () => void;
+}) {
+  const words = useT().landing.styleDemo;
+  const [visible, setVisible] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const reduce = reducedMotion();
+  const finished = elapsed >= styleReplayEnd;
+  const stage = reduce || elapsed >= 5_200 ? 3 : elapsed >= 3_600 ? 2 : elapsed >= 1_200 ? 1 : 0;
+  const typedLength = stage >= 2
+    ? words.request.length
+    : Math.floor(words.request.length * Math.max(0, (elapsed - 1_200) / 2_400));
+
+  useEffect(() => {
+    const element = section.current;
+    if (!element) return;
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), {
+      rootMargin: "0px 0px -38% 0px",
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [section]);
+
+  useEffect(() => {
+    if (reduce || !visible || paused || finished) return;
+    const timer = window.setInterval(() => {
+      setElapsed((time) => Math.min(styleReplayEnd, time + styleReplayTick));
+    }, styleReplayTick);
+    return () => window.clearInterval(timer);
+  }, [reduce, visible, paused, finished]);
+
+  return (
+    <section ref={section} className={cx("l-drafting-band", "l-style-demo")} aria-labelledby="l-style-title">
+      <div className={cx("l-style-copy")}>
+        <h2 id="l-style-title" className={cx("l-display")} data-size="section">{words.title}</h2>
+        <p>{words.description}</p>
+        <button type="button" className={cx("l-style-upload")} onClick={upload}>
+          <ImagePlus size={17} aria-hidden />
+          {words.upload}
+        </button>
+      </div>
+      <div className={cx("l-style-pair")} data-stage={stage}>
+        <figure>
+          <div className={cx("l-style-picture")}>
+            <img src="/style-reference-lighthouse.webp" alt={words.referenceAlt} loading="lazy" />
+            <span className={cx("l-style-selected")} aria-hidden><Check size={18} /></span>
+          </div>
+          <figcaption>{words.reference}</figcaption>
+        </figure>
+        <div className={cx("l-style-request")}>
+          <div className={cx("l-style-message")}>
+            <span className={cx("l-style-stage")} aria-hidden>{words.stages[stage]}</span>
+            <div className={cx("l-style-attachment")} data-attached={stage > 0} aria-hidden>
+              <img src="/style-reference-lighthouse.webp" alt="" loading="lazy" />
+              {words.file}
+            </div>
+            <p aria-hidden>{words.request.slice(0, typedLength)}</p>
+            <span className={cx("l-style-screen-reader")}>{words.request}</span>
+          </div>
+          <div className={cx("l-style-player")}>
+            <ArrowRight className={cx("l-style-direction")} size={18} aria-hidden />
+            {!reduce && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (finished) setElapsed(0);
+                  else setPaused(!paused);
+                }}
+              >
+                {finished ? <RotateCcw size={15} aria-hidden /> : paused ? <Play size={15} aria-hidden /> : <Pause size={15} aria-hidden />}
+                {finished ? words.replay : paused ? words.resume : words.pause}
+              </button>
+            )}
+          </div>
+        </div>
+        <figure>
+          <div className={cx("l-style-picture")} data-output>
+            <img src="/style-reference-fox-production.webp" alt={words.outputAlt} loading="lazy" />
+          </div>
+          <figcaption>{words.output}</figcaption>
+        </figure>
+      </div>
     </section>
   );
 }
@@ -260,10 +382,9 @@ function scrollToChapter(item: HTMLElement) {
  * until the sheet has gone over the top. The turn follows the scrolling rather than a timer,
  * so scrolling back lays the sheet down again. The band's dots drift by a little slower than
  * the page. */
-function Story() {
+function Story({ band }: { band: RefObject<HTMLElement | null> }) {
   const l = useT().landing;
   const locale = useLocale();
-  const band = useRef<HTMLElement>(null);
   const items = useRef<(HTMLElement | null)[]>([]);
   const slots = useRef<(HTMLDivElement | null)[]>([]);
   const shades = useRef<(HTMLElement | null)[]>([]);
@@ -370,7 +491,7 @@ function Story() {
   /** Which chapter each board holds: `from` in one, the chapter after it in the other. */
   const held = [0, 1].map((s) => (s === from % 2 ? from : from + 1 < chapters.length ? from + 1 : from - 1));
   return (
-    <section className={cx("l-story")} aria-labelledby="l-story-title" ref={band}>
+    <section className={cx("l-drafting-band", "l-story")} aria-labelledby="l-story-title" ref={band}>
       <header className={cx("l-section-head")}>
         <h2 id="l-story-title" className={cx("l-display")} data-size="section">
           {l.storyTitle}
