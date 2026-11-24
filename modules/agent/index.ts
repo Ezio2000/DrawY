@@ -157,6 +157,7 @@ export class Agent {
       search: settings.search.mode,
       ...(settings.search.service ? { searchBy: settings.search.service.name } : {}),
       image: settings.imageName,
+      ...(settings.judge ? { judge: settings.judge.model } : {}),
     };
     run.prices = settings.prices;
     await tracer.within(run.id, () =>

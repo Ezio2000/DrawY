@@ -48,7 +48,7 @@ A map's edge is where the ground was cut. When the map is the figure's ground an
   },
   exploration: {
     when: "before adding interactive controls, animation, click behaviour, scene interaction scripts or subscenes",
-    text: `Exploration keeps the opening canvas clean and lets interested readers dig deeper. Give a module a scene target only when that part deserves its own diagram (empty subscenes can be created for later expansion); use a detail target for HTML prose depth instead of writing sentences on the canvas.
+    text: `Exploration is optional, and most modules have no target. Give a module a scene target only when that part deserves its own diagram (empty subscenes can be created for later expansion), and a detail target only when it has substance the drawing cannot show, such as a worked example or a full procedure; a detail never restates a label or holds words cut from the canvas.
 
 A scene's script is its interaction field, a multi-line JavaScript function body receiving api:
 - api.on(moduleId, event, callback) subscribes to module events; drawings send them with api.emit, and the slider and choice library drawings send "change".

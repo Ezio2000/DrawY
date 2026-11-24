@@ -124,6 +124,8 @@ function doing(step: ToolStep, t: Words): string {
       return [w.guiding, guideNames(step, t).join(w.list)].filter(Boolean).join(" · ");
     case "read_materials":
       return [w.guiding, step.ids.join(w.list)].filter(Boolean).join(" · ");
+    case "propose_ideas":
+      return w.proposing;
     case "set_brief":
       return [w.briefing, step.subject].filter(Boolean).join(" · ");
     case "find_materials":
@@ -443,6 +445,7 @@ const icons = {
   read_work: BookOpen,
   draw_guide: BookMarked,
   read_materials: BookMarked,
+  propose_ideas: Lightbulb,
   set_brief: Compass,
   find_materials: Search,
   generate_images: ImagePlus,
@@ -596,6 +599,8 @@ function ToolBody({
           {step.ids.length > 0 && <code className={cx("step-detail")}>{step.ids.join(t.now.list)}</code>}
         </>
       );
+    case "propose_ideas":
+      return <Ideas step={step} />;
     case "set_brief":
       return <Brief step={step} used={used} zoom={zoom} />;
     case "find_materials":
@@ -651,8 +656,32 @@ function ToolBody({
       );
   }
 }
-/** The brief as the author set it: what it is about, the ideas it weighed and the one it
- * chose, and the materials it found for its cast. */
+/** The ideas the author proposed, each by its kind, with the one picked to develop and how
+ * strongly the judge favoured each. */
+function Ideas({ step }: { step: Tool<"propose_ideas"> }) {
+  const t = useT();
+  return (
+    <div className={cx("brief")}>
+      <span className={cx("step-title")}>{t.steps.propose_ideas}</span>
+      <ol className={cx("ideas")}>
+        {step.ideas.map((x, i) => (
+          <li key={i} data-chosen={step.chosen === i || undefined}>
+            <small>{t.steps.kinds[x.kind]}</small>
+            {x.idea}
+            {step.scores && <em>{Math.round(step.scores[i] * 100)}%</em>}
+          </li>
+        ))}
+      </ol>
+      {step.by && (
+        <small className={cx("step-detail")}>
+          {step.by === "judge" ? t.steps.pickedByJudge : t.steps.authorPicks}
+        </small>
+      )}
+    </div>
+  );
+}
+/** The brief as the author set it: what it is about, the idea it developed, and the
+ * materials it found for its cast. */
 function Brief({
   step,
   used,
@@ -667,13 +696,6 @@ function Brief({
     <div className={cx("brief")}>
       <span className={cx("step-title")}>{t.steps.set_brief}</span>
       {step.subject && <h4>{step.subject}</h4>}
-      {!!step.ideas?.length && (
-        <ol className={cx("ideas")}>
-          {step.ideas.map((idea, i) => (
-            <li key={i}>{idea}</li>
-          ))}
-        </ol>
-      )}
       {step.concept && (
         <blockquote>
           <small>{t.steps.concept}</small>
@@ -796,6 +818,7 @@ export function spentBy(run: Run) {
     pages: u?.pages ?? 0,
     images: u?.images?.count ?? 0,
     imageTokens: (u?.images?.input ?? 0) + (u?.images?.output ?? 0),
+    judged: u?.judge?.calls ?? 0,
     hosted: Object.entries(u?.hosted ?? {}).filter(([n]) => n !== "web_search"),
     failed: {
       attempts: u?.failed?.attempts ?? 0,
@@ -822,6 +845,7 @@ const total = (list: Spent[]): Spent => ({
   pages: list.map((s) => s.pages).reduce(sum, 0),
   images: list.map((s) => s.images).reduce(sum, 0),
   imageTokens: list.map((s) => s.imageTokens).reduce(sum, 0),
+  judged: list.map((s) => s.judged).reduce(sum, 0),
   hosted: list.flatMap((s) => s.hosted),
   failed: {
     attempts: list.map((s) => s.failed.attempts).reduce(sum, 0),
@@ -838,6 +862,7 @@ const total = (list: Spent[]): Spent => ({
         author: list.map((s) => s.cost?.author ?? 0).reduce(sum, 0),
         search: list.map((s) => s.cost?.search ?? 0).reduce(sum, 0),
         image: list.map((s) => s.cost?.image ?? 0).reduce(sum, 0),
+        judge: list.map((s) => s.cost?.judge ?? 0).reduce(sum, 0),
         failed: list.map((s) => s.cost?.failed ?? 0).reduce(sum, 0),
         total: list.map((s) => s.cost?.total ?? 0).reduce(sum, 0),
       }
@@ -861,7 +886,7 @@ function Stats({
   elapsed,
 }: {
   s: Spent;
-  by?: { author?: string; search?: string; image?: string };
+  by?: { author?: string; search?: string; image?: string; judge?: string };
   /** How long it took, for one run. */
   elapsed?: number;
 }) {
@@ -892,6 +917,14 @@ function Stats({
       parts: [w.images(s.images), !!s.imageTokens && w.tokens(k(s.imageTokens))],
       cost: s.cost?.image,
       used: s.images > 0,
+    },
+    {
+      key: "judge",
+      label: w.judge,
+      who: by?.judge,
+      parts: [w.judgeCalls(s.judged)],
+      cost: s.cost?.judge,
+      used: s.judged > 0,
     },
     {
       key: "failed",
@@ -1015,6 +1048,7 @@ function WorkUsage({ runs }: { runs: Run[] }) {
             image: names((r) =>
               spentBy(r).images ? r.services?.image : undefined,
             ),
+            judge: names((r) => r.services?.judge),
           }}
         />
       )}
@@ -1257,6 +1291,7 @@ function RunView({
                 .join(" · "),
             search: searchedBy(r, t),
             image: r.services?.image,
+            judge: r.services?.judge,
           }}
         />
       )}

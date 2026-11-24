@@ -1,6 +1,6 @@
 import { viewSchema } from "../observation/index.ts";
 import { z } from "zod";
-import { briefSchema, guideTopics, workEditSchema } from "../contracts/index.ts";
+import { briefSchema, guideTopics, ideaKinds, workEditSchema, type IdeaKind } from "../contracts/index.ts";
 import { pictureRequestSchema } from "../images/index.ts";
 const fn = (name: string, description: string, parameters: object) => ({
   type: "function",
@@ -41,9 +41,8 @@ export const askSchema = z.object({
     .min(1)
     .max(3),
 });
-/** Where a visual idea comes from. Ideas weighed for one brief come from different kinds,
- * so they are real alternatives rather than variations of the first that came to mind. */
-export const ideaKinds = {
+/** What each kind of visual idea is, as the author is told. */
+const kindsTold: Record<IdeaKind, string> = {
   convention: "the figure people usually draw for this kind of subject",
   anatomy: "the real thing seen whole, in section or cut away (a volcano cut open)",
   journey: "where things happen and how they travel through space (a letter's route across a map)",
@@ -55,18 +54,12 @@ export const ideaKinds = {
     "a familiar situation with the same structure, holding at the points that matter (a computer's memory as desk, drawer and warehouse)",
   scene: "a moment with characters that makes it felt",
 };
-/** What set_brief takes: the brief, with the ideas weighed before its concept. They come
- * first so that the concept is chosen from them as it is written; they stay in the run's
- * steps, not in the work. */
-const { subject, intent, audience, ...rest } = briefSchema.shape;
-export const settleSchema = z.object({
-  subject,
-  intent,
-  audience,
+/** What propose_ideas takes: the visual ideas for the work, each of a different kind. */
+export const proposeSchema = z.object({
   ideas: z
     .array(
       z.object({
-        kind: z.enum(Object.keys(ideaKinds) as [keyof typeof ideaKinds]),
+        kind: z.enum(ideaKinds),
         idea: z.string().min(1),
       }),
     )
@@ -77,13 +70,10 @@ export const settleSchema = z.object({
       "ideas 要来自不同的种类：同一种类的想法只是彼此的变体",
     )
     .describe(
-      `Two or three visual ideas for the intent, each of a different kind, one sentence each, weighed before the concept is chosen. Kinds: ${Object.entries(
-        ideaKinds,
-      )
-        .map(([k, v]) => `${k} (${v})`)
+      `Two or three visual ideas for what the user asked, each of a different kind, one sentence each. Kinds: ${ideaKinds
+        .map((k) => `${k} (${kindsTold[k]})`)
         .join(", ")}`,
     ),
-  ...rest,
 });
 export const findSchema = z.object({
   subjects: z
@@ -147,9 +137,14 @@ export const tools = [
     schema(askSchema),
   ),
   fn(
+    "propose_ideas",
+    "Propose the visual ideas the work could be built on, before the first brief and whenever the concept has to change. Returns the idea to develop when the app picks one, or asks you to pick; set_brief's concept then develops that idea.",
+    schema(proposeSchema),
+  ),
+  fn(
     "set_brief",
-    "Settle the work's brief before drawing, or change it when the user changes direction or the concept has to change. It decides what the figure says, not where things go, so call it before working out any layout. Each basis quotes the user's own words verbatim, and the call fails on a quote it cannot find; the ideas and the concept chosen from them are your own and quote nothing. style takes a style id or a few words describing the look, and the closest library style is chosen. Returns the revision, the chosen style with its tokens, guide and effects (and the next closest styles, to switch to by id), and library pictures found for the cast, with thumbnails.",
-    schema(settleSchema),
+    "Settle the work's brief before drawing, or change it when the user changes direction. It decides what the figure says, not where things go, so call it before working out any layout. The first brief comes after propose_ideas, and its concept develops the idea picked there. Each basis quotes the user's own words verbatim, and the call fails on a quote it cannot find; the concept is your own and quotes nothing. style takes a style id or a few words describing the look, and the closest library style is chosen. Returns the revision, the chosen style with its tokens, guide and effects (and the next closest styles, to switch to by id), and library pictures found for the cast, with thumbnails.",
+    schema(briefSchema),
   ),
   fn(
     "find_materials",

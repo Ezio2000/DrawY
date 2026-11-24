@@ -10,7 +10,7 @@ import { SEARCH_LIMIT, steering } from "./spending.ts";
 import { CONTEXT_FORMAT, withLessThought } from "./conversation.ts";
 import { guidesRead, guides } from "./guides.ts";
 
-import { settleSchema } from "./tools.ts";
+import { proposeSchema } from "./tools.ts";
 import { restore, writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { CutOff, generate, type Item } from "../models/index.ts";
@@ -125,14 +125,14 @@ async function execute(input: Item[] = [], run = newRun()) {
 }
 const waitFor = (runId: string, status: Run["status"]) =>
   vi.waitFor(() => expect(store.run(runId).status).toBe(status));
+const ideas = [
+  { kind: "anatomy", idea: "一只纵切开的苹果，由外向内指出各层" },
+  { kind: "change", idea: "从花到果的四个时刻，看各部分从哪里长出来" },
+];
 const brief = {
   subject: "苹果（水果）的结构",
   intent: "果皮、果肉、果核与种子",
   audience: "初中生",
-  ideas: [
-    { kind: "anatomy", idea: "一只纵切开的苹果，由外向内指出各层" },
-    { kind: "change", idea: "从花到果的四个时刻，看各部分从哪里长出来" },
-  ],
   concept: "一只纵切开的苹果占满画面，由外向内依次指出果皮、果肉、果核与种子",
   register: "formal",
   style: "textbook",
@@ -151,6 +151,9 @@ it("runs a request through: a brief on the user's words, a question, a batch, an
     return { ...shot, observation: { ...shot.observation, smallestText: { root: 11 } } };
   }) as never);
   const seen = script([
+    // The first brief waits for the ideas.
+    ["set_brief", brief],
+    ["propose_ideas", { ideas }],
     // "严谨" is not the user's word: the brief is refused.
     ["set_brief", brief],
     ["ask_user", { questions: [{ id: "focus", text: "画苹果的什么？", options: [{ label: "结构" }, { label: "生长", materials: ["crayon"] }] }] }],
@@ -174,7 +177,10 @@ it("runs a request through: a brief on the user's words, a question, a batch, an
   const agent = new Agent(() => {});
   const run = await agent.start(store, work.id, "root", "苹果");
   await waitFor(run.id, "waiting");
-  expect(outputs(seen[1]).at(-1).error).toContain("不是用户说过的话");
+  expect(outputs(seen[1]).at(-1).error).toContain("propose_ideas");
+  // With no judge set up, the author picks.
+  expect(outputs(seen[2]).at(-1)).toMatchObject({ develop: null });
+  expect(outputs(seen[3]).at(-1).error).toContain("不是用户说过的话");
   expect(store.work(work.id).brief).toBeNull();
   // A style option shows the style's own samples.
   expect(store.run(run.id).questions![0].options[1].pictures![0]).toMatchObject({
@@ -188,15 +194,15 @@ it("runs a request through: a brief on the user's words, a question, a batch, an
   // The concept is the author's own and needs no quote; the ideas stay with the run.
   expect(saved.brief).toMatchObject({ style: "textbook", concept: brief.concept });
   expect(saved.brief).not.toHaveProperty("ideas");
-  expect(settleSchema.safeParse({ ...brief, ideas: [brief.ideas[0], { ...brief.ideas[1], kind: "anatomy" }] }).success).toBe(false);
+  expect(proposeSchema.safeParse({ ideas: [ideas[0], { ...ideas[1], kind: "anatomy" }] }).success).toBe(false);
   expect(saved.style.font).toContain("PingFang");
   expect(saved.title).toBe("edited");
   // The cast is searched in the brief's style and shown as pictures.
-  const settled = outputs(seen[3]).at(-1);
+  const settled = outputs(seen[5]).at(-1);
   expect(settled.cast[0].hits[0]).toMatchObject({ id: "apple-textbook", style: "textbook" });
-  expect(seen[3].at(-1)!.content.some((c: Item) => c.type === "input_image")).toBe(true);
+  expect(seen[5].at(-1)!.content.some((c: Item) => c.type === "input_image")).toBe(true);
   // Every call of a batch is answered before its pictures.
-  const batch = seen[5].slice(-3).map((i) => i.call_id ?? i.role);
+  const batch = seen[7].slice(-3).map((i) => i.call_id ?? i.role);
   expect(batch).toEqual(["a", "b", "user"]);
   // Closing words are answered with what is missing: the root drawn, too-small text
   // (once), and a look at the latest revision.
@@ -217,15 +223,89 @@ it("runs a request through: a brief on the user's words, a question, a batch, an
     "stale",
     "done",
   ]);
+  expect(steps.find((s) => s.kind === "tool" && s.name === "propose_ideas" && s.status === "done")).toMatchObject({
+    ideas,
+    by: "author",
+  });
   expect(steps.find((s) => s.kind === "tool" && s.name === "set_brief" && s.status === "done")).toMatchObject({
     revision: 3,
-    ideas: brief.ideas.map((i) => i.idea),
     concept: brief.concept,
     found: [{ subject: "苹果" }, { subject: "种子" }],
   });
   expect(store.run(run.id).observations.map((o) => o.revision)).toEqual([4, 5]);
   // The pictures each look took are in the saved conversation.
   expect(store.context(run.id).input.some((x: Item) => Array.isArray(x.content) && x.content.some((v: Item) => v.type === "input_image"))).toBe(true);
+});
+
+it("lets the judge pick the idea from the user's words alone, bills it, and leaves the pick to the author when it cannot answer", async () => {
+  work.brief = null;
+  store.commit(work, 1, { kind: "edit" });
+  const catalog = db.models();
+  catalog.judge = { ...catalog.judge, enabled: true, endpoint: "https://judge.invalid/v1beta/decisions", credential: "gk", price: 0.1 };
+  db.saveModels(modelCatalogSchema.parse(catalog));
+  const asked: { key: string | null; body: any }[] = [];
+  let answer: () => Response = () =>
+    Response.json({
+      answers: { idea: { type: "choice", choice: "i1", probabilities: { i0: 0.3, i1: 0.7 } } },
+      usage: { total_input_tokens: 120 },
+    });
+  library.route(async (url, init) => {
+    if (!String(url).startsWith("https://judge.invalid")) throw Error("unexpected " + url);
+    asked.push({ key: new Headers(init?.headers).get("x-goog-api-key"), body: JSON.parse(String(init?.body)) });
+    return answer();
+  });
+  const seen = script([
+    // A brief written beside the ideas could not develop the pick.
+    [item("propose_ideas", { ideas }, "p1"), item("set_brief", brief, "s1")],
+    ["set_brief", { ...brief, basis: { subject: "苹果", intent: "苹果" } }],
+    ["view_canvas", {}],
+    ["finish", { message: "done" }],
+  ]);
+  tracer.open(dir);
+  const agent = new Agent(() => {});
+  const run = await agent.start(store, work.id, "root", "苹果");
+  await waitFor(run.id, "completed");
+  // The run's record meters the judge on its own, with the words it was shown.
+  const { trace, spans } = tracer.get(store.userId, run.id)!;
+  expect(trace.meters.find((m) => m.key === "judge")).toMatchObject({ kind: "tool", calls: 1, input: 120 });
+  expect(spans.find((s) => s.name === "judge")!.attrs.asked).toMatch(/^用户请求：苹果 · 哪个视觉想法最有创意？ · 【剖面】/);
+  tracer.close();
+  const told = outputs(seen[1]);
+  expect(told[0]).toMatchObject({ develop: ideas[1] });
+  expect(told[1].error).toContain("after propose_ideas");
+  // The judge sees the request and the ideas by kind, never the brief.
+  expect(asked[0]).toMatchObject({
+    key: "gk",
+    body: {
+      model: "gemini-decision-1",
+      input: "用户请求：苹果",
+      questions: {
+        idea: {
+          type: "choice",
+          instructions: "哪个视觉想法最有创意？",
+          criteria: { i0: "【剖面】" + ideas[0].idea, i1: "【变化】" + ideas[1].idea },
+        },
+      },
+    },
+  });
+  const done = store.run(run.id);
+  expect(done.steps.find((s) => s.kind === "tool" && s.name === "propose_ideas")).toMatchObject({ by: "judge", chosen: 1, scores: [0.3, 0.7] });
+  expect(done.usage?.judge).toEqual({ calls: 1, input: 120 });
+  expect(done.services?.judge).toBe("gemini-decision-1");
+  expect(costOf(done.usage, done.prices)?.judge).toBeCloseTo((120 * 0.1) / 1e6, 12);
+
+  // A judge that fails leaves the pick to the author, and costs nothing.
+  answer = () => new Response("quota", { status: 429 });
+  work.brief = null;
+  store.commit(work, store.work(work.id).revision, { kind: "edit" });
+  const again = script([["propose_ideas", { ideas }], ["view_canvas", {}], ["finish", { message: "done" }]]);
+  const second = await agent.start(store, work.id, "root", "换个想法");
+  await waitFor(second.id, "completed");
+  expect(outputs(again[1]).at(-1)).toMatchObject({ develop: null });
+  // Every request the user made of the work is shown, oldest first.
+  expect(asked[1].body.input).toBe("用户请求：苹果\n用户请求：换个想法");
+  expect(store.run(second.id).steps.find((s) => s.kind === "tool" && s.name === "propose_ideas")).toMatchObject({ by: "author" });
+  expect(store.run(second.id).usage?.judge).toBeUndefined();
 });
 
 it("shows a turn's thinking, words and streamed layout as steps before the write is saved", async () => {

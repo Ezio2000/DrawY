@@ -268,6 +268,13 @@ export function SceneView({
     (s): s is Extract<ToolStep, { name: "set_brief" }> =>
       s.kind === "tool" && s.name === "set_brief",
   );
+  const ideas =
+    steps
+      .findLast(
+        (s): s is Extract<ToolStep, { name: "propose_ideas" }> =>
+          s.kind === "tool" && s.name === "propose_ideas",
+      )
+      ?.ideas.map((x) => x.idea) ?? [];
   const request = steps.find(
     (s): s is Extract<Step, { kind: "message" }> => s.kind === "message" && s.role === "user",
   )?.text;
@@ -279,7 +286,7 @@ export function SceneView({
     brief || briefing?.subject
       ? {
           subject: briefing?.subject || brief!.subject,
-          ideas: briefing?.ideas ?? [],
+          ideas,
           concept: briefing?.concept || brief?.concept || "",
           tags: brief
             ? [
@@ -289,7 +296,7 @@ export function SceneView({
             : [],
         }
       : request
-        ? { request, ideas: [] as string[], concept: "", tags: [] as string[] }
+        ? { request, ideas, concept: "", tags: [] as string[] }
         : undefined;
   // Before the first stroke, the references the author gathers are laid out on the paper.
   const references = steps

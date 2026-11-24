@@ -2,6 +2,7 @@ import {
   boundsOf,
   boxSchema,
   guideTopics,
+  ideaKinds,
   labelOf,
   type GuideTopic,
   type Run,
@@ -101,18 +102,17 @@ export function activity(name: string, args: any, sceneId: string): ToolActivity
         urls: typeof args.url === "string" && args.url ? [args.url] : [],
         action: "open_page",
       };
+    case "propose_ideas":
+      return {
+        name,
+        ideas: (Array.isArray(args.ideas) ? args.ideas : []).filter(
+          (i: any) => ideaKinds.includes(i?.kind) && typeof i?.idea === "string" && i.idea,
+        ),
+      };
     case "set_brief":
       return {
         name,
         subject: args.subject ?? "",
-        ...(Array.isArray(args.ideas) &&
-        args.ideas.some((i: any) => typeof i?.idea === "string" && i.idea)
-          ? {
-              ideas: args.ideas.flatMap((i: any) =>
-                typeof i?.idea === "string" && i.idea ? [i.idea] : [],
-              ),
-            }
-          : {}),
         ...(typeof args.concept === "string" && args.concept
           ? { concept: args.concept }
           : {}),

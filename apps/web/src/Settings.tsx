@@ -2,6 +2,7 @@ import { useContext, useEffect, useState } from "react";
 import {
   UserRound,
   PenTool,
+  Gavel,
   Image as ImageIcon,
   Users,
   ShieldCheck,
@@ -33,7 +34,7 @@ import { useT, dictionaries } from "./i18n.tsx";
 import { AccountContext, useCan } from "./account.tsx";
 import { ago } from "./time.ts";
 import { Badge, Entry, Group, Head, keep, keptValue, Loaded, read, Row, useLoaded } from "./SettingsParts.tsx";
-import { ImageSection, LabelSection, SearchSection, WriterSection } from "./ModelSettings.tsx";
+import { ImageSection, JudgeSection, LabelSection, SearchSection, WriterSection } from "./ModelSettings.tsx";
 
 /** The section each model tab shows. */
 const sections = {
@@ -41,6 +42,7 @@ const sections = {
   author: WriterSection,
   search: SearchSection,
   image: ImageSection,
+  judge: JudgeSection,
 } as const;
 /** Settings changed and not yet saved, which leaving the page would lose. */
 let unsaved = false;
@@ -77,6 +79,7 @@ type Tab =
   | "author"
   | "search"
   | "image"
+  | "judge"
   | "accounts"
   | "invites"
   | "roles";
@@ -143,6 +146,7 @@ export function Settings() {
       ["author", PenTool, models],
       ["search", Globe, models],
       ["image", ImageIcon, models],
+      ["judge", Gavel, models],
       ["accounts", Users, accounts],
       ["invites", Ticket, accounts],
       ["roles", ShieldCheck, accounts],
@@ -190,7 +194,7 @@ export function Settings() {
             </Group>
           </section>
         )}
-        {(["labels", "author", "search", "image"] as const).map((k) => {
+        {(["labels", "author", "search", "image", "judge"] as const).map((k) => {
           const Section = sections[k];
           return (
             tab === k &&

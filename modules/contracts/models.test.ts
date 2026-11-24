@@ -245,3 +245,20 @@ it("splits a picture model's tokens as they are priced, so a style reference cos
   // A provider that does not split its input is counted as text.
   expect(imageTokensOf({ input_tokens: 50, output_tokens: 10 })).toMatchObject({ textInput: 50, imageInput: 0 });
 });
+
+it("asks the idea judge only when it is on and has a key, and prices its input tokens", () => {
+  const c = catalog();
+  // A catalog saved before the judge existed reads with it switched off.
+  const { judge: _, ...older } = c;
+  expect(modelCatalogSchema.parse(older).judge).toEqual(defaultCatalog().judge);
+  expect(settingsFor(c, emptySettings()).judge).toBeUndefined();
+  c.judge = { ...c.judge, enabled: true };
+  expect(settingsFor(c, emptySettings()).judge).toBeUndefined();
+  c.judge = { ...c.judge, credential: "gk", price: 0.2 };
+  const s = settingsFor(c, emptySettings());
+  expect(s.judge).toEqual({ endpoint: c.judge.endpoint, credential: "gk", model: "gemini-decision-1", question: c.judge.question });
+  expect(s.prices.judge).toBe(0.2);
+  const cost = costOf({ input: 0, cached: 0, output: 0, reasoning: 0, judge: { calls: 2, input: 500_000 } }, s.prices)!;
+  expect(cost.judge).toBeCloseTo(0.1);
+  expect(cost.total).toBeCloseTo(0.1);
+});
