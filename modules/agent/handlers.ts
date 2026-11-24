@@ -13,7 +13,7 @@ import {
 import { composed } from "../editing/index.ts";
 import type { Development } from "../images/index.ts";
 import { develop } from "../images/index.ts";
-import { bindings, find, freshen, library } from "../materials/index.ts";
+import { attachments, bindings, find, freshen, library } from "../materials/index.ts";
 import type { Item } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
 import { readPage, searchWeb } from "../search/index.ts";
@@ -218,9 +218,14 @@ export const handlers: Record<
     const { ideas } = proposeSchema.parse(args);
     const judge = x.ctx.settings.judge;
     if (judge) {
-      const requests = userMessages(x.store, x.run.workId).flatMap((s) => (s.text ? [s.text] : []));
       try {
-        const { chosen, scores, input } = await judgeIdeas(judge, requests, ideas, x.signal);
+        const sent = await Promise.all(
+          userMessages(x.store, x.run.workId).map(async (s) => ({
+            text: s.text,
+            attachments: await attachments(s.materials ?? [], x.store.viewer, true),
+          })),
+        );
+        const { chosen, scores, input } = await judgeIdeas(judge, sent, ideas, x.signal);
         spendJudge(x.run, input);
         Object.assign(call.step!, { by: "judge", chosen, scores });
         return {

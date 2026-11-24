@@ -440,39 +440,44 @@ export async function find(request: SearchRequest, user: string) {
     };
   });
 }
-/** Pictures a user attached to a message, as the author sees them. */
-export async function attached(ids: string[], user: Viewer): Promise<Item[]> {
+/** What a user attached to a message, each with the image that shows it as a data URL: a
+ * picture itself (a raster as it is, a vector drawn small), a style by its first sample, and
+ * nothing for drawings and effects. With `small`, every image is a 512px thumbnail, for a
+ * reader that needs only a glimpse and should not wait for a large upload. */
+export async function attachments(ids: string[], user: Viewer, small = false) {
   const found = ids.length ? await library.get(ids, user) : [];
-  const parts = await Promise.all(
-    found.map(async (m): Promise<Item[]> => {
-      const note = {
-        type: "input_text",
-        text: `Attached ${m.kind} ${m.id}「${m.name.zh}」${
-          m.kind === "picture"
-            ? ": place it by this id like any library picture, or pass it to generate_images as a reference; when the user asks to copy it, redraw it instead"
-            : m.kind === "style"
-              ? ": the user wants the work in this style"
-              : ": the user wants the work to use it"
-        }`,
-      };
+  return Promise.all(
+    found.map(async (m) => {
       const shown =
         m.kind === "picture" ? m.id : m.kind === "style" ? m.samples[0] : null;
-      if (!shown) return [note];
+      if (!shown) return { material: m, image: null };
       const raster =
-        m.kind === "picture" && m.file.mediaType !== "image/svg+xml";
+        !small && m.kind === "picture" && m.file.mediaType !== "image/svg+xml";
       const bytes = raster
         ? await library.file(shown, user)
         : await library.thumb(shown, user, 512);
-      return [
-        note,
-        {
-          type: "input_image",
-          image_url: `data:${raster ? m.file.mediaType : "image/webp"};base64,${Buffer.from(bytes).toString("base64")}`,
-        },
-      ];
+      const image = `data:${raster ? m.file.mediaType : "image/webp"};base64,${Buffer.from(bytes).toString("base64")}`;
+      return { material: m, image };
     }),
   );
-  return parts.flat();
+}
+export type Attachment = Awaited<ReturnType<typeof attachments>>[number];
+
+/** What a user attached to a message, as the author sees it. */
+export async function attached(ids: string[], user: Viewer): Promise<Item[]> {
+  return (await attachments(ids, user)).flatMap(({ material: m, image }): Item[] => [
+    {
+      type: "input_text",
+      text: `Attached ${m.kind} ${m.id}「${m.name.zh}」${
+        m.kind === "picture"
+          ? ": place it by this id like any library picture, or pass it to generate_images as a reference; when the user asks to copy it, redraw it instead"
+          : m.kind === "style"
+            ? ": the user wants the work in this style"
+            : ": the user wants the work to use it"
+      }`,
+    },
+    ...(image ? [{ type: "input_image", image_url: image }] : []),
+  ]);
 }
 /** A drawing material drawn from its example data, as a work of one module. */
 export async function preview(id: string, user: Viewer): Promise<Work> {

@@ -237,7 +237,7 @@ it("runs a request through: a brief on the user's words, a question, a batch, an
   expect(store.context(run.id).input.some((x: Item) => Array.isArray(x.content) && x.content.some((v: Item) => v.type === "input_image"))).toBe(true);
 });
 
-it("lets the judge pick the idea from the user's words alone, bills it, and leaves the pick to the author when it cannot answer", async () => {
+it("lets the judge pick the idea from what the user sent alone, bills it, and leaves the pick to the author when it cannot answer", async () => {
   work.brief = null;
   store.commit(work, 1, { kind: "edit" });
   const catalog = db.models();
@@ -299,11 +299,21 @@ it("lets the judge pick the idea from the user's words alone, bills it, and leav
   work.brief = null;
   store.commit(work, store.work(work.id).revision, { kind: "edit" });
   const again = script([["propose_ideas", { ideas }], ["view_canvas", {}], ["finish", { message: "done" }]]);
-  const second = await agent.start(store, work.id, "root", "换个想法");
+  const photo = await client.ingest(
+    await picture(),
+    "image/png",
+    { type: "object", name: { zh: "参考", en: "reference" }, style: null, origin: { kind: "upload" } },
+    store.userId,
+  );
+  const second = await agent.start(store, work.id, "root", "换个想法", [photo.id, "crayon"]);
   await waitFor(second.id, "completed");
   expect(outputs(again[1]).at(-1)).toMatchObject({ develop: null });
-  // Every request the user made of the work is shown, oldest first.
-  expect(asked[1].body.input).toBe("用户请求：苹果\n用户请求：换个想法");
+  // Everything the user sent on the work is shown, oldest first: a picture as a small image
+  // after its words, and no style, which is about the look rather than the idea.
+  expect(asked[1].body.input).toEqual([
+    { type: "text", text: "用户请求：苹果\n用户请求：换个想法\n用户附图「参考」：" },
+    { type: "image", data: expect.stringMatching(/^[A-Za-z0-9+/]+=*$/), mime_type: "image/webp", resolution: "low" },
+  ]);
   expect(store.run(second.id).steps.find((s) => s.kind === "tool" && s.name === "propose_ideas")).toMatchObject({ by: "author" });
   expect(store.run(second.id).usage?.judge).toBeUndefined();
 });
