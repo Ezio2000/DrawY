@@ -363,6 +363,7 @@ function Timeline({ trace, spans, account }: { trace: Costed; spans: Span[]; acc
           v.speed && v.speed !== "default" && v.speed,
           v.search === "off" ? w.noSearch : v.search === "builtin" ? w.builtinSearch : v.searchBy,
           v.image,
+          v.judge,
         ]
       : []
   ).filter(Boolean) as string[];
@@ -391,6 +392,7 @@ function Timeline({ trace, spans, account }: { trace: Costed; spans: Span[]; acc
                     `${w.costAuthor} ${money(c.author)}`,
                     `${w.costSearch} ${money(c.search)}`,
                     `${w.costImage} ${money(c.image)}`,
+                    ...(c.judge ? [`${w.costJudge} ${money(c.judge)}`] : []),
                     ...(c.failed ? [`${w.costFailed} ${money(c.failed)}`] : []),
                   ]
                 : [w.unpriced]

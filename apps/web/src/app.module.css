@@ -5506,6 +5506,29 @@ body:has(.resizer[data-dragging]) {
   color: var(--text-3);
 }
 
+.ideas small {
+  margin-right: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.ideas em {
+  margin-left: 6px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+/* The idea picked to develop reads as ink, the others stay quiet. */
+.ideas li[data-chosen] {
+  color: var(--ink);
+}
+
+.ideas li[data-chosen] small {
+  color: var(--ai-deep);
+}
+
 .brief blockquote {
   margin: 0;
   padding: 8px 12px;
@@ -9029,6 +9052,10 @@ body:has(.resizer[data-dragging]) {
 
 .spend [data-key="image"] {
   --swatch: #788c5d;
+}
+
+.spend [data-key="judge"] {
+  --swatch: #c2956b;
 }
 
 .spend [data-key="failed"] {

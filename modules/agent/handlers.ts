@@ -1,4 +1,5 @@
 import {
+  briefSchema,
   DomainError,
   EditRejected,
   type Cause,
@@ -18,10 +19,10 @@ import { observe, Unavailable } from "../observation/index.ts";
 import { readPage, searchWeb } from "../search/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { forAuthor, setBrief, writeWork } from "../workspace/index.ts";
-import { said, type Context } from "./conversation.ts";
+import { said, userMessages, type Context } from "./conversation.ts";
 import { guidesRead, readCards, readGuides } from "./guides.ts";
 import { completedRecords } from "./partial.ts";
-import { counted, failedOf, research, searchesLeft, spendImages } from "./spending.ts";
+import { counted, failedOf, research, searchesLeft, spendImages, spendJudge } from "./spending.ts";
 import { activity, type ToolStep } from "./steps.ts";
 import {
   askSchema,
@@ -30,9 +31,14 @@ import {
   guideSchema,
   openSchema,
   readSchema,
+  proposeSchema,
   searchSchema,
-  settleSchema,
 } from "./tools.ts";
+import { judgeIdeas } from "./judge.ts";
+
+/** How the author picks among its ideas when the app does not. */
+const YOUR_PICK =
+  "Pick the idea to develop yourself and build set_brief's concept on it: the one the audience would grasp fastest and remember (formal) or feel most (expressive). The convention kind is what every other picture of the subject looks like, so pick it only when the subject really has that structure and nothing shows the intent better, or when the user names it.";
 
 /** What each of the author's tools does when it is called. */
 
@@ -208,10 +214,37 @@ export const handlers: Record<
     return "waiting";
   },
 
+  async propose_ideas(x, args, call) {
+    const { ideas } = proposeSchema.parse(args);
+    const judge = x.ctx.settings.judge;
+    if (judge) {
+      const requests = userMessages(x.store, x.run.workId).flatMap((s) => (s.text ? [s.text] : []));
+      try {
+        const { chosen, scores, input } = await judgeIdeas(judge, requests, ideas, x.signal);
+        spendJudge(x.run, input);
+        Object.assign(call.step!, { by: "judge", chosen, scores });
+        return {
+          output: {
+            develop: ideas[chosen],
+            note: "The app picked this idea. Build set_brief's concept on it, keeping everything it shows true and readable for the audience.",
+          },
+        };
+      } catch {
+        x.signal.throwIfAborted();
+        // A judge that cannot answer leaves the pick to the author, as when there is none.
+      }
+    }
+    Object.assign(call.step!, { by: "author" });
+    return { output: { develop: null, note: YOUR_PICK } };
+  },
+
   async set_brief(x, args, call) {
     const { store, run, ctx } = x;
-    // The ideas weighed stay on the step; the work keeps the brief.
-    const { ideas: _, ...brief } = settleSchema.parse(args);
+    if (call.batch.some((c) => c.name === "propose_ideas"))
+      throw Error("set_brief was not saved: call it after propose_ideas has answered, so the concept develops the idea picked there");
+    if (!store.work(run.workId).brief && !run.steps.some((s) => s.kind === "tool" && s.name === "propose_ideas" && s.status === "done"))
+      throw Error("set_brief was not saved: the first brief comes after propose_ideas, and its concept develops the idea picked there");
+    const brief = briefSchema.parse(args);
     const { work, style, chosen, others } = await setBrief(
       store,
       run.workId,

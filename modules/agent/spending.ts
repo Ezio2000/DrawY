@@ -66,6 +66,12 @@ export function spendHosted(run: Run, tool: string, action?: string) {
   used[tool] = (used[tool] ?? 0) + 1;
   if (tool === "web_search") counted(run, action);
 }
+/** Adds a call to the judge that picked among the author's ideas. */
+export function spendJudge(run: Run, input: number) {
+  const judge = (usageOf(run).judge ??= { calls: 0, input: 0 });
+  judge.calls++;
+  judge.input += input;
+}
 /** Adds web searches or a page read to what a run has spent. */
 export function counted(run: Run, action: string | undefined, searches = 1) {
   const u = usageOf(run);

@@ -639,6 +639,25 @@ export interface Citation {
   url: string;
   title: string;
 }
+/** Where a visual idea comes from. The ideas proposed for one brief come from different
+ * kinds, so they are real alternatives rather than variations of the first that came to
+ * mind. */
+export const ideaKinds = [
+  "convention",
+  "anatomy",
+  "journey",
+  "change",
+  "scale",
+  "mechanism",
+  "analogy",
+  "scene",
+] as const;
+export type IdeaKind = (typeof ideaKinds)[number];
+/** One visual idea the author proposes for the work, by its kind. */
+export interface Idea {
+  kind: IdeaKind;
+  idea: string;
+}
 /** The guides the author can read on demand with draw_guide. */
 export const guideTopics = [
   "drawing",
@@ -668,11 +687,21 @@ export type ToolActivity =
   /** Material cards the author read on demand, by id. */
   | { name: "read_materials"; ids: string[] }
   | {
+      name: "propose_ideas";
+      /** The visual ideas the author proposed, as they stream. */
+      ideas: Idea[];
+      /** Who picked the one to develop: the judge, or the author itself in its concept when
+       * no judge is set up or the judge could not answer. */
+      by?: "judge" | "author";
+      /** The judge's pick, by its place in `ideas`. */
+      chosen?: number;
+      /** How strongly the judge favoured each idea, in the order of `ideas`. */
+      scores?: number[];
+    }
+  | {
       name: "set_brief";
       subject: string;
-      /** The different visual ideas the author weighed, as they stream. */
-      ideas?: string[];
-      /** The one it chose and developed, once it has streamed. */
+      /** The idea it developed, once it has streamed. */
       concept?: string;
       register?: "formal" | "expressive";
       style?: string;
@@ -753,6 +782,8 @@ export interface RunUsage {
     imageInput?: number;
     textOutput?: number;
   };
+  /** Calls to the judge that picks among the author's ideas, and their input tokens. */
+  judge?: { calls: number; input: number };
   /** What failed and did not count towards the above, though it was spent all the same. */
   failed?: FailedUsage;
 }
@@ -807,5 +838,7 @@ export interface RunServices {
   /** The search service's name, when it searched with one. */
   searchBy?: string;
   image: string;
+  /** The judge that picked among the author's ideas, when one was set up. */
+  judge?: string;
 }
 export const id = () => crypto.randomUUID();

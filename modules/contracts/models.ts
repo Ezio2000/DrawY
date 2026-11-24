@@ -392,6 +392,33 @@ export interface SearchService {
 export const searchReady = (s: Pick<SearchService, "provider" | "credential">) =>
   !searchProviderSpecs[s.provider].needsKey || !!s.credential;
 
+// ---- The idea judge
+
+/** A decision model (Gemini's Decisions API) that picks which of the author's visual ideas
+ * the work develops. It is shown only the user's own words and the ideas, never the brief,
+ * since the author writes the brief around the idea it already favours. */
+export interface IdeaJudge {
+  /** Whether runs ask it; while off, or when it cannot answer, the author picks. */
+  enabled: boolean;
+  endpoint: string;
+  credential: string;
+  model: string;
+  /** What it is asked about the ideas, in the words it is asked in. */
+  question: string;
+  /** US dollars per million input tokens; it has no output to pay for. */
+  price: number;
+}
+export const defaultJudge = (): IdeaJudge => ({
+  enabled: false,
+  endpoint: "https://generativelanguage.googleapis.com/v1beta/decisions",
+  credential: "",
+  model: "gemini-decision-1",
+  question: "哪个视觉想法最有创意？",
+  price: 0.1,
+});
+/** Whether a run can ask the judge: it is switched on and has a key. */
+export const judgeReady = (j: IdeaJudge) => j.enabled && !!j.credential;
+
 // ---- Web choices
 
 /** How a person wants a run to search, picked apart from the drawing model: not at all,
@@ -415,6 +442,8 @@ export interface ModelCatalog {
   /** The combination used while no label is configured, and the label anyone who has not
    * picked uses. */
   defaults: { writer: string; image: string; web: Web; label: string };
+  /** Who picks among the author's ideas, for every label alike. */
+  judge: IdeaJudge;
 }
 /** A combination of models under one name: people pick the name, never what is in it. */
 export interface ModelLabel {
@@ -481,6 +510,14 @@ const searchServiceSchema = z.object({
   credential: z.string(),
   prices: z.object({ query: money, page: money }),
 });
+const judgeSchema = z.object({
+  enabled: z.boolean(),
+  endpoint: z.url(),
+  credential: z.string(),
+  model: z.string().trim().min(1),
+  question: z.string().trim().min(1).max(500),
+  price: money,
+});
 const labelSchema = z.object({
   id: slug,
   name: shortName,
@@ -502,6 +539,7 @@ export const modelCatalogSchema = z
     searches: z.array(searchServiceSchema),
     labels: z.array(labelSchema).default([]),
     defaults: z.object({ writer: z.string(), image: z.string(), web: z.string(), label: z.string().default("") }),
+    judge: judgeSchema.default(defaultJudge),
   })
   .refine((c) => modelIds(c.writers).length > 0, { message: "至少需要一个绘制模型" })
   .refine((c) => modelIds(c.painters).length > 0, { message: "至少需要一个生图模型" })
@@ -531,6 +569,7 @@ export const defaultCatalog = (): ModelCatalog => {
     searches: [],
     labels: [],
     defaults: { writer: writer.id, image: image.id, web: BUILTIN, label: "" },
+    judge: defaultJudge(),
   };
 };
 /** The labels people pick from: those configured, or while there are none, one made of
@@ -605,18 +644,22 @@ export function picked(catalog: ModelCatalog, own: Pick<UserSettings, "label">) 
 }
 
 /** What a run's spending is priced at, fixed when it starts: the drawing model's tokens at
- * the picked speed, each search and page read the way it searched, and each picture. */
+ * the picked speed, each search and page read the way it searched, each picture, and the
+ * judge's input tokens when it has one. */
 export interface RunPrices {
   author: TokenPrices;
   search: number;
   page: number;
   image: ImagePrices;
+  /** Per million input tokens. */
+  judge?: number;
 }
 /** What a run cost, in US dollars, by service. */
 export interface RunCost {
   author: number;
   search: number;
   image: number;
+  judge: number;
   /** The drawing model's attempts that failed, apart from `author` and within `total`. */
   failed: number;
   total: number;
@@ -644,11 +687,13 @@ export function costOf(usage: RunUsage | undefined, prices: RunPrices | undefine
         (i.textOutput ?? 0) * p.textOutput) /
         1e6
     : 0;
-  return { author, search, image, failed, total: author + search + image + failed };
+  const judge = ((u.judge?.input ?? 0) * (prices.judge ?? 0)) / 1e6;
+  return { author, search, image, judge, failed, total: author + search + image + judge + failed };
 }
 
-/** What one run is made with: the drawing model with the options picked, how it searches
- * and the picture model, each with the name it is shown by, and what it all costs. */
+/** What one run is made with: the drawing model with the options picked, how it searches,
+ * the picture model and the idea judge, each with the name it is shown by, and what it all
+ * costs. */
 export interface Settings {
   /** The label picked, by name: all that people who do not manage models are shown. */
   label: string;
@@ -657,6 +702,8 @@ export interface Settings {
   search: { mode: SearchMode; service?: SearchService };
   image: ImageRole;
   imageName: string;
+  /** Present when the judge picks among the author's ideas. */
+  judge?: Omit<IdeaJudge, "enabled" | "price">;
   prices: RunPrices;
   preferences: string;
 }
@@ -665,6 +712,7 @@ export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings 
   const { provider: p, model: m } = writer;
   const rate = m.speedRates[speed] ?? speedRates[speed];
   const scaled = (n: number) => n * rate;
+  const judge = judgeReady(catalog.judge) ? catalog.judge : undefined;
   return {
     label: label.name,
     author: {
@@ -693,6 +741,7 @@ export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings 
       model: painter.model.model,
     },
     imageName: imageLabel(painter.provider, painter.model),
+    ...(judge ? { judge: { endpoint: judge.endpoint, credential: judge.credential, model: judge.model, question: judge.question } } : {}),
     prices: {
       author: {
         input: scaled(m.prices.input),
@@ -704,6 +753,7 @@ export function settingsFor(catalog: ModelCatalog, own: UserSettings): Settings 
         search.mode === "builtin" ? m.prices.search : search.mode === "service" ? search.service!.prices.query : 0,
       page: search.mode === "service" ? search.service!.prices.page : 0,
       image: painter.model.prices,
+      ...(judge ? { judge: judge.price } : {}),
     },
     preferences: own.preferences,
   };

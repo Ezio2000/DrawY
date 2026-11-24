@@ -43,6 +43,7 @@ import {
   writerLabel,
   type Channel,
   type Connection,
+  type IdeaJudge,
   type ImageModel,
   type ImageProvider,
   type ModelCatalog,
@@ -1478,6 +1479,66 @@ export function LabelSection({
           );
         })}
       </ul>
+    </section>
+  );
+}
+
+/** The decision model that picks which of the author's ideas the work develops. */
+export function JudgeSection({
+  catalog,
+  change,
+}: {
+  catalog: ModelCatalog;
+  change: (catalog: ModelCatalog) => void;
+}) {
+  const t = useT(),
+    w = t.settings;
+  const judge = catalog.judge;
+  const patch = (value: Partial<IdeaJudge>) => change({ ...catalog, judge: { ...judge, ...value } });
+  return (
+    <section>
+      <Head title={t.titles.judge} hint={w.judgeHint} />
+      <Group>
+        <Row label={w.judgeEnabled} hint={judge.enabled && !judge.credential ? w.judgeNoKey : w.judgeEnabledHint}>
+          <Switch checked={judge.enabled} onChange={(enabled) => patch({ enabled })} />
+        </Row>
+        <Row label={w.judgeQuestion} hint={w.judgeQuestionHint} wide>
+          <input aria-label={w.judgeQuestion} value={judge.question} onChange={(e) => patch({ question: e.target.value })} />
+        </Row>
+      </Group>
+      <Group title={w.judgeApi}>
+        <Row label={w.judgeEndpoint} hint={w.judgeEndpointHint}>
+          <input
+            aria-label={w.judgeEndpoint}
+            className={cx("mono")}
+            spellCheck={false}
+            value={judge.endpoint}
+            onChange={(e) => patch({ endpoint: e.target.value })}
+          />
+        </Row>
+        <Row label={w.credentials.api}>
+          <input
+            aria-label={w.credentials.api}
+            className={cx("mono")}
+            autoComplete="off"
+            spellCheck={false}
+            value={judge.credential}
+            onChange={(e) => patch({ credential: e.target.value })}
+          />
+        </Row>
+        <Row label={w.judgeModel}>
+          <input
+            aria-label={w.judgeModel}
+            className={cx("mono")}
+            spellCheck={false}
+            value={judge.model}
+            onChange={(e) => patch({ model: e.target.value })}
+          />
+        </Row>
+        <Row label={w.judgePrice} hint={w.judgePriceHint}>
+          <NumberField value={judge.price} set={(price) => patch({ price })} unit="$ / 1M" />
+        </Row>
+      </Group>
     </section>
   );
 }
