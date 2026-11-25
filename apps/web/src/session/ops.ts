@@ -43,7 +43,11 @@ import {
   type Side,
   type Stacking,
 } from "../../../../modules/editing/index.ts";
+import { inked, type Brought } from "../../../../modules/interchange/index.ts";
+import { union } from "../../../../modules/contracts/geometry.ts";
 import { api } from "../api.ts";
+import { clipOf, type Incoming } from "../interchange.ts";
+import { dictionaries } from "../i18n.tsx";
 import { SessionError, type Context } from "./types.ts";
 
 /* Everything a person does to a work by hand, whatever they do it with: each operation
@@ -82,11 +86,19 @@ function ownCopy(m: DrawingMaterial, locale: "zh" | "en"): Omit<Drawing, "id"> {
 }
 
 /** Words placed by hand read at about 22 screen pixels, within what reads in a picture. */
+/** Whether two boxes share any area. */
+const overlaps = (a: Bounds, b: Bounds) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 const textSize = (scale: number) => Math.round(Math.min(96, Math.max(14, 22 / scale)));
 
 export function editOps(ctx: Context) {
   const fail = (error: unknown) => ctx.tell({ kind: "failed", error });
   const report = (p: Promise<unknown>) => void p.catch(fail);
+  /** A clip with the drawings it makes for the work named in the person's language. */
+  const named = (clip: Clip): Clip => {
+    const names = dictionaries[ctx.host.locale()].edit.made;
+    return { ...clip, drawings: clip.drawings.map((d) => ({ ...d, name: names[d.id] ?? d.name })) };
+  };
   const scene = () => ctx.scenes.sceneId;
   /** The work as shown, with the hand edits on their way laid on it. */
   const shown = () => ctx.edits.draft?.work ?? ctx.revisions.work;
@@ -395,6 +407,77 @@ export function editOps(ctx: Context) {
     /** Words pasted onto the canvas, as words of the work's own. */
     words(text: string) {
       void ops.text(text);
+    },
+    /** A line drawn on the canvas where it was drawn: a freehand stroke with the pen, which
+     * stays in hand for the next; or a straight arrow, selected once drawn. Its width reads
+     * as about two screen pixels in the view it is drawn in. */
+    async ink(points: Point[], kind: "pen" | "arrow"): Promise<string | undefined> {
+      const pending = materializeBlank();
+      if (pending) {
+        const real = await pending;
+        return real ? real.ops.ink(points, kind) : undefined;
+      }
+      if (!points.length) return;
+      const s = scale(),
+        sceneId = scene();
+      const clip = named(inked(points, { kind, width: Math.min(12, Math.max(1, Math.round((2 / s) * 2) / 2)), scale: s }));
+      if (kind === "pen") {
+        report(ctx.edits.commit((w) => paste(w, sceneId, clip).edit));
+        return;
+      }
+      try {
+        return await made((w) => paste(w, sceneId, clip));
+      } catch (e) {
+        fail(e);
+      }
+    },
+    /** Parts brought in from another tool (an Excalidraw scene, a Mermaid diagram), in the
+     * middle of the view and selected. A library drawing the work's own drawing shadows
+     * comes in as a copy, as with a library drawing added by hand. Parts that could not
+     * come in as they were (turned, seen through or flipped) are told of once placed. */
+    async bring(brought: Brought): Promise<string | undefined> {
+      const clip = named(brought.clip),
+        { adjusted } = brought;
+      const pending = materializeBlank();
+      if (pending) {
+        const real = await pending;
+        return real ? real.ops.bring(brought) : undefined;
+      }
+      const w = shown(),
+        view = ctx.view,
+        sceneId = scene();
+      if (!w || !view || !clip.modules.length) return;
+      try {
+        const used = new Set([...clip.modules, ...clip.links].map((p) => p.drawingId));
+        const libraries = await Promise.all(
+          clip.materials
+            .filter((id) => used.has(id) && w.drawings[id])
+            .map(async (id) => {
+              const copy = ownCopy(await fromLibrary(id), ctx.host.locale());
+              return { id, kind: "drawing" as const, name: copy.name, source: copy.source, defaults: copy.defaults ?? {}, params: copy.params ?? {} };
+            }),
+        );
+        if (scene() !== sceneId || ctx.view !== view) return;
+        // In the middle of the view, unless that covers what is drawn: then beside it.
+        const size = clipBounds(clip),
+          middle = view.center();
+        const there = { x: middle.x - size.width / 2, y: middle.y - size.height / 2, width: size.width, height: size.height };
+        const drawn = w.scenes[sceneId]?.modules.map((m) => m.bounds) ?? [];
+        const all = drawn.length ? union(drawn) : undefined;
+        const centre =
+          all && drawn.some((b) => overlaps(b, there))
+            ? { x: all.x + all.width + 80 + size.width / 2, y: all.y + size.height / 2 }
+            : middle;
+        const placed = await made((work) => paste(work, sceneId, { ...clip, libraries }, { centre }));
+        if (placed && Object.values(adjusted).some((n) => n > 0)) ctx.tell({ kind: "adjusted", adjusted });
+        return placed;
+      } catch (e) {
+        fail(e);
+      }
+    },
+    /** Mermaid source or an Excalidraw scene pasted or dropped on the canvas, brought in. */
+    bringIn(what: Incoming) {
+      report(clipOf(what).then(ops.bring));
     },
   };
   return ops;

@@ -12,6 +12,7 @@ import {
 } from "../../../../modules/editing/index.ts";
 import type { DrawingMaterial, Material, PictureMaterial } from "@drawy/materials/schema";
 import { CLIP_TYPE, Clipboard, newer } from "../session/clip.ts";
+import { incoming } from "../interchange.ts";
 import { useSelect, useStore } from "../session/store.ts";
 import type { WorkSession } from "../session/work.ts";
 import { useT } from "../i18n.tsx";
@@ -25,8 +26,9 @@ import { useT } from "../i18n.tsx";
 export const shapes = ["box", "pill", "circle", "diamond", "cylinder", "document", "callout"] as const;
 export type Shape = (typeof shapes)[number];
 /** What a press on the canvas does while editing: select and move, move the view, link two
- * modules, place words, or draw a shape. */
-export type Tool = "select" | "hand" | "link" | "text" | Shape;
+ * modules, place words, draw a shape, draw a line freehand (pen) or straight (arrow), or
+ * rub parts out. */
+export type Tool = "select" | "hand" | "link" | "text" | "pen" | "arrow" | "erase" | Shape;
 const isShape = (tool: Tool): tool is Shape => (shapes as readonly string[]).includes(tool);
 
 /** The library drawing a shape is drawn with, the data that makes it that shape around its
@@ -45,7 +47,9 @@ const stamps: Record<
 };
 /** The canvas's tool for each of the editor's. */
 const canvasTool = (tool: Tool): CanvasTool =>
-  tool === "select" || tool === "hand" || tool === "link" ? tool : "draw";
+  tool === "select" || tool === "hand" || tool === "link" || tool === "pen" || tool === "arrow" || tool === "erase"
+    ? tool
+    : "draw";
 
 /** The parts last copied, shared by every work and, through local storage, every tab. */
 const clipboard = new Clipboard();
@@ -82,6 +86,8 @@ export function useEditing({
 }) {
   const [tool, setTool] = useState<Tool>("select");
   const [menu, setMenu] = useState<{ x: number; y: number }>();
+  // Mermaid or Excalidraw being brought in, in a dialog of its own.
+  const [bringing, setBringing] = useState(false);
   const [brushed, setBrushed] = useState(!!brush);
   const t = useT();
   const clipped = useStore(clipboard);
@@ -94,6 +100,7 @@ export function useEditing({
     if (!editing) {
       setTool("select");
       setMenu(undefined);
+      setBringing(false);
     }
   }, [editing]);
   /** Changes a new module's words where they are drawn, once it is. */
@@ -108,6 +115,13 @@ export function useEditing({
     ...base,
     /** Takes out the selected modules, or the selected link. */
     remove: () => base.remove(parts()),
+    /** Takes out the parts the eraser went over. */
+    erase: (ids: string[]) => base.remove(ids),
+    /** Links two modules; drawn with the arrow tool, the hand then takes up selecting. */
+    connect(...args: Parameters<typeof base.connect>) {
+      if (tool === "arrow") setTool("select");
+      base.connect(...args);
+    },
     /** Turns a link round: the selected one unless another is named. */
     reverse: (id = link) => void (id && base.reverse(id)),
     duplicate: () => base.duplicate(selected),
@@ -204,6 +218,13 @@ export function useEditing({
     else ops.add("text", at, box);
   };
 
+  /** A line drawn with the pen, which stays in hand for the next, or with the arrow tool,
+   * after which the hand takes the selecting tool again, as drawing apps do. */
+  const ink = (points: Point[], how: { kind: "pen" | "arrow" }) => {
+    if (how.kind === "arrow") setTool("select");
+    void base.ink(points, how.kind);
+  };
+
   // Copy, cut and paste go through the system clipboard: parts copied in one tab or work
   // paste into another, pictures paste as pictures and words as words.
   const latest = useRef({ ops, editing, locked, selected, link });
@@ -244,6 +265,9 @@ export function useEditing({
       // The words written beside a clip mean the clip itself.
       if (mine && text === mine.modules.map(labelOf).join("\n"))
         return latest.current.ops.paste(mine);
+      // Mermaid source and Excalidraw's elements come in as what they draw.
+      const what = text && incoming(text);
+      if (what) return latest.current.ops.bringIn(what);
       if (text) return latest.current.ops.words(text.slice(0, 2000));
       if (mine) latest.current.ops.paste(mine);
     };
@@ -355,7 +379,7 @@ export function useEditing({
     return () => removeEventListener("keydown", key);
   }, [editing, locked, selected, link, sceneId, tool, menu, canvas]);
 
-  return { ops, tool, setTool, place, menu, setMenu, clipped, brushed };
+  return { ops, tool, setTool, place, ink, menu, setMenu, clipped, brushed, bringing, setBringing };
 }
 /** A tool by the letter drawing apps give it. */
 const toolKeys: Record<string, Tool> = {
@@ -363,6 +387,9 @@ const toolKeys: Record<string, Tool> = {
   KeyH: "hand",
   KeyT: "text",
   KeyL: "link",
+  KeyP: "pen",
+  KeyA: "arrow",
+  KeyE: "erase",
   KeyR: "box",
   KeyO: "circle",
   KeyD: "diamond",

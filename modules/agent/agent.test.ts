@@ -7,7 +7,7 @@ import { register } from "../identity/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { Agent } from "./index.ts";
 import { SEARCH_LIMIT, steering } from "./spending.ts";
-import { CONTEXT_FORMAT, withLessThought } from "./conversation.ts";
+import { CONTEXT_FORMAT, userStarted, withLessThought } from "./conversation.ts";
 import { guidesRead, guides } from "./guides.ts";
 
 import { proposeSchema } from "./tools.ts";
@@ -57,6 +57,7 @@ const looked = async (s: UserStore, workId: string) => ({
     errors: [],
   },
   content: [{ type: "input_image", image_url: "data:image/png;base64,dmlzaWJsZQ==" }],
+  omitted: [] as string[],
 });
 vi.mock("../observation/index.ts", async (original) => ({
   ...(await original<object>()),
@@ -128,6 +129,7 @@ const waitFor = (runId: string, status: Run["status"]) =>
 const ideas = [
   { kind: "anatomy", idea: "一只纵切开的苹果，由外向内指出各层" },
   { kind: "change", idea: "从花到果的四个时刻，看各部分从哪里长出来" },
+  { kind: "scale", idea: "一排苹果从野生小果到栽培大果按真实大小排开" },
 ];
 const brief = {
   subject: "苹果（水果）的结构",
@@ -194,7 +196,8 @@ it("runs a request through: a brief on the user's words, a question, a batch, an
   // The concept is the author's own and needs no quote; the ideas stay with the run.
   expect(saved.brief).toMatchObject({ style: "textbook", concept: brief.concept });
   expect(saved.brief).not.toHaveProperty("ideas");
-  expect(proposeSchema.safeParse({ ideas: [ideas[0], { ...ideas[1], kind: "anatomy" }] }).success).toBe(false);
+  expect(proposeSchema.safeParse({ ideas: [ideas[0], { ...ideas[1], kind: "anatomy" }, ideas[2]] }).success).toBe(false);
+  expect(proposeSchema.safeParse({ ideas: ideas.slice(0, 2) }).success).toBe(false);
   expect(saved.style.font).toContain("PingFang");
   expect(saved.title).toBe("edited");
   // The cast is searched in the brief's style and shown as pictures.
@@ -246,7 +249,7 @@ it("lets the judge pick the idea from what the user sent alone, bills it, and le
   const asked: { key: string | null; body: any }[] = [];
   let answer: () => Response = () =>
     Response.json({
-      answers: { idea: { type: "choice", choice: "i1", probabilities: { i0: 0.3, i1: 0.7 } } },
+      answers: { idea: { type: "choice", choice: "i1", probabilities: { i0: 0.2, i1: 0.7, i2: 0.1 } } },
       usage: { total_input_tokens: 120 },
     });
   library.route(async (url, init) => {
@@ -268,12 +271,12 @@ it("lets the judge pick the idea from what the user sent alone, bills it, and le
   // The run's record meters the judge on its own, with the words it was shown.
   const { trace, spans } = tracer.get(store.userId, run.id)!;
   expect(trace.meters.find((m) => m.key === "judge")).toMatchObject({ kind: "tool", calls: 1, input: 120 });
-  expect(spans.find((s) => s.name === "judge")!.attrs.asked).toMatch(/^用户请求：苹果 · 哪个视觉想法最有创意？ · 【剖面】/);
+  expect(spans.find((s) => s.name === "judge")!.attrs.asked).toMatch(/^用户请求：苹果 · 哪个视觉想法最有创意？ · 一只纵切开的苹果/);
   tracer.close();
   const told = outputs(seen[1]);
   expect(told[0]).toMatchObject({ develop: ideas[1] });
   expect(told[1].error).toContain("after propose_ideas");
-  // The judge sees the request and the ideas by kind, never the brief.
+  // The judge sees the request and what each idea draws, never its kind or the brief.
   expect(asked[0]).toMatchObject({
     key: "gk",
     body: {
@@ -283,13 +286,13 @@ it("lets the judge pick the idea from what the user sent alone, bills it, and le
         idea: {
           type: "choice",
           instructions: "哪个视觉想法最有创意？",
-          criteria: { i0: "【剖面】" + ideas[0].idea, i1: "【变化】" + ideas[1].idea },
+          criteria: { i0: ideas[0].idea, i1: ideas[1].idea, i2: ideas[2].idea },
         },
       },
     },
   });
   const done = store.run(run.id);
-  expect(done.steps.find((s) => s.kind === "tool" && s.name === "propose_ideas")).toMatchObject({ by: "judge", chosen: 1, scores: [0.3, 0.7] });
+  expect(done.steps.find((s) => s.kind === "tool" && s.name === "propose_ideas")).toMatchObject({ by: "judge", chosen: 1, scores: [0.2, 0.7, 0.1] });
   expect(done.usage?.judge).toEqual({ calls: 1, input: 120 });
   expect(done.services?.judge).toBe("gemini-decision-1");
   expect(costOf(done.usage, done.prices)?.judge).toBeCloseTo((120 * 0.1) / 1e6, 12);
@@ -316,6 +319,75 @@ it("lets the judge pick the idea from what the user sent alone, bills it, and le
   ]);
   expect(store.run(second.id).steps.find((s) => s.kind === "tool" && s.name === "propose_ideas")).toMatchObject({ by: "author" });
   expect(store.run(second.id).usage?.judge).toBeUndefined();
+});
+
+it("has the judge look in a look's pictures for each claim, tells the author what they do not show, and bills it", async () => {
+  const catalog = db.models();
+  catalog.judge = { ...catalog.judge, enabled: true, endpoint: "https://judge.invalid/v1beta/decisions", credential: "gk", price: 0.1 };
+  db.saveModels(modelCatalogSchema.parse(catalog));
+  const asked: any[] = [];
+  library.route(async (url, init) => {
+    if (!String(url).startsWith("https://judge.invalid")) throw Error("unexpected " + url);
+    asked.push(JSON.parse(String(init?.body)));
+    return Response.json({
+      answers: { c0: { type: "noul", noul: 0.9 }, c1: { type: "noul", noul: 0.2 } },
+      usage: { total_input_tokens: 700 },
+    });
+  });
+  const claims = ["近地轨道、月球和深空是能分开的三个区域", "地球在左下角"];
+  const seen = script([["view_canvas", { claims }], ["finish", { message: "done" }]]);
+  const run = await new Agent(() => {}).start(store, work.id, "root", "看看");
+  await waitFor(run.id, "completed");
+  // Each claim is a yes-or-no question on the look's pictures, which go legible enough to read.
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toMatchObject({
+    model: "gemini-decision-1",
+    input: [
+      { type: "text", text: "作品的画面：\n" },
+      { type: "image", data: "dmlzaWJsZQ==", mime_type: "image/png", resolution: "medium" },
+    ],
+    questions: {
+      c0: { type: "noul", instructions: "画面是否做到了：" + claims[0] },
+      c1: { type: "noul", instructions: "画面是否做到了：" + claims[1] },
+    },
+  });
+  // The author is told only what the pictures do not show; the studio shows every verdict.
+  const next = JSON.stringify(seen[1]);
+  expect(next).toContain("do not show yet: 地球在左下角. ");
+  expect(next).not.toContain("do not show yet: 近地轨道");
+  const done = store.run(run.id);
+  expect(done.steps.find((s) => s.kind === "tool" && s.name === "view_canvas")).toMatchObject({
+    checked: [
+      { claim: claims[0], score: 0.9, holds: true },
+      { claim: claims[1], score: 0.2, holds: false },
+    ],
+  });
+  expect(done.usage?.judge).toEqual({ calls: 1, input: 700 });
+});
+
+it("checks claims about scenes a look left out as unchanged against how they last looked", async () => {
+  const catalog = db.models();
+  catalog.judge = { ...catalog.judge, enabled: true, endpoint: "https://judge.invalid/v1beta/decisions", credential: "gk", price: 0.1 };
+  db.saveModels(modelCatalogSchema.parse(catalog));
+  const asked: any[] = [];
+  library.route(async (url, init) => {
+    asked.push(JSON.parse(String(init?.body)));
+    return Response.json({ answers: { c0: { type: "noul", noul: 0.9 } }, usage: { total_input_tokens: 10 } });
+  });
+  // The first look sees both scenes; the second only the one that changed.
+  const child = store.putCapture(Buffer.from("child"), `canvas-${store.work(work.id).revision}-child-1`);
+  vi.mocked(observe)
+    .mockImplementationOnce((async (s: UserStore, workId: string) => {
+      const shot = await looked(s, workId);
+      return { ...shot, observation: { ...shot.observation, sceneIds: ["root", "child"], screenshots: [child] } };
+    }) as never)
+    .mockImplementationOnce((async (s: UserStore, workId: string) => ({ ...(await looked(s, workId)), omitted: ["child"] })) as never);
+  script([["view_canvas", { claims: ["子场景里有两条路"] }], ["view_canvas", { claims: ["子场景里有两条路"] }], ["finish", { message: "done" }]]);
+  const run = await new Agent(() => {}).start(store, work.id, "root", "看看");
+  await waitFor(run.id, "completed");
+  const images = (n: number) => asked[n].input.filter((p: { type: string }) => p.type === "image").map((p: { data: string }) => p.data);
+  expect(images(0)).toEqual(["dmlzaWJsZQ=="]);
+  expect(images(1)).toEqual(["dmlzaWJsZQ==", Buffer.from("child").toString("base64")]);
 });
 
 it("shows a turn's thinking, words and streamed layout as steps before the write is saved", async () => {
@@ -497,6 +569,36 @@ it("catches a continuing conversation up with what the user changed themselves, 
   await writeWork(store, work.id, setData(store.work(work.id), "root", "level-1", { color: "#000000" }), { cause: { kind: "edit" } });
   const whole = await told("More");
   expect(whole).toMatch(/^Since your last turn the user changed the work themselves \(revision 6 to 7\)\.[^\n]*\n- scene root: changed level-1\nCurrent scene: root\nCurrent work: /);
+});
+
+it("builds on a work the user started themselves: the author is told so, and its first brief needs no ideas", async () => {
+  // A work an author starts is empty until its first write, even one written before a brief.
+  const drawn = structuredClone(work);
+  const other = { ...structuredClone(work), id: "other", brief: null, revision: 0 };
+  for (const s of Object.values(other.scenes)) s.modules = [];
+  store.commit(other, 0, { kind: "create" });
+  expect(userStarted(store, store.work("other"))).toBe(false);
+  store.commit({ ...drawn, id: "other", brief: null, revision: 1 }, 1, { kind: "run", runId: "r", prompt: "画" });
+  store.commit({ ...store.work("other") }, 2, { kind: "edit" });
+  expect(userStarted(store, store.work("other"))).toBe(false);
+
+  // This one holds what the user drew before any author wrote to it.
+  work.brief = null;
+  store.commit(work, 1, { kind: "edit" });
+  expect(userStarted(store, store.work(work.id))).toBe(true);
+  const seen = script([
+    ["set_brief", { ...brief, basis: { subject: "苹果", intent: "苹果" } }],
+    ["view_canvas", {}],
+    ["finish", { message: "done" }],
+  ]);
+  const run = await new Agent(() => {}).start(store, work.id, "root", "苹果");
+  await waitFor(run.id, "completed");
+  const handed = seen[0].findLast((i: Item) => typeof i.content === "string" && i.content.includes("Current work:"))!.content;
+  expect(handed).toMatch(/^The user made this work themselves[^\n]*\nCurrent scene: root\nCurrent work: /);
+  expect(outputs(seen[1])[0]).not.toHaveProperty("error");
+  expect(store.work(work.id).brief).toMatchObject({ concept: brief.concept });
+  // Once it has a brief it is a work like any other.
+  expect(userStarted(store, store.work(work.id))).toBe(false);
 });
 
 it("compacts the conversation at its budget, and goes on without old pictures when a summary fails", async () => {

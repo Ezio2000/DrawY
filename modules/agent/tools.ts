@@ -63,14 +63,13 @@ export const proposeSchema = z.object({
         idea: z.string().min(1),
       }),
     )
-    .min(2)
-    .max(3)
+    .length(3)
     .refine(
       (ideas) => new Set(ideas.map((i) => i.kind)).size === ideas.length,
       "ideas 要来自不同的种类：同一种类的想法只是彼此的变体",
     )
     .describe(
-      `Two or three visual ideas for what the user asked, each of a different kind, one sentence each. Kinds: ${ideaKinds
+      `Three visual ideas for what the user asked, each of a different kind, one or two sentences each saying where things sit on the canvas and what their placement, size or distance stands for. Kinds: ${ideaKinds
         .map((k) => `${k} (${kindsTold[k]})`)
         .join(", ")}`,
     ),

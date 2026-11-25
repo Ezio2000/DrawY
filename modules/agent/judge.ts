@@ -1,18 +1,6 @@
-import type { Idea, IdeaKind, Settings } from "../contracts/index.ts";
+import type { Idea, Settings } from "../contracts/index.ts";
 import type { Attachment } from "../materials/index.ts";
 import { tracer } from "../trace/index.ts";
-
-/** How each kind of idea is named to the judge, which is asked in Chinese. */
-const kindNames: Record<IdeaKind, string> = {
-  convention: "惯例",
-  anatomy: "剖面",
-  journey: "旅程",
-  change: "变化",
-  scale: "比例",
-  mechanism: "机理",
-  analogy: "类比",
-  scene: "情景",
-};
 
 /** The judge's verdict: the idea to develop, by its place in the list, and how strongly it
  * favoured each, in list order. */
@@ -60,8 +48,8 @@ export function judgeInput(said: Said[]): Part[] {
 }
 
 /** The judge's `input` as the API takes it: plain words when there is no picture, otherwise
- * text and image blocks in turn, each image small. */
-const apiInput = (parts: Part[]) =>
+ * text and image blocks in turn, each image at the resolution given. */
+const apiInput = (parts: Part[], resolution: "low" | "medium") =>
   parts.every((p) => p.type === "text")
     ? parts.map((p) => p.text).join("")
     : parts.map((p) =>
@@ -71,12 +59,43 @@ const apiInput = (parts: Part[]) =>
               type: "image",
               data: p.image.slice(p.image.indexOf(",") + 1),
               mime_type: p.image.slice(5, p.image.indexOf(";")),
-              resolution: "low",
+              resolution,
             },
       );
 
+/** Puts questions to the judge about what `parts` show, and gives its answers with the input
+ * tokens it was paid for. Each call is metered as the judge's in the run's record, which
+ * shows what it was asked, its pictures kept as files like any other image the record holds.
+ * Throws when the judge does not answer within ten seconds. */
+function ask(
+  judge: NonNullable<Settings["judge"]>,
+  name: string,
+  parts: Part[],
+  resolution: "low" | "medium",
+  questions: Record<string, object>,
+  signal: AbortSignal,
+) {
+  const body = { model: judge.model, input: apiInput(parts, resolution), questions };
+  const input = typeof body.input === "string" ? body.input : parts;
+  const attrs = { meter: "judge", model: judge.model, args: { input, questions } };
+  return tracer.span("tool", name, attrs, async (span) => {
+    const response = await fetch(judge.endpoint, {
+      method: "POST",
+      headers: { "x-goog-api-key": judge.credential, "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    });
+    if (!response.ok) throw Error(`HTTP ${response.status} ${(await response.text()).slice(0, 300)}`);
+    const { answers, usage } = await response.json();
+    const tokens = Number(usage?.total_input_tokens ?? usage?.input_tokens ?? 0);
+    span.set({ answers, usage: { input_tokens: tokens } });
+    return { answers: (answers ?? {}) as Record<string, any>, input: tokens };
+  });
+}
+
 /** Asks the judge which idea to develop. Each idea is scored on its own, so the order they
- * are listed in does not sway it. Throws when the user has sent nothing to judge by (a style
+ * are listed in does not sway it. The judge reads only what each idea draws: its kind is the
+ * author's own label, and an idea labelled convention would lose for the label alone. Throws when the user has sent nothing to judge by (a style
  * alone), when the judge does not answer within ten seconds, or when it answers with
  * something other than a choice among the ideas. */
 export async function judgeIdeas(
@@ -88,36 +107,45 @@ export async function judgeIdeas(
   const parts = judgeInput(said);
   if (!parts.length) throw Error("The user has sent nothing the judge can read");
   const keys = ideas.map((_, i) => "i" + i);
-  const body = {
-    model: judge.model,
-    input: apiInput(parts),
-    questions: {
-      idea: {
-        type: "choice",
-        instructions: judge.question,
-        criteria: Object.fromEntries(ideas.map((x, i) => [keys[i], `【${kindNames[x.kind]}】${x.idea}`])),
-      },
-    },
-  };
-  // Metered on its own in the run's record, which shows what it was asked, its pictures
-  // kept as files like any other image the record holds.
-  const input = typeof body.input === "string" ? body.input : parts;
-  const attrs = { meter: "judge", model: judge.model, args: { input, questions: body.questions } };
-  return tracer.span("tool", "judge", attrs, async (span) => {
-    const response = await fetch(judge.endpoint, {
-      method: "POST",
-      headers: { "x-goog-api-key": judge.credential, "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-    });
-    if (!response.ok) throw Error(`HTTP ${response.status} ${(await response.text()).slice(0, 300)}`);
-    const { answers, usage } = await response.json();
-    const answer = answers?.idea;
-    const chosen = keys.indexOf(answer?.choice);
-    if (answer?.type !== "choice" || chosen < 0) throw Error("The judge did not pick one of the ideas");
-    const scores = keys.map((k) => Number(answer.probabilities?.[k] ?? 0));
-    const input = Number(usage?.total_input_tokens ?? usage?.input_tokens ?? 0);
-    span.set({ chosen, scores, usage: { input_tokens: input } });
-    return { chosen, scores, input };
+  const criteria = Object.fromEntries(ideas.map((x, i) => [keys[i], x.idea]));
+  const question = { type: "choice", instructions: judge.question, criteria };
+  const { answers, input } = await ask(judge, "judge", parts, "low", { idea: question }, signal);
+  const answer = answers.idea;
+  const chosen = keys.indexOf(answer?.choice);
+  if (answer?.type !== "choice" || chosen < 0) throw Error("The judge did not pick one of the ideas");
+  const scores = keys.map((k) => Number(answer.probabilities?.[k] ?? 0));
+  return { chosen, scores, input };
+}
+
+/** A claim the author made of a look, as the judge found it in the picture. */
+export interface Checked {
+  claim: string;
+  /** How likely the picture shows it, by the judge. */
+  score: number;
+  /** Whether that is likely enough to count as shown. */
+  holds: boolean;
+}
+
+/** Asks the judge whether the pictures of a look show each claim the author made of them,
+ * one yes-or-no question a claim: eyes other than the author's own, which pass what they
+ * meant to draw. The pictures go at medium resolution, enough to read labels and years.
+ * Throws when the judge does not answer within ten seconds or leaves a claim unanswered. */
+export async function checkClaims(
+  judge: NonNullable<Settings["judge"]>,
+  claims: string[],
+  pictures: string[],
+  signal: AbortSignal,
+): Promise<{ checked: Checked[]; input: number }> {
+  const parts: Part[] = [
+    { type: "text", text: pictures.length > 1 ? "作品的画面（同一次查看的几张截图）：\n" : "作品的画面：\n" },
+    ...pictures.map((image) => ({ type: "image" as const, image })),
+  ];
+  const questions = Object.fromEntries(claims.map((c, i) => ["c" + i, { type: "noul", instructions: `画面是否做到了：${c}` }]));
+  const { answers, input } = await ask(judge, "check_claims", parts, "medium", questions, signal);
+  const checked = claims.map((claim, i) => {
+    const score = Number(answers["c" + i]?.noul);
+    if (!Number.isFinite(score)) throw Error("The judge left a claim unanswered");
+    return { claim, score, holds: score >= 0.5 };
   });
+  return { checked, input };
 }

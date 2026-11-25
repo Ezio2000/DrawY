@@ -392,13 +392,16 @@ export interface SearchService {
 export const searchReady = (s: Pick<SearchService, "provider" | "credential">) =>
   !searchProviderSpecs[s.provider].needsKey || !!s.credential;
 
-// ---- The idea judge
+// ---- The judge
 
-/** A decision model (Gemini's Decisions API) that picks which of the author's visual ideas
- * the work develops. It is shown only the user's own words and the ideas, never the brief,
- * since the author writes the brief around the idea it already favours. */
-export interface IdeaJudge {
-  /** Whether runs ask it; while off, or when it cannot answer, the author picks. */
+/** A decision model (Gemini's Decisions API) with eyes other than the author's. It picks which
+ * of the author's visual ideas the work develops, shown only what the user sent and the
+ * ideas, never the brief, since the author writes the brief around the idea it already
+ * favours; and on each look it checks the screenshots for every claim the author made of
+ * them, so what the author meant to draw is not taken for what it drew. */
+export interface Judge {
+  /** Whether runs ask it; while off, or when it cannot answer, the author picks and judges
+   * its looks alone. */
   enabled: boolean;
   endpoint: string;
   credential: string;
@@ -408,7 +411,7 @@ export interface IdeaJudge {
   /** US dollars per million input tokens; it has no output to pay for. */
   price: number;
 }
-export const defaultJudge = (): IdeaJudge => ({
+export const defaultJudge = (): Judge => ({
   enabled: false,
   endpoint: "https://generativelanguage.googleapis.com/v1beta/decisions",
   credential: "",
@@ -417,7 +420,7 @@ export const defaultJudge = (): IdeaJudge => ({
   price: 0.1,
 });
 /** Whether a run can ask the judge: it is switched on and has a key. */
-export const judgeReady = (j: IdeaJudge) => j.enabled && !!j.credential;
+export const judgeReady = (j: Judge) => j.enabled && !!j.credential;
 
 // ---- Web choices
 
@@ -443,7 +446,7 @@ export interface ModelCatalog {
    * picked uses. */
   defaults: { writer: string; image: string; web: Web; label: string };
   /** Who picks among the author's ideas, for every label alike. */
-  judge: IdeaJudge;
+  judge: Judge;
 }
 /** A combination of models under one name: people pick the name, never what is in it. */
 export interface ModelLabel {
@@ -703,7 +706,7 @@ export interface Settings {
   image: ImageRole;
   imageName: string;
   /** Present when the judge picks among the author's ideas. */
-  judge?: Omit<IdeaJudge, "enabled" | "price">;
+  judge?: Omit<Judge, "enabled" | "price">;
   prices: RunPrices;
   preferences: string;
 }

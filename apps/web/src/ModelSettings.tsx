@@ -43,7 +43,7 @@ import {
   writerLabel,
   type Channel,
   type Connection,
-  type IdeaJudge,
+  type Judge,
   type ImageModel,
   type ImageProvider,
   type ModelCatalog,
@@ -1494,7 +1494,7 @@ export function JudgeSection({
   const t = useT(),
     w = t.settings;
   const judge = catalog.judge;
-  const patch = (value: Partial<IdeaJudge>) => change({ ...catalog, judge: { ...judge, ...value } });
+  const patch = (value: Partial<Judge>) => change({ ...catalog, judge: { ...judge, ...value } });
   return (
     <section>
       <Head title={t.titles.judge} hint={w.judgeHint} />

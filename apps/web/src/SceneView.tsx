@@ -1,7 +1,7 @@
 import { detailElement } from "../../../modules/runtime/detail.ts";
 import type { WorkSession } from "./session/work.ts";
 import { useSelect } from "./session/store.ts";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Lightbulb } from "lucide-react";
 import { reducedMotion, Spinner } from "./ui/primitives.tsx";
@@ -57,6 +57,8 @@ export function SceneView({
   reconnect,
   menu,
   place: placeAt,
+  ink,
+  erase,
   board,
   setBoard,
   help,
@@ -69,6 +71,7 @@ export function SceneView({
   resizable = true,
   fill,
   hold,
+  start,
 }: {
   work: Work;
   /** What tells this showing of the work from another of the same revision: a hand edit
@@ -105,6 +108,10 @@ export function SceneView({
   menu?: CanvasOptions["menu"];
   /** A press with a drawing tool at a point in the scene, or the box dragged out with it. */
   place?: CanvasOptions["place"];
+  /** A line drawn with the pen or the arrow tool. */
+  ink?: CanvasOptions["ink"];
+  /** Parts rubbed out with the eraser. */
+  erase?: CanvasOptions["erase"];
   /** Receives the canvas the scene is drawn on, for the editor to work with. */
   view: (canvas: Canvas | undefined) => void;
   /** Whether the zoom buttons show: where fingers pinch, they need not. */
@@ -115,6 +122,8 @@ export function SceneView({
   hold?: CanvasOptions["hold"];
   /** How far the automatic view may zoom past the whole drawing to fill the screen. */
   fill?: number;
+  /** Ways to start on a blank scene by hand, under the note that it is blank. */
+  start?: ReactNode;
 }) {
   const t = useT(),
     locale = useLocale();
@@ -126,9 +135,9 @@ export function SceneView({
     // work goes from the spinner straight to the picture, without a blank page between.
     [shown, setShown] = useState(false),
     [error, setError] = useState("");
-  const callbacks = useRef({ open, select, commit, point, connect, extend, duplicate, selectLink, reconnect, menu, place: placeAt, view, quiet, hold });
+  const callbacks = useRef({ open, select, commit, point, connect, extend, duplicate, selectLink, reconnect, menu, place: placeAt, ink, erase, view, quiet, hold });
   const picked = useRef<{ key: string; ids: string[] } | null>(null);
-  callbacks.current = { open, select, commit, point, connect, extend, duplicate, selectLink, reconnect, menu, place: placeAt, view, quiet, hold };
+  callbacks.current = { open, select, commit, point, connect, extend, duplicate, selectLink, reconnect, menu, place: placeAt, ink, erase, view, quiet, hold };
   // While editing, the automatic view also keeps clear of the tools and rulers at its edges.
   const boarded = useRef(false);
   boarded.current = editing && !disabled;
@@ -172,6 +181,8 @@ export function SceneView({
       menu: (at) => callbacks.current.menu?.(at),
       ...(hold ? { hold: (at: { x: number; y: number }) => callbacks.current.hold?.(at) } : {}),
       place: (at, box) => callbacks.current.place?.(at, box),
+      ink: (points, how) => callbacks.current.ink?.(points, how),
+      erase: (ids) => callbacks.current.erase?.(ids),
       cameraChanged: (c) => cameras.current.set(key, c),
       error: setError,
     });
@@ -364,7 +375,10 @@ export function SceneView({
         </div>
       )}
       {empty && !run && shown && (
-        <p className={cx("blank")}>{t.work.blank}</p>
+        <div className={cx("blank")} data-start={!!start || undefined}>
+          <p>{t.work.blank}</p>
+          {start}
+        </div>
       )}
       {empty && run && (!!references.length || note) && (
         <div

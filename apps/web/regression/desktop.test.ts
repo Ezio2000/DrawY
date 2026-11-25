@@ -6,6 +6,7 @@ import {
   browser,
   cdp,
   composer,
+  context,
   count,
   drag,
   editing,
@@ -674,3 +675,98 @@ it("requests covers only in work records and restores the sidebar row on undo or
   await page.getByText("Work is busy", { exact: true }).waitFor();
   expect(lists).toBe(2);
 }, 20_000);
+
+it("draws by hand with the pen, the arrow and the eraser; brings Mermaid and Excalidraw in by pasting; and sends the scene out as Excalidraw and Mermaid", async () => {
+  const id = await open(await make()).then(() => page.url().split("/a/")[1]);
+  await editing();
+  await settled();
+  const tray = page.getByRole("navigation", { name: "Editing tools" });
+  const own = async (kind: string) => {
+    const w = await api("/works/" + id);
+    return w.scenes.root.modules.filter((m: { drawingId: string }) => w.drawings[m.drawingId]?.source.startsWith("// drawy:" + kind));
+  };
+  // The pen draws where it goes and stays in hand for the next line.
+  await page.keyboard.press("p");
+  const alpha = await rectOf("Alpha"),
+    beta = await rectOf("Beta");
+  const y = alpha.y + alpha.height + 120;
+  await page.mouse.move(alpha.x, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 20; i++) await page.mouse.move(alpha.x + i * 15, y + Math.sin(i / 3) * 30);
+  await page.mouse.up();
+  await settled();
+  const [stroke] = await own("sketch-line");
+  expect(stroke.data).toMatchObject({ smooth: true });
+  expect(await tray.getByRole("button", { name: "Pen", exact: true }).getAttribute("aria-pressed")).toBe("true");
+  // An arrow drawn from one part onto another links them, and the hand selects again.
+  await page.keyboard.press("a");
+  await page.mouse.move(alpha.cx, alpha.cy);
+  await page.mouse.down();
+  await page.mouse.move(beta.cx, beta.cy, { steps: 8 });
+  await page.mouse.up();
+  await settled();
+  expect((await rootOf(id)).links).toEqual([expect.objectContaining({ from: { moduleId: "a" }, to: { moduleId: "b" } })]);
+  expect(await tray.getByRole("button", { name: "Select", exact: true }).getAttribute("aria-pressed")).toBe("true");
+  // The eraser takes out what it went over once it is lifted.
+  await page.keyboard.press("e");
+  await page.mouse.move(alpha.x + 140, y - 60);
+  await page.mouse.down();
+  await page.mouse.move(alpha.x + 160, y + 60, { steps: 10 });
+  await page.mouse.up();
+  await settled();
+  expect(await own("sketch-line")).toEqual([]);
+  await page.keyboard.press("Escape");
+  // Mermaid pasted onto the canvas: a flowchart comes in as blocks and links beside what
+  // is drawn, selected.
+  const paste = (text: string) =>
+    page.evaluate((text) => {
+      const data = new DataTransfer();
+      data.setData("text/plain", text);
+      document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+    }, text);
+  await paste("flowchart LR\n  S([Start]) --> D{Ready?}\n  D -->|yes| E[Ship]");
+  await expect.poll(async () => (await rootOf(id)).modules.filter((m: { drawingId: string }) => m.drawingId === "node").length, { timeout: 15_000 }).toBe(3);
+  const root = await rootOf(id);
+  const ship = root.modules.find((m: { data: { title?: string } }) => m.data.title === "Ship");
+  expect(ship.bounds.x).toBeGreaterThan(740);
+  expect(root.links.filter((l: { data: { label?: string } }) => l.data.label === "yes")).toHaveLength(1);
+  // An Excalidraw shape keeps its hand-drawn look and its words; turned there, it comes in
+  // upright, and the page says so.
+  await paste(
+    JSON.stringify({
+      type: "excalidraw/clipboard",
+      elements: [
+        { id: "r", type: "rectangle", x: 0, y: 0, width: 160, height: 80, angle: 0.3, strokeColor: "#1971c2", backgroundColor: "#a5d8ff", fillStyle: "hachure", roughness: 1, boundElements: [{ id: "t", type: "text" }] },
+        { id: "t", type: "text", x: 40, y: 30, width: 80, height: 25, text: "Sketch", fontSize: 20, containerId: "r" },
+      ],
+      files: {},
+    }),
+  );
+  await expect.poll(() => page.getByText("Imported. 1 element was rotated in the original", { exact: false }).count(), { timeout: 10_000 }).toBe(1);
+  await expect.poll(async () => (await own("sketch-shape")).length, { timeout: 10_000 }).toBe(1);
+  // The drawings the work made for itself are named in the language of the page.
+  const names = Object.values((await api("/works/" + id)).drawings as Record<string, { source: string; name: string }>)
+    .filter((d) => d.source.startsWith("// drawy:"))
+    .map((d) => d.name)
+    .sort();
+  expect(names).toEqual(["Hand-drawn line", "Hand-drawn shape"]);
+  await expect.poll(() => count("Sketch")).toBe(1);
+  // Out again: an Excalidraw file with the drawn parts as pictures and the link bound to
+  // them, and the blocks and links as a Mermaid flowchart.
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
+  const menu = () => page.getByRole("button", { name: "Export & share", exact: true }).click();
+  await menu();
+  const [file] = await Promise.all([page.waitForEvent("download"), page.getByRole("menuitem", { name: "Excalidraw file" }).click()]);
+  expect(file.suggestedFilename()).toBe("Check.excalidraw");
+  const scene = JSON.parse(await (await file.createReadStream()).toArray().then((c) => Buffer.concat(c).toString()));
+  const of = (id: string) => scene.elements.find((e: { id: string }) => e.id === id);
+  expect(of("a")).toMatchObject({ type: "image" });
+  expect(scene.files[of("a").fileId].mimeType).toBe("image/svg+xml");
+  expect(scene.elements.find((e: { type: string; startBinding?: { elementId: string } }) => e.type === "arrow" && e.startBinding?.elementId === "a")).toMatchObject({ endBinding: { elementId: "b" } });
+  expect(scene.elements.find((e: { type: string; text?: string }) => e.type === "text" && e.text === "Sketch")).toBeTruthy();
+  await menu();
+  await page.getByRole("menuitem", { name: "Copy Mermaid code" }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("  a --> b\n");
+  const mermaid = await page.evaluate(() => navigator.clipboard.readText());
+  for (const line of ['a["Alpha"]', '(["Start"])', '-->|"yes"|']) expect(mermaid).toContain(line);
+}, 90_000);

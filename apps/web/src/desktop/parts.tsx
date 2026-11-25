@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { ChevronDown, X, Check } from "lucide-react";
+import { ChevronDown, X, Check, FileInput, PenLine, Square } from "lucide-react";
 import * as Hand from "../ui/brand/icons.tsx";
 import type { Canvas, CanvasOptions, Pointed } from "../../../../modules/canvas/index.ts";
 import type { Selection, Target } from "../../../../modules/contracts/index.ts";
@@ -7,6 +7,7 @@ import { cx } from "../cx.ts";
 import { SelectionBar } from "../EditBar.tsx";
 import { EditMenu } from "../EditMenu.tsx";
 import { EditTray } from "../EditTray.tsx";
+import { BringDialog } from "../Bring.tsx";
 import type { BoardSettings } from "../EditView.tsx";
 import { EditPanel } from "../Editor.tsx";
 import { ExportMenu } from "../Export.tsx";
@@ -148,6 +149,7 @@ export function CanvasArea({
   board,
   setBoard,
   help,
+  start,
 }: {
   session: WorkSession;
   editing: boolean;
@@ -162,8 +164,11 @@ export function CanvasArea({
   setBoard: (change: Partial<BoardSettings>) => void;
   /** Shows the shortcuts and gestures. */
   help: () => void;
+  /** Takes up editing on a blank scene: with the pen, a box, or bringing something in. */
+  start: (how: "pen" | "box" | "bring") => void;
 }) {
   counted("canvas");
+  const t = useT();
   const { display, sceneId, locked, run, id } = useSelect(session, shownOf);
   return (
     <SceneView
@@ -187,9 +192,33 @@ export function CanvasArea({
       reconnect={hand.ops.reconnect}
       menu={hand.setMenu}
       place={hand.place}
+      ink={hand.ink}
+      erase={hand.ops.erase}
       board={board}
       setBoard={setBoard}
       help={help}
+      start={
+        !locked && (
+          editing ? (
+            <small>{t.work.start.editing}</small>
+          ) : (
+            <span className={cx("blank-start")}>
+              <button onClick={() => start("pen")}>
+                <PenLine size={15} />
+                {t.work.start.pen}
+              </button>
+              <button onClick={() => start("box")}>
+                <Square size={15} />
+                {t.work.start.box}
+              </button>
+              <button onClick={() => start("bring")}>
+                <FileInput size={15} />
+                {t.work.start.bring}
+              </button>
+            </span>
+          )
+        )
+      }
     />
   );
 }
@@ -227,7 +256,8 @@ export function EditOverlay({
   });
   return (
     <>
-      <EditTray tool={hand.tool} setTool={hand.setTool} ops={hand.ops} />
+      <EditTray tool={hand.tool} setTool={hand.setTool} ops={hand.ops} bring={() => hand.setBringing(true)} />
+      {hand.bringing && <BringDialog bring={hand.ops.bring} close={() => hand.setBringing(false)} />}
       <SelectionBar
         canvas={canvas}
         stage={stage}

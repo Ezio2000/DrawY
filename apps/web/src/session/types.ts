@@ -1,6 +1,7 @@
 import type { Locale } from "../ui/locale.tsx";
 import type { Link, Point, Run, Selection, Work, WorkEdit } from "../../../../modules/contracts/index.ts";
 import type { Drawn } from "../../../../modules/canvas/index.ts";
+import type { Adjusted } from "../../../../modules/interchange/index.ts";
 import type { Listener } from "../events.ts";
 import type { Edits } from "./edits.ts";
 import type { Revisions } from "./revisions.ts";
@@ -52,7 +53,9 @@ export class SessionError extends Error {
  * (an edit from a menu, a key or a drag) that failed. */
 export type Happening =
   | { kind: "saved"; version: number }
-  | { kind: "failed"; error: unknown };
+  | { kind: "failed"; error: unknown }
+  // Parts brought in from another tool that could not come in as they were there.
+  | { kind: "adjusted"; adjusted: Adjusted };
 
 /** Going back, which can be taken back for a while: to a version, by its number, or to
  * the latest version by throwing hand edits away. */
