@@ -192,10 +192,8 @@ describe("Excalidraw", () => {
     work.scenes.root.links.push({ id: "l2", drawingId: "arrow", from: { moduleId: "shape-1" }, to: { moduleId: "box" }, data: {} });
     work.drawings.chart = { id: "chart", name: "图表", source: "return api.svg('<svg/>')" };
     work.scenes.root.modules.push({ id: "chart", drawingId: "chart", bounds: { x: 600, y: 500, width: 100, height: 100 }, data: {} });
-    expect(picturesFor(work, "root")).toEqual([
-      { moduleId: "picture-1", kind: "picture", material: "pic-1" },
-      { moduleId: "chart", kind: "snapshot" },
-    ]);
+    // A library picture goes out as it is drawn too, cropped, fitted and captioned.
+    expect(picturesFor(work, "root")).toEqual(["picture-1", "chart"]);
     // Words of their own, named as the box's words would be.
     work.scenes.root.modules.push({ id: "box-text", drawingId: "label", bounds: { x: 0, y: 620, width: 160, height: 30 }, data: { text: "另一段" } });
     const out = toExcalidraw(work, "root", { chart: { dataURL: "data:image/svg+xml;base64,PHN2Zy8+", mimeType: "image/svg+xml" } }, 1);
@@ -224,11 +222,25 @@ describe("Excalidraw", () => {
     expect(back.scenes.root.links).toHaveLength(2);
   });
 
+  it("bows a bound arrow with only a start head to the same side once it is turned round", () => {
+    const shapes = [
+      el({ id: "x", type: "rectangle", x: 0, y: 0, boundElements: [{ id: "arc", type: "arrow" }] }),
+      el({ id: "y", type: "rectangle", x: 400, y: 0, boundElements: [{ id: "arc", type: "arrow" }] }),
+    ];
+    const forward = el({ id: "arc", type: "arrow", x: 110, y: 30, width: 280, height: 60, points: [[0, 0], [140, -60], [280, 0]], startBinding: { elementId: "x" }, endBinding: { elementId: "y" }, startArrowhead: null, endArrowhead: "triangle" });
+    const backward = el({ id: "arc", type: "arrow", x: 390, y: 30, width: 280, height: 60, points: [[0, 0], [-140, -60], [-280, 0]], startBinding: { elementId: "y" }, endBinding: { elementId: "x" }, startArrowhead: "triangle", endArrowhead: null });
+    const link = (arrow: ExcalidrawElement) => pasted(blank(), fromExcalidraw({ elements: [...shapes, arrow] }).clip).work.scenes.root.links[0];
+    const there = link(forward),
+      back = link(backward);
+    expect(there.data.bend).toBeLessThan(0);
+    expect(back).toMatchObject({ from: there.from, to: there.to, data: { bend: there.data.bend } });
+  });
+
   it("writes a work's own drawing named like a library one as a picture of itself", () => {
     const work = blank();
     work.drawings.node = { id: "node", name: "自己的节点", source: "return api.svg('<svg/>')" };
     work.scenes.root.modules.push({ id: "n", drawingId: "node", bounds: { x: 0, y: 0, width: 100, height: 60 }, data: { title: "甲" } });
-    expect(picturesFor(work, "root")).toEqual([{ moduleId: "n", kind: "snapshot" }]);
+    expect(picturesFor(work, "root")).toEqual(["n"]);
     const out = toExcalidraw(work, "root", { n: { dataURL: "data:image/svg+xml;base64,PHN2Zy8+", mimeType: "image/svg+xml" } }, 1);
     expect(out.elements).toEqual([expect.objectContaining({ id: "n", type: "image" })]);
   });
@@ -254,6 +266,7 @@ describe("Mermaid", () => {
         { from: "A", to: "B", text: "提交", head: "filled", dashed: true },
         { from: "B", to: "A", head: "filled" },
         { from: "B", to: "missing", head: "filled" },
+        { from: "B", to: "B", text: "重试", head: "filled", dashed: true },
       ],
       groups: [{ title: "流程", box: { x: -20, y: -20, width: 200, height: 260 } }],
     });
@@ -264,10 +277,20 @@ describe("Mermaid", () => {
       ["label", "流程"],
       ["node", "开始"],
       ["node", "是否通过"],
+      ["sketch-line", ""],
+      ["label", "重试"],
     ]);
     expect(root.modules[3].data).toMatchObject({ shape: "diamond", color: "#c00", fillStyle: "soft" });
     // Two edges between the same blocks bow apart.
     expect(root.links.map((l) => l.data)).toEqual([{ bend: 0.25, dashed: true, label: "提交" }, { bend: 0.25 }]);
+    // An edge back to its block, which a link cannot draw, is a loop over the block with its
+    // words, grouped with it so they move together.
+    const [block, loop, words] = root.modules.slice(3);
+    expect(loop.data).toMatchObject({ head: "filled", smooth: true, dashed: true });
+    expect(loop.bounds.y + loop.bounds.height).toBeLessThanOrEqual(block.bounds.y + 8);
+    expect(words.bounds.y).toBeLessThan(loop.bounds.y);
+    expect(new Set([block.group, loop.group, words.group]).size).toBe(1);
+    expect(block.group).toBeTruthy();
     const whole = pasted(blank(), mermaidBlock("pie\n  \"a\": 1", { width: 300, height: 200 })).work;
     expect(whole.scenes.root.modules[0]).toMatchObject({ drawingId: "mermaid", data: { source: 'pie\n  "a": 1' } });
     expect(toMermaid(whole, "root")).toBe('pie\n  "a": 1');

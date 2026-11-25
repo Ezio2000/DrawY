@@ -1,8 +1,8 @@
 import type { Bounds, Work } from "../contracts/index.ts";
 import { drawingOf, labelOf } from "../contracts/index.ts";
 import { bound, type Clip } from "../editing/index.ts";
-import { ClipMaker } from "./clip.ts";
-import { kindOfSource, mermaidDiagram } from "./drawings.ts";
+import { ClipMaker, lineBox } from "./clip.ts";
+import { kindOfSource, mermaidDiagram, sketchLine } from "./drawings.ts";
 import { CALLOUT, NODE } from "./library.ts";
 
 /* Mermaid, in and out. A flowchart read in becomes blocks and links of the work, laid out
@@ -110,7 +110,11 @@ export function fromFlowchart(chart: Flowchart): Clip {
         "text",
       );
   }
+  // A block with edges back to itself is grouped with their loops, so they move with it.
+  const looped = new Map<string, string>();
+  for (const e of chart.edges) if (e.from === e.to && !looped.has(e.from)) looped.set(e.from, made.id("loop-group"));
   const ids = new Map<string, string>();
+  const boxes = new Map<string, Bounds>();
   for (const n of chart.nodes) {
     const data: Record<string, unknown> = { title: n.text };
     if (n.shape !== "box") data.shape = n.shape;
@@ -118,7 +122,9 @@ export function fromFlowchart(chart: Flowchart): Clip {
       data.color = n.stroke || n.fill;
       if (n.fill) data.fillStyle = n.stroke && n.stroke !== n.fill ? "soft" : "solid";
     }
-    ids.set(n.id, made.module({ bounds: n.box, drawingId: made.material(NODE), data }, "node"));
+    const group = looped.get(n.id);
+    ids.set(n.id, made.module({ ...(group ? { group } : {}), bounds: n.box, drawingId: made.material(NODE), data }, "node"));
+    boxes.set(n.id, n.box);
   }
   // Edges between the same two blocks bow apart instead of running over each other: each
   // bends to its left, so two running opposite ways part, and more the same way spread out.
@@ -126,10 +132,17 @@ export function fromFlowchart(chart: Flowchart): Clip {
   const shared = new Map<string, number>();
   for (const e of chart.edges) shared.set(pair(e), (shared.get(pair(e)) ?? 0) + 1);
   const seen = new Map<string, number>();
+  const loops = new Map<string, number>();
   for (const e of chart.edges) {
     const from = ids.get(e.from),
       to = ids.get(e.to);
-    if (!from || !to || from === to) continue;
+    if (!from || !to) continue;
+    if (from === to) {
+      const nth = loops.get(e.from) ?? 0;
+      loops.set(e.from, nth + 1);
+      loop(made, e, boxes.get(e.from)!, looped.get(e.from)!, nth);
+      continue;
+    }
     const data: Record<string, unknown> = {};
     const k = `${e.from}\u0000${e.to}`,
       nth = seen.get(k) ?? 0;
@@ -143,6 +156,42 @@ export function fromFlowchart(chart: Flowchart): Clip {
     made.link({ drawingId: made.material(b.link), from: { moduleId: from }, to: { moduleId: to }, data });
   }
   return made.clip();
+}
+/** An edge from a block back to itself, which a link cannot draw: a loop over the block's
+ * top right, further left for each more, with its words above it, grouped with the block. */
+function loop(made: ClipMaker, e: Flowchart["edges"][number], box: Bounds, group: string, nth: number) {
+  const span = Math.max(24, Math.min(56, box.width * 0.3)),
+    rise = Math.max(28, Math.min(48, box.height * 0.6));
+  const x = box.x + box.width - span - Math.min(12, box.width * 0.1) - nth * (span + 10),
+    top = box.y;
+  const width = e.thick ? 3 : 2;
+  const { box: bounds, points } = lineBox(
+    [
+      { x, y: top },
+      { x: x - span * 0.1, y: top - rise * 0.7 },
+      { x: x + span * 0.5, y: top - rise },
+      { x: x + span * 1.1, y: top - rise * 0.7 },
+      { x: x + span, y: top },
+    ],
+    Math.max(4, width * 2),
+  );
+  const data: Record<string, unknown> = { points, smooth: true, head: e.head };
+  if (e.both) data.both = true;
+  if (e.dashed) data.dashed = true;
+  if (width !== 2) data.width = width;
+  made.module({ group, bounds, drawingId: made.drawing(sketchLine), data }, "loop");
+  if (e.text) {
+    const w = Math.max(40, e.text.length * 14);
+    made.module(
+      {
+        group,
+        bounds: { x: x + span / 2 - w / 2, y: top - rise - 28, width: w, height: 24 },
+        drawingId: made.material(bound().text),
+        data: { text: e.text, size: 14, halo: false },
+      },
+      "text",
+    );
+  }
 }
 /** A diagram of any other kind, whole: drawn from its source at the size Mermaid drew it. */
 export function mermaidBlock(source: string, size: { width: number; height: number }): Clip {

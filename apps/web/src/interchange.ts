@@ -256,16 +256,11 @@ export async function excalidrawOf(work: Work, sceneId: string, canvas?: Element
   await loadBindings();
   const pictures: Record<string, Picture> = {};
   await Promise.all(
-    picturesFor(work, sceneId).map(async (p) => {
+    picturesFor(work, sceneId).map(async (id) => {
       try {
-        if (p.kind === "picture") {
-          const use = work.materials[p.material];
-          if (use?.kind === "picture") pictures[p.moduleId] = await fetched(use.url);
-          return;
-        }
-        const host = canvas?.querySelector<HTMLElement>(`[data-module-id="${CSS.escape(p.moduleId)}"]`);
-        const m = work.scenes[sceneId].modules.find((x) => x.id === p.moduleId)!;
-        if (host) pictures[p.moduleId] = await snapshot(host, m.bounds);
+        const host = canvas?.querySelector<HTMLElement>(`[data-module-id="${CSS.escape(id)}"]`);
+        const m = work.scenes[sceneId].modules.find((x) => x.id === id)!;
+        if (host) pictures[id] = await snapshot(host, m.bounds);
       } catch {
         // Left without a picture, it goes out outlined and named.
       }

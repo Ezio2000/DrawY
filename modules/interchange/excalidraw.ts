@@ -264,8 +264,9 @@ export function fromExcalidraw(
         to = moduleOf.get(e.endBinding!.elementId)!;
       let start = e.startArrowhead,
         end = e.endArrowhead;
-      // A head only at the start reads as a link the other way round.
-      if (!end && start) [from, to, start, end] = [to, from, end, start];
+      // A head only at the start reads as a link the other way round, its points too.
+      const reversed = !end && !!start;
+      if (reversed) [from, to, start, end] = [to, from, end, start];
       const data: Record<string, unknown> = { head: e.type === "line" ? "none" : headOf(end) };
       if (start) data.both = true;
       if (e.strokeStyle && e.strokeStyle !== "solid") data.dashed = true;
@@ -273,8 +274,9 @@ export function fromExcalidraw(
       if (e.strokeWidth && e.strokeWidth !== 2) data.width = e.strokeWidth;
       if (e.elbowed) data.route = "elbow";
       else if ((e.points?.length ?? 0) > 2) {
-        // A curve through a middle point: the bend that passes through it.
-        const pts = linePoints(e);
+        // A curve through a middle point: the bend that passes through it, on the side it
+        // bows to going from the link's start to its end.
+        const pts = reversed ? linePoints(e).reverse() : linePoints(e);
         const a = pts[0],
           z = pts.at(-1)!,
           m = pts[Math.floor(pts.length / 2)];
@@ -324,21 +326,12 @@ export function fromExcalidraw(
 
 /* —— out —— */
 
-/** A part written out as Excalidraw can hold it, or as a picture of itself. */
-export type Outgoing =
-  | { moduleId: string; kind: "picture"; material: string }
-  | { moduleId: string; kind: "snapshot" };
-/** The parts of a scene that go out as pictures: a library picture by its file, anything
- * else by how it is drawn. Whoever writes the scene out makes these pictures first. */
-export function picturesFor(work: Work, sceneId: string): Outgoing[] {
-  const b = bound();
-  return work.scenes[sceneId].modules.flatMap((m): Outgoing[] => {
-    if (writable(work, m)) return [];
-    const material = m.data.material;
-    if (m.drawingId === b.picture && typeof material === "string" && work.materials[material]?.kind === "picture")
-      return [{ moduleId: m.id, kind: "picture", material }];
-    return [{ moduleId: m.id, kind: "snapshot" }];
-  });
+/** The parts of a scene Excalidraw has no element for, by id: they go out as pictures of
+ * how they are drawn, which whoever writes the scene out makes first. A library picture is
+ * one of them too, since it is drawn cropped to its content, fitted, faded at the edges,
+ * recoloured or captioned, none of which its file shows. */
+export function picturesFor(work: Work, sceneId: string): string[] {
+  return work.scenes[sceneId].modules.filter((m) => !writable(work, m)).map((m) => m.id);
 }
 /** Whether a module goes out as elements of its own rather than as a picture. */
 function writable(work: Work, m: Instance) {
