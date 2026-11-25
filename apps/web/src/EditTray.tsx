@@ -117,7 +117,18 @@ export function EditTray({
     </button>
   );
   return (
-    <nav ref={ref} className={cx("tray")} aria-label={names.label}>
+    <nav
+      ref={ref}
+      className={cx("tray")}
+      aria-label={names.label}
+      // A press on a tool takes it up without taking the focus: the keys that follow are the
+      // board's (a letter for another tool, Space to pan), not the button's, and no focus
+      // ring is left on it. The library's sheet keeps its own, for its search and dragging.
+      onPointerDown={(e) => {
+        const t = e.target as Element;
+        if (t.closest("button") && !t.closest("[data-flyout]")) e.preventDefault();
+      }}
+    >
       {item("select", <MousePointer2 size={17} />)}
       {item("hand", <Hand size={17} />)}
       <i />
