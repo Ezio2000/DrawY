@@ -21,7 +21,7 @@ import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 import { useDismiss } from "./popover.ts";
 import type { Work } from "../../../modules/contracts/index.ts";
-import { excalidrawClipboard, excalidrawOf, toMermaid } from "./interchange.ts";
+import { excalidrawClipboard, excalidrawOf, SeveralDiagrams, toMermaid } from "./interchange.ts";
 
 type Format =
   | "png"
@@ -268,7 +268,12 @@ export function useExports({
         return;
       }
       if (format === "mermaid" || format === "mermaidFile") {
-        const source = toMermaid(work, sceneId);
+        let source: string | null;
+        try {
+          source = toMermaid(work, sceneId);
+        } catch (e) {
+          throw e instanceof SeveralDiagrams ? Error(w.severalMermaid(e.count)) : e;
+        }
         if (!source) throw Error(w.noMermaid);
         if (format === "mermaidFile") save(new Blob([source], { type: "text/plain" }), stem + ".mmd");
         else {

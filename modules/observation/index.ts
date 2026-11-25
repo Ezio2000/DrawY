@@ -148,6 +148,8 @@ function moduleReport(work: Work, shot: Shot, reported: Reported) {
       : {}),
   };
 }
+/** A look at a work's scenes: what it records, what the author is shown, and the scenes
+ * it left out as unchanged since an earlier clean look in this run. */
 export async function observe(
   store: UserStore,
   workId: string,
@@ -305,7 +307,7 @@ export async function observe(
               : []),
           ]),
         ];
-        return { observation, content };
+        return { observation, content, omitted: skippedIds };
       }),
   );
 }

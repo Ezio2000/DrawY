@@ -3,6 +3,7 @@ import {
   DomainError,
   EditRejected,
   type Cause,
+  type Observation,
   type Picture,
   type Problem,
   type Question,
@@ -528,8 +529,10 @@ async function performView(x: Execution, args: any, step: ToolStep): Promise<Out
       }
     }
     if (!result) throw new Unavailable("画布查看服务不可用");
+    // Claims about the scenes left out are checked against how they last looked.
+    const unchanged = lastLooks(x.store, run.observations, result.omitted);
     run.observations.push(result.observation);
-    const checked = await checkLook(x, args.claims, result.content, signal);
+    const checked = await checkLook(x, args.claims, [...pictures(result.content), ...unchanged], signal);
     Object.assign(step, {
       waiting: undefined,
       screenshots: result.observation.screenshots.map(({ name, url }) => ({ name, url })),
@@ -547,19 +550,36 @@ async function performView(x: Execution, args: any, step: ToolStep): Promise<Out
 /** Has the judge, when there is one, look in a look's pictures for each claim the author made
  * of them, and bills it. Without a judge, claims or pictures, or when the judge cannot answer,
  * the author's own reading of the look is all there is. */
-async function checkLook(x: Execution, claims: unknown, content: Item[], signal: AbortSignal) {
+async function checkLook(x: Execution, claims: unknown, shown: string[], signal: AbortSignal) {
   const judge = x.ctx.settings.judge;
   const made = Array.isArray(claims) ? claims.filter((c): c is string => typeof c === "string" && !!c.trim()) : [];
-  const pictures = content.flatMap((c) => (c.type === "input_image" ? [String(c.image_url)] : []));
-  if (!judge || !made.length || !pictures.length) return undefined;
+  if (!judge || !made.length || !shown.length) return undefined;
   try {
-    const { checked, input } = await checkClaims(judge, made, pictures, signal);
+    const { checked, input } = await checkClaims(judge, made, shown, signal);
     spendJudge(x.run, input);
     return checked;
   } catch {
     signal.throwIfAborted();
     return undefined;
   }
+}
+/** The pictures a look shows, as data URLs. */
+const pictures = (content: Item[]) => content.flatMap((c) => (c.type === "input_image" ? [String(c.image_url)] : []));
+/** The latest whole picture of each scene from this run's earlier looks: what a look that
+ * left those scenes out as unchanged would have shown of them. */
+function lastLooks(store: UserStore, observations: Observation[], sceneIds: string[]) {
+  return sceneIds.flatMap((sceneId) => {
+    const seen = observations.findLast((o) => o.overview && o.sceneIds.includes(sceneId));
+    if (!seen) return [];
+    const prefix = `canvas-${seen.revision}-${sceneId}-`;
+    const shot = seen.screenshots.find((c) => c.name.startsWith(prefix) && /^\d+$/.test(c.name.slice(prefix.length)));
+    if (!shot) return [];
+    try {
+      return ["data:image/png;base64," + store.captureBytes(shot.id).toString("base64")];
+    } catch {
+      return [];
+    }
+  });
 }
 /** What the judge found, as the author is told it beside the look. */
 function told(checked: Checked[]) {

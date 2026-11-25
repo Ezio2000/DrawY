@@ -10,6 +10,7 @@ import {
   picturesFor,
   readExcalidraw,
   readMermaid,
+  SeveralDiagrams,
   toExcalidraw,
   toMermaid,
   type Brought,
@@ -269,4 +270,4 @@ export async function excalidrawOf(work: Work, sceneId: string, canvas?: Element
   );
   return toExcalidraw(work, sceneId, pictures);
 }
-export { excalidrawClipboard, toMermaid };
+export { excalidrawClipboard, SeveralDiagrams, toMermaid };

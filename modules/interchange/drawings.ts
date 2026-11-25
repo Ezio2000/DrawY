@@ -39,7 +39,9 @@ const pts = (Array.isArray(d.points) ? d.points : [])
   .filter((p) => Array.isArray(p) && p.length >= 2)
   .map((p) => ({ x: Number(p[0]) * W, y: Number(p[1]) * H }));
 const w = Math.max(0.5, Number(d.width ?? 2));
-const color = d.color || t.ink || "#333";
+// A colour as CSS writes one, else nothing: what goes into the markup is only ever a colour.
+const paint = (c) => (typeof c === "string" && /^[#\\w(),.%\\s/+-]+$/.test(c) ? c : "");
+const color = paint(d.color) || t.ink || "#333";
 const f = (v) => Math.round(v * 100) / 100;
 let path = "";
 if (pts.length === 1) path = "M" + f(pts[0].x) + " " + f(pts[0].y) + "h0.01";
@@ -121,8 +123,10 @@ const W = api.width, H = api.height;
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const f = (v) => Math.round(v * 100) / 100;
 const sw = Math.max(0.5, Number(d.strokeWidth ?? 2));
-const stroke = d.stroke || t.ink || "#1e1e1e";
-const fill = d.fill && d.fill !== "transparent" ? d.fill : "";
+// A colour as CSS writes one, else nothing: what goes into the markup is only ever a colour.
+const paint = (c) => (typeof c === "string" && /^[#\\w(),.%\\s/+-]+$/.test(c) ? c : "");
+const stroke = paint(d.stroke) || t.ink || "#1e1e1e";
+const fill = paint(d.fill) && d.fill !== "transparent" ? d.fill : "";
 const rough = Math.max(0, Number(d.roughness ?? 1));
 let seed = Math.abs(Math.round(Number(d.seed ?? 1))) % 2147483646 || 1;
 const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -210,7 +214,7 @@ const align = d.align === "left" ? "left" : d.align === "right" ? "right" : "cen
 const inset = shape === "rectangle" ? { x: size * 0.5, y: size * 0.4 } : { x: W * 0.18, y: H * 0.16 };
 return api.html(
   "<style>:host,.shape{position:relative;width:" + W + "px;height:" + H + "px}.shape{opacity:" + f(Math.min(1, Math.max(0, Number(d.opacity ?? 1)))) + "}svg{position:absolute;inset:0;overflow:visible}" +
-    ".words{position:absolute;left:" + inset.x + "px;right:" + inset.x + "px;top:" + inset.y + "px;bottom:" + inset.y + "px;display:flex;align-items:center;justify-content:" + (align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center") + ";text-align:" + align + ";font-family:" + esc(t.font || "system-ui") + ";font-size:" + size + "px;line-height:1.25;color:" + esc(d.textColor || stroke) + ";white-space:pre-wrap;overflow-wrap:anywhere}</style>" +
+    ".words{position:absolute;left:" + inset.x + "px;right:" + inset.x + "px;top:" + inset.y + "px;bottom:" + inset.y + "px;display:flex;align-items:center;justify-content:" + (align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center") + ";text-align:" + align + ";font-family:" + esc(t.font || "system-ui") + ";font-size:" + size + "px;line-height:1.25;color:" + (paint(d.textColor) || stroke) + ";white-space:pre-wrap;overflow-wrap:anywhere}</style>" +
     '<div class="shape"><svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '">' + body +
     '<path d="' + strokes + '" fill="none" stroke="' + stroke + '" stroke-width="' + sw + '" stroke-linecap="round" stroke-linejoin="round"' + dash + "/></svg>" +
     (d.text ? '<div class="words">' + esc(d.text) + "</div>" : "") + "</div>",

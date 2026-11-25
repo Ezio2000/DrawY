@@ -1026,6 +1026,7 @@ const zh = {
     mermaidFile: "Mermaid 文件",
     copiedMermaid: "Mermaid 代码已复制",
     noMermaid: "这个场景里没有可以写成 Mermaid 的方框和连线",
+    severalMermaid: (n: number) => `这个场景里有 ${n} 张 Mermaid 图，一份 Mermaid 代码只能放一张；把其他的移到别的场景再导出`,
   },
   phone: {
     back: "回到首页",
@@ -2492,6 +2493,8 @@ const en: Words = {
     mermaidFile: "Mermaid file",
     copiedMermaid: "Mermaid code copied",
     noMermaid: "This scene has no boxes and links to write as Mermaid",
+    severalMermaid: (n: number) =>
+      `This scene has ${n} Mermaid diagrams, and one Mermaid source holds only one; move the others to another scene, then export`,
   },
   phone: {
     back: "Back to home",

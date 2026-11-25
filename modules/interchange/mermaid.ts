@@ -226,9 +226,17 @@ const SHAPED: Record<BlockShape, [string, string]> = {
   cylinder: ["[(", ")]"],
   document: ["[", "]"],
 };
+/** Thrown when a scene holds several Mermaid diagrams and nothing else: one Mermaid source
+ * holds one diagram, so there is no single source to give. */
+export class SeveralDiagrams extends Error {
+  constructor(readonly count: number) {
+    super(`${count} Mermaid diagrams`);
+  }
+}
 /** A scene's blocks and links as a Mermaid flowchart, running the way the scene is longer;
- * a scene holding only Mermaid diagrams gives their source. Words and lines on their own, and
- * pictures, are left out unless a link joins them. Null when there is nothing to write. */
+ * a scene holding only a Mermaid diagram gives its source, and only several throws
+ * SeveralDiagrams. Words and lines on their own, and pictures, are left out unless a link
+ * joins them. Null when there is nothing to write. */
 export function toMermaid(work: Work, sceneId: string): string | null {
   const scene = work.scenes[sceneId];
   const own = (drawingId: string) => kindOfSource(work.drawings[drawingId]?.source);
@@ -240,8 +248,10 @@ export function toMermaid(work: Work, sceneId: string): string | null {
       (!work.drawings[m.drawingId] && (m.drawingId === NODE || m.drawingId === CALLOUT)) ||
       own(m.drawingId) === "sketch-shape",
   );
-  if (!blocks.length)
-    return diagrams.length ? diagrams.map((m) => String(m.data.source ?? "").trim()).join("\n\n") : null;
+  if (!blocks.length) {
+    if (diagrams.length > 1) throw new SeveralDiagrams(diagrams.length);
+    return diagrams.length ? String(diagrams[0].data.source ?? "").trim() : null;
+  }
   const names = new Map<string, string>();
   const taken = new Set<string>();
   for (const m of blocks) {

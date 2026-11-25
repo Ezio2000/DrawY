@@ -18,6 +18,7 @@ import {
   sketchShape,
   toExcalidraw,
   toMermaid,
+  SeveralDiagrams,
   type ExcalidrawElement,
 } from "./index.ts";
 import type { Clip } from "../editing/index.ts";
@@ -161,13 +162,14 @@ describe("Excalidraw", () => {
     const { work } = pasted(blank(), clip, { "pic-1": photo("pic-1") });
     const root = work.scenes.root;
     const by = (id: string) => root.modules.find((m) => m.id === id)!;
+    // In the order Excalidraw stacks them, a line on its own included.
     expect(root.modules.map((m) => [m.id, m.drawingId])).toEqual([
       ["shape-1", "sketch-shape"],
       ["shape-2", "sketch-shape"],
-      ["text-1", "label"],
-      ["picture-1", "picture"],
       ["line-1", "sketch-line"],
       ["stroke-1", "sketch-line"],
+      ["text-1", "label"],
+      ["picture-1", "picture"],
     ]);
     expect(by("shape-1").data).toMatchObject({ shape: "rectangle", text: "开始", fill: "#ffc9c9", fillStyle: "hachure", rounded: true });
     // Excalidraw's nested groups keep the outermost.
@@ -258,6 +260,34 @@ describe("Excalidraw", () => {
     ]);
   });
 
+  it("takes a file's colours only as colours", () => {
+    const { clip } = fromExcalidraw({
+      elements: [el({ id: "x", type: "rectangle", strokeColor: 'red" onload="x', backgroundColor: "<svg>" })],
+    });
+    expect(clip.modules[0].data).toMatchObject({ stroke: "#1e1e1e", fillStyle: "none" });
+    for (const d of [sketchLine, sketchShape]) expect(d.source).toContain("const paint = ");
+  });
+
+  it("writes a right-angled link out with its turns, and reads one back as turning", () => {
+    const work = blank();
+    const box = (id: string, x: number, y: number) => ({ id, drawingId: "node", bounds: { x, y, width: 100, height: 60 }, data: { title: id } });
+    work.scenes.root.modules.push(box("p", 0, 0), box("q", 400, 300));
+    work.scenes.root.links.push({ id: "pq", drawingId: "arrow", from: { moduleId: "p" }, to: { moduleId: "q" }, data: { route: "elbow", bend: 0.2, label: "过去" } });
+    const out = toExcalidraw(work, "root", {}, 1);
+    const arrow = out.elements.find((e) => e.id === "pq")!;
+    const [, a, b, z] = arrow.points!;
+    expect(arrow.points).toHaveLength(4);
+    expect(a[1]).toBe(0);
+    expect(a[0]).toBeCloseTo(z[0] * 0.7, 0);
+    expect(b[0]).toBe(a[0]);
+    expect(arrow.roundness).toBeNull();
+    // Its words sit halfway along the turns.
+    const words = out.elements.find((e) => e.containerId === "pq")!;
+    expect(words.x + words.width / 2).toBeCloseTo(arrow.x + a[0], 0);
+    const back = pasted(blank(), fromExcalidraw(out).clip).work.scenes.root.links[0];
+    expect(back.data).toMatchObject({ route: "elbow", bend: 0.2, label: "过去" });
+  });
+
   it("bows a bound arrow with only a start head to the same side once it is turned round", () => {
     const shapes = [
       el({ id: "x", type: "rectangle", x: 0, y: 0, boundElements: [{ id: "arc", type: "arrow" }] }),
@@ -335,6 +365,9 @@ describe("Mermaid", () => {
     const whole = pasted(blank(), mermaidBlock("pie\n  \"a\": 1", { width: 300, height: 200 })).work;
     expect(whole.scenes.root.modules[0]).toMatchObject({ drawingId: "mermaid", data: { source: 'pie\n  "a": 1' } });
     expect(toMermaid(whole, "root")).toBe('pie\n  "a": 1');
+    // One Mermaid source holds one diagram, so two cannot go out as one.
+    const two = pasted(whole, mermaidBlock("sequenceDiagram\n  A->>B: hi", { width: 300, height: 200 })).work;
+    expect(() => toMermaid(two, "root")).toThrow(SeveralDiagrams);
   });
 
   it("writes a scene's blocks and links out as a flowchart", () => {

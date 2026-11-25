@@ -99,6 +99,8 @@ export function readExcalidraw(
 
 const SHAPES = new Set(["rectangle", "ellipse", "diamond"]);
 const LINES = new Set(["arrow", "line"]);
+/** A colour as CSS writes one (#hex, a name, rgb() or hsl()), or nothing. */
+const colour = (c?: string) => (c && /^[#\w(),.%\s/+-]+$/.test(c) ? c : undefined);
 const transparent = (c?: string) => !c || c === "transparent" || /^#[0-9a-f]{6}00$/i.test(c);
 /** A drawing's opacity (a share) as Excalidraw keeps it (a percentage). */
 const percent = (opacity: unknown) => Math.round(Math.min(1, Math.max(0, Number(opacity ?? 1))) * 100);
@@ -150,7 +152,14 @@ export function fromExcalidraw(
   const opacity = (e: ExcalidrawElement) => Math.round(e.opacity ?? 100) / 100;
   // Nor do the words of what is gone or unseen.
   const gone = new Set(scene.elements.filter((e) => !seen(e)).map((e) => e.id));
-  const live = scene.elements.filter((e) => seen(e) && !(e.containerId && gone.has(e.containerId)));
+  // A file's colours come in only as colours; anything else takes Excalidraw's default.
+  const live = scene.elements
+    .filter((e) => seen(e) && !(e.containerId && gone.has(e.containerId)))
+    .map((e) => ({
+      ...e,
+      strokeColor: colour(e.strokeColor) ?? "#1e1e1e",
+      backgroundColor: colour(e.backgroundColor) ?? "transparent",
+    }));
   const byId = new Map(live.map((e) => [e.id, e]));
   // Words held by a shape or an arrow, by the element holding them.
   const held = new Map<string, ExcalidrawElement>();
@@ -264,79 +273,91 @@ export function fromExcalidraw(
           },
           "text",
         );
+    } else if ((LINES.has(e.type) || e.type === "freedraw") && !linked(e)) {
+      // A line on its own keeps its place in the stack; an arrow bound at both ends waits
+      // until both ends have come in, to become a link, which draws beneath them anyway.
+      const freehand = e.type === "freedraw";
+      let pts = linePoints(e);
+      if (freehand) pts = simplify(pts, 0.6);
+      const width = (e.strokeWidth ?? 2) * (freehand ? 2 : 1);
+      const { box: bounds, points } = lineBox(pts, Math.max(4, width * 2));
+      const data: Record<string, unknown> = { points };
+      if (freehand || (e.roundness && pts.length > 2)) data.smooth = true;
+      if (width !== 2) data.width = width;
+      if (e.strokeColor && e.strokeColor !== "#1e1e1e") data.color = e.strokeColor;
+      if (e.strokeStyle && e.strokeStyle !== "solid") data.dashed = true;
+      if (faded(e)) data.opacity = opacity(e);
+      if (e.type === "arrow") {
+        let list = points;
+        let start = e.startArrowhead,
+          end = e.endArrowhead;
+        if (!end && start) {
+          list = [...points].reverse();
+          [start, end] = [end, start];
+        }
+        data.points = list;
+        data.head = headOf(end);
+        if (start) data.both = true;
+      }
+      made.module({ ...common, bounds, drawingId: made.drawing(sketchLine), data }, freehand ? "stroke" : "line");
     }
   }
-  const upright = [...moduleOf.keys()].filter((id) => Math.abs(byId.get(id)!.angle ?? 0) > 1e-3).length;
+  const upright =[...moduleOf.keys()].filter((id) => Math.abs(byId.get(id)!.angle ?? 0) > 1e-3).length;
   // Words and pictures are drawn by the library, which has no opacity.
   let opaque = [...moduleOf.keys()].map((id) => byId.get(id)!).filter((e) => !SHAPES.has(e.type) && faded(e)).length;
-  // Lines and arrows go after the shapes, so links can name both ends.
+  // Arrows bound at both ends, now both ends have come in.
   for (const e of live) {
-    if (!LINES.has(e.type) && e.type !== "freedraw") continue;
-    const group = groupOf(e);
+    if (!linked(e)) continue;
     const words = held.get(e.id);
-    if (linked(e)) {
-      let from = moduleOf.get(e.startBinding!.elementId)!,
-        to = moduleOf.get(e.endBinding!.elementId)!;
-      let start = e.startArrowhead,
-        end = e.endArrowhead;
-      // A head only at the start reads as a link the other way round, its points too.
-      const reversed = !end && !!start;
-      if (reversed) [from, to, start, end] = [to, from, end, start];
-      const data: Record<string, unknown> = { head: e.type === "line" ? "none" : headOf(end) };
-      if (start) data.both = true;
-      if (e.strokeStyle && e.strokeStyle !== "solid") data.dashed = true;
-      if (e.strokeColor && e.strokeColor !== "#1e1e1e") data.color = e.strokeColor;
-      if (e.strokeWidth && e.strokeWidth !== 2) data.width = e.strokeWidth;
-      if (e.elbowed) data.route = "elbow";
-      else if ((e.points?.length ?? 0) > 2) {
-        // A curve through a middle point: the bend that passes through it, on the side it
-        // bows to going from the link's start to its end.
-        const pts = reversed ? linePoints(e).reverse() : linePoints(e);
-        const a = pts[0],
-          z = pts.at(-1)!,
-          m = pts[Math.floor(pts.length / 2)];
-        const len = Math.hypot(z.x - a.x, z.y - a.y) || 1;
-        const ux = (z.x - a.x) / len,
-          uy = (z.y - a.y) / len;
-        const off = (m.x - (a.x + z.x) / 2) * -uy + (m.y - (a.y + z.y) / 2) * ux;
-        const bend = Math.max(-1, Math.min(1, Math.round(((2 * off) / len) * 100) / 100));
-        if (bend) data.bend = bend;
-      }
-      if (words?.text) data.label = words.originalText || words.text;
-      // So are links.
-      if (faded(e)) opaque++;
-      made.link(
-        { drawingId: made.material(b.link), from: { moduleId: from }, to: { moduleId: to }, data },
-        "link",
-      );
-      continue;
-    }
-    const freehand = e.type === "freedraw";
-    let pts = linePoints(e);
-    if (freehand) pts = simplify(pts, 0.6);
-    const width = (e.strokeWidth ?? 2) * (freehand ? 2 : 1);
-    const { box, points } = lineBox(pts, Math.max(4, width * 2));
-    const data: Record<string, unknown> = { points };
-    if (freehand || (e.roundness && pts.length > 2)) data.smooth = true;
-    if (width !== 2) data.width = width;
-    if (e.strokeColor && e.strokeColor !== "#1e1e1e") data.color = e.strokeColor;
+    let from = moduleOf.get(e.startBinding!.elementId)!,
+      to = moduleOf.get(e.endBinding!.elementId)!;
+    let start = e.startArrowhead,
+      end = e.endArrowhead;
+    // A head only at the start reads as a link the other way round, its points too.
+    const reversed = !end && !!start;
+    if (reversed) [from, to, start, end] = [to, from, end, start];
+    const data: Record<string, unknown> = { head: e.type === "line" ? "none" : headOf(end) };
+    if (start) data.both = true;
     if (e.strokeStyle && e.strokeStyle !== "solid") data.dashed = true;
-    if (faded(e)) data.opacity = opacity(e);
-    if (e.type === "arrow") {
-      let list = points;
-      let start = e.startArrowhead,
-        end = e.endArrowhead;
-      if (!end && start) {
-        list = [...points].reverse();
-        [start, end] = [end, start];
+    if (e.strokeColor && e.strokeColor !== "#1e1e1e") data.color = e.strokeColor;
+    if (e.strokeWidth && e.strokeWidth !== 2) data.width = e.strokeWidth;
+    // Right angles all the way read as a link that turns: once is a corner, more an elbow.
+    const square = squared(e);
+    if (e.elbowed || square) {
+      data.route = square === "corner" ? "corner" : "elbow";
+      if (square) {
+        // The way it leaves, when not along the longer axis, and where an elbow crosses.
+        const q = reversed ? [...e.points!].reverse() : e.points!;
+        const [ax, ay] = q[0],
+          [zx, zy] = q[q.length - 1];
+        const along = Math.abs(q[1][0] - ax) > 0.5;
+        if (along !== Math.abs(zx - ax) >= Math.abs(zy - ay)) data.first = along ? "horizontal" : "vertical";
+        if (q.length === 4) {
+          const share = along ? (q[1][0] - ax) / (zx - ax || 1) : (q[1][1] - ay) / (zy - ay || 1);
+          const bend = Math.round((share - 0.5) * 100) / 100;
+          if (bend) data.bend = bend;
+        }
       }
-      data.points = list;
-      data.head = headOf(end);
-      if (start) data.both = true;
+    } else if ((e.points?.length ?? 0) > 2) {
+      // A curve through a middle point: the bend that passes through it, on the side it
+      // bows to going from the link's start to its end.
+      const pts = reversed ? linePoints(e).reverse() : linePoints(e);
+      const a = pts[0],
+        z = pts.at(-1)!,
+        m = pts[Math.floor(pts.length / 2)];
+      const len = Math.hypot(z.x - a.x, z.y - a.y) || 1;
+      const ux = (z.x - a.x) / len,
+        uy = (z.y - a.y) / len;
+      const off = (m.x - (a.x + z.x) / 2) * -uy + (m.y - (a.y + z.y) / 2) * ux;
+      const bend = Math.max(-1, Math.min(1, Math.round(((2 * off) / len) * 100) / 100));
+      if (bend) data.bend = bend;
     }
-    made.module(
-      { ...(group ? { group } : {}), bounds: box, drawingId: made.drawing(sketchLine), data },
-      freehand ? "stroke" : "line",
+    if (words?.text) data.label = words.originalText || words.text;
+    // So are links.
+    if (faded(e)) opaque++;
+    made.link(
+      { drawingId: made.material(b.link), from: { moduleId: from }, to: { moduleId: to }, data },
+      "link",
     );
   }
   return { clip: made.clip(), upright, opaque };
@@ -600,10 +621,14 @@ export function toExcalidraw(
       dy = ends.to.y - ends.from.y;
     const bend = Number(d.bend ?? 0);
     const len = Math.hypot(dx, dy) || 1;
+    const route = d.route ?? "curve";
+    const curved = !!bend && route === "curve";
     const points: [number, number][] =
-      bend && (d.route ?? "curve") === "curve"
-        ? [[0, 0], [dx / 2 + (-dy / len) * bend * len * 0.5, dy / 2 + (dx / len) * bend * len * 0.5], [dx, dy]]
-        : [[0, 0], [dx, dy]];
+      route === "elbow" || route === "corner"
+        ? turns(dx, dy, route, d.first, bend)
+        : curved
+          ? [[0, 0], [dx / 2 + (-dy / len) * bend * len * 0.5, dy / 2 + (dx / len) * bend * len * 0.5], [dx, dy]]
+          : [[0, 0], [dx, dy]];
     const from = holder.get(l.from.moduleId),
       to = holder.get(l.to.moduleId);
     const arrow = base(l.id, "arrow", { x: ends.from.x, y: ends.from.y, width: Math.abs(dx), height: Math.abs(dy) }, {
@@ -611,7 +636,7 @@ export function toExcalidraw(
       strokeWidth: Number(d.width ?? 2),
       strokeStyle: d.dashed ? "dashed" : "solid",
       roughness: 0,
-      roundness: points.length > 2 ? { type: 2 } : null,
+      roundness: curved ? { type: 2 } : null,
       points,
       lastCommittedPoint: null,
       startBinding: from ? { elementId: from.id, focus: 0, gap: 4 } : null,
@@ -624,8 +649,8 @@ export function toExcalidraw(
       if (end) end.boundElements = [...(end.boundElements ?? []), { id: l.id, type: "arrow" }];
     const label = [d.label, d.text].find((w) => typeof w === "string" && w);
     if (label) {
-      // A curve passes through its middle point; a straight arrow's middle is halfway.
-      const [mx, my] = points.length > 2 ? points[1] : [dx / 2, dy / 2];
+      // A curve passes through its middle point; otherwise the words sit halfway along.
+      const [mx, my] = curved ? points[1] : halfway(points);
       const mid = { x: ends.from.x + mx, y: ends.from.y + my };
       const m = measure(label, 16);
       const words = text(fresh(l.id + "-label"), label, { x: mid.x - m.width / 2, y: mid.y - m.height / 2, ...m }, {
@@ -644,6 +669,39 @@ export function toExcalidraw(
     appState: { viewBackgroundColor: style.paper || "#ffffff", gridSize: null },
     files,
   };
+}
+/** A right-angled link's turns from its start (0, 0) to its end: along one axis and then
+ * the other for a corner; out, across where bend puts the cross segment, and in for an
+ * elbow. The first axis is the given one, else the longer. The library's arrow also steps
+ * round the parts it joins; these are its turns when nothing is in the way. */
+function turns(dx: number, dy: number, route: "elbow" | "corner", first: unknown, bend: number): [number, number][] {
+  const h = first === "horizontal" || (first !== "vertical" && Math.abs(dx) >= Math.abs(dy));
+  if (route === "corner") return h ? [[0, 0], [dx, 0], [dx, dy]] : [[0, 0], [0, dy], [dx, dy]];
+  const k = 0.5 + bend;
+  return h ? [[0, 0], [dx * k, 0], [dx * k, dy], [dx, dy]] : [[0, 0], [0, dy * k], [dx, dy * k], [dx, dy]];
+}
+/** The point halfway along a line through points. */
+function halfway(points: [number, number][]): [number, number] {
+  const lengths = points.slice(1).map((p, i) => Math.hypot(p[0] - points[i][0], p[1] - points[i][1]));
+  let left = lengths.reduce((a, b) => a + b, 0) / 2;
+  for (let i = 0; i < lengths.length; i++) {
+    if (left <= lengths[i] && lengths[i]) {
+      const t = left / lengths[i],
+        [a, b] = [points[i], points[i + 1]];
+      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    }
+    left -= lengths[i];
+  }
+  return points[points.length - 1];
+}
+/** Whether a line turns only at right angles: "corner" when it turns once, "elbow" when
+ * more, else not. */
+function squared(e: ExcalidrawElement): "corner" | "elbow" | undefined {
+  const p = e.points ?? [];
+  if (p.length < 3) return undefined;
+  for (let i = 1; i < p.length; i++)
+    if (Math.abs(p[i][0] - p[i - 1][0]) > 0.5 && Math.abs(p[i][1] - p[i - 1][1]) > 0.5) return undefined;
+  return p.length === 3 ? "corner" : "elbow";
 }
 /** An Excalidraw scene as Excalidraw takes it from the clipboard. */
 export const excalidrawClipboard = (scene: ExcalidrawScene) =>

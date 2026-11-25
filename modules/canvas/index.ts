@@ -2644,8 +2644,12 @@ export class Canvas {
   private rub(clientX: number, clientY: number) {
     const g = this.gesture;
     if (g?.kind !== "erase") return;
-    const m = this.moduleAt(clientX, clientY, false);
-    const link = m ? null : this.linkAt(clientX, clientY);
+    // What is painted there, unless it is the backdrop with a link drawn over it, as `pick`
+    // takes a press; never a module only by its box.
+    const near = this.linkAt(clientX, clientY);
+    const drawn = this.moduleAt(clientX, clientY, false);
+    const m = drawn && !(near && this.beneath(drawn)) ? drawn : null;
+    const link = m ? null : near;
     const ids = m
       ? m.group
         ? [...this.renderer.instances.values()].filter((x) => x.group === m.group).map((x) => x.id)

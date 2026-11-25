@@ -57,6 +57,7 @@ const looked = async (s: UserStore, workId: string) => ({
     errors: [],
   },
   content: [{ type: "input_image", image_url: "data:image/png;base64,dmlzaWJsZQ==" }],
+  omitted: [] as string[],
 });
 vi.mock("../observation/index.ts", async (original) => ({
   ...(await original<object>()),
@@ -362,6 +363,31 @@ it("has the judge look in a look's pictures for each claim, tells the author wha
     ],
   });
   expect(done.usage?.judge).toEqual({ calls: 1, input: 700 });
+});
+
+it("checks claims about scenes a look left out as unchanged against how they last looked", async () => {
+  const catalog = db.models();
+  catalog.judge = { ...catalog.judge, enabled: true, endpoint: "https://judge.invalid/v1beta/decisions", credential: "gk", price: 0.1 };
+  db.saveModels(modelCatalogSchema.parse(catalog));
+  const asked: any[] = [];
+  library.route(async (url, init) => {
+    asked.push(JSON.parse(String(init?.body)));
+    return Response.json({ answers: { c0: { type: "noul", noul: 0.9 } }, usage: { total_input_tokens: 10 } });
+  });
+  // The first look sees both scenes; the second only the one that changed.
+  const child = store.putCapture(Buffer.from("child"), `canvas-${store.work(work.id).revision}-child-1`);
+  vi.mocked(observe)
+    .mockImplementationOnce((async (s: UserStore, workId: string) => {
+      const shot = await looked(s, workId);
+      return { ...shot, observation: { ...shot.observation, sceneIds: ["root", "child"], screenshots: [child] } };
+    }) as never)
+    .mockImplementationOnce((async (s: UserStore, workId: string) => ({ ...(await looked(s, workId)), omitted: ["child"] })) as never);
+  script([["view_canvas", { claims: ["子场景里有两条路"] }], ["view_canvas", { claims: ["子场景里有两条路"] }], ["finish", { message: "done" }]]);
+  const run = await new Agent(() => {}).start(store, work.id, "root", "看看");
+  await waitFor(run.id, "completed");
+  const images = (n: number) => asked[n].input.filter((p: { type: string }) => p.type === "image").map((p: { data: string }) => p.data);
+  expect(images(0)).toEqual(["dmlzaWJsZQ=="]);
+  expect(images(1)).toEqual(["dmlzaWJsZQ==", Buffer.from("child").toString("base64")]);
 });
 
 it("shows a turn's thinking, words and streamed layout as steps before the write is saved", async () => {
