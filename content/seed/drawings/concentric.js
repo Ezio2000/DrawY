@@ -62,6 +62,7 @@ const palette = (n) =>
 const rings = (d.rings || []).map((r) =>
   typeof r === "string" ? { label: r } : r,
 );
+// With no rings named yet, the core alone, waiting for its name.
 const n = Math.max(1, rings.length);
 const R = Math.min(W, H) / 2 - sw;
 const bottom = d.align === "bottom";
@@ -73,7 +74,7 @@ for (let i = n - 1; i >= 0; i--) {
   const r = (R * (i + 1)) / n;
   const cy = bottom ? H - sw - r : H / 2;
   const base =
-    rings[i].color || (i === 0 ? d.color || accent : d.color2 || accent2);
+    rings[i]?.color || (i === 0 ? d.color || accent : d.color2 || accent2);
   const k = i === 0 ? 0.55 : 0.12 + (0.3 * (n - 1 - i)) / Math.max(1, n - 1);
   out += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${mix(paper, base, k)}" stroke="${base}" stroke-width="${sw}"/>`;
 }
