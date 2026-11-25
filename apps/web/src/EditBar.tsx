@@ -3,24 +3,18 @@ import {
   AlignCenter,
   AlignLeft,
   AlignRight,
-  ArrowRightLeft,
   Bold,
-  Copy,
   Ellipsis,
-  Group,
-  Minus,
   MessageSquareQuote,
+  Minus,
   Plus,
-  Trash2,
   Type,
-  Ungroup,
 } from "lucide-react";
 import type { Canvas } from "../../../modules/canvas/index.ts";
 import type { Work } from "../../../modules/contracts/index.ts";
 import { quickFields, sharedFields, type SharedField } from "../../../modules/editing/index.ts";
 import { shapes, type EditOps, type Shape } from "./desktop/editing.ts";
 import { Colors, hex, nameOf, optionOf } from "./EditControls.tsx";
-import { keys } from "./EditMenu.tsx";
 import { ShapeGlyph } from "./EditTray.tsx";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
@@ -100,10 +94,12 @@ const toneOf = (work: Work, tone: string) => {
             : s[tone];
 };
 
-/** The selection's look and most used actions in a bar over it on the canvas, following it
- * as the view moves: what shape, colour and size of type everything selected takes at once,
- * then copying, grouping, asking the author about it and taking it out. It steps aside
- * while something is dragged, and sits under the selection when there is no room above. */
+/** The selection's look in a small bar under it on the canvas, following it as the view
+ * moves: what shape, colour and size of type everything selected (modules and links) takes
+ * at once, the menu of everything else, and describing a change to the author, which brings
+ * up the composer put away while editing. The rest is in the panel, the menu and the
+ * keyboard, so the bar covers as little of the drawing as it can. It steps aside while
+ * something is dragged, and sits over the selection when there is no room under it. */
 export function SelectionBar({
   canvas,
   stage,
@@ -111,11 +107,10 @@ export function SelectionBar({
   sceneId,
   ops,
   selected,
-  link,
-  grouped,
+  links,
   hidden,
-  ask,
   more,
+  ask,
 }: {
   canvas?: Canvas;
   stage: HTMLElement | null;
@@ -124,21 +119,19 @@ export function SelectionBar({
   sceneId: string;
   ops: EditOps;
   selected: string[];
-  link: string | null;
-  /** Whether the selected modules share a group. */
-  grouped: boolean;
+  links: string[];
   hidden: boolean;
-  ask: () => void;
   /** Opens the menu of everything else that can be done, at a point on screen. */
   more: (at: { x: number; y: number }) => void;
+  /** Brings up the composer, about the selection. */
+  ask: () => void;
 }) {
   const t = useT(),
     e = t.edit;
   const ref = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState("");
-  const some = selected.length > 0;
   useDismiss(!!open, () => setOpen(""), ref, "[data-popover]");
-  const showing = selected.join() + ":" + (link ?? "");
+  const showing = selected.join() + ":" + links.join();
   useLayoutEffect(() => setOpen(""), [showing]);
   useLayoutEffect(() => {
     if (!canvas || !stage) return;
@@ -160,13 +153,15 @@ export function SelectionBar({
       }
       const w = el.offsetWidth,
         h = el.offsetHeight;
-      // Clear of the dot above a selected module and of the ruler along the top; under
-      // the selection it is clear of its measure.
-      // Fingers have a dot out on every side, further off, and the bar stands clear of it.
+      // Under the selection, clear of its measure and of the dot on its side (fingers have
+      // a dot out on every side, further off); over it where the composer or the edge of
+      // the canvas leaves no room under it.
       const clear = matchMedia("(any-pointer: coarse)").matches ? 62 : 36;
-      let top = r.top - area.top - h - clear;
-      const under = top < 30;
-      if (under) top = r.bottom - area.top + clear + 2;
+      const dock = stage.querySelector("[data-dock]")?.getBoundingClientRect();
+      const floor = Math.min(area.bottom, dock && dock.height ? dock.top : area.bottom) - area.top - 8;
+      let top = r.bottom - area.top + clear;
+      const under = top + h <= floor || r.top - area.top - h - clear < 30;
+      if (!under) top = r.top - area.top - h - clear;
       const left = Math.min(
         area.width - w - 12,
         Math.max(76, r.left - area.left + r.width / 2 - w / 2),
@@ -180,23 +175,23 @@ export function SelectionBar({
     place();
     return canvas.watch(place);
   }, [canvas, stage, showing, hidden]);
-  if (hidden || (!some && !link)) return null;
+  if (hidden || (!selected.length && !links.length)) return null;
   const scene = work.scenes[sceneId];
-  const parts = some
-    ? (scene?.modules.filter((m) => selected.includes(m.id)) ?? [])
-    : (scene?.links.filter((l) => l.id === link) ?? []);
+  const parts = [
+    ...(scene?.modules.filter((m) => selected.includes(m.id)) ?? []),
+    ...(scene?.links.filter((l) => links.includes(l.id)) ?? []),
+  ];
   const quick = quickFields(sharedFields(work, parts));
   const item = (
     label: string,
     icon: ReactNode,
     run: (ev: React.MouseEvent<HTMLButtonElement>) => void,
-    o: { key?: string; danger?: boolean; off?: boolean; pressed?: boolean; words?: string } = {},
+    o: { off?: boolean; pressed?: boolean; words?: string } = {},
   ) => (
     <button
       key={label}
       aria-label={label}
-      data-tip={o.words ? undefined : o.key ? `${label} · ${keys(o.key)}` : label}
-      data-tone={o.danger ? "danger" : undefined}
+      data-tip={o.words ? undefined : label}
       data-worded={o.words ? "" : undefined}
       aria-pressed={o.pressed}
       disabled={o.off}
@@ -326,18 +321,6 @@ export function SelectionBar({
     <div ref={ref} className={cx("selection-bar")} role="toolbar" aria-label={e.bar.label} data-away="">
       {quick.map(control)}
       {!!quick.length && <i />}
-      {some ? (
-        <>
-          {item(e.menu.duplicate, <Copy size={15} />, ops.duplicate, { key: "Mod+D" })}
-          {grouped
-            ? item(e.menu.ungroup, <Ungroup size={15} />, ops.ungroup, { key: "Shift+Mod+G" })
-            : selected.length > 1 &&
-              item(e.menu.group, <Group size={15} />, ops.group, { key: "Mod+G" })}
-        </>
-      ) : (
-        item(e.menu.reverse, <ArrowRightLeft size={15} />, () => ops.reverse(), { key: "R" })
-      )}
-      {item(e.menu.remove, <Trash2 size={15} />, ops.remove, { key: "Delete", danger: true })}
       {item(
         e.menu.more,
         <Ellipsis size={16} />,

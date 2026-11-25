@@ -8,6 +8,7 @@ import {
   MousePointer2,
   MoveUpRight,
   PenLine,
+  Plus,
   Search,
   Spline,
   Type,
@@ -58,8 +59,6 @@ export function ShapeGlyph({ shape, size = 18 }: { shape: Shape; size?: number }
     </svg>
   );
 }
-/** The shapes always in the tray; the rest are behind the last one. */
-const first: Shape[] = ["box", "circle", "diamond"];
 const letters: Partial<Record<Tool, string>> = {
   select: "V",
   hand: "H",
@@ -73,11 +72,12 @@ const letters: Partial<Record<Tool, string>> = {
   erase: "E",
 };
 
-/** The tools laid beside the canvas while editing, as instruments beside a drawing board:
- * the hand's own (select, move the view), the shapes a figure is built from, words, links,
- * the pen, a free arrow and the eraser, pictures, everything else the library draws, and
- * what other tools drew (Mermaid, Excalidraw) brought in. A shape or words go where the
- * canvas is then pressed, or fill the box dragged out there. */
+/** The tools laid beside the canvas while editing, as instruments beside a drawing board,
+ * kept to a short column: the hand's own (select, move the view), the shape last taken
+ * (the others behind its corner, and under their letters), words, links, a free arrow,
+ * the pen and the eraser, everything the library draws, and behind one more button a
+ * picture or what other tools drew (Mermaid, Excalidraw) brought in. A shape or words go
+ * where the canvas is then pressed, or fill the box dragged out there. */
 export function EditTray({
   tool,
   setTool,
@@ -92,14 +92,13 @@ export function EditTray({
 }) {
   const t = useT(),
     names = t.edit.tools;
-  // The shape last taken from the rest, shown in the tray in their place.
-  const [extra, setExtra] = useState<Shape>("pill");
-  const [open, setOpen] = useState<"" | "shapes" | "library">("");
+  // The shape last taken, shown in the tray for all of them.
+  const [shape, setShape] = useState<Shape>("box");
+  const [open, setOpen] = useState<"" | "shapes" | "library" | "insert">("");
   const ref = useRef<HTMLElement>(null);
   useDismiss(!!open, () => setOpen(""), ref, "[data-flyout]");
   useEffect(() => {
-    if (!first.includes(tool as Shape) && (shapes as readonly string[]).includes(tool))
-      setExtra(tool as Shape);
+    if ((shapes as readonly string[]).includes(tool)) setShape(tool as Shape);
   }, [tool]);
   const item = (id: Tool, icon: ReactNode) => (
     <button
@@ -122,9 +121,8 @@ export function EditTray({
       {item("select", <MousePointer2 size={17} />)}
       {item("hand", <Hand size={17} />)}
       <i />
-      {first.map((s) => item(s, <ShapeGlyph shape={s} />))}
       <span className={cx("tray-more")}>
-        {item(extra, <ShapeGlyph shape={extra} />)}
+        {item(shape, <ShapeGlyph shape={shape} />)}
         <button
           className={cx("tray-caret")}
           aria-label={names.shapes}
@@ -138,44 +136,32 @@ export function EditTray({
           </svg>
         </button>
         {open === "shapes" && (
-          <div className={cx("tray-flyout", "tray-shapes")} data-flyout role="menu">
-            {shapes
-              .filter((s) => !first.includes(s))
-              .map((s) => (
-                <button
-                  key={s}
-                  role="menuitemradio"
-                  aria-checked={tool === s}
-                  onClick={() => {
-                    setOpen("");
-                    setTool(s);
-                  }}
-                >
-                  <ShapeGlyph shape={s} size={20} />
-                  <span>{names[s]}</span>
-                </button>
-              ))}
+          <div className={cx("tray-flyout", "tray-menu")} data-flyout role="menu">
+            {shapes.map((s) => (
+              <button
+                key={s}
+                role="menuitemradio"
+                aria-checked={tool === s}
+                onClick={() => {
+                  setOpen("");
+                  setTool(s);
+                }}
+              >
+                <ShapeGlyph shape={s} size={20} />
+                <span>{names[s]}</span>
+                {letters[s] && <kbd>{letters[s]}</kbd>}
+              </button>
+            ))}
           </div>
         )}
       </span>
       <i />
       {item("text", <Type size={17} />)}
       {item("link", <Spline size={17} />)}
-      {item("pen", <PenLine size={17} />)}
       {item("arrow", <MoveUpRight size={17} />)}
+      {item("pen", <PenLine size={17} />)}
       {item("erase", <Eraser size={17} />)}
       <i />
-      <button
-        aria-label={names.picture}
-        data-tip={names.picture}
-        data-tip-side="right"
-        onClick={() => {
-          setOpen("");
-          ops.add("picture");
-        }}
-      >
-        <ImagePlus size={17} />
-      </button>
       <span className={cx("tray-more")}>
         <button
           aria-label={names.drawing}
@@ -200,17 +186,41 @@ export function EditTray({
           />
         )}
       </span>
-      <button
-        aria-label={names.bring}
-        data-tip={names.bring}
-        data-tip-side="right"
-        onClick={() => {
-          setOpen("");
-          bring();
-        }}
-      >
-        <FileInput size={17} />
-      </button>
+      <span className={cx("tray-more")}>
+        <button
+          aria-label={names.insert}
+          data-tip={open === "insert" ? undefined : names.insert}
+          data-tip-side="right"
+          aria-expanded={open === "insert"}
+          onClick={() => setOpen(open === "insert" ? "" : "insert")}
+        >
+          <Plus size={17} />
+        </button>
+        {open === "insert" && (
+          <div className={cx("tray-flyout", "tray-menu")} data-flyout role="menu">
+            <button
+              role="menuitem"
+              onClick={() => {
+                setOpen("");
+                ops.add("picture");
+              }}
+            >
+              <ImagePlus size={18} />
+              <span>{names.picture}</span>
+            </button>
+            <button
+              role="menuitem"
+              onClick={() => {
+                setOpen("");
+                bring();
+              }}
+            >
+              <FileInput size={18} />
+              <span>{names.bring}</span>
+            </button>
+          </div>
+        )}
+      </span>
     </nav>
   );
 }

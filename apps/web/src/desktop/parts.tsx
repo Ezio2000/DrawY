@@ -1,8 +1,9 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, X, Check, FileInput, PenLine, Square } from "lucide-react";
 import * as Hand from "../ui/brand/icons.tsx";
 import type { Canvas, CanvasOptions, Pointed } from "../../../../modules/canvas/index.ts";
-import type { Selection, Target } from "../../../../modules/contracts/index.ts";
+import type { Target } from "../../../../modules/contracts/index.ts";
+import { carried } from "../../../../modules/editing/index.ts";
 import { cx } from "../cx.ts";
 import { SelectionBar } from "../EditBar.tsx";
 import { EditMenu } from "../EditMenu.tsx";
@@ -19,6 +20,7 @@ import { SceneView } from "../SceneView.tsx";
 import { Seal } from "../Title.tsx";
 import { useSelect } from "../session/store.ts";
 import type { Change, WorkSession } from "../session/work.ts";
+import type { RequestDraft } from "../session/request.ts";
 import type { EditOps, useEditing } from "./editing.ts";
 import { notesOf, shownOf } from "../workPage.ts";
 
@@ -143,7 +145,6 @@ export function CanvasArea({
   view,
   open,
   select,
-  selectLink,
   point,
   hand,
   board,
@@ -155,8 +156,7 @@ export function CanvasArea({
   editing: boolean;
   view: (canvas: Canvas | undefined) => void;
   open: (target: Target) => void;
-  select: (selection: Selection[]) => void;
-  selectLink: NonNullable<CanvasOptions["selectLink"]>;
+  select: CanvasOptions["select"];
   point: (pointed: Pointed) => void;
   hand: ReturnType<typeof useEditing>;
   /** How the drawing board is set up while editing. */
@@ -188,7 +188,6 @@ export function CanvasArea({
       connect={hand.ops.connect}
       extend={hand.ops.extend}
       duplicate={hand.ops.duplicateBy}
-      selectLink={selectLink}
       reconnect={hand.ops.reconnect}
       menu={hand.setMenu}
       place={hand.place}
@@ -231,7 +230,7 @@ export function EditOverlay({
   canvas,
   stage,
   ids,
-  link,
+  links,
   retyping,
   ask,
 }: {
@@ -240,16 +239,23 @@ export function EditOverlay({
   canvas?: Canvas;
   stage: HTMLElement | null;
   ids: string[];
-  link: string | null;
+  links: string[];
   retyping: boolean;
   ask: () => void;
 }) {
   counted("overlay");
-  const { some, all, work, sceneId } = useSelect(session, (s) => {
-    const groups = ids.map((id) => s.scene?.modules.find((m) => m.id === id)?.group);
+  const { some, within, holds, work, sceneId } = useSelect(session, (s) => {
+    const modules = s.scene?.modules ?? [];
+    const groups = ids.map((id) => modules.find((m) => m.id === id)?.group);
+    const group = groups[0];
     return {
       some: groups.some(Boolean),
-      all: !!groups.length && groups.every((g) => g && g === groups[0]),
+      // Inside a group: part of one group selected, not all of it.
+      within:
+        !!group &&
+        groups.every((g) => g === group) &&
+        modules.filter((m) => m.group === group).length > ids.length,
+      holds: carried(modules, ids).length > 0,
       work: s.shown!,
       sceneId: s.sceneId,
     };
@@ -265,19 +271,20 @@ export function EditOverlay({
         sceneId={sceneId}
         ops={hand.ops}
         selected={ids}
-        link={link}
-        grouped={all}
+        links={links}
         hidden={!!hand.menu || retyping || hand.tool !== "select"}
-        ask={ask}
         more={hand.setMenu}
+        ask={ask}
       />
       {hand.menu && (
         <EditMenu
           at={hand.menu}
           ops={hand.ops}
           selected={ids}
-          link={link}
+          links={links}
           grouped={some}
+          within={within}
+          holds={holds}
           clipped={hand.clipped}
           brushed={hand.brushed}
           close={() => hand.setMenu(undefined)}
@@ -286,6 +293,63 @@ export function EditOverlay({
         />
       )}
     </>
+  );
+}
+
+/** The dock over the canvas's foot: the bars, then the composer. While editing by hand the
+ * composer is put away until it is asked for: "describe a change", or a change handed to
+ * the author, brings it up (the request counts each one), and it goes again once the focus
+ * leaves it, or a press lands elsewhere, with nothing in it. What is in it, and the author at work, keep it up. It is a
+ * part of its own so typing draws the page no further than here; what it holds is made by
+ * the page and kept as it is. */
+export function Dock({
+  session,
+  draft,
+  editing,
+  children,
+}: {
+  session: WorkSession;
+  draft: RequestDraft;
+  editing: boolean;
+  children: ReactNode;
+}) {
+  const [describing, setDescribing] = useState(false);
+  const editingNow = useRef(editing);
+  editingNow.current = editing;
+  useEffect(() => {
+    let asked = draft.get().asked;
+    return draft.subscribe(() => {
+      const now = draft.get().asked;
+      if (now !== asked && editingNow.current) setDescribing(true);
+      asked = now;
+    });
+  }, [draft]);
+  useEffect(() => {
+    if (!editing) setDescribing(false);
+  }, [editing]);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!describing) return;
+    const away = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setDescribing(false);
+    };
+    addEventListener("pointerdown", away, true);
+    return () => removeEventListener("pointerdown", away, true);
+  }, [describing]);
+  const written = useSelect(draft, (d) => !!d.text.trim() || d.attachments.length > 0 || d.uploading > 0);
+  const busy = useSelect(session, (s) => s.locked || s.working || s.waiting);
+  return (
+    <div
+      ref={ref}
+      className={cx("dock")}
+      data-dock
+      data-quiet={(editing && !busy && !describing && !written) || undefined}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDescribing(false);
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -483,7 +547,7 @@ export function SideTools({
 export function EditPane({
   session,
   ids,
-  link,
+  links,
   canvas,
   change,
   ops,
@@ -493,7 +557,7 @@ export function EditPane({
 }: {
   session: WorkSession;
   ids: string[];
-  link: string | null;
+  links: string[];
   canvas?: Canvas;
   change: Change;
   ops: EditOps;
@@ -509,7 +573,7 @@ export function EditPane({
       work={s.shown}
       sceneId={s.sceneId}
       selected={ids}
-      link={link}
+      links={links}
       canvas={canvas}
       busy={s.engaged ? t.edit.busy : undefined}
       change={change}

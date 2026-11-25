@@ -8,6 +8,7 @@ import {
   align,
   applied,
   arrange,
+  carried,
   changesBetween,
   connect,
   copy,
@@ -557,7 +558,7 @@ describe("hand edits reach what the author writes", () => {
     expect(scene(moved).links[0].to.at).toBe("left");
     // Without a side it goes back to following the side facing the other end.
     expect(scene(apply(twice, reattach(twice, "root", link.id, "to", undefined))).links[0].to).toEqual({ moduleId: "level-0" });
-    const turned = apply(moved, reverse(moved, "root", link.id));
+    const turned = apply(moved, reverse(moved, "root", [link.id]));
     expect(scene(turned).links[0].from.moduleId).toBe("level-0");
     // An end dragged onto another module goes to the side it was dropped on.
     const elsewhere = apply(turned, reattach(turned, "root", link.id, "to", "right", "level-3"));
@@ -794,6 +795,42 @@ describe("hand edits as a drawing app has them", () => {
     work.scenes.root.modules.push(at("a", 0, { color: "#ff0000", size: 20, note: "first" }), at("b", 200), at("c", 500));
     return work;
   };
+
+  it("carries what a module holds: the modules over it and wholly in its box, not those under it, beside it or as large", () => {
+    const box = (id: string, x: number, y: number, width: number, height: number) => ({
+      id,
+      bounds: { x, y, width, height },
+    });
+    const scene = [
+      box("under", 20, 20, 40, 40),
+      box("zone", 0, 0, 400, 200),
+      box("inner", 200, 20, 180, 160),
+      box("step", 220, 40, 40, 40),
+      box("across", 380, 40, 60, 40),
+      box("twin", 0, 0, 400, 200),
+      box("away", 600, 0, 40, 40),
+    ];
+    // What is drawn under the zone, or reaches out of it, or is as large, stays; a zone in
+    // it goes, and so does what that zone holds.
+    expect(carried(scene, ["zone"])).toEqual(["inner", "step"]);
+    expect(carried(scene, ["inner"])).toEqual(["step"]);
+    // Nothing given is carried, and a module holding nothing carries nothing.
+    expect(carried(scene, ["zone", "step"])).toEqual(["inner"]);
+    expect(carried(scene, ["away"])).toEqual([]);
+  });
+
+  it("turns several links round at once", () => {
+    const work = row();
+    const look = { drawingId: "connector", data: {} };
+    const linked = apply(work, connect(work, "root", { moduleId: "a" }, { moduleId: "b" }, look).edit);
+    const twice = apply(linked, connect(linked, "root", { moduleId: "b" }, { moduleId: "c" }, look).edit);
+    const ids = twice.scenes.root.links.map((l) => l.id);
+    const turned = apply(twice, reverse(twice, "root", ids));
+    expect(turned.scenes.root.links.map((l) => [l.from.moduleId, l.to.moduleId])).toEqual([
+      ["b", "a"],
+      ["c", "b"],
+    ]);
+  });
 
   it("settles a moved box where its gaps to its neighbours are equal", () => {
     const a = { x: 0, y: 0, width: 100, height: 40 },

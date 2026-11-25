@@ -3,6 +3,7 @@ import {
   api,
   asked,
   base,
+  box,
   browser,
   cdp,
   composer,
@@ -137,6 +138,13 @@ it("holds a request while hand edits are unsaved, until they are saved, thrown a
   await editing();
   await drag("Alpha");
   await settled();
+  // While editing the composer is put away until a change is to be described.
+  expect(await composer().isVisible()).toBe(false);
+  await page
+    .getByRole("toolbar", { name: "The selection's look" })
+    .getByRole("button", { name: "Describe a change" })
+    .click();
+  await expect.poll(() => composer().evaluate((el) => el === document.activeElement)).toBe(true);
   await composer().fill("Make it blue");
   await composer().press("Enter");
   const asking = page.locator("[role=alertdialog]");
@@ -150,13 +158,20 @@ it("holds a request while hand edits are unsaved, until they are saved, thrown a
   // Sent about what is selected (the module just dragged), once saved as a version.
   expect(asked.map((a) => a.prompt)).toEqual(["Make it blue\nSelected module: a\nAlpha"]);
   expect(await composer().inputValue()).toBe("");
+  // Back on the board, the empty composer is put away again.
+  const paper = (await page.locator("[data-canvas]").boundingBox())!;
+  await page.mouse.click(paper.x + paper.width - 80, paper.y + 120);
+  await expect.poll(() => composer().isVisible()).toBe(false);
   // The work's second save: the one the request waited for.
   const revisions: { cause: { kind: string } }[] = await api(`/works/${page.url().split("/a/")[1]}/revisions`);
   expect(revisions.filter((r) => r.cause.kind === "save")).toHaveLength(2);
 });
 
 it("places words ready to type on a blank canvas, and duplicates, copies and pastes them", async () => {
-  await page.goto(base + "/new");
+  // The blank canvas is a press away in the sidebar.
+  await page.goto(base + "/");
+  await page.getByRole("navigation", { name: "Navigation" }).getByRole("button", { name: "New blank canvas", exact: true }).click();
+  await page.waitForURL(/\/new$/);
   await page.waitForSelector("[data-canvas]");
   await page.waitForTimeout(500);
   await editing();
@@ -272,14 +287,14 @@ it("builds a figure by hand: a shape drawn to size and typed in, a side's plus g
   expect(await count("Alpha")).toBe(2);
   root = await rootOf(id);
   expect(root.modules.find((m: { id: string }) => m.id === "a").bounds).toMatchObject({ x: 100, y: 100 });
-  // The bar over the selection gives everything selected one look.
+  // The bar under the selection gives everything selected one look.
   const g = await rectOf("Gamma"),
     d = await rectOf("Delta");
   await page.mouse.click(g.cx, g.cy);
   await page.keyboard.down("Shift");
   await page.mouse.click(d.cx, d.cy);
   await page.keyboard.up("Shift");
-  const bar = page.getByRole("toolbar", { name: "The selection's look and actions" });
+  const bar = page.getByRole("toolbar", { name: "The selection's look" });
   await bar.getByRole("button", { name: "Tone", exact: true }).click();
   await bar.getByRole("menuitemradio", { name: "Accent", exact: true }).click();
   await settled();
@@ -288,13 +303,115 @@ it("builds a figure by hand: a shape drawn to size and typed in, a side's plus g
   expect(made("Delta").data.tone).toBe("accent");
 });
 
+it("selects as drawing tools do: a box over a zone takes what lies in it (with Alt what it touches) and the links among them, a zone pressed is selected and dragged with what it holds, a group is selected whole and entered by a second press, and links are selected together and taken out at once", async () => {
+  const w = await api("/works", "POST", { title: "Zones" });
+  const part = (id: string, label: string, bounds: number[], group?: string) => ({
+    id,
+    drawingId: "box",
+    bounds,
+    data: { label },
+    ...(group ? { group } : {}),
+  });
+  await api(`/works/${w.id}/edits`, "POST", {
+    baseRevision: w.revision,
+    edit: {
+      drawings: [{ id: "box", name: "Box", source: box }],
+      // The zone is drawn first, under what it holds.
+      modules: [
+        part("zone", "Zone", [60, 60, 700, 300]),
+        part("a", "Alpha", [100, 140, 160, 80]),
+        part("b", "Beta", [460, 140, 160, 80]),
+        part("g", "Gamma", [100, 460, 160, 80], "pair"),
+        part("d", "Delta", [460, 460, 160, 80], "pair"),
+      ],
+      links: [
+        { id: "ab", from: { moduleId: "a" }, to: { moduleId: "b" } },
+        { id: "gd", from: { moduleId: "g" }, to: { moduleId: "d" } },
+      ],
+    },
+  });
+  await api(`/works/${w.id}/save`, "POST");
+  await open(w.id);
+  await editing();
+  await settled();
+  // What the request would be about: what is selected, by name.
+  const quoted = async () => (await page.locator("[data-dock] [class*=quote] span").allInnerTexts()).join();
+  const boxOver = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 4 });
+    await page.mouse.move(to.x, to.y, { steps: 4 });
+    await page.mouse.up();
+  };
+  // A box begun on the zone selects what lies wholly in it, and the link between them,
+  // not the zone; nothing moves.
+  const zone = await rectOf("Zone"),
+    alpha = await rectOf("Alpha"),
+    beta = await rectOf("Beta");
+  await boxOver({ x: alpha.x - 12, y: alpha.y - 12 }, { x: beta.x + beta.width + 12, y: beta.y + beta.height + 12 });
+  expect(await quoted()).toBe("Alpha, Beta, Alpha → Beta");
+  expect((await rectOf("Zone")).x).toBe(zone.x);
+  // With Alt it takes what it touches.
+  await page.keyboard.down("Alt");
+  await boxOver({ x: alpha.x - 12, y: alpha.y - 12 }, { x: alpha.cx, y: alpha.cy });
+  await page.keyboard.up("Alt");
+  expect(await quoted()).toBe("Alpha");
+  // A press on the zone, let go where it was, selects it; dragged, what it holds goes
+  // with it, and nothing else.
+  await page.mouse.click(zone.x + 20, zone.y + zone.height - 20);
+  expect(await quoted()).toBe("Zone");
+  await page.mouse.move(zone.x + 20, zone.y + zone.height - 20);
+  await page.mouse.down();
+  await page.mouse.move(zone.x + 40, zone.y + zone.height - 10, { steps: 4 });
+  await page.mouse.move(zone.x + 60, zone.y + zone.height, { steps: 4 });
+  await page.mouse.up();
+  await settled();
+  let root = await rootOf(w.id);
+  const at = (id: string) => root.modules.find((m: { id: string }) => m.id === id).bounds;
+  const dx = at("zone").x - 60,
+    dy = at("zone").y - 60;
+  expect(dx).toBeGreaterThan(20);
+  expect(at("a")).toMatchObject({ x: 100 + dx, y: 140 + dy });
+  expect(at("b")).toMatchObject({ x: 460 + dx, y: 140 + dy });
+  expect(at("g")).toMatchObject({ x: 100, y: 460 });
+  // A press on a grouped part selects the group; a second press, the part alone, which
+  // then moves by itself.
+  const gamma = await rectOf("Gamma");
+  await page.mouse.click(gamma.cx, gamma.cy);
+  expect(await quoted()).toBe("Gamma, Delta");
+  await page.mouse.click(gamma.cx, gamma.cy);
+  expect(await quoted()).toBe("Gamma");
+  await drag("Gamma");
+  await settled();
+  root = await rootOf(w.id);
+  expect(at("g").x).not.toBe(100);
+  expect(at("d")).toMatchObject({ x: 460, y: 460 });
+  // Links are selected together with Shift, and taken out at once.
+  const a = await rectOf("Alpha"),
+    b = await rectOf("Beta"),
+    g = await rectOf("Gamma"),
+    d = await rectOf("Delta");
+  await page.mouse.click((a.x + a.width + b.x) / 2, a.cy);
+  await page.keyboard.down("Shift");
+  await page.mouse.click((g.x + g.width + d.x) / 2, (g.cy + d.cy) / 2);
+  await page.keyboard.up("Shift");
+  expect(await quoted()).toBe("Alpha → Beta, Gamma → Delta");
+  expect(await page.getByRole("heading", { name: "2 connections selected" }).count()).toBe(1);
+  await page.keyboard.press("Delete");
+  await settled();
+  root = await rootOf(w.id);
+  expect(root.links).toEqual([]);
+  expect(root.modules).toHaveLength(5);
+});
+
 it("measures the drawing board: rulers, the view's scale and its settings, parts moved and resized on the squares, and the sheet of shortcuts", async () => {
   const id = await make();
   await open(id);
   const rulers = page.locator("canvas[data-axis]");
   expect(await rulers.count()).toBe(0);
+  // The rulers are off until asked for, to leave the canvas room.
   await editing();
-  expect(await rulers.count()).toBe(2);
+  expect(await rulers.count()).toBe(0);
   // The scale shows in figures and opens the scales to go to and the board's settings.
   const scale = page.getByRole("button", { name: /^Shown at \d+%/ });
   await scale.click();
@@ -302,9 +419,9 @@ it("measures the drawing board: rulers, the view's scale and its settings, parts
   await expect.poll(() => scale.innerText()).toBe("100%");
   await scale.click();
   await page.getByRole("menuitemcheckbox", { name: "Rulers" }).click();
-  expect(await rulers.count()).toBe(0);
-  await page.getByRole("menuitemcheckbox", { name: "Rulers" }).click();
   expect(await rulers.count()).toBe(2);
+  await page.getByRole("menuitemcheckbox", { name: "Rulers" }).click();
+  expect(await rulers.count()).toBe(0);
   // On the squares, a dragged part ends on their lines.
   await page.getByRole("menuitemcheckbox", { name: "Snap to the squares" }).click();
   await page.keyboard.press("Escape");
@@ -438,6 +555,12 @@ it("draws again only what shows the author's run as it goes, and only the compos
   for (const part of ["page", "topbar", "tools", "editor", "bars", "composer"]) expect([part, grew(part)]).toEqual([part, 0]);
   await tell({ type: "run", run: run(id, "live", "completed", [user]) });
   await settled();
+  // The composer, put away while editing, is asked for from the menu on the paper.
+  const paper = (await page.locator("[data-canvas]").boundingBox())!;
+  await page.mouse.click(paper.x + paper.width - 80, paper.y + 120, { button: "right" });
+  await page.getByRole("menuitem", { name: "Describe a change to the drawing" }).click();
+  await expect.poll(() => composer().evaluate((el) => el === document.activeElement)).toBe(true);
+  await settled();
   const quiet = await renders();
   await composer().pressSequentially("hello", { delay: 20 });
   await settled();
@@ -482,7 +605,7 @@ it("keeps a text tool's dragged bounds and turns default bold off", async () => 
   await page.keyboard.down("Shift");
   await page.mouse.click(text.cx, text.cy);
   await page.keyboard.up("Shift");
-  const bar = page.getByRole("toolbar", { name: "The selection's look and actions" });
+  const bar = page.getByRole("toolbar", { name: "The selection's look" });
   await bar.getByRole("button", { name: "Bold", exact: true }).click();
   await settled();
   await bar.getByRole("button", { name: "Bold", exact: true }).click();

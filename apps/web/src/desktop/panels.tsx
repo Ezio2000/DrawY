@@ -9,7 +9,7 @@ export type Sized = "journal" | "drafts" | "edit";
 export const panelWidths: Record<Sized, { min: number; initial: number }> = {
   journal: { min: 360, initial: 520 },
   drafts: { min: 260, initial: 340 },
-  edit: { min: 300, initial: 380 },
+  edit: { min: 280, initial: 320 },
 };
 export const panelWidth = {
   max: () => Math.max(420, Math.round(innerWidth * 0.62)),

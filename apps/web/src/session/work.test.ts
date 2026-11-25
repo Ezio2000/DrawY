@@ -202,11 +202,11 @@ it("holds a request back while a hand edit is still on its way", async () => {
 it("tells the author what a request is about", async () => {
   const { store } = await open();
   const link = { id: "l1", from: { moduleId: "heading" }, to: { moduleId: "control" } } as never;
-  await store.send({ text: "bigger", focus: { modules: [{ moduleId: "heading", label: "Title" }] } });
+  await store.send({ text: "bigger", focus: { modules: [{ moduleId: "heading", label: "Title" }], links: [] } });
   expect(posted.at(-1)!.data.prompt).toBe("bigger\nSelected module: heading\nTitle");
   runs[0].status = "completed" as never;
   events!({ type: "run", run: runs[0] });
-  await store.send({ text: "thicker", focus: { modules: [], link } });
+  await store.send({ text: "thicker", focus: { modules: [], links: [link] } });
   expect(posted.at(-1)!.data.prompt).toBe("thicker\nSelected link: l1 (heading → control)");
 });
 

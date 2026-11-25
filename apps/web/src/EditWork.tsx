@@ -387,14 +387,15 @@ export function Layers({
   work,
   sceneId,
   selected,
-  link,
+  links,
   canvas,
   change,
 }: {
   work: Work;
   sceneId: string;
   selected: string[];
-  link: string | null;
+  /** The links selected, with the modules or alone. */
+  links: string[];
   canvas?: Canvas;
   change: Change;
 }) {
@@ -451,13 +452,9 @@ export function Layers({
               setOver(undefined);
             }}
             onClick={(e) =>
-              canvas?.select(
-                e.shiftKey || e.metaKey || e.ctrlKey
-                  ? chosen
-                    ? selected.filter((id) => id !== m.id)
-                    : [...selected, m.id]
-                  : [m.id],
-              )
+              e.shiftKey || e.metaKey || e.ctrlKey
+                ? canvas?.select(chosen ? selected.filter((id) => id !== m.id) : [...selected, m.id], links)
+                : canvas?.select([m.id])
             }
             onDoubleClick={() => setNaming(m.id)}
           >
@@ -506,8 +503,15 @@ export function Layers({
           {scene.links.map((l) => (
             <li
               key={l.id}
-              aria-selected={link === l.id}
-              onClick={() => canvas?.selectLink(l.id)}
+              aria-selected={links.includes(l.id)}
+              onClick={(e) =>
+                e.shiftKey || e.metaKey || e.ctrlKey
+                  ? canvas?.select(
+                      selected,
+                      links.includes(l.id) ? links.filter((id) => id !== l.id) : [...links, l.id],
+                    )
+                  : canvas?.select([], [l.id])
+              }
             >
               <i>
                 <Spline size={13} />

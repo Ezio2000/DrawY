@@ -85,7 +85,7 @@ export interface SessionHost {
 /** What a request is about, when not the whole scene: the modules selected, or a link. */
 export interface Focus {
   modules: Pick<Selection, "moduleId" | "label">[];
-  link?: Link;
+  links: Link[];
 }
 
 /** A request to the author, or an answer while it waits for one. */

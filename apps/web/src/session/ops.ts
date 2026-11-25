@@ -199,9 +199,9 @@ export function editOps(ctx: Context) {
     remove(parts: string[]) {
       if (parts.length) run((w, s) => removeParts(w, s, parts));
     },
-    /** Turns a link round. */
-    reverse(link: string) {
-      run((w, s) => reverse(w, s, link));
+    /** Turns links round. */
+    reverse(links: string[]) {
+      if (links.length) run((w, s) => reverse(w, s, links));
     },
     /** Moves an end of a link onto a side of a module. */
     reconnect(link: string, end: "from" | "to", to: { moduleId: string; side: Side }) {

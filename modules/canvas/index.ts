@@ -3,6 +3,7 @@ import { fit, union, zoom, type Camera } from "../contracts/geometry.ts";
 import { shownName } from "../contracts/index.ts";
 import { plan, play, gesture, hatching } from "./ink.ts";
 import {
+  carried,
   facing,
   handles,
   resized,
@@ -65,7 +66,9 @@ export interface CanvasOptions {
    * the app and are not part of the work. */
   marks?: boolean;
   open: (target: Target) => void;
-  select: (selection: Selection[]) => void;
+  /** The selection changed: the modules selected, and while editing the links selected
+   * with them (or alone), by id. */
+  select: (selection: Selection[], links: string[]) => void;
   /** A double click on words or a picture in a module. */
   point?: (pointed: Pointed) => void;
   cameraChanged?: (camera: Camera) => void;
@@ -84,9 +87,6 @@ export interface CanvasOptions {
    * module like it is wanted there (beyond that side, when no point is given), linked to
    * it. */
   extend?: (from: { moduleId: string; side: Side }, at?: Point) => void;
-  /** A link selected while editing, or none. Selecting a link leaves no module selected,
-   * and selecting modules leaves no link selected. */
-  selectLink?: (id: string | null) => void;
   /** An end of a link dragged onto a side of a module while editing. */
   reconnect?: (
     linkId: string,
@@ -229,12 +229,13 @@ export class Canvas {
   private snapping = { guides: true, grid: 0 };
   /** The box around the group of a selected module. */
   private groupBox = document.createElement("div");
-  /** The link selected while editing, and the one under the pointer. */
-  private link: string | null = null;
+  /** The links selected while editing, with the modules selected or alone, and the link
+   * under the pointer. */
+  private linkSelection: string[] = [];
   private hoveredLink: string | null = null;
   /** The lines of the hovered and the selected link, traced over them. */
   private linkMarks = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  /** The ends of the selected link, to drag onto another module or side. */
+  /** The ends of the one link selected, to drag onto another module or side. */
   private ends = new Map<"from" | "to", HTMLButtonElement>();
   /** Each drawn link's lines and words, sampled in scene units, for pressing near it. */
   private traces = new Map<
@@ -297,8 +298,9 @@ export class Canvas {
         last?: { id: string; bounds: Bounds }[];
         /** Whether copies are being dragged off: the modules themselves stay. */
         copy: boolean;
-        /** The modules that were selected, of which the others moved are group mates. */
-        chosen: string[];
+        /** A module of the selection pressed: let go where it was pressed, the selection
+         * narrows to it (or to its group), as a second press goes into a group. */
+        narrow?: string;
       }
     | {
         kind: "resize";
@@ -308,7 +310,16 @@ export class Canvas {
         others: Bounds[];
         last?: { id: string; bounds: Bounds }[];
       }
-    | { kind: "marquee"; start: Point; base: string[]; picked: string }
+    | {
+        kind: "marquee";
+        start: Point;
+        /** What was selected before, kept as the box adds to it (with Shift held). */
+        base: { modules: string[]; links: string[] };
+        picked: string;
+        /** The module that holds others the box was begun on: let go where it was
+         * pressed, the press selects it. */
+        on?: string;
+      }
     | { kind: "draw"; start: Point; box?: Bounds }
     | { kind: "connect"; from: { moduleId: string; side?: Side } }
     | { kind: "relink"; linkId: string; end: "from" | "to" }
@@ -506,10 +517,7 @@ export class Canvas {
         if (this.touching) return e.preventDefault();
         if (!this.editing || !this.options.menu) return;
         e.preventDefault();
-        const { module: m, link } = this.pick(e.clientX, e.clientY);
-        if (link) this.selectLink(link);
-        else if (m && !this.selection.includes(m.id)) this.select([m.id]);
-        else if (!m) this.select([]);
+        this.follow(this.pick(e.clientX, e.clientY));
         this.options.menu({ x: e.clientX, y: e.clientY });
       },
       { signal },
@@ -549,7 +557,7 @@ export class Canvas {
           this.fit();
           e.preventDefault();
         }
-        if (e.key === "Escape" && (this.selection.length || this.link)) {
+        if (e.key === "Escape" && (this.selection.length || this.linkSelection.length)) {
           this.select([]);
           e.stopPropagation();
         }
@@ -605,8 +613,8 @@ export class Canvas {
   }
   /** Keeps the selection on what is still drawn, as it is now. */
   private refresh(paint = true) {
-    if (this.selection.length) this.select(this.selection);
-    if (this.link && !this.renderer.links.has(this.link)) this.selectLink(null);
+    if (this.selection.length || this.linkSelection.length)
+      this.select(this.selection, this.linkSelection);
     if (paint) this.paint();
   }
   /** Modules waited for, each with the revision that made them. */
@@ -1209,14 +1217,13 @@ export class Canvas {
         dot.style.display = linking && (all || this.near === side) ? "grid" : "none";
     } else this.frame.style.display = "none";
     this.paintDims(chosen.length ? union(chosen.map((m) => m.bounds)) : undefined);
-    // A grouped module shows the box of the group it moves with.
+    // Modules selected inside a group show the box of the group they belong to.
+    const within = chosen[0]?.group;
     const group =
-      this.editing && chosen.length === 1 && chosen[0].group
-        ? [...this.renderer.instances.values()].filter(
-            (m) => m.group === chosen[0].group,
-          )
+      this.editing && within && chosen.every((m) => m.group === within)
+        ? [...this.renderer.instances.values()].filter((m) => m.group === within)
         : [];
-    if (group.length > 1) {
+    if (group.length > chosen.length) {
       const g = union(group.map((m) => this.ghost.get(m.id) ?? m.bounds));
       box(this.groupBox, {
         x: g.x - 6 / scale,
@@ -1357,7 +1364,16 @@ export class Canvas {
   }
   /** The module under the pointer that opens something, while not editing. */
   private hot: string | null = null;
-  /** The hovered and the selected link traced over, and the selected link's ends. */
+  /** The selection following a right click or a long press onto what it lands on, unless
+   * that is selected already. */
+  private follow({ module: m, link }: { module?: Instance; link?: string }) {
+    if (link && !m) {
+      if (!this.linkSelection.includes(link)) this.select([], [link]);
+    } else if (m && !this.selection.includes(m.id)) this.select(this.unitOf(m));
+    else if (!m) this.select([]);
+  }
+  /** The hovered and the selected links traced over, and the ends of the one link
+   * selected alone. */
   private paintLinks() {
     const { x, y, scale } = this.camera;
     const d = (id: string | null) => {
@@ -1376,10 +1392,13 @@ export class Canvas {
     const relinking = this.gesture?.kind === "relink";
     hover.setAttribute(
       "d",
-      this.hoveredLink !== this.link && !this.gesture ? d(this.hoveredLink) : "",
+      this.hoveredLink && !this.linkSelection.includes(this.hoveredLink) && !this.gesture
+        ? d(this.hoveredLink)
+        : "",
     );
-    chosen.setAttribute("d", relinking ? "" : d(this.link));
-    const link = this.link && this.editing ? this.renderer.links.get(this.link) : undefined;
+    chosen.setAttribute("d", relinking ? "" : this.linkSelection.map(d).join(""));
+    const only = this.onlyLink;
+    const link = only && this.editing ? this.renderer.links.get(only) : undefined;
     for (const [end, handle] of this.ends) {
       if (!link || relinking || !this.movable) {
         handle.style.display = "none";
@@ -1480,8 +1499,10 @@ export class Canvas {
   private pick(x: number, y: number): { module?: Instance; link?: string } {
     const link = this.editing ? this.linkAt(x, y) : null;
     const drawn = this.moduleAt(x, y, false);
-    // A link is drawn over the backdrop, so there the link is what the press is on.
-    if (drawn && !(link && this.beneath(drawn))) return { module: drawn };
+    // A link is drawn over the backdrop, and runs between what a zone holds, so there the
+    // link is what the press is on.
+    if (drawn && !(link && (this.beneath(drawn) || this.holds(drawn.id))))
+      return { module: drawn };
     if (link) return { link };
     const module = this.moduleAt(x, y);
     return module ? { module } : {};
@@ -1500,32 +1521,33 @@ export class Canvas {
   get dragging() {
     return !!this.gesture && this.gesture.kind !== "press" && this.gesture.moved;
   }
-  /** Where the selection is on screen: the box around the selected modules, or around
-   * the selected link's lines. */
+  /** The points a link is drawn through, with the corners of its words, in scene units. */
+  private pointsOf(id: string): Point[] {
+    const t = this.traceOf(id);
+    return t
+      ? [...t.lines.flat(), ...t.boxes.flatMap((b) => [b, { x: b.x + b.width, y: b.y + b.height }])]
+      : [];
+  }
+  /** Where the selection is on screen: the box around the selected modules and the lines
+   * of the selected links. */
   selectionRect(): DOMRect | undefined {
     const r = this.element.getBoundingClientRect();
-    let b: Bounds | undefined;
-    if (this.selection.length) {
-      const boxes = this.selection.flatMap((id) => {
-        const m = this.renderer.instances.get(id);
-        return m ? [this.ghost.get(id) ?? m.bounds] : [];
+    const boxes = this.selection.flatMap((id) => {
+      const m = this.renderer.instances.get(id);
+      return m ? [this.ghost.get(id) ?? m.bounds] : [];
+    });
+    const points = this.linkSelection.flatMap((id) => this.pointsOf(id));
+    if (points.length) {
+      const xs = points.map((p) => p.x),
+        ys = points.map((p) => p.y);
+      boxes.push({
+        x: Math.min(...xs),
+        y: Math.min(...ys),
+        width: Math.max(...xs) - Math.min(...xs),
+        height: Math.max(...ys) - Math.min(...ys),
       });
-      if (boxes.length) b = union(boxes);
-    } else if (this.link) {
-      const t = this.traceOf(this.link);
-      const points = t ? [...t.lines.flat(), ...t.boxes.flatMap((b) => [b, { x: b.x + b.width, y: b.y + b.height }])] : [];
-      if (points.length) {
-        const xs = points.map((p) => p.x),
-          ys = points.map((p) => p.y);
-        b = {
-          x: Math.min(...xs),
-          y: Math.min(...ys),
-          width: Math.max(...xs) - Math.min(...xs),
-          height: Math.max(...ys) - Math.min(...ys),
-        };
-      }
     }
-    const on = b && this.shown(b);
+    const on = boxes.length ? this.shown(union(boxes)) : undefined;
     return on && new DOMRect(r.left + on.x, r.top + on.y, on.width, on.height);
   }
   private changed() {
@@ -1767,42 +1789,66 @@ export class Canvas {
       this.editing && (this.spacing || this.tool !== "select"),
     );
   }
-  /** Selects every module in the scene. */
+  /** Selects everything in the scene: its modules, and while editing its links. */
   selectAll() {
-    this.select([...this.renderer.instances.keys()]);
+    this.select(
+      [...this.renderer.instances.keys()],
+      this.editing ? [...this.renderer.links.keys()] : [],
+    );
   }
   get selected() {
     return [...this.selection];
   }
-  select(ids: string[]) {
-    this.selection = ids.filter((id) => this.renderer.instances.has(id));
-    if (this.link && (this.selection.length || !ids.length)) {
-      this.link = null;
-      this.options.selectLink?.(null);
-    }
+  get selectedLinks() {
+    return [...this.linkSelection];
+  }
+  /** Selects modules, and links with them or alone; nothing, given none. */
+  select(ids: string[], links: string[] = []) {
+    this.selection = [...new Set(ids)].filter((id) => this.renderer.instances.has(id));
+    this.linkSelection = [...new Set(links)].filter((id) => this.renderer.links.has(id));
     this.options.select(
       this.selection.map((id) => {
         const m = this.renderer.instances.get(id)!;
         return { moduleId: m.id, label: shownName(this.renderer.work, m), data: m.data };
       }),
+      [...this.linkSelection],
     );
     this.paint();
   }
-  /** Selects a link, leaving no module selected, or no link. */
-  selectLink(id: string | null) {
-    const next = id && this.renderer.links.has(id) ? id : null;
-    if (next && this.selection.length) {
-      this.selection = [];
-      this.options.select([]);
-    }
-    if (next !== this.link) {
-      this.link = next;
-      this.options.selectLink?.(next);
-    }
-    this.paint();
+  /** The one link selected, alone: its ends can be dragged elsewhere. */
+  private get onlyLink() {
+    return this.linkSelection.length === 1 && !this.selection.length
+      ? this.linkSelection[0]
+      : null;
   }
-  get selectedLink() {
-    return this.link;
+  /** The scene's modules in stacking order, where they are now. */
+  private stack() {
+    return this.renderer.scene.modules.flatMap((m) => {
+      const v = this.renderer.instances.get(m.id);
+      return v ? [{ id: v.id, bounds: this.ghost.get(v.id) ?? v.bounds }] : [];
+    });
+  }
+  /** Whether a module holds others drawn over it, as a zone holds the steps in it. */
+  private holds(id: string) {
+    return carried(this.stack(), [id]).length > 0;
+  }
+  /** The members of a group. */
+  private mates(group: string) {
+    return [...this.renderer.instances.values()]
+      .filter((v) => v.group === group)
+      .map((v) => v.id);
+  }
+  /** What a press on a module selects while editing: its whole group, unless the
+   * selection is already inside that group, or Cmd or Ctrl reaches in (`deep`): then the
+   * module alone. */
+  private unitOf(m: Instance, deep = false) {
+    if (!this.editing || !m.group || deep) return [m.id];
+    const mates = this.mates(m.group);
+    const inside =
+      this.selection.length > 0 &&
+      this.selection.length < mates.length &&
+      this.selection.every((id) => mates.includes(id));
+    return inside ? [m.id] : mates;
   }
   /** Whether the whole drawing is in view, clear of the controls laid over it. */
   showsWhole() {
@@ -1842,9 +1888,10 @@ export class Canvas {
     this.drag(moves, false);
     this.paint();
   }
-  /** Moves modules by a distance in scene units, until the move is committed. */
+  /** Moves modules, with what they hold, by a distance in scene units, until the move is
+   * committed. */
   nudge(ids: string[], dx: number, dy: number) {
-    const moves = ids.flatMap((id) => {
+    const moves = [...ids, ...carried(this.stack(), ids)].flatMap((id) => {
       const m = this.renderer.instances.get(id);
       return m
         ? [{ id, bounds: { ...m.bounds, x: m.bounds.x + dx, y: m.bounds.y + dy } }]
@@ -2212,59 +2259,74 @@ export class Canvas {
       };
       return capture();
     }
-    // An end of the selected link is dragged onto another module, or another side.
+    // An end of the one link selected is dragged onto another module, or another side.
     const end = control?.dataset.linkEnd as "from" | "to" | undefined;
-    if (end && this.link) {
-      this.gesture = { ...start, kind: "relink", linkId: this.link, end };
+    const only = this.onlyLink;
+    if (end && only) {
+      this.gesture = { ...start, kind: "relink", linkId: only, end };
       this.paint();
       return capture();
     }
     const { module: m, link } = this.pick(e.clientX, e.clientY);
-    // A press on a link while editing selects it.
+    const selection = this.selection,
+      links = this.linkSelection;
+    // A press on a link while editing selects it; with Shift it joins the selection or
+    // leaves it.
     if (link && this.editing && !m) {
-      this.selectLink(link);
+      if (!e.shiftKey) this.select([], [link]);
+      else if (links.includes(link)) this.select(selection, links.filter((id) => id !== link));
+      else this.select(selection, [...links, link]);
       this.gesture = { ...start, kind: "press" };
       return capture();
     }
-    // Pressing a module selects it; dragging one already selected moves it, and dragging
-    // anything else moves the view. While editing, any module pressed can be dragged at
-    // once, Shift adds a module to the selection or takes it out, and dragging over the
-    // paper draws a box that selects what it touches.
-    const was = this.selection.includes(m?.id ?? "");
-    if (this.editing && e.shiftKey && m)
-      this.select(
-        was
-          ? this.selection.filter((id) => id !== m.id)
-          : [...this.selection, m.id],
-      );
-    else if (m && !was) this.select([m.id]);
-    else if (!m && !(this.editing && e.shiftKey)) this.select([]);
-    // A finger on the paper moves the view: boxing a selection in is a mouse's job.
-    if (!m && this.editing && !touch) {
+    // While editing, dragging over the paper with a mouse draws a box that selects what it
+    // holds; so does dragging over a zone that holds others and is not selected, which a
+    // press without a drag selects. A finger on the paper moves the view instead.
+    const zone = !!m && !selection.includes(m.id) && this.editing && this.holds(m.id);
+    if (this.editing && !touch && (!m || zone)) {
+      if (!m && !e.shiftKey) this.select([]);
       this.gesture = {
         ...start,
         kind: "marquee",
         start: this.toScene(e.clientX, e.clientY),
-        base: e.shiftKey ? [...this.selection] : [],
+        base: e.shiftKey ? { modules: [...this.selection], links: [...this.linkSelection] } : { modules: [], links: [] },
         picked: "",
+        on: zone ? m.id : undefined,
       };
       return capture();
     }
+    // Pressing a module selects it, and while editing its group with it (a second press,
+    // or Cmd or Ctrl, reaches a module inside a group); dragging one already selected
+    // moves the selection, and dragging anything else moves the view. While editing any
+    // module pressed can be dragged at once, and Shift adds a module (or its group) to
+    // the selection or takes it out.
+    const deep = this.editing && (e.metaKey || e.ctrlKey);
+    const was = !!m && selection.includes(m.id);
+    let narrow: string | undefined;
+    if (m && this.editing && e.shiftKey) {
+      const unit = this.unitOf(m, deep);
+      this.select(
+        unit.every((id) => selection.includes(id))
+          ? selection.filter((id) => !unit.includes(id))
+          : [...selection, ...unit],
+        links,
+      );
+    } else if (m && (!was || deep)) this.select(this.unitOf(m, deep));
+    else if (m && this.editing && (selection.length > 1 || links.length)) narrow = m.id;
+    else if (!m) this.select([]);
     const held = !!m && this.selection.includes(m.id) && (was || this.editing);
     if (this.movable && held) {
-      // A grouped module takes its group along. With Alt held while editing, copies are
-      // dragged off and the modules stay, so they are among what the copies line up with.
-      const moving = [
-        ...new Set(
-          chosen().flatMap((d) =>
-            d.group
-              ? [...this.renderer.instances.values()].filter(
-                  (v) => v.group === d.group,
-                )
-              : [d],
-          ),
-        ),
-      ];
+      // What is selected moves with what it holds. Outside editing a grouped module takes
+      // its group along, as editing selects the group itself. With Alt held while
+      // editing, copies are dragged off and the modules stay, so they are among what the
+      // copies line up with.
+      const ids = this.editing
+        ? this.selection
+        : chosen().flatMap((d) => (d.group ? this.mates(d.group) : [d.id]));
+      const moving = [...new Set([...ids, ...carried(this.stack(), ids)])].flatMap((id) => {
+        const v = this.renderer.instances.get(id);
+        return v ? [v] : [];
+      });
       const copy = this.editing && e.altKey && !!this.options.duplicate;
       this.gesture = {
         ...start,
@@ -2272,7 +2334,7 @@ export class Canvas {
         moves: moving.map((v) => ({ id: v.id, bounds: { ...v.bounds } })),
         others: others(copy ? new Set() : new Set(moving.map((v) => v.id))),
         copy,
-        chosen: [...this.selection],
+        narrow,
       };
       if (copy) this.element.style.cursor = "copy";
     } else this.gesture = { ...start, kind: "pan", camera: { ...this.camera } };
@@ -2586,20 +2648,48 @@ export class Canvas {
         width: box.width * scale + "px",
         height: box.height * scale + "px",
       });
-      // What the box touches is selected as it is drawn.
-      const hits = [...this.renderer.instances.values()]
-        .filter(
-          (m) =>
-            m.bounds.x < box.x + box.width &&
-            box.x < m.bounds.x + m.bounds.width &&
-            m.bounds.y < box.y + box.height &&
-            box.y < m.bounds.y + m.bounds.height,
+      // What lies wholly in the box is selected as it is drawn; with Alt, whatever it
+      // touches. A group goes as a whole: once all of it is in the box, or with Alt once
+      // any of it is. A module the box lies wholly in (the zone it was begun in) is not
+      // what it means.
+      const touching = e.altKey;
+      const inBox = (p: Point) =>
+        p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height;
+      const meets = (b: Bounds) =>
+        b.x < box.x + box.width && box.x < b.x + b.width && b.y < box.y + box.height && box.y < b.y + b.height;
+      const holds = (b: Bounds) =>
+        b.x <= box.x && b.y <= box.y && b.x + b.width >= box.x + box.width && b.y + b.height >= box.y + box.height;
+      const all = [...this.renderer.instances.values()];
+      const hit = new Set(
+        all
+          .filter((m) =>
+            touching
+              ? meets(m.bounds) && !holds(m.bounds)
+              : inBox(m.bounds) && inBox({ x: m.bounds.x + m.bounds.width, y: m.bounds.y + m.bounds.height }),
+          )
+          .map((m) => m.id),
+      );
+      const modules = all
+        .filter((m) =>
+          m.group
+            ? touching
+              ? this.mates(m.group).some((id) => hit.has(id))
+              : this.mates(m.group).every((id) => hit.has(id))
+            : hit.has(m.id),
         )
         .map((m) => m.id);
-      const picked = [...new Set([...g.base, ...hits])];
-      if (picked.join() !== g.picked) {
-        g.picked = picked.join();
-        this.select(picked);
+      const links = [...this.renderer.links.keys()].filter((id) => {
+        const points = this.pointsOf(id);
+        return points.length > 0 && (touching ? points.some(inBox) : points.every(inBox));
+      });
+      const picked = {
+        modules: [...new Set([...g.base.modules, ...modules])],
+        links: [...new Set([...g.base.links, ...links])],
+      };
+      const key = picked.modules.join() + "|" + picked.links.join();
+      if (key !== g.picked) {
+        g.picked = key;
+        this.select(picked.modules, picked.links);
       }
     } else if (g.kind === "connect") {
       const from = this.renderer.instances.get(g.from.moduleId);
@@ -2738,10 +2828,7 @@ export class Canvas {
       if (!g || g.pointer !== pointer || g.moved || this.touches.size !== 1) return;
       this.cancel();
       if (this.element.hasPointerCapture(pointer)) this.element.releasePointerCapture(pointer);
-      const { module: m, link } = under;
-      if (link && !m) this.selectLink(link);
-      else if (m && !this.selection.includes(m.id)) this.select([m.id]);
-      else if (!m) this.select([]);
+      this.follow(under);
       if (this.options.hold) this.options.hold(at);
       else if (this.editing) this.options.menu?.(at);
     }, HOLD_MS);
@@ -2800,6 +2887,31 @@ export class Canvas {
       else if (!g.straight || g.moved) this.options.ink?.(g.points, { kind: g.straight ? "arrow" : "pen" });
     }
     if (g.kind === "erase" && g.hit.size) this.options.erase?.([...g.hit]);
+    // A zone pressed without a drag is selected, or with Shift joins the selection or
+    // leaves it.
+    if (g.kind === "marquee" && !g.moved && g.on) {
+      const m = this.renderer.instances.get(g.on);
+      if (m) {
+        const unit = this.unitOf(m);
+        const { modules, links } = g.base;
+        if (!e.shiftKey) this.select(unit);
+        else if (unit.every((id) => modules.includes(id)))
+          this.select(modules.filter((id) => !unit.includes(id)), links);
+        else this.select([...modules, ...unit], links);
+      }
+    }
+    // A press on one of several selected, let go where it was, selects it alone, or its
+    // group; pressed again within a selected group, the one module inside it.
+    if (g.kind === "move" && !g.moved && g.narrow) {
+      const m = this.renderer.instances.get(g.narrow);
+      const mates = m?.group ? this.mates(m.group) : [];
+      if (m)
+        this.select(
+          mates.length && mates.length === this.selection.length && mates.every((id) => this.selection.includes(id)) && !this.linkSelection.length
+            ? [m.id]
+            : this.unitOf(m),
+        );
+    }
     if (g.kind === "draw") {
       const big = g.box && g.box.width * this.camera.scale >= 12 && g.box.height * this.camera.scale >= 12;
       this.options.place?.(

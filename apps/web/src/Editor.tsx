@@ -35,6 +35,7 @@ import {
 import type { Canvas, Pointed } from "../../../modules/canvas/index.ts";
 import {
   addScene,
+  carried,
   composed,
   shownName,
   moveParts,
@@ -106,7 +107,7 @@ export function EditPanel({
   work,
   sceneId,
   selected,
-  link,
+  links,
   canvas,
   busy,
   change,
@@ -118,8 +119,8 @@ export function EditPanel({
   work: Work;
   sceneId: string;
   selected: string[];
-  /** The link selected, when no module is. */
-  link: string | null;
+  /** The links selected, with the modules or alone. */
+  links: string[];
   canvas?: Canvas;
   /** Why the work cannot be edited right now, if it cannot. */
   busy?: string;
@@ -140,7 +141,7 @@ export function EditPanel({
   const scene = work.scenes[sceneId];
   const top = useRef<HTMLDivElement>(null);
   // Something else selected is read from the top.
-  const showing = tab + ":" + selected.join() + ":" + (link ?? "");
+  const showing = tab + ":" + selected.join() + ":" + links.join();
   useLayoutEffect(() => {
     top.current?.parentElement?.scrollTo({ top: 0 });
   }, [showing]);
@@ -151,7 +152,7 @@ export function EditPanel({
     const m = scene.modules.find((x) => x.id === id);
     return m ? [m] : [];
   });
-  const chosenLink = !modules.length && link ? scene.links.find((l) => l.id === link) : undefined;
+  const chosenLinks = scene.links.filter((l) => links.includes(l.id));
   return (
     <div ref={top} className={cx("edit")}>
       <span className={cx("field-choice", "edit-tabs")} role="tablist">
@@ -168,7 +169,7 @@ export function EditPanel({
           work={work}
           sceneId={sceneId}
           selected={selected}
-          link={link}
+          links={links}
           canvas={canvas}
           change={change}
         />
@@ -177,6 +178,7 @@ export function EditPanel({
           work={work}
           sceneId={sceneId}
           modules={modules}
+          links={chosenLinks}
           canvas={canvas}
           change={change}
           ops={ops}
@@ -185,12 +187,12 @@ export function EditPanel({
           ask={ask}
           openScene={openScene}
         />
-      ) : chosenLink ? (
+      ) : chosenLinks.length === 1 ? (
         <LinkPanel
-          key={chosenLink.id}
+          key={chosenLinks[0].id}
           work={work}
           sceneId={sceneId}
-          link={chosenLink}
+          link={chosenLinks[0]}
           canvas={canvas}
           change={change}
           ops={ops}
@@ -198,6 +200,8 @@ export function EditPanel({
           pickPicture={pickPicture}
           ask={ask}
         />
+      ) : chosenLinks.length ? (
+        <Links work={work} sceneId={sceneId} links={chosenLinks} canvas={canvas} change={change} ops={ops} ask={ask} />
       ) : (
         <>
           <Section id="scene" title={sceneId === work.rootSceneId ? t.edit.scene.rootHeading : t.edit.scene.heading}>
@@ -250,11 +254,12 @@ function Act({
   );
 }
 
-/** What can be changed about the selected modules. */
+/** What can be changed about the selected modules, and the links selected with them. */
 function Selected({
   work,
   sceneId,
   modules,
+  links: chosenLinks,
   canvas,
   change,
   ops,
@@ -266,6 +271,7 @@ function Selected({
   work: Work;
   sceneId: string;
   modules: Instance[];
+  links: Link[];
   canvas?: Canvas;
   change: Change;
   ops: EditOps;
@@ -276,7 +282,7 @@ function Selected({
 }) {
   const t = useT();
   const scene = work.scenes[sceneId];
-  const one = modules.length === 1 ? modules[0] : undefined;
+  const one = modules.length === 1 && !chosenLinks.length ? modules[0] : undefined;
   const grouped = modules.some((m) => m.group);
   const links = one
     ? scene.links.filter((l) => l.from.moduleId === one.id || l.to.moduleId === one.id)
@@ -307,7 +313,7 @@ function Selected({
               }
             />
           ) : (
-            <h3>{t.edit.many(modules.length)}</h3>
+            <h3>{t.edit.many(modules.length + chosenLinks.length)}</h3>
           )}
           {drawing && <small>{drawing}</small>}
         </div>
@@ -356,11 +362,11 @@ function Selected({
         )}
       </header>
       <Section id="place" title={t.edit.place.heading}>
-        <Place sceneId={sceneId} modules={modules} canvas={canvas} change={change} />
+        <Place sceneId={sceneId} scene={scene.modules} modules={modules} canvas={canvas} change={change} />
         <Arrange count={modules.length} ops={ops} />
       </Section>
       {!one && (
-        <Shared work={work} sceneId={sceneId} modules={modules} canvas={canvas} change={change} />
+        <Shared work={work} sceneId={sceneId} parts={[...modules, ...chosenLinks]} canvas={canvas} change={change} />
       )}
       {one && (
         <Section id="content" title={t.edit.content}>
@@ -421,11 +427,14 @@ const round = (n: number) => Math.round(n * 10) / 10;
  * sized as one, each keeping its share. */
 function Place({
   sceneId,
+  scene,
   modules,
   canvas,
   change,
 }: {
   sceneId: string;
+  /** The scene's modules in stacking order, for what the selection holds. */
+  scene: Instance[];
   modules: Instance[];
   canvas?: Canvas;
   change: Change;
@@ -433,14 +442,23 @@ function Place({
   const t = useT();
   const [locked, setLocked] = useState(false);
   const frame = union(modules.map((m) => m.bounds));
+  /** Where the selection goes, and moved (not resized) what it holds with it. */
   const movesFor = (key: keyof Bounds, value: number) => {
     const next = { ...frame, [key]: value };
     if (locked && key === "width") next.height = (value * frame.height) / frame.width;
     if (locked && key === "height") next.width = (value * frame.width) / frame.height;
-    return modules.map((m) => ({
-      id: m.id,
-      bounds: modules.length === 1 ? next : scaled(m.bounds, frame, next),
-    }));
+    const dx = next.x - frame.x,
+      dy = next.y - frame.y;
+    const held = dx || dy ? carried(scene, modules.map((m) => m.id)) : [];
+    return [
+      ...modules.map((m) => ({
+        id: m.id,
+        bounds: modules.length === 1 ? next : scaled(m.bounds, frame, next),
+      })),
+      ...scene
+        .filter((m) => held.includes(m.id))
+        .map((m) => ({ id: m.id, bounds: { ...m.bounds, x: m.bounds.x + dx, y: m.bounds.y + dy } })),
+    ];
   };
   const valid = (key: keyof Bounds, value: number) =>
     Number.isFinite(value) &&
@@ -476,7 +494,7 @@ function Place({
             el.removeEventListener("pointerup", up);
             el.removeEventListener("pointercancel", up);
             if (valid(key, value)) commit(key, value);
-            else canvas?.reshape(modules.map((m) => ({ id: m.id, bounds: m.bounds })));
+            else canvas?.reshape(movesFor(key, frame[key]));
           };
           el.addEventListener("pointermove", move);
           el.addEventListener("pointerup", up);
@@ -682,7 +700,7 @@ function Connection({
     .find((v): v is string => typeof v === "string" && !!v);
   return (
     <li className={cx("link-row")}>
-      <button className={cx("link-row-main")} onClick={() => canvas?.selectLink(link.id)} data-tip={t.edit.linkPanel.select}>
+      <button className={cx("link-row-main")} onClick={() => canvas?.select([], [link.id])} data-tip={t.edit.linkPanel.select}>
         <Spline size={14} />
         <span>{out ? t.edit.to(other) : t.edit.from(other)}</span>
         {words && <small>{words}</small>}
@@ -691,7 +709,7 @@ function Connection({
       <button
         aria-label={t.edit.linkEnds.reverse}
         data-tip={t.edit.linkEnds.reverse}
-        onClick={() => void change((w) => reverse(w, sceneId, link.id))}
+        onClick={() => void change((w) => reverse(w, sceneId, [link.id]))}
       >
         <ArrowRightLeft size={14} />
       </button>
@@ -796,7 +814,7 @@ function LinkPanel({
           </h3>
         </div>
         <Actions>
-          <Act label={t.edit.linkEnds.reverse} tip={`${t.edit.linkEnds.reverse} · R`} onClick={() => ops.reverse(link.id)}>
+          <Act label={t.edit.linkEnds.reverse} tip={`${t.edit.linkEnds.reverse} · R`} onClick={() => ops.reverse([link.id])}>
             <ArrowRightLeft size={16} />
           </Act>
           <Act label={l.selectEnds} onClick={() => canvas?.select([link.from.moduleId, link.to.moduleId])}>
@@ -845,30 +863,85 @@ function LinkPanel({
   );
 }
 
-/** How several selected modules look, as the values they can all be given at once: a
- * choice, a colour, a number or a switch every one of them has. Each change goes to them
- * all; a value they differ in shows as none chosen until one is. */
+/** What can be changed about several links selected alone: their direction, their look,
+ * the modules they join, and taking them out. */
+function Links({
+  work,
+  sceneId,
+  links,
+  canvas,
+  change,
+  ops,
+  ask,
+}: {
+  work: Work;
+  sceneId: string;
+  links: Link[];
+  canvas?: Canvas;
+  change: Change;
+  ops: EditOps;
+  ask: () => void;
+}) {
+  const t = useT(),
+    l = t.edit.linkPanel;
+  return (
+    <>
+      <header className={cx("edit-head")}>
+        <div className={cx("edit-title")}>
+          <span className={cx("edit-kind")}>
+            <Spline size={13} />
+            {l.heading}
+          </span>
+          <h3>{t.edit.manyLinks(links.length)}</h3>
+        </div>
+        <Actions>
+          <Act label={t.edit.linkEnds.reverse} tip={`${t.edit.linkEnds.reverse} · R`} onClick={() => ops.reverse()}>
+            <ArrowRightLeft size={16} />
+          </Act>
+          <Act
+            label={l.selectEnds}
+            onClick={() => canvas?.select(links.flatMap((x) => [x.from.moduleId, x.to.moduleId]))}
+          >
+            <Group size={16} />
+          </Act>
+          <i />
+          <Act label={t.edit.actions.ask} onClick={ask}>
+            <MessageSquareQuote size={16} />
+          </Act>
+          <Act label={t.edit.removeLinks} tip={t.edit.remove} danger onClick={ops.remove}>
+            <Trash2 size={16} />
+          </Act>
+        </Actions>
+      </header>
+      <Shared work={work} sceneId={sceneId} parts={links} canvas={canvas} change={change} />
+    </>
+  );
+}
+
+/** How several selected parts (modules and links) look, as the values they can all be
+ * given at once: a choice, a colour, a number or a switch every one of them has. Each
+ * change goes to them all; a value they differ in shows as none chosen until one is. */
 function Shared({
   work,
   sceneId,
-  modules,
+  parts,
   canvas,
   change,
 }: {
   work: Work;
   sceneId: string;
-  modules: Instance[];
+  parts: (Instance | Link)[];
   canvas?: Canvas;
   change: Change;
 }) {
   const t = useT();
-  const fields = sharedFields(work, modules);
+  const fields = sharedFields(work, parts);
   if (!fields.length) return null;
-  const ids = modules.map((m) => m.id);
+  const ids = parts.map((m) => m.id);
   const keep = (f: SharedField, value: unknown) =>
     void change((w) => restyle(w, sceneId, ids, { [f.key]: value }));
   const show = (f: SharedField, value: unknown) => {
-    for (const m of modules) canvas?.preview(m.id, { ...m.data, [f.key]: value });
+    for (const m of parts) canvas?.preview(m.id, { ...m.data, [f.key]: value });
   };
   return (
     <Section id="shared" title={t.edit.shared}>
