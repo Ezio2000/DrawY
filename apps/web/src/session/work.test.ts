@@ -124,6 +124,30 @@ it("shows a hand edit at once and swaps the saved work in quietly", async () => 
 });
 
 
+it("counts each hand edit as unsaved at once, without waiting for the revisions", async () => {
+  const { store, s } = await open();
+  let list!: () => void;
+  const held = new Promise<void>((r) => (list = r));
+  const through = server.handle;
+  // The server tells every page of the edit before it answers the one that made it.
+  server.handle = async (path, method, data) => {
+    if (path.endsWith("/revisions")) await held;
+    const answered = await through(path, method, data);
+    if (path.endsWith("/edits")) events!({ type: "work", work: structuredClone(answered) as Work });
+    return answered;
+  };
+  // The unsaved bar reads this count; it must not drop to nothing between edits.
+  expect(await store.change(moved)).toBe(true);
+  expect(s().synced).toBe(true);
+  expect(s().unsaved).toBe(1);
+  expect(await store.change(moved)).toBe(true);
+  expect(s().unsaved).toBe(2);
+  list();
+  await settle();
+  expect(s().unsaved).toBe(2);
+  expect(s().undoable).toBe(true);
+});
+
 it("recovers the edit queue and draft when constructing an edit throws", async () => {
   const { store, s } = await open();
   const make = vi.fn(moved).mockImplementationOnce(moved).mockImplementationOnce(() => {

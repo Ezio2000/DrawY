@@ -62,7 +62,25 @@ it("paints the drawing's words as laid out; shows a hand edit at once and lays t
   expect(await module("Alpha")).toMatchObject({ left: moved.left, mark: before.mark });
   expect(await statuses()).toContain("1 change not saved\nDiscard changes\nSave as version 2");
   expect(await seal("Version 1 · unsaved changes").count()).toBe(1);
-  // Undone by keyboard, in place; moved again.
+  // A further edit is counted at once: the bar stays while the revisions catch up, rather
+  // than leaving and coming back on every edit.
+  let list!: () => void;
+  const listed = new Promise<void>((r) => (list = r));
+  await page.route("**/api/works/*/revisions", async (route) => {
+    await listed;
+    await route.continue();
+  });
+  await drag("Alpha");
+  await expect
+    .poll(async () => (await statuses()).join("|"))
+    .toContain("2 changes not saved\nDiscard changes\nSave as version 2");
+  list();
+  await page.unroute("**/api/works/*/revisions");
+  await settled();
+  // Undone by keyboard, in place, a step at a time; moved again.
+  await page.keyboard.press("Control+z");
+  await settled();
+  expect(await module("Alpha")).toMatchObject({ left: moved.left, mark: before.mark });
   await page.keyboard.press("Control+z");
   await settled();
   expect(await module("Alpha")).toMatchObject({ left: before.left, mark: before.mark });

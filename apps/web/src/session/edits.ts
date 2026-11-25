@@ -77,7 +77,7 @@ export class Edits {
           api<Work>("/works/" + w.id + "/edits", "POST", { baseRevision: w.revision, edit }),
         );
         settle(false);
-        revisions.take(saved);
+        revisions.edited(saved);
         this.ctx.changed();
         return saved;
       } catch (e) {

@@ -79,7 +79,7 @@ export class Runs {
 
   private receive(event: ServerEvent) {
     if (this.ctx.disposed) return;
-    if (event.type === "work") return this.ctx.revisions.take(event.work);
+    if (event.type === "work") return this.ctx.revisions.heard(event.work);
     if (event.type === "run") {
       if (event.run.workId === this.ctx.id) this.upsert(event.run);
       return;

@@ -18,6 +18,8 @@ export class Revisions {
   private own = new Set<number>();
   /** The person's own changes still on their way to the server. */
   private inflight = 0;
+  /** The latest work the server told of while the person's change was on its way. */
+  private meanwhile?: Work;
   private asked = 0;
   private derived?: {
     history: RevisionSummary[];
@@ -55,6 +57,18 @@ export class Revisions {
     this.ctx.changed();
   }
 
+  /** Takes a hand edit the server saved. Its row in the list is known already, so it is
+   * counted among the unsaved edits at once, rather than the count going blank until the
+   * list catches up, which would hide the unsaved bar and show it again on every edit. */
+  edited(work: Work) {
+    if (work.revision > (this.work?.revision ?? -1) && this.synced)
+      this.history = [
+        ...this.history,
+        { revision: work.revision, updatedAt: work.updatedAt, cause: { kind: "edit" } },
+      ];
+    this.take(work);
+  }
+
   private async fetch() {
     // The blank sheet is not saved yet, so the server has no revisions for it.
     if (this.ctx.id === "_blank") return;
@@ -67,15 +81,27 @@ export class Revisions {
     } catch {}
   }
 
+  /** A work the server told every page of. While the person's own change is on its way,
+   * its answer brings that work and the caller knows what it was, so the telling waits for
+   * it and stands only if the answer does not come. */
+  heard(work: Work) {
+    if (!this.inflight) return this.take(work);
+    if (work.revision > (this.meanwhile?.revision ?? -1)) this.meanwhile = work;
+  }
+
   /** Runs a change the person makes, marking the revision it saves as theirs. */
   async mine(save: () => Promise<Work>) {
     this.inflight++;
+    let w: Work | undefined;
     try {
-      const w = await save();
+      w = await save();
       this.own.add(w.revision);
       return w;
     } finally {
       this.inflight--;
+      const told = this.inflight ? undefined : this.meanwhile;
+      if (told) this.meanwhile = undefined;
+      if (told && told.revision > (w?.revision ?? -1)) this.take(told);
     }
   }
 
