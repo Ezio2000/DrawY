@@ -41,7 +41,7 @@ export const IMPORTABLE = ".excalidraw,.json,.mmd,.mermaid,.md,.txt";
 export const importable = (file: File) => /\.(excalidraw|json|mmd|mermaid|md|txt)$/i.test(file.name);
 
 /** The clip something brought in becomes, its pictures in the library, with how many of
- * its parts came in upright or solid. Throws when the text is not a scene or a diagram it
+ * what of it was adjusted on the way. Throws when the text is not a scene or a diagram it
  * can read. */
 export async function clipOf(what: Incoming): Promise<Brought> {
   await loadBindings();
@@ -50,7 +50,7 @@ export async function clipOf(what: Incoming): Promise<Brought> {
     return fromExcalidraw(scene, await upload(scene.elements, scene.files));
   }
   const clip = isFlowchart(what.source) ? fromFlowchart(await layout(what.source)) : mermaidBlock(what.source, await measure(what.source));
-  return { clip, upright: 0, opaque: 0 };
+  return { clip, adjusted: { upright: 0, opaque: 0, flipped: 0 } };
 }
 
 /** The scene's pictures uploaded to the library, by the file each came from. */

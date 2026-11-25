@@ -154,11 +154,14 @@ describe("Excalidraw", () => {
   });
 
   it("brings shapes, words, links, lines, strokes and pictures in as parts", () => {
-    const { clip, upright } = fromExcalidraw(scene, { file1: "pic-1" });
-    expect(upright).toBe(0);
+    const { clip, adjusted } = fromExcalidraw(scene, { file1: "pic-1" });
+    expect(adjusted).toEqual({ upright: 0, opaque: 0, flipped: 0 });
     // Turned shapes, words and pictures come in upright and are counted; lines keep their turn.
     const turned = { elements: scene.elements.map((e) => (["a", "free"].includes(e.id) ? { ...e, angle: 0.5 } : e)) };
-    expect(fromExcalidraw(turned, { file1: "pic-1" }).upright).toBe(1);
+    expect(fromExcalidraw(turned, { file1: "pic-1" }).adjusted.upright).toBe(1);
+    // A mirrored picture comes in the right way round, and is counted too.
+    const mirrored = { elements: scene.elements.map((e) => (e.id === "img" ? { ...e, scale: [-1, 1] as [number, number] } : e)) };
+    expect(fromExcalidraw(mirrored, { file1: "pic-1" }).adjusted.flipped).toBe(1);
     const { work } = pasted(blank(), clip, { "pic-1": photo("pic-1") });
     const root = work.scenes.root;
     const by = (id: string) => root.modules.find((m) => m.id === id)!;
@@ -209,6 +212,9 @@ describe("Excalidraw", () => {
     expect(of("shape-1")).toMatchObject({ type: "rectangle", backgroundColor: "#ffc9c9", fillStyle: "hachure", roundness: { type: 3 }, groupIds: ["outer"] });
     expect(of("shape-1-text")).toMatchObject({ type: "text", text: "开始", containerId: "shape-1" });
     expect(of("box")).toMatchObject({ type: "rectangle", strokeColor: "#d97757", backgroundColor: "#d9775724" });
+    // A block without a fill is filled with the paper, as it is drawn, hiding what is under it.
+    work.scenes.root.modules.push({ id: "plain", drawingId: "node", bounds: { x: 200, y: 700, width: 100, height: 50 }, data: { title: "空白", fillStyle: "none" } });
+    expect(toExcalidraw(work, "root", {}, 1).elements.find((e) => e.id === "plain")!.backgroundColor).toBe(work.style.paper || "#ffffff");
     expect(of("l2")).toMatchObject({ type: "arrow", startBinding: { elementId: "shape-1" }, endBinding: { elementId: "box" }, endArrowhead: "triangle" });
     expect(of("shape-1").boundElements).toEqual(expect.arrayContaining([{ id: "l2", type: "arrow" }]));
     expect(of("stroke-1")).toMatchObject({ type: "freedraw", strokeColor: "#e03131", strokeWidth: 2 });
@@ -235,7 +241,10 @@ describe("Excalidraw", () => {
   });
 
   it("keeps shapes and lines seen through, leaves out what cannot be seen, and counts what comes in solid", () => {
-    const { clip, opaque } = fromExcalidraw({
+    const {
+      clip,
+      adjusted: { opaque },
+    } = fromExcalidraw({
       elements: [
         el({ id: "glass", type: "rectangle", opacity: 40, boundElements: [{ id: "gt", type: "text" }] }),
         el({ id: "gt", type: "text", text: "半透明", containerId: "glass", opacity: 40 }),

@@ -78,7 +78,7 @@ export function useWorkPage({
         h.kind === "saved"
           ? feedback.say(t.unsaved.saved(h.version))
           : h.kind === "adjusted"
-            ? feedback.say(t.edit.bring.adjusted(h.upright, h.opaque), EXPLAIN_FOR)
+            ? feedback.say(t.edit.bring.adjusted(h.adjusted), EXPLAIN_FOR)
             : feedback.fail(h.error),
       ),
     [session, t],

@@ -127,14 +127,19 @@ const headOf = (h?: string | null) => (!h ? "none" : h === "arrow" ? "open" : "f
 /** The group a part keeps: Excalidraw nests groups, a work has one level, so the outermost. */
 const groupOf = (e: ExcalidrawElement) => e.groupIds?.at(-1);
 
-/** What an Excalidraw scene becomes: the clip to paste, and what of it could not come in as
- * it was, since a work has neither rotation nor opacity: how many shapes, words and
- * pictures were turned and come in upright, and how many words, pictures and links were
- * seen through and come in solid. */
-export interface Brought {
-  clip: Clip;
+/** What of a scene could not come in as it was, since a work has no rotation, no opacity
+ * for words, pictures and links, and no mirroring: how many shapes, words and pictures
+ * were turned and come in upright, how many words, pictures and links were seen through
+ * and come in solid, and how many pictures were flipped and come in the right way round. */
+export interface Adjusted {
   upright: number;
   opaque: number;
+  flipped: number;
+}
+/** What an Excalidraw scene becomes: the clip to paste, and what of it was adjusted. */
+export interface Brought {
+  clip: Clip;
+  adjusted: Adjusted;
 }
 /** The parts an Excalidraw scene becomes, as a clip to paste. Pictures come in as the
  * library materials `pictures` maps their files to; one without is left out. Lines and
@@ -302,9 +307,11 @@ export function fromExcalidraw(
       made.module({ ...common, bounds, drawingId: made.drawing(sketchLine), data }, freehand ? "stroke" : "line");
     }
   }
-  const upright =[...moduleOf.keys()].filter((id) => Math.abs(byId.get(id)!.angle ?? 0) > 1e-3).length;
-  // Words and pictures are drawn by the library, which has no opacity.
-  let opaque = [...moduleOf.keys()].map((id) => byId.get(id)!).filter((e) => !SHAPES.has(e.type) && faded(e)).length;
+  const came = [...moduleOf.keys()].map((id) => byId.get(id)!);
+  const upright = came.filter((e) => Math.abs(e.angle ?? 0) > 1e-3).length;
+  // Words and pictures are drawn by the library, which has neither opacity nor mirroring.
+  let opaque = came.filter((e) => !SHAPES.has(e.type) && faded(e)).length;
+  const flipped = came.filter((e) => e.type === "image" && (e.scale ?? [1, 1]).some((k) => k < 0)).length;
   // Arrows bound at both ends, now both ends have come in.
   for (const e of live) {
     if (!linked(e)) continue;
@@ -360,7 +367,7 @@ export function fromExcalidraw(
       "link",
     );
   }
-  return { clip: made.clip(), upright, opaque };
+  return { clip: made.clip(), adjusted: { upright, opaque, flipped } };
 }
 
 /* —— out —— */
@@ -556,7 +563,8 @@ export function toExcalidraw(
             ? color.length === 7
               ? color + "24"
               : color
-            : "transparent";
+            : // Without a fill a block is filled with the paper, hiding what is under it.
+              style.paper || "#ffffff";
       const shape = m.drawingId === CALLOUT ? "box" : d.shape || "box";
       const type = shape === "circle" ? "ellipse" : shape === "diamond" ? "diamond" : "rectangle";
       const el = base(m.id, type, box, {
