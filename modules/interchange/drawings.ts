@@ -25,12 +25,14 @@ export const sketchLine: Drawing = {
     both: { type: "boolean" },
     dashed: { type: "boolean" },
     smooth: { type: "boolean" },
+    opacity: { type: "number", min: 0.05, max: 1, step: 0.05 },
   },
-  defaults: { width: 2, head: "none", both: false, dashed: false, smooth: false },
+  defaults: { width: 2, head: "none", both: false, dashed: false, smooth: false, opacity: 1 },
   source: `${SKETCH_LINE}
 // A line drawn by hand through data.points (shares of the box): a smooth curve when
 // data.smooth, else straight segments; data.head puts an arrowhead at its end (both ends
-// with data.both). The line keeps its width whatever the box's size.
+// with data.both), seen through as much as data.opacity leaves. The line keeps its width
+// whatever the box's size.
 const d = api.data, t = api.theme;
 const W = api.width, H = api.height;
 const pts = (Array.isArray(d.points) ? d.points : [])
@@ -72,7 +74,7 @@ const dash = d.dashed ? ' stroke-dasharray="' + f(w * 3) + " " + f(w * 2.5) + '"
 return api.svg(
   '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" style="overflow:visible">' +
     '<path d="' + path + '" fill="none" stroke="transparent" stroke-width="' + (w + 12) + '" stroke-linecap="round"/>' +
-    '<g stroke="' + color + '" stroke-width="' + w + '" stroke-linecap="round" stroke-linejoin="round">' +
+    '<g stroke="' + color + '" stroke-width="' + w + '" stroke-linecap="round" stroke-linejoin="round" opacity="' + f(Math.min(1, Math.max(0, Number(d.opacity ?? 1)))) + '">' +
     '<path d="' + path + '" fill="none"' + dash + "/>" + heads + "</g></svg>",
 );`,
 };
@@ -96,6 +98,7 @@ export const sketchShape: Drawing = {
     size: { type: "number", min: 8, max: 120, step: 1 },
     textColor: { type: "color" },
     align: { type: "choice", options: ["left", "center", "right"] },
+    opacity: { type: "number", min: 0.05, max: 1, step: 0.05 },
   },
   defaults: {
     shape: "rectangle",
@@ -106,12 +109,13 @@ export const sketchShape: Drawing = {
     rounded: false,
     size: 20,
     align: "center",
+    opacity: 1,
   },
   source: `${SKETCH_SHAPE}
 // A shape as Excalidraw draws it: data.shape (rectangle, ellipse, diamond) outlined in
 // data.stroke and filled with data.fill (hachure, cross-hatch or solid), its lines wavering
 // as much as data.roughness (0 draws it clean) the same way every time (data.seed), with
-// data.text in the middle.
+// data.text in the middle, the whole seen through as much as data.opacity leaves.
 const d = api.data, t = api.theme;
 const W = api.width, H = api.height;
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -205,7 +209,7 @@ const size = Number(d.size ?? 20);
 const align = d.align === "left" ? "left" : d.align === "right" ? "right" : "center";
 const inset = shape === "rectangle" ? { x: size * 0.5, y: size * 0.4 } : { x: W * 0.18, y: H * 0.16 };
 return api.html(
-  "<style>:host,.shape{position:relative;width:" + W + "px;height:" + H + "px}svg{position:absolute;inset:0;overflow:visible}" +
+  "<style>:host,.shape{position:relative;width:" + W + "px;height:" + H + "px}.shape{opacity:" + f(Math.min(1, Math.max(0, Number(d.opacity ?? 1)))) + "}svg{position:absolute;inset:0;overflow:visible}" +
     ".words{position:absolute;left:" + inset.x + "px;right:" + inset.x + "px;top:" + inset.y + "px;bottom:" + inset.y + "px;display:flex;align-items:center;justify-content:" + (align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center") + ";text-align:" + align + ";font-family:" + esc(t.font || "system-ui") + ";font-size:" + size + "px;line-height:1.25;color:" + esc(d.textColor || stroke) + ";white-space:pre-wrap;overflow-wrap:anywhere}</style>" +
     '<div class="shape"><svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '">' + body +
     '<path d="' + strokes + '" fill="none" stroke="' + stroke + '" stroke-width="' + sw + '" stroke-linecap="round" stroke-linejoin="round"' + dash + "/></svg>" +

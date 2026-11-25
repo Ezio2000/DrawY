@@ -53,8 +53,9 @@ export class SessionError extends Error {
 export type Happening =
   | { kind: "saved"; version: number }
   | { kind: "failed"; error: unknown }
-  // Parts brought in from another tool that were turned there and came in upright.
-  | { kind: "upright"; count: number };
+  // Parts brought in from another tool that could not come in as they were there: how many
+  // were turned and came in upright, and how many were seen through and came in solid.
+  | { kind: "adjusted"; upright: number; opaque: number };
 
 /** Going back, which can be taken back for a while: to a version, by its number, or to
  * the latest version by throwing hand edits away. */

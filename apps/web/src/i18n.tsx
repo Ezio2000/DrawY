@@ -480,7 +480,13 @@ const zh = {
       unknown: "这既不是 Mermaid 代码，也不是 Excalidraw 内容",
       broken: (why: string) => `读不懂这段内容：${why}`,
       empty: "里面没有可以导入的东西",
-      upright: (n: number) => `已导入。原图里有 ${n} 个元素是旋转的，DrawY 不支持旋转，已按正向摆放`,
+      adjusted: (upright: number, opaque: number) =>
+        `已导入。${[
+          upright && `原图里有 ${upright} 个元素是旋转的，DrawY 不支持旋转，已按正向摆放`,
+          opaque && `${opaque} 个半透明的文字、图片或连线已按不透明放入，它们在 DrawY 里不能调透明度`,
+        ]
+          .filter(Boolean)
+          .join("；")}`,
     },
     menu: {
       cut: "剪切",
@@ -1945,8 +1951,15 @@ const en: Words = {
       unknown: "This is neither Mermaid code nor Excalidraw content",
       broken: (why: string) => `Could not read it: ${why}`,
       empty: "There is nothing in it to import",
-      upright: (n: number) =>
-        `Imported. ${n} ${n === 1 ? "element was" : "elements were"} rotated in the original; DrawY doesn't rotate parts, so they are set upright`,
+      adjusted: (upright: number, opaque: number) =>
+        `Imported. ${[
+          upright &&
+            `${upright} ${upright === 1 ? "element was" : "elements were"} rotated in the original; DrawY doesn't rotate parts, so they are set upright`,
+          opaque &&
+            `${opaque} see-through ${opaque === 1 ? "text, picture or link came" : "texts, pictures or links came"} in solid, as DrawY can't make those see-through`,
+        ]
+          .filter(Boolean)
+          .join(". ")}`,
     },
     menu: {
       cut: "Cut",

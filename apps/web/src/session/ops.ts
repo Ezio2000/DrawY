@@ -427,13 +427,14 @@ export function editOps(ctx: Context) {
     },
     /** Parts brought in from another tool (an Excalidraw scene, a Mermaid diagram), in the
      * middle of the view and selected. A library drawing the work's own drawing shadows
-     * comes in as a copy, as with a library drawing added by hand. Parts that came in
-     * upright from turned ones are told of once they are placed. */
-    async bring({ clip, upright }: Brought): Promise<string | undefined> {
+     * comes in as a copy, as with a library drawing added by hand. Parts that could not
+     * come in as they were (turned, or seen through) are told of once they are placed. */
+    async bring(brought: Brought): Promise<string | undefined> {
+      const { clip, upright, opaque } = brought;
       const pending = materializeBlank();
       if (pending) {
         const real = await pending;
-        return real ? real.ops.bring({ clip, upright }) : undefined;
+        return real ? real.ops.bring(brought) : undefined;
       }
       const w = shown(),
         view = ctx.view,
@@ -461,7 +462,7 @@ export function editOps(ctx: Context) {
             ? { x: all.x + all.width + 80 + size.width / 2, y: all.y + size.height / 2 }
             : middle;
         const placed = await made((work) => paste(work, sceneId, { ...clip, libraries }, { centre }));
-        if (placed && upright) ctx.tell({ kind: "upright", count: upright });
+        if (placed && (upright || opaque)) ctx.tell({ kind: "adjusted", upright, opaque });
         return placed;
       } catch (e) {
         fail(e);

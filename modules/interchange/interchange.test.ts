@@ -189,14 +189,16 @@ describe("Excalidraw", () => {
   it("writes parts out as the elements that hold them, and the rest as pictures", () => {
     const { work } = pasted(blank(), fromExcalidraw(scene, { file1: "pic-1" }).clip, { "pic-1": photo("pic-1") });
     work.scenes.root.modules.push({ id: "box", drawingId: "node", bounds: { x: 0, y: 500, width: 160, height: 80 }, data: { title: "服务", note: "处理请求", tone: "accent" } });
-    work.scenes.root.links.push({ id: "l2", drawingId: "arrow", from: { moduleId: "shape-1" }, to: { moduleId: "box" }, data: {} });
+    work.scenes.root.links.push({ id: "l2", drawingId: "arrow", from: { moduleId: "shape-1" }, to: { moduleId: "box" }, data: { label: "调用" } });
     work.drawings.chart = { id: "chart", name: "图表", source: "return api.svg('<svg/>')" };
     work.scenes.root.modules.push({ id: "chart", drawingId: "chart", bounds: { x: 600, y: 500, width: 100, height: 100 }, data: {} });
+    work.scenes.root.modules.push({ id: "chart-file", drawingId: "chart", bounds: { x: 800, y: 500, width: 100, height: 100 }, data: {} });
     // A library picture goes out as it is drawn too, cropped, fitted and captioned.
-    expect(picturesFor(work, "root")).toEqual(["picture-1", "chart"]);
+    expect(picturesFor(work, "root")).toEqual(["picture-1", "chart", "chart-file"]);
     // Words of their own, named as the box's words would be.
     work.scenes.root.modules.push({ id: "box-text", drawingId: "label", bounds: { x: 0, y: 620, width: 160, height: 30 }, data: { text: "另一段" } });
-    const out = toExcalidraw(work, "root", { chart: { dataURL: "data:image/svg+xml;base64,PHN2Zy8+", mimeType: "image/svg+xml" } }, 1);
+    const svg = { dataURL: "data:image/svg+xml;base64,PHN2Zy8+", mimeType: "image/svg+xml" };
+    const out = toExcalidraw(work, "root", { chart: svg, "chart-file": { ...svg, dataURL: svg.dataURL + "PC9zdmc+" } }, 1);
     const of = (id: string) => out.elements.find((e) => e.id === id)!;
     expect(new Set(out.elements.map((e) => e.id)).size).toBe(out.elements.length);
     expect(of("box-text").text).toBe("另一段");
@@ -212,6 +214,14 @@ describe("Excalidraw", () => {
     const chart = of("chart");
     expect(chart.type).toBe("image");
     expect(out.files[chart.fileId!].mimeType).toBe("image/svg+xml");
+    // Each picture keeps a file of its own, whatever the parts are called.
+    expect(of("chart-file").fileId).not.toBe(chart.fileId);
+    expect(out.files[of("chart-file").fileId!].dataURL).toBe(svg.dataURL + "PC9zdmc+");
+    // A straight link's words sit halfway along it.
+    const arrow = of("l2"),
+      said = out.elements.find((e) => e.containerId === "l2")!;
+    expect(said.x + said.width / 2).toBeCloseTo(arrow.x + arrow.points![1][0] / 2, 0);
+    expect(said.y + said.height / 2).toBeCloseTo(arrow.y + arrow.points![1][1] / 2, 0);
     // Without a picture, a part is outlined and named.
     expect(of("picture-1")).toMatchObject({ type: "rectangle", strokeStyle: "dashed" });
     expect(of("picture-1-text").text).toBe("picture");
@@ -220,6 +230,32 @@ describe("Excalidraw", () => {
     const shapes = back.scenes.root.modules.filter((m) => m.drawingId === "sketch-shape");
     expect(shapes[0].data).toMatchObject({ shape: "rectangle", text: "开始", fill: "#ffc9c9" });
     expect(back.scenes.root.links).toHaveLength(2);
+  });
+
+  it("keeps shapes and lines seen through, leaves out what cannot be seen, and counts what comes in solid", () => {
+    const { clip, opaque } = fromExcalidraw({
+      elements: [
+        el({ id: "glass", type: "rectangle", opacity: 40, boundElements: [{ id: "gt", type: "text" }] }),
+        el({ id: "gt", type: "text", text: "半透明", containerId: "glass", opacity: 40 }),
+        el({ id: "ghost", type: "rectangle", x: 200, opacity: 0, boundElements: [{ id: "ht", type: "text" }] }),
+        el({ id: "ht", type: "text", x: 200, text: "看不见", containerId: "ghost" }),
+        el({ id: "note", type: "text", y: 200, text: "注", opacity: 60 }),
+        el({ id: "pen", type: "freedraw", y: 100, points: [[0, 0], [50, 20], [100, 0]], opacity: 50 }),
+      ],
+    });
+    const { work } = pasted(blank(), clip);
+    const parts = work.scenes.root.modules;
+    expect(parts.map((m) => m.data.text ?? m.drawingId)).toEqual(["半透明", "注", "sketch-line"]);
+    expect(parts[0].data.opacity).toBe(0.4);
+    expect(parts[2].data.opacity).toBe(0.5);
+    // Free words are drawn by the library, which has no opacity.
+    expect(opaque).toBe(1);
+    const out = toExcalidraw(work, "root", {}, 1);
+    expect(out.elements.filter((e) => e.opacity !== 100).map((e) => [e.type, e.opacity])).toEqual([
+      ["rectangle", 40],
+      ["text", 40],
+      ["freedraw", 50],
+    ]);
   });
 
   it("bows a bound arrow with only a start head to the same side once it is turned round", () => {
@@ -261,14 +297,16 @@ describe("Mermaid", () => {
       nodes: [
         { id: "A", text: "开始", shape: "pill", box: { x: 0, y: 0, width: 120, height: 50 } },
         { id: "B", text: "是否通过", shape: "diamond", box: { x: 0, y: 120, width: 140, height: 90 }, stroke: "#c00", fill: "#fee" },
+        { id: "C", text: "归档", shape: "box", box: { x: 320, y: 100, width: 100, height: 50 } },
       ],
       edges: [
         { from: "A", to: "B", text: "提交", head: "filled", dashed: true },
         { from: "B", to: "A", head: "filled" },
         { from: "B", to: "missing", head: "filled" },
         { from: "B", to: "B", text: "重试", head: "filled", dashed: true },
+        { from: "S", to: "C", text: "汇总", head: "filled" },
       ],
-      groups: [{ title: "流程", box: { x: -20, y: -20, width: 200, height: 260 } }],
+      groups: [{ id: "S", title: "流程", box: { x: -20, y: -20, width: 200, height: 260 } }],
     });
     const { work } = pasted(blank(), clip);
     const root = work.scenes.root;
@@ -277,15 +315,18 @@ describe("Mermaid", () => {
       ["label", "流程"],
       ["node", "开始"],
       ["node", "是否通过"],
+      ["node", "归档"],
       ["sketch-line", ""],
       ["label", "重试"],
     ]);
     expect(root.modules[3].data).toMatchObject({ shape: "diamond", color: "#c00", fillStyle: "soft" });
     // Two edges between the same blocks bow apart.
-    expect(root.links.map((l) => l.data)).toEqual([{ bend: 0.25, dashed: true, label: "提交" }, { bend: 0.25 }]);
+    expect(root.links.map((l) => l.data)).toEqual([{ bend: 0.25, dashed: true, label: "提交" }, { bend: 0.25 }, { label: "汇总" }]);
+    // An edge from a subgraph starts at the box it came in as.
+    expect(root.links[2]).toMatchObject({ from: { moduleId: root.modules[0].id }, to: { moduleId: root.modules[4].id } });
     // An edge back to its block, which a link cannot draw, is a loop over the block with its
     // words, grouped with it so they move together.
-    const [block, loop, words] = root.modules.slice(3);
+    const [block, , loop, words] = root.modules.slice(3);
     expect(loop.data).toMatchObject({ head: "filled", smooth: true, dashed: true });
     expect(loop.bounds.y + loop.bounds.height).toBeLessThanOrEqual(block.bounds.y + 8);
     expect(words.bounds.y).toBeLessThan(loop.bounds.y);

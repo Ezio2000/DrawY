@@ -100,6 +100,8 @@ export function readExcalidraw(
 const SHAPES = new Set(["rectangle", "ellipse", "diamond"]);
 const LINES = new Set(["arrow", "line"]);
 const transparent = (c?: string) => !c || c === "transparent" || /^#[0-9a-f]{6}00$/i.test(c);
+/** A drawing's opacity (a share) as Excalidraw keeps it (a percentage). */
+const percent = (opacity: unknown) => Math.round(Math.min(1, Math.max(0, Number(opacity ?? 1))) * 100);
 /** A point turned about a centre. */
 const turned = (p: Point, c: Point, angle: number): Point =>
   angle
@@ -123,22 +125,32 @@ const headOf = (h?: string | null) => (!h ? "none" : h === "arrow" ? "open" : "f
 /** The group a part keeps: Excalidraw nests groups, a work has one level, so the outermost. */
 const groupOf = (e: ExcalidrawElement) => e.groupIds?.at(-1);
 
-/** What an Excalidraw scene becomes: the clip to paste, and how many of its shapes, words
- * and pictures were turned and come in upright, since a work has no rotation. */
+/** What an Excalidraw scene becomes: the clip to paste, and what of it could not come in as
+ * it was, since a work has neither rotation nor opacity: how many shapes, words and
+ * pictures were turned and come in upright, and how many words, pictures and links were
+ * seen through and come in solid. */
 export interface Brought {
   clip: Clip;
   upright: number;
+  opaque: number;
 }
 /** The parts an Excalidraw scene becomes, as a clip to paste. Pictures come in as the
  * library materials `pictures` maps their files to; one without is left out. Lines and
- * strokes keep their rotation in their points; shapes, words and pictures come in upright. */
+ * strokes keep their rotation in their points; shapes, words and pictures come in upright.
+ * Shapes and lines keep their opacity in their own drawings; what cannot be seen at all
+ * does not come in. */
 export function fromExcalidraw(
   scene: { elements: ExcalidrawElement[] },
   pictures: Record<string, string> = {},
 ): Brought {
   const b = bound();
   const made = new ClipMaker();
-  const live = scene.elements.filter((e) => !e.isDeleted);
+  const seen = (e: ExcalidrawElement) => !e.isDeleted && (e.opacity ?? 100) > 0;
+  const faded = (e: ExcalidrawElement) => (e.opacity ?? 100) < 100;
+  const opacity = (e: ExcalidrawElement) => Math.round(e.opacity ?? 100) / 100;
+  // Nor do the words of what is gone or unseen.
+  const gone = new Set(scene.elements.filter((e) => !seen(e)).map((e) => e.id));
+  const live = scene.elements.filter((e) => seen(e) && !(e.containerId && gone.has(e.containerId)));
   const byId = new Map(live.map((e) => [e.id, e]));
   // Words held by a shape or an arrow, by the element holding them.
   const held = new Map<string, ExcalidrawElement>();
@@ -188,6 +200,7 @@ export function fromExcalidraw(
       if (e.strokeWidth !== undefined && e.strokeWidth !== 2) data.strokeWidth = e.strokeWidth;
       if (e.strokeStyle && e.strokeStyle !== "solid") data.dashed = true;
       if (e.roughness !== undefined && e.roughness !== 1) data.roughness = e.roughness;
+      if (faded(e)) data.opacity = opacity(e);
       if (e.roundness) data.rounded = true;
       if (words?.text) {
         data.text = words.originalText || words.text;
@@ -254,6 +267,8 @@ export function fromExcalidraw(
     }
   }
   const upright = [...moduleOf.keys()].filter((id) => Math.abs(byId.get(id)!.angle ?? 0) > 1e-3).length;
+  // Words and pictures are drawn by the library, which has no opacity.
+  let opaque = [...moduleOf.keys()].map((id) => byId.get(id)!).filter((e) => !SHAPES.has(e.type) && faded(e)).length;
   // Lines and arrows go after the shapes, so links can name both ends.
   for (const e of live) {
     if (!LINES.has(e.type) && e.type !== "freedraw") continue;
@@ -288,6 +303,8 @@ export function fromExcalidraw(
         if (bend) data.bend = bend;
       }
       if (words?.text) data.label = words.originalText || words.text;
+      // So are links.
+      if (faded(e)) opaque++;
       made.link(
         { drawingId: made.material(b.link), from: { moduleId: from }, to: { moduleId: to }, data },
         "link",
@@ -304,6 +321,7 @@ export function fromExcalidraw(
     if (width !== 2) data.width = width;
     if (e.strokeColor && e.strokeColor !== "#1e1e1e") data.color = e.strokeColor;
     if (e.strokeStyle && e.strokeStyle !== "solid") data.dashed = true;
+    if (faded(e)) data.opacity = opacity(e);
     if (e.type === "arrow") {
       let list = points;
       let start = e.startArrowhead,
@@ -321,7 +339,7 @@ export function fromExcalidraw(
       freehand ? "stroke" : "line",
     );
   }
-  return { clip: made.clip(), upright };
+  return { clip: made.clip(), upright, opaque };
 }
 
 /* —— out —— */
@@ -427,7 +445,8 @@ export function toExcalidraw(
   const elements: ExcalidrawElement[] = [];
   const files: Record<string, ExcalidrawFile> = {};
   const ids = new Set(scene.modules.map((m) => m.id));
-  // Words written out for a part or a link get ids of their own, clear of every id in the scene.
+  // Words and picture files written out for a part or a link get ids of their own, clear of
+  // every id in the scene and of each other.
   const used = new Set([...ids, ...scene.links.map((l) => l.id)]);
   const fresh = (id: string) => {
     let next = id;
@@ -458,19 +477,20 @@ export function toExcalidraw(
         roughness: Number(d.roughness ?? 1),
         roundness: d.rounded ? { type: 3 } : null,
         seed: Number(d.seed) || hash(m.id),
+        opacity: percent(d.opacity),
       });
       holder.set(m.id, shape);
       if (d.text)
-        inside(
-          shape,
-          text(fresh(m.id + "-text"), String(d.text), box, {
+        inside(shape, {
+          ...text(fresh(m.id + "-text"), String(d.text), box, {
             size: Number(d.size ?? 20),
             color: d.textColor || d.stroke || ink,
             align: d.align || "center",
             container: m.id,
             family: Number(d.roughness ?? 1) ? 5 : 2,
           }),
-        );
+          opacity: percent(d.opacity),
+        });
       else elements.push(shape);
     } else if (kind === "sketch-line") {
       const pts: Point[] = (Array.isArray(d.points) ? d.points : []).map((p: number[]) => ({
@@ -491,6 +511,7 @@ export function toExcalidraw(
           strokeWidth: type === "freedraw" ? Number(d.width ?? 2) / 2 : Number(d.width ?? 2),
           strokeStyle: d.dashed ? "dashed" : "solid",
           roughness: type === "freedraw" ? 0 : 1,
+          opacity: percent(d.opacity),
           roundness: d.smooth && type !== "freedraw" ? { type: 2 } : null,
           points: rel,
           ...(type === "freedraw"
@@ -554,7 +575,7 @@ export function toExcalidraw(
     } else {
       const picture = pictures[m.id];
       if (picture) {
-        const fileId = "f" + hash(m.id + picture.dataURL.length).toString(36);
+        const fileId = fresh(m.id + "-file");
         files[fileId] = { id: fileId, mimeType: picture.mimeType, dataURL: picture.dataURL, created: now };
         const el = base(m.id, "image", box, { ...group, fileId, status: "saved", scale: [1, 1] });
         holder.set(m.id, el);
@@ -603,7 +624,9 @@ export function toExcalidraw(
       if (end) end.boundElements = [...(end.boundElements ?? []), { id: l.id, type: "arrow" }];
     const label = [d.label, d.text].find((w) => typeof w === "string" && w);
     if (label) {
-      const mid = { x: ends.from.x + points[Math.floor(points.length / 2)][0], y: ends.from.y + points[Math.floor(points.length / 2)][1] };
+      // A curve passes through its middle point; a straight arrow's middle is halfway.
+      const [mx, my] = points.length > 2 ? points[1] : [dx / 2, dy / 2];
+      const mid = { x: ends.from.x + mx, y: ends.from.y + my };
       const m = measure(label, 16);
       const words = text(fresh(l.id + "-label"), label, { x: mid.x - m.width / 2, y: mid.y - m.height / 2, ...m }, {
         size: 16,

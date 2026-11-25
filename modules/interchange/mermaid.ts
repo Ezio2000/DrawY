@@ -58,7 +58,8 @@ export interface Flowchart {
     dashed?: boolean;
     thick?: boolean;
   }[];
-  groups: { title: string; box: Bounds }[];
+  /** Subgraphs, by the id edges to them name them by. */
+  groups: { id: string; title: string; box: Bounds }[];
 }
 /** Mermaid's names for its node shapes, as the shapes a block draws. */
 export function blockShape(type: string | undefined): BlockShape {
@@ -95,11 +96,25 @@ export function blockShape(type: string | undefined): BlockShape {
 export function fromFlowchart(chart: Flowchart): Clip {
   const b = bound();
   const made = new ClipMaker();
+  // A block with edges back to itself is grouped with their loops, so they move with it.
+  const looped = new Map<string, string>();
+  for (const e of chart.edges) if (e.from === e.to && !looped.has(e.from)) looped.set(e.from, made.id("loop-group"));
+  // Edges join blocks and subgraphs alike, by the id Mermaid knows them by.
+  const ids = new Map<string, string>();
+  const boxes = new Map<string, Bounds>();
+  const grouped = (id: string) => {
+    const group = looped.get(id);
+    return group ? { group } : {};
+  };
   for (const g of chart.groups) {
-    made.module(
-      { bounds: g.box, drawingId: made.material(NODE), data: { tone: "muted", fillStyle: "soft", radius: 12 } },
-      "group",
+    ids.set(
+      g.id,
+      made.module(
+        { ...grouped(g.id), bounds: g.box, drawingId: made.material(NODE), data: { tone: "muted", fillStyle: "soft", radius: 12 } },
+        "group",
+      ),
     );
+    boxes.set(g.id, g.box);
     if (g.title)
       made.module(
         {
@@ -110,11 +125,6 @@ export function fromFlowchart(chart: Flowchart): Clip {
         "text",
       );
   }
-  // A block with edges back to itself is grouped with their loops, so they move with it.
-  const looped = new Map<string, string>();
-  for (const e of chart.edges) if (e.from === e.to && !looped.has(e.from)) looped.set(e.from, made.id("loop-group"));
-  const ids = new Map<string, string>();
-  const boxes = new Map<string, Bounds>();
   for (const n of chart.nodes) {
     const data: Record<string, unknown> = { title: n.text };
     if (n.shape !== "box") data.shape = n.shape;
@@ -122,8 +132,7 @@ export function fromFlowchart(chart: Flowchart): Clip {
       data.color = n.stroke || n.fill;
       if (n.fill) data.fillStyle = n.stroke && n.stroke !== n.fill ? "soft" : "solid";
     }
-    const group = looped.get(n.id);
-    ids.set(n.id, made.module({ ...(group ? { group } : {}), bounds: n.box, drawingId: made.material(NODE), data }, "node"));
+    ids.set(n.id, made.module({ ...grouped(n.id), bounds: n.box, drawingId: made.material(NODE), data }, "node"));
     boxes.set(n.id, n.box);
   }
   // Edges between the same two blocks bow apart instead of running over each other: each
