@@ -100,6 +100,8 @@ describe("drawings made by hand and brought in", () => {
     const line = Array.from({ length: 50 }, (_, i) => ({ x: i, y: i < 25 ? 0 : i - 25 }));
     const kept = simplify(line, 0.5);
     expect(kept).toEqual([{ x: 0, y: 0 }, { x: 25, y: 0 }, { x: 49, y: 24 }]);
+    // A stroke that doubles back along itself keeps its turning point.
+    expect(simplify([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 10, y: 0 }], 0.5)).toHaveLength(3);
   });
 
   it("puts a stroke where it was drawn, its points as shares of its box", () => {
@@ -151,7 +153,11 @@ describe("Excalidraw", () => {
   });
 
   it("brings shapes, words, links, lines, strokes and pictures in as parts", () => {
-    const clip = fromExcalidraw(scene, { file1: "pic-1" });
+    const { clip, upright } = fromExcalidraw(scene, { file1: "pic-1" });
+    expect(upright).toBe(0);
+    // Turned shapes, words and pictures come in upright and are counted; lines keep their turn.
+    const turned = { elements: scene.elements.map((e) => (["a", "free"].includes(e.id) ? { ...e, angle: 0.5 } : e)) };
+    expect(fromExcalidraw(turned, { file1: "pic-1" }).upright).toBe(1);
     const { work } = pasted(blank(), clip, { "pic-1": photo("pic-1") });
     const root = work.scenes.root;
     const by = (id: string) => root.modules.find((m) => m.id === id)!;
@@ -181,7 +187,7 @@ describe("Excalidraw", () => {
   });
 
   it("writes parts out as the elements that hold them, and the rest as pictures", () => {
-    const { work } = pasted(blank(), fromExcalidraw(scene, { file1: "pic-1" }), { "pic-1": photo("pic-1") });
+    const { work } = pasted(blank(), fromExcalidraw(scene, { file1: "pic-1" }).clip, { "pic-1": photo("pic-1") });
     work.scenes.root.modules.push({ id: "box", drawingId: "node", bounds: { x: 0, y: 500, width: 160, height: 80 }, data: { title: "服务", note: "处理请求", tone: "accent" } });
     work.scenes.root.links.push({ id: "l2", drawingId: "arrow", from: { moduleId: "shape-1" }, to: { moduleId: "box" }, data: {} });
     work.drawings.chart = { id: "chart", name: "图表", source: "return api.svg('<svg/>')" };
@@ -190,12 +196,17 @@ describe("Excalidraw", () => {
       { moduleId: "picture-1", kind: "picture", material: "pic-1" },
       { moduleId: "chart", kind: "snapshot" },
     ]);
+    // Words of their own, named as the box's words would be.
+    work.scenes.root.modules.push({ id: "box-text", drawingId: "label", bounds: { x: 0, y: 620, width: 160, height: 30 }, data: { text: "另一段" } });
     const out = toExcalidraw(work, "root", { chart: { dataURL: "data:image/svg+xml;base64,PHN2Zy8+", mimeType: "image/svg+xml" } }, 1);
     const of = (id: string) => out.elements.find((e) => e.id === id)!;
+    expect(new Set(out.elements.map((e) => e.id)).size).toBe(out.elements.length);
+    expect(of("box-text").text).toBe("另一段");
+    expect(of("box-text-2")).toMatchObject({ text: "服务\n处理请求", containerId: "box" });
+    expect(of("box").boundElements).toContainEqual({ id: "box-text-2", type: "text" });
     expect(of("shape-1")).toMatchObject({ type: "rectangle", backgroundColor: "#ffc9c9", fillStyle: "hachure", roundness: { type: 3 }, groupIds: ["outer"] });
     expect(of("shape-1-text")).toMatchObject({ type: "text", text: "开始", containerId: "shape-1" });
     expect(of("box")).toMatchObject({ type: "rectangle", strokeColor: "#d97757", backgroundColor: "#d9775724" });
-    expect(of("box-text").text).toBe("服务\n处理请求");
     expect(of("l2")).toMatchObject({ type: "arrow", startBinding: { elementId: "shape-1" }, endBinding: { elementId: "box" }, endArrowhead: "triangle" });
     expect(of("shape-1").boundElements).toEqual(expect.arrayContaining([{ id: "l2", type: "arrow" }]));
     expect(of("stroke-1")).toMatchObject({ type: "freedraw", strokeColor: "#e03131", strokeWidth: 2 });
@@ -207,10 +218,19 @@ describe("Excalidraw", () => {
     expect(of("picture-1")).toMatchObject({ type: "rectangle", strokeStyle: "dashed" });
     expect(of("picture-1-text").text).toBe("picture");
     // Read back, what was drawn by hand comes back the same.
-    const back = pasted(blank(), fromExcalidraw(out, { [chart.fileId!]: "pic-2" }), { "pic-2": photo("pic-2") }).work;
+    const back = pasted(blank(), fromExcalidraw(out, { [chart.fileId!]: "pic-2" }).clip, { "pic-2": photo("pic-2") }).work;
     const shapes = back.scenes.root.modules.filter((m) => m.drawingId === "sketch-shape");
     expect(shapes[0].data).toMatchObject({ shape: "rectangle", text: "开始", fill: "#ffc9c9" });
     expect(back.scenes.root.links).toHaveLength(2);
+  });
+
+  it("writes a work's own drawing named like a library one as a picture of itself", () => {
+    const work = blank();
+    work.drawings.node = { id: "node", name: "自己的节点", source: "return api.svg('<svg/>')" };
+    work.scenes.root.modules.push({ id: "n", drawingId: "node", bounds: { x: 0, y: 0, width: 100, height: 60 }, data: { title: "甲" } });
+    expect(picturesFor(work, "root")).toEqual([{ moduleId: "n", kind: "snapshot" }]);
+    const out = toExcalidraw(work, "root", { n: { dataURL: "data:image/svg+xml;base64,PHN2Zy8+", mimeType: "image/svg+xml" } }, 1);
+    expect(out.elements).toEqual([expect.objectContaining({ id: "n", type: "image" })]);
   });
 });
 

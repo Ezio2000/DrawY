@@ -43,7 +43,7 @@ import {
   type Side,
   type Stacking,
 } from "../../../../modules/editing/index.ts";
-import { inked } from "../../../../modules/interchange/index.ts";
+import { inked, type Brought } from "../../../../modules/interchange/index.ts";
 import { union } from "../../../../modules/contracts/geometry.ts";
 import { api } from "../api.ts";
 import { clipOf, type Incoming } from "../interchange.ts";
@@ -427,12 +427,13 @@ export function editOps(ctx: Context) {
     },
     /** Parts brought in from another tool (an Excalidraw scene, a Mermaid diagram), in the
      * middle of the view and selected. A library drawing the work's own drawing shadows
-     * comes in as a copy, as with a library drawing added by hand. */
-    async bring(clip: Clip): Promise<string | undefined> {
+     * comes in as a copy, as with a library drawing added by hand. Parts that came in
+     * upright from turned ones are told of once they are placed. */
+    async bring({ clip, upright }: Brought): Promise<string | undefined> {
       const pending = materializeBlank();
       if (pending) {
         const real = await pending;
-        return real ? real.ops.bring(clip) : undefined;
+        return real ? real.ops.bring({ clip, upright }) : undefined;
       }
       const w = shown(),
         view = ctx.view,
@@ -459,14 +460,16 @@ export function editOps(ctx: Context) {
           all && drawn.some((b) => overlaps(b, there))
             ? { x: all.x + all.width + 80 + size.width / 2, y: all.y + size.height / 2 }
             : middle;
-        return await made((work) => paste(work, sceneId, { ...clip, libraries }, { centre }));
+        const placed = await made((work) => paste(work, sceneId, { ...clip, libraries }, { centre }));
+        if (placed && upright) ctx.tell({ kind: "upright", count: upright });
+        return placed;
       } catch (e) {
         fail(e);
       }
     },
     /** Mermaid source or an Excalidraw scene pasted or dropped on the canvas, brought in. */
     bringIn(what: Incoming) {
-      report(clipOf(what).then((clip) => ops.bring(clip)));
+      report(clipOf(what).then(ops.bring));
     },
   };
   return ops;

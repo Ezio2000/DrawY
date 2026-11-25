@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { AlertCircle, FileUp } from "lucide-react";
-import type { Clip } from "../../../modules/editing/index.ts";
+import type { Brought } from "../../../modules/interchange/index.ts";
 import { Dialog } from "./ui/dialogs.tsx";
 import { Spinner } from "./ui/primitives.tsx";
 import { cx } from "./cx.ts";
@@ -13,7 +13,7 @@ export function BringDialog({
   bring,
   close,
 }: {
-  bring: (clip: Clip) => Promise<unknown>;
+  bring: (brought: Brought) => Promise<unknown>;
   close: () => void;
 }) {
   const t = useT(),
@@ -28,10 +28,10 @@ export function BringDialog({
     setBusy(true);
     setError("");
     try {
-      const clip = await clipOf(what);
-      if (!clip.modules.length) return setError(b.empty);
+      const brought = await clipOf(what);
+      if (!brought.clip.modules.length) return setError(b.empty);
       close();
-      await bring(clip);
+      await bring(brought);
     } catch (e) {
       setError(b.broken(e instanceof Error ? e.message.split("\n")[0] : String(e)));
     } finally {

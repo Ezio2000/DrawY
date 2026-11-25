@@ -52,7 +52,9 @@ export class SessionError extends Error {
  * (an edit from a menu, a key or a drag) that failed. */
 export type Happening =
   | { kind: "saved"; version: number }
-  | { kind: "failed"; error: unknown };
+  | { kind: "failed"; error: unknown }
+  // Parts brought in from another tool that were turned there and came in upright.
+  | { kind: "upright"; count: number };
 
 /** Going back, which can be taken back for a while: to a version, by its number, or to
  * the latest version by throwing hand edits away. */

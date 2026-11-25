@@ -2,9 +2,11 @@ import type { Words } from "./i18n.tsx";
 import { SessionError } from "./session/types.ts";
 import { Store } from "./session/store.ts";
 
-/** How long a note stays: an error long enough to read, a note of something done briefly. */
+/** How long a note stays: an error long enough to read, a note of something done briefly,
+ * one that explains what happened long enough to read too. */
 const ERROR_FOR = 8000,
   NOTICE_FOR = 2400;
+export const EXPLAIN_FOR = 6000;
 
 /** What went wrong last and what went well, as the app says them; a store, so only the
  * parts of a page that show them are drawn again when they come and go. The session's
@@ -18,12 +20,12 @@ export class Feedback extends Store<{ error: string; notice: string }> {
   protected build() {
     return this.state;
   }
-  private show(kind: "error" | "notice", text: string) {
+  private show(kind: "error" | "notice", text: string, ms = kind === "error" ? ERROR_FOR : NOTICE_FOR) {
     clearTimeout(this.timers[kind]);
     this.state = { ...this.state, [kind]: text };
     this.changed();
     if (text)
-      this.timers[kind] = setTimeout(() => this.show(kind, ""), kind === "error" ? ERROR_FOR : NOTICE_FOR);
+      this.timers[kind] = setTimeout(() => this.show(kind, ""), ms);
   }
   /** Words for what went wrong. */
   describe(error: unknown) {
@@ -39,7 +41,7 @@ export class Feedback extends Store<{ error: string; notice: string }> {
     return error instanceof Error ? error.message : String(error);
   }
   fail = (error: unknown) => this.show("error", this.describe(error));
-  say = (text: string) => this.show("notice", text);
+  say = (text: string, ms?: number) => this.show("notice", text, ms);
   dismiss = () => this.show("error", "");
   /** Runs an action, saying what went wrong if it fails. */
   attempt = async (fn: () => Promise<unknown>) => {

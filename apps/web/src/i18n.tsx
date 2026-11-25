@@ -480,6 +480,7 @@ const zh = {
       unknown: "这既不是 Mermaid 代码，也不是 Excalidraw 内容",
       broken: (why: string) => `读不懂这段内容：${why}`,
       empty: "里面没有可以导入的东西",
+      upright: (n: number) => `已导入。原图里有 ${n} 个元素是旋转的，DrawY 不支持旋转，已按正向摆放`,
     },
     menu: {
       cut: "剪切",
@@ -1944,6 +1945,8 @@ const en: Words = {
       unknown: "This is neither Mermaid code nor Excalidraw content",
       broken: (why: string) => `Could not read it: ${why}`,
       empty: "There is nothing in it to import",
+      upright: (n: number) =>
+        `Imported. ${n} ${n === 1 ? "element was" : "elements were"} rotated in the original; DrawY doesn't rotate parts, so they are set upright`,
     },
     menu: {
       cut: "Cut",

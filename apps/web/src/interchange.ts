@@ -1,6 +1,5 @@
 import type { Material } from "@drawy/materials/schema";
 import type { Bounds, Work } from "../../../modules/contracts/index.ts";
-import type { Clip } from "../../../modules/editing/index.ts";
 import {
   blockShape,
   excalidrawClipboard,
@@ -13,6 +12,7 @@ import {
   readMermaid,
   toExcalidraw,
   toMermaid,
+  type Brought,
   type ExcalidrawElement,
   type ExcalidrawFile,
   type Flowchart,
@@ -39,15 +39,16 @@ export function incoming(text: string): Incoming | null {
 export const IMPORTABLE = ".excalidraw,.json,.mmd,.mermaid,.md,.txt";
 export const importable = (file: File) => /\.(excalidraw|json|mmd|mermaid|md|txt)$/i.test(file.name);
 
-/** The clip something brought in becomes, its pictures in the library. Throws when the
- * text is not a scene or a diagram it can read. */
-export async function clipOf(what: Incoming): Promise<Clip> {
+/** The clip something brought in becomes, its pictures in the library, with how many of
+ * its parts came in upright. Throws when the text is not a scene or a diagram it can read. */
+export async function clipOf(what: Incoming): Promise<Brought> {
   await loadBindings();
   if (what.kind === "excalidraw") {
     const scene = readExcalidraw(what.text)!;
     return fromExcalidraw(scene, await upload(scene.elements, scene.files));
   }
-  return isFlowchart(what.source) ? fromFlowchart(await layout(what.source)) : mermaidBlock(what.source, await measure(what.source));
+  const clip = isFlowchart(what.source) ? fromFlowchart(await layout(what.source)) : mermaidBlock(what.source, await measure(what.source));
+  return { clip, upright: 0 };
 }
 
 /** The scene's pictures uploaded to the library, by the file each came from. */

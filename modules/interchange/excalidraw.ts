@@ -123,12 +123,19 @@ const headOf = (h?: string | null) => (!h ? "none" : h === "arrow" ? "open" : "f
 /** The group a part keeps: Excalidraw nests groups, a work has one level, so the outermost. */
 const groupOf = (e: ExcalidrawElement) => e.groupIds?.at(-1);
 
+/** What an Excalidraw scene becomes: the clip to paste, and how many of its shapes, words
+ * and pictures were turned and come in upright, since a work has no rotation. */
+export interface Brought {
+  clip: Clip;
+  upright: number;
+}
 /** The parts an Excalidraw scene becomes, as a clip to paste. Pictures come in as the
- * library materials `pictures` maps their files to; one without is left out. */
+ * library materials `pictures` maps their files to; one without is left out. Lines and
+ * strokes keep their rotation in their points; shapes, words and pictures come in upright. */
 export function fromExcalidraw(
   scene: { elements: ExcalidrawElement[] },
   pictures: Record<string, string> = {},
-): Clip {
+): Brought {
   const b = bound();
   const made = new ClipMaker();
   const live = scene.elements.filter((e) => !e.isDeleted);
@@ -246,6 +253,7 @@ export function fromExcalidraw(
         );
     }
   }
+  const upright = [...moduleOf.keys()].filter((id) => Math.abs(byId.get(id)!.angle ?? 0) > 1e-3).length;
   // Lines and arrows go after the shapes, so links can name both ends.
   for (const e of live) {
     if (!LINES.has(e.type) && e.type !== "freedraw") continue;
@@ -311,7 +319,7 @@ export function fromExcalidraw(
       freehand ? "stroke" : "line",
     );
   }
-  return made.clip();
+  return { clip: made.clip(), upright };
 }
 
 /* —— out —— */
@@ -426,6 +434,14 @@ export function toExcalidraw(
   const elements: ExcalidrawElement[] = [];
   const files: Record<string, ExcalidrawFile> = {};
   const ids = new Set(scene.modules.map((m) => m.id));
+  // Words written out for a part or a link get ids of their own, clear of every id in the scene.
+  const used = new Set([...ids, ...scene.links.map((l) => l.id)]);
+  const fresh = (id: string) => {
+    let next = id;
+    for (let n = 2; used.has(next); n++) next = `${id}-${n}`;
+    used.add(next);
+    return next;
+  };
   const holder = new Map<string, ExcalidrawElement>();
   const inside = (container: ExcalidrawElement, words: ExcalidrawElement) => {
     container.boundElements = [...(container.boundElements ?? []), { id: words.id, type: "text" }];
@@ -454,7 +470,7 @@ export function toExcalidraw(
       if (d.text)
         inside(
           shape,
-          text(m.id + "-text", String(d.text), box, {
+          text(fresh(m.id + "-text"), String(d.text), box, {
             size: Number(d.size ?? 20),
             color: d.textColor || d.stroke || ink,
             align: d.align || "center",
@@ -496,7 +512,7 @@ export function toExcalidraw(
               }),
         }),
       );
-    } else if (m.drawingId === NODE || m.drawingId === CALLOUT) {
+    } else if (!work.drawings[m.drawingId] && (m.drawingId === NODE || m.drawingId === CALLOUT)) {
       const color = toneColor(style, d.tone, d.color);
       const fill =
         d.fillStyle === "solid"
@@ -523,7 +539,7 @@ export function toExcalidraw(
       if (words)
         inside(
           el,
-          text(m.id + "-text", words, box, {
+          text(fresh(m.id + "-text"), words, box, {
             size: Number(d.size ?? 15),
             color: d.fillStyle === "solid" ? style.paper || "#ffffff" : ink,
             align: d.align === "left" ? "left" : "center",
@@ -554,7 +570,7 @@ export function toExcalidraw(
         // Nothing to show it with: its place, outlined and named.
         const el = base(m.id, "rectangle", box, { ...group, strokeColor: "#999999", strokeStyle: "dashed" });
         holder.set(m.id, el);
-        inside(el, text(m.id + "-text", shownName(work, m), box, { size: 16, color: "#999999", container: m.id }));
+        inside(el, text(fresh(m.id + "-text"), shownName(work, m), box, { size: 16, color: "#999999", container: m.id }));
       }
     }
   }
@@ -596,7 +612,7 @@ export function toExcalidraw(
     if (label) {
       const mid = { x: ends.from.x + points[Math.floor(points.length / 2)][0], y: ends.from.y + points[Math.floor(points.length / 2)][1] };
       const m = measure(label, 16);
-      const words = text(l.id + "-label", label, { x: mid.x - m.width / 2, y: mid.y - m.height / 2, ...m }, {
+      const words = text(fresh(l.id + "-label"), label, { x: mid.x - m.width / 2, y: mid.y - m.height / 2, ...m }, {
         size: 16,
         color: d.labelColor || d.color || ink,
         container: l.id,

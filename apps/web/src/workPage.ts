@@ -3,6 +3,7 @@ import type { Material } from "@drawy/materials/schema";
 import type { Pointed } from "../../../modules/canvas/index.ts";
 import { shownName, versionOf, type Target } from "../../../modules/contracts/index.ts";
 import { fieldsOf, removeParts, replace, setData } from "../../../modules/editing/index.ts";
+import { EXPLAIN_FOR } from "./feedback.ts";
 import { useT } from "./i18n.tsx";
 import { useSelect } from "./session/store.ts";
 import type { Ask, Snapshot } from "./session/work.ts";
@@ -74,7 +75,11 @@ export function useWorkPage({
   useEffect(
     () =>
       session.on((h) =>
-        h.kind === "saved" ? feedback.say(t.unsaved.saved(h.version)) : feedback.fail(h.error),
+        h.kind === "saved"
+          ? feedback.say(t.unsaved.saved(h.version))
+          : h.kind === "upright"
+            ? feedback.say(t.edit.bring.upright(h.count), EXPLAIN_FOR)
+            : feedback.fail(h.error),
       ),
     [session, t],
   );

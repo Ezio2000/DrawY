@@ -730,17 +730,19 @@ it("draws by hand with the pen, the arrow and the eraser; brings Mermaid and Exc
   const ship = root.modules.find((m: { data: { title?: string } }) => m.data.title === "Ship");
   expect(ship.bounds.x).toBeGreaterThan(740);
   expect(root.links.filter((l: { data: { label?: string } }) => l.data.label === "yes")).toHaveLength(1);
-  // An Excalidraw shape keeps its hand-drawn look and its words.
+  // An Excalidraw shape keeps its hand-drawn look and its words; turned there, it comes in
+  // upright, and the page says so.
   await paste(
     JSON.stringify({
       type: "excalidraw/clipboard",
       elements: [
-        { id: "r", type: "rectangle", x: 0, y: 0, width: 160, height: 80, strokeColor: "#1971c2", backgroundColor: "#a5d8ff", fillStyle: "hachure", roughness: 1, boundElements: [{ id: "t", type: "text" }] },
+        { id: "r", type: "rectangle", x: 0, y: 0, width: 160, height: 80, angle: 0.3, strokeColor: "#1971c2", backgroundColor: "#a5d8ff", fillStyle: "hachure", roughness: 1, boundElements: [{ id: "t", type: "text" }] },
         { id: "t", type: "text", x: 40, y: 30, width: 80, height: 25, text: "Sketch", fontSize: 20, containerId: "r" },
       ],
       files: {},
     }),
   );
+  await expect.poll(() => page.getByText("Imported. 1 element was rotated in the original", { exact: false }).count(), { timeout: 10_000 }).toBe(1);
   await expect.poll(async () => (await own("sketch-shape")).length, { timeout: 10_000 }).toBe(1);
   await expect.poll(() => count("Sketch")).toBe(1);
   // Out again: an Excalidraw file with the drawn parts as pictures and the link bound to

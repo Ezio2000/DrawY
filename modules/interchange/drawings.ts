@@ -244,7 +244,9 @@ export function kindOfSource(source: string | undefined) {
 }
 
 /** Points with the ones that add nothing to the line's shape taken out: those within
- * `tolerance` of the line between their neighbours kept (Ramer–Douglas–Peucker). */
+ * `tolerance` of the segment between their neighbours (Ramer–Douglas–Peucker). Distances
+ * are to the segment, not the line through it, so a stroke that doubles back keeps its
+ * turning point. */
 export function simplify(points: { x: number; y: number }[], tolerance: number) {
   if (points.length < 3) return points;
   const keep = new Uint8Array(points.length);
@@ -258,12 +260,11 @@ export function simplify(points: { x: number; y: number }[], tolerance: number) 
       q = points[b];
     const dx = q.x - p.x,
       dy = q.y - p.y,
-      l = Math.hypot(dx, dy);
+      l2 = dx * dx + dy * dy;
     for (let i = a + 1; i < b; i++) {
       const r = points[i];
-      const d = l
-        ? Math.abs(dy * r.x - dx * r.y + q.x * p.y - q.y * p.x) / l
-        : Math.hypot(r.x - p.x, r.y - p.y);
+      const t = l2 ? Math.max(0, Math.min(1, ((r.x - p.x) * dx + (r.y - p.y) * dy) / l2)) : 0;
+      const d = Math.hypot(r.x - p.x - t * dx, r.y - p.y - t * dy);
       if (d > most) {
         most = d;
         far = i;
