@@ -19,7 +19,7 @@ import { observe, Unavailable } from "../observation/index.ts";
 import { readPage, searchWeb } from "../search/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { forAuthor, setBrief, writeWork } from "../workspace/index.ts";
-import { said, userMessages, type Context } from "./conversation.ts";
+import { said, userMessages, userStarted, type Context } from "./conversation.ts";
 import { guidesRead, readCards, readGuides } from "./guides.ts";
 import { completedRecords } from "./partial.ts";
 import { counted, failedOf, research, searchesLeft, spendImages, spendJudge } from "./spending.ts";
@@ -34,7 +34,7 @@ import {
   proposeSchema,
   searchSchema,
 } from "./tools.ts";
-import { judgeIdeas } from "./judge.ts";
+import { checkClaims, judgeIdeas, type Checked } from "./judge.ts";
 
 /** How the author picks among its ideas when the app does not. */
 const YOUR_PICK =
@@ -247,7 +247,8 @@ export const handlers: Record<
     const { store, run, ctx } = x;
     if (call.batch.some((c) => c.name === "propose_ideas"))
       throw Error("set_brief was not saved: call it after propose_ideas has answered, so the concept develops the idea picked there");
-    if (!store.work(run.workId).brief && !run.steps.some((s) => s.kind === "tool" && s.name === "propose_ideas" && s.status === "done"))
+    const current = store.work(run.workId);
+    if (!current.brief && !userStarted(store, current) && !run.steps.some((s) => s.kind === "tool" && s.name === "propose_ideas" && s.status === "done"))
       throw Error("set_brief was not saved: the first brief comes after propose_ideas, and its concept develops the idea picked there");
     const brief = briefSchema.parse(args);
     const { work, style, chosen, others } = await setBrief(
@@ -528,18 +529,44 @@ async function performView(x: Execution, args: any, step: ToolStep): Promise<Out
     }
     if (!result) throw new Unavailable("画布查看服务不可用");
     run.observations.push(result.observation);
+    const checked = await checkLook(x, args.claims, result.content, signal);
     Object.assign(step, {
       waiting: undefined,
       screenshots: result.observation.screenshots.map(({ name, url }) => ({ name, url })),
       errors: result.observation.errors,
+      ...(checked ? { checked } : {}),
     });
     return {
       output: { ...result.observation, ...research(run) },
-      images: [...images, ...result.content],
+      images: [...images, ...result.content, ...(checked ? [{ type: "input_text", text: told(checked) }] : [])],
     };
   } finally {
     run.status = "running";
   }
+}
+/** Has the judge, when there is one, look in a look's pictures for each claim the author made
+ * of them, and bills it. Without a judge, claims or pictures, or when the judge cannot answer,
+ * the author's own reading of the look is all there is. */
+async function checkLook(x: Execution, claims: unknown, content: Item[], signal: AbortSignal) {
+  const judge = x.ctx.settings.judge;
+  const made = Array.isArray(claims) ? claims.filter((c): c is string => typeof c === "string" && !!c.trim()) : [];
+  const pictures = content.flatMap((c) => (c.type === "input_image" ? [String(c.image_url)] : []));
+  if (!judge || !made.length || !pictures.length) return undefined;
+  try {
+    const { checked, input } = await checkClaims(judge, made, pictures, signal);
+    spendJudge(x.run, input);
+    return checked;
+  } catch {
+    signal.throwIfAborted();
+    return undefined;
+  }
+}
+/** What the judge found, as the author is told it beside the look. */
+function told(checked: Checked[]) {
+  const missed = checked.filter((c) => !c.holds).map((c) => c.claim);
+  return missed.length
+    ? `An independent check of these pictures finds they do not show yet: ${missed.join(" | ")}. Before anything about how it looks, make the picture show each of these, or where a claim was wrong, make what the picture shows true.`
+    : "An independent check of these pictures finds they show every claim you made.";
 }
 /** What the search budget had left before this call, which is already among the steps. */
 function takeSearch(x: Execution, call: Call) {

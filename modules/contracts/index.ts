@@ -739,6 +739,8 @@ export type ToolActivity =
       waiting?: string[];
       screenshots?: Picture[];
       errors?: string[];
+      /** The claims the author made of this look, as the judge found them in the picture. */
+      checked?: { claim: string; score: number; holds: boolean }[];
     };
 export type Step =
   | {

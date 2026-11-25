@@ -220,13 +220,30 @@ export function catchUp(
 function ownChanges(store: UserStore, work: Work) {
   const history = store.revisions(work.id);
   const last = history.find((r) => r.cause.kind === "run");
-  if (!last || last.revision === work.revision) return "";
+  if (!last) return userStarted(store, work) ? STARTED : "";
+  if (last.revision === work.revision) return "";
   const lines = changeLines(
     changesBetween(store.revision(work.id, last.revision), work),
   );
   return lines.length
     ? `Since your last turn the user changed the work themselves (revision ${last.revision} to ${work.revision}). The current work below includes these changes; keep them unless the user asks otherwise:\n${lines.join("\n")}\n`
     : "";
+}
+/** What the author is told of a work the user started themselves: the picture is the idea. */
+const STARTED =
+  "The user made this work themselves before asking you, drawing it by hand or bringing it in from Mermaid or Excalidraw, so it has no brief yet. What is in it is the user's own: keep it and build on it unless they ask for a new picture. That picture is the idea, so this first brief needs no propose_ideas: call set_brief with a concept that describes the picture as it stands and a style close to how it already looks, then make the change asked for.\n";
+/** Whether the user made what the work holds themselves (by hand or by bringing it in)
+ * before any author wrote to it, and no brief has been set on it since. Works an author
+ * starts are empty until its first write, so they never are. */
+export function userStarted(store: UserStore, work: Work): boolean {
+  if (work.brief) return false;
+  const history = store.revisions(work.id);
+  const first = history.findLastIndex((r) => r.cause.kind === "run");
+  const before =
+    first < 0
+      ? work
+      : history[first + 1] && store.revision(work.id, history[first + 1].revision);
+  return !!before && Object.values(before.scenes).some((s) => s.modules.length > 0);
 }
 
 /** Characters of JSON, a third of a token each. Pictures count as a fixed size and

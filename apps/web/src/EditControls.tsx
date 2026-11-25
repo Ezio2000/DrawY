@@ -581,6 +581,8 @@ function DataEntry({
     </div>
   );
 }
+/** How many items a list shows before it is folded. */
+const LONG = 12;
 function Node({
   value,
   path,
@@ -597,6 +599,15 @@ function Node({
   pickPicture: PickPicture;
 }) {
   const t = useT();
+  // A long list (a line's points, a table's rows) opens on request.
+  const [folded, setFolded] = useState(Array.isArray(value) && value.length > LONG);
+  if (Array.isArray(value) && folded)
+    return (
+      <button className={cx("tree-add")} onClick={() => setFolded(false)}>
+        <ChevronRight size={13} />
+        {t.edit.data.unfold(value.length)}
+      </button>
+    );
   if (Array.isArray(value))
     return (
       <div className={cx("tree-list")}>

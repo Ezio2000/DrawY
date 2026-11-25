@@ -19,6 +19,7 @@ import { useSelect } from "../session/store.ts";
 import type { ShellProps } from "../shell.ts";
 import { Title } from "../Title.tsx";
 import { useEditing } from "./editing.ts";
+import { importable, incoming } from "../interchange.ts";
 import { useWorkPage, nameIn } from "../workPage.ts";
 import { panelWidth, Resizer } from "./panels.tsx";
 import {
@@ -216,6 +217,17 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           if (e.defaultPrevented || !editing || locked || !canvas) return;
           const drawing = e.dataTransfer.getData(DRAWING_TYPE);
           const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
+          // An Excalidraw scene or Mermaid source comes in as what it draws.
+          const scene = [...e.dataTransfer.files].find(importable);
+          if (scene && !drawing) {
+            e.preventDefault();
+            void attempt(async () => {
+              const what = incoming(await scene.text());
+              if (!what) throw Error(t.edit.bring.unknown);
+              hand.ops.bringIn(what);
+            });
+            return;
+          }
           if (!drawing && !files.length) return;
           e.preventDefault();
           const r = canvas.element.getBoundingClientRect(),
@@ -255,6 +267,11 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           board={board}
           setBoard={setBoard}
           help={() => setHelp(true)}
+          start={(how) => {
+            if (!editing) edit();
+            if (how === "bring") hand.setBringing(true);
+            else hand.setTool(how);
+          }}
         />
         {editing && !locked && (
           <EditOverlay

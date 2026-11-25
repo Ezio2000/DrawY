@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  ClipboardCopy,
   Clipboard,
   FileCode2,
+  FileJson,
+  GitFork,
+  PenTool,
   FileImage,
   FileText,
   ImageDown,
@@ -17,6 +21,7 @@ import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 import { useDismiss } from "./popover.ts";
 import type { Work } from "../../../modules/contracts/index.ts";
+import { excalidrawClipboard, excalidrawOf, toMermaid } from "./interchange.ts";
 
 type Format =
   | "png"
@@ -27,7 +32,11 @@ type Format =
   | "pdf"
   | "html"
   | "copy"
-  | "share";
+  | "share"
+  | "excalidraw"
+  | "excalidrawCopy"
+  | "mermaid"
+  | "mermaidFile";
 /** The sizes social posts take, in pixels. */
 const cards = {
   square: [1080, 1080],
@@ -242,9 +251,33 @@ export function useExports({
   const share =
     typeof navigator.canShare === "function" &&
     navigator.canShare({ files: [new File([""], "a.png", { type: "image/png" })] });
+  /** What the files are called: the work's title, and the scene's below the root. */
+  const stem = title.replace(/[\\/:*?"<>|]+/g, " ").trim() || "drawy";
   async function run(format: Format) {
     setBusy(format);
     try {
+      if (format === "excalidraw" || format === "excalidrawCopy") {
+        const scene = await excalidrawOf(work, sceneId, document.querySelector("[data-canvas]"));
+        if (format === "excalidraw")
+          save(new Blob([JSON.stringify(scene, null, 2)], { type: "application/json" }), stem + ".excalidraw");
+        else {
+          await navigator.clipboard.writeText(excalidrawClipboard(scene));
+          done(w.copiedExcalidraw);
+        }
+        close();
+        return;
+      }
+      if (format === "mermaid" || format === "mermaidFile") {
+        const source = toMermaid(work, sceneId);
+        if (!source) throw Error(w.noMermaid);
+        if (format === "mermaidFile") save(new Blob([source], { type: "text/plain" }), stem + ".mmd");
+        else {
+          await navigator.clipboard.writeText(source);
+          done(w.copiedMermaid);
+        }
+        close();
+        return;
+      }
       if (format === "copy") {
         await navigator.clipboard.write([
           new ClipboardItem({ "image/png": png().then((p) => p.blob) }),
@@ -333,6 +366,11 @@ export function ExportItems({
       <h4>{w.other}</h4>
       {item("html", FileCode2, w.html)}
       {item("pdf", FileText, w.pdf)}
+      <h4>{w.editable}</h4>
+      {item("excalidraw", PenTool, w.excalidraw)}
+      {item("excalidrawCopy", ClipboardCopy, w.excalidrawCopy)}
+      {item("mermaid", GitFork, w.mermaid)}
+      {item("mermaidFile", FileJson, w.mermaidFile)}
     </>
   );
 }

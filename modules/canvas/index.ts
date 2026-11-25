@@ -103,6 +103,12 @@ export interface CanvasOptions {
   /** A press with the drawing tool at a point in the scene, or a box dragged out with it;
    * and a double click on the paper while editing, at its point. */
   place?: (at: Point, box?: Bounds) => void;
+  /** A line drawn while editing, in scene units: with the pen, through the points the hand
+   * went; with the arrow tool, straight from the press to where it was let go. An arrow
+   * drawn from one module onto another is a link between them, asked for with `connect`. */
+  ink?: (points: Point[], how: { kind: "pen" | "arrow" }) => void;
+  /** Modules and links rubbed out with the eraser while editing, by id. */
+  erase?: (ids: string[]) => void;
   /** A scene has been drawn and is now on screen. */
   shown?: (scene: Scene) => void;
   error: (message: string) => void;
@@ -122,8 +128,13 @@ const CHECK = "#e5484d";
 /** Figures on the canvas are set in the interface's face, as the lettering of a drawing. */
 const FIGURES = "'Sofia Sans Letters','Sofia Sans',system-ui,sans-serif";
 /** What a press does while editing: select and move, move the view, draw a box for
- * something new, or draw a link from one module to another. */
-export type CanvasTool = "select" | "hand" | "draw" | "link";
+ * something new, draw a link from one module to another, draw a line freehand (pen) or
+ * straight (arrow), or rub parts out (erase). */
+export type CanvasTool = "select" | "hand" | "draw" | "link" | "pen" | "arrow" | "erase";
+/** The eraser's mark on screen: a small ring where it rubs. */
+const ERASER = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="7" fill="rgba(255,255,255,.7)" stroke="#555" stroke-width="1.5"/></svg>')}") 10 10, cell`;
+/** The angle a straight line drawn with Shift held keeps to a multiple of. */
+const ANGLE_STEP = Math.PI / 12;
 /** How far from a link's line, in screen pixels, a press still takes the link: a finger
  * covers far more than a mouse's point does. */
 const SLOP = 10,
@@ -241,6 +252,8 @@ export class Canvas {
   private marquee = document.createElement("div");
   private guides: HTMLDivElement[] = [];
   private line = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  /** The line being drawn with the pen or the arrow tool, on screen until it is made. */
+  private ink = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   /** What a press does while editing: select and move, move the view, or place. */
   private tool: CanvasTool = "select";
   /** The space bar held: the view moves under a drag, whatever the tool. */
@@ -299,6 +312,11 @@ export class Canvas {
     | { kind: "draw"; start: Point; box?: Bounds }
     | { kind: "connect"; from: { moduleId: string; side?: Side } }
     | { kind: "relink"; linkId: string; end: "from" | "to" }
+    /** A line being drawn: the pen's every point, or the arrow's two ends; and the module
+     * an arrow began on, to link it to the one it ends on. */
+    | { kind: "ink"; points: Point[]; straight: boolean; from?: string }
+    /** The eraser going over parts: those it has touched go when it is lifted. */
+    | { kind: "erase"; hit: Set<string>; last: { x: number; y: number } }
     | { kind: "press" }
   );
   /** The fingers on the canvas now, where they are on screen. */
@@ -402,6 +420,10 @@ export class Canvas {
       "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none;z-index:5;overflow:visible";
     this.line.innerHTML = `<line stroke="${ACCENT}" stroke-width="1.5" stroke-dasharray="5 4" stroke-linecap="round"/><circle r="4" fill="${ACCENT}"/><circle data-target r="7" fill="#fff" stroke="${ACCENT}" stroke-width="2.5" style="display:none"/>`;
     this.element.append(this.line);
+    this.ink.style.cssText =
+      "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none;z-index:5;overflow:visible";
+    this.ink.innerHTML = `<path fill="none" stroke="#2b2b2b" stroke-opacity=".85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+    this.element.append(this.ink);
     this.linkMarks.style.cssText =
       "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;overflow:visible";
     this.linkMarks.innerHTML = `<path data-hover fill="none" stroke="${ACCENT}" stroke-opacity=".35" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path data-chosen fill="none" stroke="${ACCENT}" stroke-opacity=".45" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>`;
@@ -1735,9 +1757,11 @@ export class Canvas {
         ? this.gesture?.kind === "pan"
           ? "grabbing"
           : "grab"
-        : this.tool === "draw" || this.tool === "link"
+        : this.tool === "draw" || this.tool === "link" || this.tool === "pen" || this.tool === "arrow"
           ? "crosshair"
-          : "";
+          : this.tool === "erase"
+            ? ERASER
+            : "";
     this.element.toggleAttribute(
       "data-panning",
       this.editing && (this.spacing || this.tool !== "select"),
@@ -2134,6 +2158,26 @@ export class Canvas {
       this.gesture = { ...start, kind: "connect", from: { moduleId: from.id } };
       return capture();
     }
+    // The pen draws where it goes; the arrow tool a straight line from the press, which
+    // links two modules when it runs from one onto another.
+    if (this.editing && (this.tool === "pen" || this.tool === "arrow")) {
+      const straight = this.tool === "arrow";
+      this.gesture = {
+        ...start,
+        kind: "ink",
+        points: [this.toScene(e.clientX, e.clientY)],
+        straight,
+        from: straight ? this.moduleAt(e.clientX, e.clientY, false)?.id : undefined,
+      };
+      this.paintInk();
+      return capture();
+    }
+    // The eraser takes out whatever it goes over, once it is lifted.
+    if (this.editing && this.tool === "erase") {
+      this.gesture = { ...start, kind: "erase", hit: new Set(), last: { x: e.clientX, y: e.clientY } };
+      this.rub(e.clientX, e.clientY);
+      return capture();
+    }
     const chosen = () =>
       this.selection.flatMap((id) => {
         const m = this.renderer.instances.get(id);
@@ -2362,6 +2406,40 @@ export class Canvas {
         this.element.style.cursor = !m && link ? "pointer" : "";
       } else if (this.editing && this.tool === "link" && !this.spacing)
         this.hoverOver(this.moduleAt(e.clientX, e.clientY)?.id ?? null);
+      else if (this.editing && (this.tool === "arrow" || this.tool === "erase") && !this.spacing)
+        this.hoverOver(this.moduleAt(e.clientX, e.clientY, false)?.id ?? null);
+      return;
+    }
+    // The eraser rubs along the way the pointer went, so a quick stroke misses nothing.
+    if (g.kind === "erase") {
+      const steps = Math.ceil(Math.hypot(e.clientX - g.last.x, e.clientY - g.last.y) / 4);
+      for (let i = 1; i <= steps; i++)
+        this.rub(g.last.x + ((e.clientX - g.last.x) * i) / steps, g.last.y + ((e.clientY - g.last.y) * i) / steps);
+      g.last = { x: e.clientX, y: e.clientY };
+      g.moved = true;
+      return;
+    }
+    if (g.kind === "ink") {
+      if (g.straight) {
+        // Shift keeps the line to every fifteen degrees.
+        let end = this.toScene(e.clientX, e.clientY);
+        const a = g.points[0];
+        if (e.shiftKey) {
+          const len = Math.hypot(end.x - a.x, end.y - a.y),
+            turn = Math.round(Math.atan2(end.y - a.y, end.x - a.x) / ANGLE_STEP) * ANGLE_STEP;
+          end = { x: a.x + Math.cos(turn) * len, y: a.y + Math.sin(turn) * len };
+        }
+        g.points = [a, end];
+        this.hoverOver(this.moduleAt(e.clientX, e.clientY, false)?.id ?? null);
+      } else
+        for (const p of e.getCoalescedEvents?.() ?? [e]) {
+          const at = this.toScene(p.clientX, p.clientY),
+            last = g.points.at(-1)!;
+          if (Math.hypot(at.x - last.x, at.y - last.y) * this.camera.scale >= 1) g.points.push(at);
+        }
+      g.moved ||= Math.hypot(e.clientX - g.x, e.clientY - g.y) > (g.touch ? FINGER_STILL : STILL);
+      if (g.moved) clearTimeout(this.holding);
+      this.paintInk();
       return;
     }
     const dx = e.clientX - g.x,
@@ -2547,8 +2625,48 @@ export class Canvas {
     }
     this.paint();
   }
+  /** The line being drawn, where it is on screen. */
+  private paintInk() {
+    const g = this.gesture;
+    if (g?.kind !== "ink") {
+      this.ink.style.display = "none";
+      return;
+    }
+    const { x, y, scale } = this.camera;
+    const d = g.points
+      .map((p, i) => `${i ? "L" : "M"}${(x + p.x * scale).toFixed(1)} ${(y + p.y * scale).toFixed(1)}`)
+      .join("");
+    this.ink.style.display = "block";
+    this.ink.firstElementChild!.setAttribute("d", g.points.length === 1 ? d + "h0.1" : d);
+  }
+  /** The eraser at a point on screen: the module drawn there (with its group), or else the
+   * link passing near, fades until the eraser is lifted. */
+  private rub(clientX: number, clientY: number) {
+    const g = this.gesture;
+    if (g?.kind !== "erase") return;
+    const m = this.moduleAt(clientX, clientY, false);
+    const link = m ? null : this.linkAt(clientX, clientY);
+    const ids = m
+      ? m.group
+        ? [...this.renderer.instances.values()].filter((x) => x.group === m.group).map((x) => x.id)
+        : [m.id]
+      : link
+        ? [link]
+        : [];
+    for (const id of ids) {
+      if (g.hit.has(id)) continue;
+      g.hit.add(id);
+      const host = this.renderer.host(this.renderer.instances.has(id) ? "module" : "link", id);
+      if (host) host.style.opacity = ".2";
+    }
+  }
   private finish() {
+    const was = this.gesture;
+    if (was?.kind === "erase")
+      for (const id of was.hit)
+        this.renderer.host(this.renderer.instances.has(id) ? "module" : "link", id)?.style.removeProperty("opacity");
     this.gesture = undefined;
+    this.ink.style.display = "none";
     this.ghost.clear();
     this.marquee.style.display = "none";
     this.origin.style.display = "none";
@@ -2671,6 +2789,13 @@ export class Canvas {
       this.changed();
       this.options.commit?.(g.last.map((m) => ({ id: m.id, bounds: { ...m.bounds } })));
     }
+    if (g.kind === "ink") {
+      const to = g.straight ? this.moduleAt(e.clientX, e.clientY, false) : undefined;
+      this.hoverOver(null);
+      if (g.from && to && to.id !== g.from) this.options.connect?.({ moduleId: g.from }, { moduleId: to.id });
+      else if (!g.straight || g.moved) this.options.ink?.(g.points, { kind: g.straight ? "arrow" : "pen" });
+    }
+    if (g.kind === "erase" && g.hit.size) this.options.erase?.([...g.hit]);
     if (g.kind === "draw") {
       const big = g.box && g.box.width * this.camera.scale >= 12 && g.box.height * this.camera.scale >= 12;
       this.options.place?.(

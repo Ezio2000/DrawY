@@ -19,10 +19,10 @@ export const viewSchema = z.object({
   sceneId: z.string().optional().describe("One scene; leave out to see every nonempty scene"),
   claims: z
     .array(z.string().min(1))
-    .max(6)
+    .max(8)
     .optional()
     .describe(
-      "The statements this figure makes about time, direction, proportion, cause or a number's conditions that would mislead if drawn wrong, each one specific enough to be checked against the picture",
+      "The statements this figure makes about time, direction, proportion, cause or a number's conditions that would mislead if drawn wrong, and the spatial relations its concept rests on (what sits where, and what its place, size or distance shows), each one specific enough to be checked against the picture by someone who sees only the picture",
     ),
   regions: z
     .array(boxSchema)

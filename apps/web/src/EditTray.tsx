@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Hand, ImagePlus, LibraryBig, MousePointer2, Search, Spline, Type } from "lucide-react";
+import {
+  Eraser,
+  FileInput,
+  Hand,
+  ImagePlus,
+  LibraryBig,
+  MousePointer2,
+  MoveUpRight,
+  PenLine,
+  Search,
+  Spline,
+  Type,
+} from "lucide-react";
 import type { DrawingMaterial, Material } from "@drawy/materials/schema";
 import { useLocale } from "./ui/locale.tsx";
 import { api } from "./api.ts";
@@ -56,20 +68,27 @@ const letters: Partial<Record<Tool, string>> = {
   diamond: "D",
   text: "T",
   link: "L",
+  pen: "P",
+  arrow: "A",
+  erase: "E",
 };
 
 /** The tools laid beside the canvas while editing, as instruments beside a drawing board:
  * the hand's own (select, move the view), the shapes a figure is built from, words, links,
- * pictures, and everything else the library draws. A shape or words go where the canvas is
- * then pressed, or fill the box dragged out there. */
+ * the pen, a free arrow and the eraser, pictures, everything else the library draws, and
+ * what other tools drew (Mermaid, Excalidraw) brought in. A shape or words go where the
+ * canvas is then pressed, or fill the box dragged out there. */
 export function EditTray({
   tool,
   setTool,
   ops,
+  bring,
 }: {
   tool: Tool;
   setTool: (t: Tool) => void;
   ops: EditOps;
+  /** Opens the dialog that brings Mermaid or Excalidraw in. */
+  bring: () => void;
 }) {
   const t = useT(),
     names = t.edit.tools;
@@ -142,6 +161,10 @@ export function EditTray({
       <i />
       {item("text", <Type size={17} />)}
       {item("link", <Spline size={17} />)}
+      {item("pen", <PenLine size={17} />)}
+      {item("arrow", <MoveUpRight size={17} />)}
+      {item("erase", <Eraser size={17} />)}
+      <i />
       <button
         aria-label={names.picture}
         data-tip={names.picture}
@@ -177,6 +200,17 @@ export function EditTray({
           />
         )}
       </span>
+      <button
+        aria-label={names.bring}
+        data-tip={names.bring}
+        data-tip-side="right"
+        onClick={() => {
+          setOpen("");
+          bring();
+        }}
+      >
+        <FileInput size={17} />
+      </button>
     </nav>
   );
 }

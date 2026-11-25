@@ -2115,6 +2115,59 @@ span.model-bar {
   pointer-events: none;
 }
 
+.blank p {
+  margin: 0;
+}
+
+.blank small {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+/* Ways to start a blank page by hand, under the note that it is blank. */
+.blank-start {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+  pointer-events: auto;
+}
+
+.blank-start button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  transition:
+    background 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+
+.blank-start button:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+
+/* Mermaid or Excalidraw pasted in to bring it into the scene: set as code. */
+.bring textarea {
+  min-height: 200px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
 
 /* ---------- The author on the canvas ---------- */
 
@@ -5527,6 +5580,33 @@ body:has(.resizer[data-dragging]) {
 
 .ideas li[data-chosen] small {
   color: var(--ai-deep);
+}
+
+/* What the judge found of the author's claims on a look: the ones not shown stand out. */
+.checks {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.checks span {
+  display: inline-block;
+  width: 16px;
+  font-weight: 600;
+}
+
+.checks em {
+  margin-left: 6px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.checks li[data-missed] {
+  color: var(--red-text);
 }
 
 .brief blockquote {

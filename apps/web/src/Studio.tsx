@@ -652,9 +652,28 @@ function ToolBody({
               ))}
             </div>
           )}
+          {!!step.checked?.length && <Checked checked={step.checked} />}
         </>
       );
   }
+}
+/** What the author claimed of a look, each as the judge found it in the pictures. */
+function Checked({ checked }: { checked: NonNullable<Tool<"view_canvas">["checked"]> }) {
+  const t = useT();
+  return (
+    <>
+      <small className={cx("step-detail")}>{t.steps.checked}</small>
+      <ul className={cx("checks")}>
+        {checked.map((c, i) => (
+          <li key={i} data-missed={!c.holds || undefined}>
+            <span aria-label={c.holds ? t.steps.shown : t.steps.notShown}>{c.holds ? "✓" : "✗"}</span>
+            {c.claim}
+            <em>{Math.round(c.score * 100)}%</em>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
 }
 /** The ideas the author proposed, each by its kind, with the one picked to develop and how
  * strongly the judge favoured each. */
