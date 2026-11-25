@@ -385,9 +385,13 @@ function writable(work: Work, m: Instance) {
   const kind = kindOfSource(work.drawings[m.drawingId]?.source);
   if (kind === "sketch-line" || kind === "sketch-shape") return true;
   if (work.drawings[m.drawingId]) return false;
-  // A block with an icon, or with copies stacked behind it, is more than a shape and words.
-  if (m.drawingId === NODE) return !m.data.icon && !(Number(m.data.stack ?? 0) > 0);
-  return m.drawingId === CALLOUT || m.drawingId === b.text;
+  // Excalidraw has boxes, pills, circles and diamonds; a block shaped otherwise, or with an
+  // icon or copies stacked behind it, is more than a shape and words. So is a callout with
+  // its tail, which it has unless told otherwise.
+  if (m.drawingId === NODE)
+    return ["box", "pill", "circle", "diamond"].includes(String(m.data.shape ?? "box")) && !m.data.icon && !(Number(m.data.stack ?? 0) > 0);
+  if (m.drawingId === CALLOUT) return m.data.tail === "none";
+  return m.drawingId === b.text;
 }
 /** A picture a part goes out as, as a data URL. */
 export interface Picture {

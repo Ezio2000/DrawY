@@ -316,11 +316,20 @@ describe("Excalidraw", () => {
     expect(back).toMatchObject({ from: there.from, to: there.to, data: { bend: there.data.bend } });
   });
 
-  it("writes a block with an icon or copies stacked behind it as a picture of itself", () => {
+  it("writes a block or callout Excalidraw cannot draw as a picture of itself", () => {
     const work = blank();
     const block = (id: string, data: Record<string, unknown>) => ({ id, drawingId: "node", bounds: { x: 0, y: 0, width: 100, height: 60 }, data: { title: id, ...data } });
-    work.scenes.root.modules.push(block("plain", {}), block("iconic", { icon: "pic-1" }), block("stacked", { stack: 2 }));
-    expect(picturesFor(work, "root")).toEqual(["iconic", "stacked"]);
+    work.scenes.root.modules.push(
+      block("plain", {}),
+      block("iconic", { icon: "pic-1" }),
+      block("stacked", { stack: 2 }),
+      block("database", { shape: "cylinder" }),
+      block("page", { shape: "document" }),
+      { ...block("said", {}), drawingId: "callout" },
+      { ...block("aside", { tail: "none" }), drawingId: "callout" },
+    );
+    // Shapes Excalidraw has no element for, and a callout with its tail, go out as pictures.
+    expect(picturesFor(work, "root")).toEqual(["iconic", "stacked", "database", "page", "said"]);
     const out = toExcalidraw(work, "root", {}, 1);
     expect(out.elements.find((e) => e.id === "plain")!.type).toBe("rectangle");
     // Without its picture, a composed block is outlined and named, not drawn as a bare box.
