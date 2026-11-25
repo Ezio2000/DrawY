@@ -214,6 +214,12 @@ it("builds a figure by hand: a shape drawn to size and typed in, a side's plus g
   // The tray holds the tools; R takes up the box, which is drawn by dragging its size out.
   const tray = page.getByRole("navigation", { name: "Editing tools" });
   expect(await tray.getByRole("button", { name: "Select", exact: true }).getAttribute("aria-pressed")).toBe("true");
+  // A tool pressed takes no focus, so the keys go on taking up tools and no ring is left.
+  await tray.getByRole("button", { name: "Box", exact: true }).click();
+  await page.keyboard.press("h");
+  expect(await tray.getByRole("button", { name: "Pan", exact: true }).getAttribute("aria-pressed")).toBe("true");
+  expect(await tray.evaluate((el) => el.contains(document.activeElement))).toBe(false);
+  await page.keyboard.press("v");
   await page.keyboard.press("r");
   expect(await tray.getByRole("button", { name: "Box", exact: true }).getAttribute("aria-pressed")).toBe("true");
   const beta = await rectOf("Beta");
