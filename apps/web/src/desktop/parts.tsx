@@ -296,11 +296,15 @@ export function Bars({
   feedback,
   restore,
   undo,
+  editing,
 }: {
   session: WorkSession;
   feedback: Feedback;
   restore: (revision: number) => void;
   undo: () => void;
+  /** The hand editor is open: edits come one after another there, and the dot on the
+   * seal and ⌘S are enough until it is closed. */
+  editing: boolean;
 }) {
   counted("bars");
   const t = useT();
@@ -376,7 +380,8 @@ export function Bars({
       ) : (
         !!s.unsaved &&
         s.preview === undefined &&
-        !s.engaged && (
+        !s.engaged &&
+        !editing && (
           <div className={cx("unsaved-bar")} role="status">
             <span className={cx("unsaved-text")}>
               <i className={cx("unsaved-dot")} />

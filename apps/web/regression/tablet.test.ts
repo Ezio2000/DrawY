@@ -45,7 +45,7 @@ it("edits with fingers: a part moves with one, the paper moves the view, and a l
   const after = (await module("Alpha"))!;
   expect(after.left).not.toBe(before.left);
   expect(after.mark).toBe(before.mark);
-  expect(await statuses()).toContain("1 change not saved\nDiscard changes\nSave as version 2");
+  expect(await page.getByRole("button", { name: "Version 1 · unsaved changes", exact: true }).count()).toBe(1);
   // The handles on the selection are as big as a fingertip.
   const handle = await page.evaluate(() => {
     const h = [...document.querySelectorAll<HTMLElement>("[data-handle]")].find((h) => h.offsetParent);

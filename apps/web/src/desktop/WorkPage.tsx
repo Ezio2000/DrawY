@@ -294,7 +294,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           />
         )}
         <div className={cx("dock")} data-dock>
-          <Bars session={session} feedback={feedback} restore={restore} undo={undo} />
+          <Bars session={session} feedback={feedback} restore={restore} undo={undo} editing={editing} />
           <WorkComposer
             session={session}
             asking={asking}
