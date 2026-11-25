@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Canvas, CanvasTool, Pointed } from "../../../../modules/canvas/index.ts";
 import type { Bounds, Point } from "../../../../modules/contracts/index.ts";
 import {
+  carried,
   isClip,
   labelOf,
   type Alignment,
@@ -64,7 +65,7 @@ export function useEditing({
   canvas,
   editing,
   selected,
-  link,
+  links,
   pick,
   retype,
   help,
@@ -75,8 +76,8 @@ export function useEditing({
   editing: boolean;
   /** The modules selected. */
   selected: string[];
-  /** The link selected, when no module is. */
-  link: string | null;
+  /** The links selected, with the modules or alone. */
+  links: string[];
   /** Asks for a material from the library, of one kind. */
   pick: (kind: "picture" | "drawing", chosen: (m: Material) => void) => void;
   /** Starts changing words where they are drawn. */
@@ -109,11 +110,12 @@ export function useEditing({
       const words = id && canvasRef.current?.wordsIn(id);
       if (words) retype(words);
     });
-  const parts = () => (selected.length ? selected : link ? [link] : []);
+  /** Everything selected: the modules, then the links. */
+  const parts = () => [...selected, ...links];
 
   const ops = {
     ...base,
-    /** Takes out the selected modules, or the selected link. */
+    /** Takes out what is selected: modules and links. */
     remove: () => base.remove(parts()),
     /** Takes out the parts the eraser went over. */
     erase: (ids: string[]) => base.remove(ids),
@@ -122,8 +124,8 @@ export function useEditing({
       if (tool === "arrow") setTool("select");
       base.connect(...args);
     },
-    /** Turns a link round: the selected one unless another is named. */
-    reverse: (id = link) => void (id && base.reverse(id)),
+    /** Turns links round: the selected ones unless others are named. */
+    reverse: (ids = links) => base.reverse(ids),
     duplicate: () => base.duplicate(selected),
     /** Copies of modules, dragged off them this far. */
     duplicateBy: (ids: string[], by: Point) => base.duplicate(ids, by),
@@ -135,9 +137,9 @@ export function useEditing({
     matchSize: (what: "width" | "height" | "both") => base.matchSize(selected, what),
     /** Changes the same values on everything selected. */
     restyle: (patch: Record<string, unknown>) => base.restyle(parts(), patch),
-    /** Keeps how the selected part looks, to give to others. */
+    /** Keeps how the first selected part looks, to give to others. */
     copyLook() {
-      const id = selected[0] ?? link;
+      const id = parts()[0];
       const look = id ? base.look(id) : null;
       if (!look) return;
       brush = look;
@@ -147,13 +149,32 @@ export function useEditing({
       if (brush) base.pasteLook(parts(), brush);
     },
     selectAll: () => canvas?.selectAll(),
-    /** Selects every module drawn with the same drawing as one of those selected. */
+    /** Selects every module and link drawn with the same drawing as one of those
+     * selected. */
     selectSame() {
-      const modules = session.get().scene?.modules ?? [];
+      const scene = session.get().scene;
+      if (!scene) return;
+      const chosen = new Set(parts());
       const drawings = new Set(
-        modules.filter((m) => selected.includes(m.id)).map((m) => m.drawingId),
+        [...scene.modules, ...scene.links].filter((p) => chosen.has(p.id)).map((p) => p.drawingId),
       );
-      canvas?.select(modules.filter((m) => drawings.has(m.drawingId)).map((m) => m.id));
+      canvas?.select(
+        scene.modules.filter((m) => drawings.has(m.drawingId)).map((m) => m.id),
+        scene.links.filter((l) => drawings.has(l.drawingId)).map((l) => l.id),
+      );
+    },
+    /** Selects what the selected modules hold: the modules drawn over them and wholly
+     * inside them, as the steps in a zone. */
+    selectInside() {
+      const modules = session.get().scene?.modules ?? [];
+      const inside = carried(modules, selected);
+      if (inside.length) canvas?.select(inside);
+    },
+    /** Selects the whole group of the modules selected inside one. */
+    selectGroup() {
+      const modules = session.get().scene?.modules ?? [];
+      const groups = new Set(modules.filter((m) => selected.includes(m.id)).flatMap((m) => (m.group ? [m.group] : [])));
+      if (groups.size) canvas?.select(modules.filter((m) => m.group && groups.has(m.group)).map((m) => m.id));
     },
     /** Selects the next module in the stacking order, or the one before. */
     cycle(back: boolean) {
@@ -227,16 +248,17 @@ export function useEditing({
 
   // Copy, cut and paste go through the system clipboard: parts copied in one tab or work
   // paste into another, pictures paste as pictures and words as words.
-  const latest = useRef({ ops, editing, locked, selected, link });
-  latest.current = { ops, editing, locked, selected, link };
+  const latest = useRef({ ops, editing, locked, selected, links });
+  latest.current = { ops, editing, locked, selected, links };
   useEffect(() => {
     const active = (e: Event) =>
       latest.current.editing && !latest.current.locked && !typing(e.target);
     const onCopy = (e: ClipboardEvent) => {
       if (!active(e)) return;
-      // A link is taken out by cutting it; it is copied with the modules it joins.
+      // Links alone are taken out by cutting them; they are copied with the modules they
+      // join.
       if (!latest.current.selected.length) {
-        if (e.type === "cut" && latest.current.link && !getSelection()?.toString()) {
+        if (e.type === "cut" && latest.current.links.length && !getSelection()?.toString()) {
           e.preventDefault();
           latest.current.ops.remove();
         }
@@ -307,7 +329,7 @@ export function useEditing({
       if (e.key === "Escape") {
         if (menu) setMenu(undefined);
         else if (tool !== "select") setTool("select");
-        else if (ids.length || link) canvas?.select([]);
+        else if (ids.length || links.length) canvas?.select([]);
         else return;
       }
       // The view: closer, further, as drawn, the whole drawing, and what is selected.
@@ -318,8 +340,8 @@ export function useEditing({
       else if (e.shiftKey && !mod && !e.altKey && code === "Digit2") canvas?.frameSelection();
       else if (e.key === "?" && !mod) help();
       else if (locked) return;
-      // R turns a selected link round; with anything else it takes up the rectangle.
-      else if (link && !ids.length && plain && code === "KeyR") ops.reverse();
+      // R turns the selected links round; with anything else it takes up the rectangle.
+      else if (links.length && !ids.length && plain && code === "KeyR") ops.reverse();
       else if (letter) setTool(letter);
       else if (mod && code === "KeyA") ops.selectAll();
       // Tab steps through the parts only from the canvas; elsewhere it moves the focus.
@@ -328,9 +350,9 @@ export function useEditing({
         (e.target === document.body || (e.target as Element).closest?.("[data-canvas]"))
       )
         ops.cycle(e.shiftKey);
-      else if (mod && e.altKey && code === "KeyC" && (ids.length || link)) ops.copyLook();
-      else if (mod && e.altKey && code === "KeyV" && (ids.length || link)) ops.pasteLook();
-      else if (link && !ids.length) {
+      else if (mod && e.altKey && code === "KeyC" && (ids.length || links.length)) ops.copyLook();
+      else if (mod && e.altKey && code === "KeyV" && (ids.length || links.length)) ops.pasteLook();
+      else if (links.length && !ids.length) {
         if (e.key === "Delete" || e.key === "Backspace") ops.remove();
         else return;
       } else if (!ids.length) return;
@@ -377,7 +399,7 @@ export function useEditing({
     };
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
-  }, [editing, locked, selected, link, sceneId, tool, menu, canvas]);
+  }, [editing, locked, selected, links, sceneId, tool, menu, canvas]);
 
   return { ops, tool, setTool, place, ink, menu, setMenu, clipped, brushed, bringing, setBringing };
 }

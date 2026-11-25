@@ -53,7 +53,6 @@ export function SceneView({
   connect,
   extend,
   duplicate,
-  selectLink,
   reconnect,
   menu,
   place: placeAt,
@@ -86,7 +85,8 @@ export function SceneView({
   /** Whether a revision is the person's own change, shown at once rather than drawn. */
   quiet: (revision: number) => boolean;
   open: (target: Target) => void;
-  select: (value: Selection[]) => void;
+  /** The modules selected, and while editing the links selected with them or alone. */
+  select: CanvasOptions["select"];
   commit: (moves: { id: string; bounds: Bounds }[]) => void;
   point: (pointed: Pointed) => void;
   /** A link drawn while editing, from one module to another. */
@@ -100,8 +100,6 @@ export function SceneView({
   board?: BoardSettings;
   setBoard?: (change: Partial<BoardSettings>) => void;
   help?: () => void;
-  /** A link selected while editing, or none. */
-  selectLink?: CanvasOptions["selectLink"];
   /** An end of a link dragged onto a side of a module. */
   reconnect?: CanvasOptions["reconnect"];
   /** A right click while editing, for the menu. */
@@ -135,9 +133,9 @@ export function SceneView({
     // work goes from the spinner straight to the picture, without a blank page between.
     [shown, setShown] = useState(false),
     [error, setError] = useState("");
-  const callbacks = useRef({ open, select, commit, point, connect, extend, duplicate, selectLink, reconnect, menu, place: placeAt, ink, erase, view, quiet, hold });
-  const picked = useRef<{ key: string; ids: string[] } | null>(null);
-  callbacks.current = { open, select, commit, point, connect, extend, duplicate, selectLink, reconnect, menu, place: placeAt, ink, erase, view, quiet, hold };
+  const callbacks = useRef({ open, select, commit, point, connect, extend, duplicate, reconnect, menu, place: placeAt, ink, erase, view, quiet, hold });
+  const picked = useRef<{ key: string; ids: string[]; links: string[] } | null>(null);
+  callbacks.current = { open, select, commit, point, connect, extend, duplicate, reconnect, menu, place: placeAt, ink, erase, view, quiet, hold };
   // While editing, the automatic view also keeps clear of the tools and rulers at its edges.
   const boarded = useRef(false);
   boarded.current = editing && !disabled;
@@ -167,16 +165,15 @@ export function SceneView({
         };
       },
       open: (t) => callbacks.current.open(t),
-      select: (s) => {
-        picked.current = { key, ids: s.map((x) => x.moduleId) };
-        callbacks.current.select(s);
+      select: (s, links) => {
+        picked.current = { key, ids: s.map((x) => x.moduleId), links };
+        callbacks.current.select(s, links);
       },
       commit: (m) => callbacks.current.commit(m),
       point: (p) => callbacks.current.point(p),
       connect: (from, to) => callbacks.current.connect?.(from, to),
       extend: (from, at) => callbacks.current.extend?.(from, at),
       duplicate: (ids, by) => callbacks.current.duplicate?.(ids, by),
-      selectLink: (id) => callbacks.current.selectLink?.(id),
       reconnect: (id, end, to) => callbacks.current.reconnect?.(id, end, to),
       menu: (at) => callbacks.current.menu?.(at),
       ...(hold ? { hold: (at: { x: number; y: number }) => callbacks.current.hold?.(at) } : {}),
@@ -203,7 +200,8 @@ export function SceneView({
     void view.ready
       .then(() => {
         if (!mounted) return;
-        view.select(picked.current?.key === key ? picked.current.ids : []);
+        const was = picked.current?.key === key ? picked.current : undefined;
+        view.select(was?.ids ?? [], was?.links ?? []);
       })
       .catch((e) => setError(String(e)))
       .finally(() => mounted && setShown(true));

@@ -4327,18 +4327,10 @@ body:has(.resizer[data-dragging]) {
    selected is measured as a drawing is dimensioned. The tool in hand is inked; everything
    that measures or marks the selection is the blue pencil. */
 
-/* The composer waits as one line while the hand is at work, and opens when it is written
-   in: what is selected is said by its placeholder, and asking about it is a press away. */
-.stage[data-editing]
-  .composer[data-place="dock"]:not(:focus-within):not(:has(textarea:not(:placeholder-shown)))
-  :is(.composer-tools, .composer-extras) {
+/* The composer is put away while the hand is at work, leaving the board clear; "describe a
+   change" brings it up (see the work page). The bars over it stay. */
+.dock[data-quiet] .composer-wrap[data-place="dock"] {
   display: none;
-}
-
-.stage[data-editing]
-  .composer[data-place="dock"]:not(:focus-within):not(:has(textarea:not(:placeholder-shown))) {
-  padding-top: 9px;
-  padding-bottom: 9px;
 }
 
 .stage[data-editing] .dock {
@@ -4602,14 +4594,14 @@ body:has(.resizer[data-dragging]) {
   }
 }
 
-.tray-shapes {
+.tray-menu {
   display: flex;
   flex-direction: column;
   min-width: 148px;
   padding: 5px;
 }
 
-.tray-shapes button {
+.tray-menu button {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -4621,14 +4613,25 @@ body:has(.resizer[data-dragging]) {
   white-space: nowrap;
 }
 
-.tray-shapes button svg {
+.tray-menu button svg {
   flex: none;
   color: var(--text-2);
 }
 
-.tray-shapes button:hover,
-.tray-shapes button[aria-checked="true"] {
+.tray-menu button:hover,
+.tray-menu button[aria-checked="true"] {
   background: var(--fill);
+}
+
+/* A shape's letter, at the end of its row. */
+.tray-more .tray-menu kbd {
+  position: static;
+  display: inline;
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: 11px;
+  color: var(--text-3);
+  opacity: 1;
 }
 
 /* The library's drawings beside the tray. */
@@ -4768,7 +4771,7 @@ body:has(.resizer[data-dragging]) {
   background: var(--fill);
 }
 
-/* The selection's look and actions, in a bar over it on the canvas. */
+/* The selection's look, in a bar over it on the canvas. */
 .selection-bar {
   position: absolute;
   z-index: 11;

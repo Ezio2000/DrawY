@@ -96,11 +96,11 @@ export function reattach(
     throw Error("连线要连到另一个元素");
   return { links: [{ id: linkId, scene: sceneId, [which]: end(m.id, side) }] };
 }
-/** Turns a link round: what it came from it now goes to. */
-export function reverse(work: Work, sceneId: string, linkId: string): WorkEdit {
-  const link = sceneOf(work, sceneId).links.find((l) => l.id === linkId);
-  if (!link) throw Error("连线不存在");
-  return { links: [{ id: linkId, scene: sceneId, from: link.to, to: link.from }] };
+/** Turns links round: what each came from it now goes to. */
+export function reverse(work: Work, sceneId: string, linkIds: string[]): WorkEdit {
+  const links = sceneOf(work, sceneId).links.filter((l) => linkIds.includes(l.id));
+  if (!links.length) throw Error("连线不存在");
+  return { links: links.map((l) => ({ id: l.id, scene: sceneId, from: l.to, to: l.from })) };
 }
 
 const opposite: Record<Side, Side> = { left: "right", right: "left", top: "bottom", bottom: "top" };

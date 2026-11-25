@@ -13,6 +13,7 @@ import {
   MessageSquareQuote,
   PaintRoller,
   Paintbrush,
+  BoxSelect,
   Scan,
   Scissors,
   SendToBack,
@@ -49,8 +50,10 @@ export function EditMenu({
   at,
   ops,
   selected,
-  link,
+  links,
   grouped,
+  within,
+  holds,
   clipped,
   brushed,
   close,
@@ -60,10 +63,14 @@ export function EditMenu({
   at: { x: number; y: number };
   ops: EditOps;
   selected: string[];
-  /** The link selected, when no module is. */
-  link?: string | null;
+  /** The links selected, with the modules or alone. */
+  links: string[];
   /** Whether any selected module is in a group. */
   grouped: boolean;
+  /** Whether the modules selected are part of a group, not all of it. */
+  within: boolean;
+  /** Whether the modules selected hold others, as a zone holds its steps. */
+  holds: boolean;
   /** Whether there is something to paste. */
   clipped: boolean;
   /** Whether a look has been copied, to give to the selection. */
@@ -105,11 +112,13 @@ export function EditMenu({
     { label: m.ask, icon: <MessageSquareQuote size={size} />, run: ask },
     { label: m.remove, icon: <Trash2 size={size} />, key: "Delete", run: ops.remove, danger: true },
   ];
-  const items: Item[] = link && !some
+  const same: Item = { label: m.selectSame, icon: <SquareStack size={size} />, run: ops.selectSame };
+  const items: Item[] = links.length && !some
     ? [
         { label: m.reverse, icon: <ArrowRightLeft size={size} />, key: "R", run: () => ops.reverse() },
         "-",
         ...look,
+        same,
         "-",
         ...last,
       ]
@@ -121,7 +130,9 @@ export function EditMenu({
         { label: m.duplicate, icon: <CopyPlus size={size} />, key: "Mod+D", run: ops.duplicate },
         "-",
         ...look,
-        { label: m.selectSame, icon: <SquareStack size={size} />, run: ops.selectSame },
+        same,
+        ...(within ? [{ label: m.selectGroup, icon: <Group size={size} />, run: ops.selectGroup }] : []),
+        ...(holds ? [{ label: m.selectInside, icon: <BoxSelect size={size} />, run: ops.selectInside }] : []),
         "-",
         { label: m.front, icon: <BringToFront size={size} />, key: "Mod+]", run: () => ops.stack("front") },
         { label: m.forward, icon: <ArrowUpToLine size={size} />, key: "Alt+Mod+]", run: () => ops.stack("forward") },
@@ -142,6 +153,7 @@ export function EditMenu({
         { label: m.addDrawing, icon: <LibraryBig size={size} />, run: () => ops.add("drawing") },
         "-",
         { label: m.fit, icon: <Scan size={size} />, key: "Shift+1", run: fit },
+        { label: m.askAll, icon: <MessageSquareQuote size={size} />, run: ask },
       ];
   return (
     <div ref={ref} className={cx("edit-menu")} role="menu" style={{ left: at.x, top: at.y }}>

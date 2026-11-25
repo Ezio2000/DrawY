@@ -23,7 +23,7 @@ export interface BoardSettings {
  * author lays its figures out on the same step. */
 export const GRID = 20;
 const KEY = "drawy.edit.board";
-const defaults: BoardSettings = { rulers: true, guides: true, grid: false };
+const defaults: BoardSettings = { rulers: false, guides: true, grid: false };
 export function useBoard() {
   const [board, setBoard] = useState<BoardSettings>(() => {
     try {

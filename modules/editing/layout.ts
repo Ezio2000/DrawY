@@ -95,6 +95,26 @@ export function matchSize(
 
 /** A handle on a box: a corner or the middle of an edge, by compass point. */
 export type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+/** Whether a box lies wholly inside another, smaller than it. */
+const within = (inner: Bounds, outer: Bounds) =>
+  inner.x >= outer.x &&
+  inner.y >= outer.y &&
+  inner.x + inner.width <= outer.x + outer.width &&
+  inner.y + inner.height <= outer.y + outer.height &&
+  inner.width * inner.height < outer.width * outer.height;
+/** What goes along when modules are moved by hand: the modules drawn over one of them and
+ * wholly inside its box, as the steps of a flow sit in the zone drawn under them. The
+ * modules come in stacking order (the first drawn first), as a scene lists them; returns
+ * the ids carried, none of those given. */
+export function carried(modules: { id: string; bounds: Bounds }[], ids: string[]): string[] {
+  const moving = new Set(ids);
+  return modules.flatMap((m, i) =>
+    !moving.has(m.id) &&
+    modules.slice(0, i).some((c) => moving.has(c.id) && within(m.bounds, c.bounds))
+      ? [m.id]
+      : [],
+  );
+}
 export const handles: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 /** A box resized by dragging one of its handles. Shift keeps its proportions; Alt resizes
  * it about its centre; it never shrinks below `min`. */

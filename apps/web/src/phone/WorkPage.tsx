@@ -45,7 +45,7 @@ export default function PhoneWorkPage({ session, asking, feedback, go }: ShellPr
   const { draft } = asking;
   const [selected, setSelected] = useState<Selection[]>([]);
   const [sheet, setSheet] = useState<SheetKind>("");
-  const page = useWorkPage({ session, asking, feedback, focus: { modules: selected } });
+  const page = useWorkPage({ session, asking, feedback, focus: { modules: selected, links: [] } });
   const { sceneId, putAway, dismiss, detailId, setDetail, retyping, setRetyping, retyped } = page;
   const { restore, undo, enter, open, ask, stop, send, resume } = page;
   // A picture being chosen from the library, and what it is for.

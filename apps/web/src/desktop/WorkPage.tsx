@@ -25,6 +25,7 @@ import { panelWidth, Resizer } from "./panels.tsx";
 import {
   Bars,
   CanvasArea,
+  Dock,
   EditOverlay,
   EditPane,
   SideTools,
@@ -47,9 +48,9 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
   const t = useT();
   const { attempt } = feedback;
   const { draft } = asking;
-  // What is selected: modules, or else a link, as the canvas says.
+  // What is selected, as the canvas says: modules, and links with them or alone.
   const [selected, setSelected] = useState<Selection[]>([]);
-  const [link, setLink] = useState<string | null>(null);
+  const [links, setLinks] = useState<string[]>([]);
   const [panel, setPanel] = useState<Panel>("");
   const [widths, setWidths] = useState(() => ({
     journal: panelWidth.read("journal"),
@@ -77,24 +78,24 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     drafting = panel === "drafts",
     editing = panel === "edit";
   const ids = selected.map((x) => x.moduleId);
-  const { working, waiting, locked, runId, chosenLink, linkName } = useSelect(session, (s) => {
-    const l = !ids.length && link ? s.scene?.links.find((x) => x.id === link) : undefined;
-    return {
-      working: s.working,
-      waiting: s.waiting,
-      locked: s.locked,
-      runId: s.run?.id,
-      chosenLink: l,
-      linkName: l && nameIn(s, l.id),
-    };
-  });
-  const linkId = chosenLink ? link : null;
-  const page = useWorkPage({ session, asking, feedback, focus: { modules: selected, link: chosenLink } });
+  const { working, waiting, locked, runId } = useSelect(session, (s) => ({
+    working: s.working,
+    waiting: s.waiting,
+    locked: s.locked,
+    runId: s.run?.id,
+  }));
+  // The selected links still in the scene, and what they are called.
+  const chosenLinks = useSelect(session, (s) =>
+    links.flatMap((id) => s.scene?.links.find((l) => l.id === id) ?? []),
+  );
+  const linkNames = useSelect(session, (s) => chosenLinks.map((l) => nameIn(s, l.id)));
+  const linkIds = chosenLinks.map((l) => l.id);
+  const page = useWorkPage({ session, asking, feedback, focus: { modules: selected, links: chosenLinks } });
   const { sceneId, putAway, dismiss, detailId, setDetail, retyping, setRetyping, retyped } = page;
   const { restore, undo, enter, open, ask, swap, stop, send, resume } = page;
   // The latest reply shows under the canvas until it is put away.
   const replying = !putAway && !working && !waiting;
-  const deselect = () => (canvas ? canvas.select([]) : (setSelected([]), setLink(null)));
+  const deselect = () => (canvas ? canvas.select([]) : (setSelected([]), setLinks([])));
   const toggle = (p: Panel) => {
     const next = panel === p ? "" : p;
     // The versions are looked at as wholes: what was selected in the one shown goes.
@@ -111,7 +112,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     canvas,
     editing,
     selected: ids,
-    link: linkId,
+    links: linkIds,
     pick,
     retype: setRetyping,
     help: () => setHelp(true),
@@ -119,7 +120,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
   // What is selected and open belongs to the scene it was in.
   useEffect(() => {
     setSelected([]);
-    setLink(null);
+    setLinks([]);
     setScenes(false);
   }, [session, sceneId]);
   // While the author draws, the studio shows how it goes about it, unless the person is
@@ -260,8 +261,10 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             session.attach(c);
           }}
           open={open}
-          select={setSelected}
-          selectLink={setLink}
+          select={(modules, links) => {
+            setSelected(modules);
+            setLinks(links);
+          }}
           point={point}
           hand={hand}
           board={board}
@@ -280,7 +283,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             canvas={canvas}
             stage={stage.current}
             ids={ids}
-            link={linkId}
+            links={linkIds}
             retyping={!!retyping}
             ask={() => ask()}
           />
@@ -293,7 +296,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             done={retyped}
           />
         )}
-        <div className={cx("dock")} data-dock>
+        <Dock session={session} draft={draft} editing={editing}>
           <Bars session={session} feedback={feedback} restore={restore} undo={undo} editing={editing} />
           <WorkComposer
             session={session}
@@ -315,17 +318,16 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
               />
             }
             quote={
-              selected.length
-                ? selected.map((x) => x.label || x.moduleId).join(t.now.list)
-                : linkName
+              [...selected.map((x) => x.label || x.moduleId), ...linkNames].join(t.now.list) ||
+              undefined
             }
             unquote={deselect}
-            selecting={!!selected.length || !!chosenLink}
+            selecting={!!selected.length || !!chosenLinks.length}
             edit={editing || locked ? undefined : edit}
             send={() => send()}
             stop={stop}
           />
-        </div>
+        </Dock>
         {editing && tucked && (
           <button
             className={cx("untuck")}
@@ -383,7 +385,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
               <EditPane
                 session={session}
                 ids={ids}
-                link={linkId}
+                links={linkIds}
                 canvas={canvas}
                 change={(make) => attempt(() => session.change(make)).then(() => true)}
                 ops={hand.ops}

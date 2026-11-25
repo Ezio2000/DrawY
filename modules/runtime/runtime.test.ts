@@ -289,11 +289,16 @@ it("edits with the mouse: a press selects instead of operating, a box selects, h
     await page.mouse.up();
   };
   const scale = await page.evaluate(() => window.drawyView.view.scale);
-  // A level opens its explanation when explored; while editing, a press only selects it,
-  // and Shift adds another.
-  await page.locator('[data-module-id="level-0"]').click();
+  // A level opens its explanation when explored; while editing, a press only selects: the
+  // pyramid the level is grouped in, and with Cmd or Ctrl the level alone. Shift adds
+  // another.
+  const level0 = page.locator('[data-module-id="level-0"]'),
+    level1 = page.locator('[data-module-id="level-1"]');
+  await level0.click();
+  expect(await data("selected")).toBe("level-0,level-1,level-2,level-3,level-4");
+  await level0.click({ modifiers: ["ControlOrMeta"] });
   expect(await data("selected")).toBe("level-0");
-  await page.locator('[data-module-id="level-1"]').click({ modifiers: ["Shift"] });
+  await level1.click({ modifiers: ["Shift"] });
   expect(await data("selected")).toBe("level-0,level-1");
   expect(await data("opened")).toBeUndefined();
   // The drawing's own button is pressed without acting.
@@ -301,8 +306,18 @@ it("edits with the mouse: a press selects instead of operating, a box selects, h
   expect(await data("selected")).toBe("control");
   await page.waitForTimeout(150);
   expect(await page.locator('[data-module-id="level-4"] text').nth(1).textContent()).toBe("食物与休息");
-  // Dragging over the paper selects what the box touches.
+  // Dragging over the paper selects what lies wholly in the box, a group once all of it
+  // does; with Alt, what the box touches, with its group.
   await drag(await screen(120, 95), await screen(320, 220));
+  expect(await data("selected")).toBe("");
+  await page.keyboard.down("Alt");
+  await drag(await screen(120, 95), await screen(320, 220));
+  await page.keyboard.up("Alt");
+  expect(await data("selected")).toBe("level-0,level-1,level-2,level-3,level-4");
+  await drag(await screen(40, 100), await screen(860, 620));
+  expect(await data("selected")).toBe("level-0,level-1,level-2,level-3,level-4");
+  await level0.click({ modifiers: ["ControlOrMeta"] });
+  await level1.click({ modifiers: ["Shift"] });
   expect(await data("selected")).toBe("level-0,level-1");
   // The handles on the box around two modules resize both in proportion, and the link
   // between them follows.
@@ -328,10 +343,10 @@ it("edits with the mouse: a press selects instead of operating, a box selects, h
   await drag(moved, { x: moved.x + 5, y: moved.y });
   await page.keyboard.up("Control");
   expect(JSON.parse((await data("moves"))!)[0].bounds.x).toBeCloseTo(100 + 5 / scale);
-  // A right click selects what it lands on and asks for the menu there.
+  // A right click selects what it lands on (with its group) and asks for the menu there.
   const safety = await screen(450, 450);
   await page.mouse.click(safety.x, safety.y, { button: "right" });
-  expect(await data("selected")).toBe("level-3");
+  expect(await data("selected")).toBe("level-0,level-1,level-2,level-3,level-4");
   const menu = JSON.parse((await data("menu"))!);
   expect(Math.abs(menu.x - safety.x)).toBeLessThan(2);
   expect(Math.abs(menu.y - safety.y)).toBeLessThan(2);
@@ -361,7 +376,7 @@ it("edits with the mouse: a press selects instead of operating, a box selects, h
   await page.waitForTimeout(100);
   const level = (await page.locator('[data-module-id="level-2"] text').first().boundingBox())!;
   await page.mouse.click(level.x + level.width / 2, level.y + level.height / 2);
-  expect(await data("selected")).toBe("level-2");
+  expect(await data("selected")).toBe("level-0,level-1,level-2,level-3,level-4");
   const veil = (await page.locator('[data-module-id="veil"] circle').boundingBox())!;
   await page.mouse.click(veil.x + veil.width / 2, veil.y + veil.height / 2);
   expect(await data("selected")).toBe("veil");
@@ -408,8 +423,10 @@ it("selects a link by its line while editing, drags its ends onto other modules 
       body = document.body.dataset;
     view.setMovable(true);
     view.setEditing(true);
-    view.options.select = (s) => (body.selected = s.map((x) => x.moduleId).join());
-    view.options.selectLink = (id) => (body.link = id ?? "");
+    view.options.select = (s, links) => {
+      body.selected = s.map((x) => x.moduleId).join();
+      body.link = links.join();
+    };
     view.options.reconnect = (id, end, to) =>
       (body.reconnected = JSON.stringify({ id, end, to }));
     view.options.point = (p) => (body.pointed = JSON.stringify(p));
@@ -418,12 +435,12 @@ it("selects a link by its line while editing, drags its ends onto other modules 
   // the selected module.
   const first = await screen(420, 150);
   await page.mouse.click(first.x, first.y);
-  expect(await data("selected")).toBe("level-0");
+  expect(await data("selected")).toBe("level-0,level-1,level-2,level-3,level-4");
   const between = await screen(565, 207);
   await page.mouse.click(between.x + 3, between.y);
   expect(await data("link")).toBe("next");
   expect(await data("selected")).toBe("");
-  expect(await page.evaluate(() => window.drawyView.selectedLink)).toBe("next");
+  expect(await page.evaluate(() => window.drawyView.selectedLinks)).toEqual(["next"]);
   // Its end is dragged onto another module, to the side facing where it is dropped.
   const end = (await page.locator('[data-link-end="to"]').boundingBox())!;
   const target = await screen(160, 457);
@@ -448,7 +465,7 @@ it("selects a link by its line while editing, drags its ends onto other modules 
   // Selecting a module leaves no link selected.
   const level = await screen(420, 150);
   await page.mouse.click(level.x, level.y);
-  expect(await data("selected")).toBe("level-0");
+  expect(await data("selected")).toBe("level-0,level-1,level-2,level-3,level-4");
   expect(await data("link")).toBe("");
   // Enter finds the words a module draws first; a double click on the paper puts words
   // where it lands.

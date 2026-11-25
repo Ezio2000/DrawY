@@ -4,11 +4,11 @@ import type { Ask, Context, Focus } from "./types.ts";
 
 /** What the author is told a request is about, under the request itself. */
 export function aboutOf(text: string, focus?: Focus) {
-  if (focus?.modules.length)
-    return `${text}\n${focus.modules.map((x) => `Selected module: ${x.moduleId}\n${x.label}`).join("\n")}`;
-  if (focus?.link)
-    return `${text}\nSelected link: ${focus.link.id} (${focus.link.from.moduleId} → ${focus.link.to.moduleId})`;
-  return text;
+  const about = [
+    ...(focus?.modules ?? []).map((x) => `Selected module: ${x.moduleId}\n${x.label}`),
+    ...(focus?.links ?? []).map((l) => `Selected link: ${l.id} (${l.from.moduleId} → ${l.to.moduleId})`),
+  ];
+  return about.length ? `${text}\n${about.join("\n")}` : text;
 }
 
 /** Requests to the author: sending one, or an answer while it waits; holding one back

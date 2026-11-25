@@ -74,8 +74,8 @@ export function Rename({
   );
 }
 
-/** The app's navigation: home (where a new work starts), the library, the recent works
- * and the account. Collapsed it shows icons; open it slides over the page. */
+/** The app's navigation: home (where a request starts a new work), a blank canvas to
+ * draw on by hand, the library, the recent works and the account. Collapsed it shows icons; open it slides over the page. */
 export function Rail({
   user,
   open,
@@ -143,6 +143,7 @@ export function Rail({
         </span>
       </div>
       {link("/", t.rail.home, Hand.Home, page === "home")}
+      {link("/new", t.rail.blankCanvas, Hand.Plus, page === "new")}
       {link("/library", t.rail.library, Hand.Library, page === "library")}
       <section className={cx("rail-recents")} inert={!open}>
         {open && user && <RecentList recents={recents} current={current} nav={nav} remove={remove} />}
