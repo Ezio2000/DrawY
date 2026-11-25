@@ -470,6 +470,13 @@ const zh = {
       drawing: "画法库",
       bring: "导入 Mermaid 或 Excalidraw",
     },
+    // The names of the drawings a work makes for itself when drawn on by hand or brought into.
+    made: {
+      "sketch-line": "手绘线",
+      "sketch-shape": "手绘形状",
+      "imported-picture": "导入的图片",
+      mermaid: "Mermaid 图",
+    } as Record<string, string>,
     bring: {
       title: "导入",
       heading: "导入 Mermaid 或 Excalidraw",
@@ -1943,6 +1950,12 @@ const en: Words = {
       drawing: "Drawings",
       bring: "Import Mermaid or Excalidraw",
     },
+    made: {
+      "sketch-line": "Hand-drawn line",
+      "sketch-shape": "Hand-drawn shape",
+      "imported-picture": "Imported picture",
+      mermaid: "Mermaid diagram",
+    } as Record<string, string>,
     bring: {
       title: "Import",
       heading: "Import Mermaid or Excalidraw",

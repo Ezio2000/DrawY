@@ -316,6 +316,17 @@ describe("Excalidraw", () => {
     expect(back).toMatchObject({ from: there.from, to: there.to, data: { bend: there.data.bend } });
   });
 
+  it("writes a block with an icon or copies stacked behind it as a picture of itself", () => {
+    const work = blank();
+    const block = (id: string, data: Record<string, unknown>) => ({ id, drawingId: "node", bounds: { x: 0, y: 0, width: 100, height: 60 }, data: { title: id, ...data } });
+    work.scenes.root.modules.push(block("plain", {}), block("iconic", { icon: "pic-1" }), block("stacked", { stack: 2 }));
+    expect(picturesFor(work, "root")).toEqual(["iconic", "stacked"]);
+    const out = toExcalidraw(work, "root", {}, 1);
+    expect(out.elements.find((e) => e.id === "plain")!.type).toBe("rectangle");
+    // Without its picture, a composed block is outlined and named, not drawn as a bare box.
+    expect(out.elements.find((e) => e.id === "iconic")).toMatchObject({ strokeStyle: "dashed" });
+  });
+
   it("writes a work's own drawing named like a library one as a picture of itself", () => {
     const work = blank();
     work.drawings.node = { id: "node", name: "自己的节点", source: "return api.svg('<svg/>')" };

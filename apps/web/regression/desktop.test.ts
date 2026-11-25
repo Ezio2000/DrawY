@@ -744,6 +744,12 @@ it("draws by hand with the pen, the arrow and the eraser; brings Mermaid and Exc
   );
   await expect.poll(() => page.getByText("Imported. 1 element was rotated in the original", { exact: false }).count(), { timeout: 10_000 }).toBe(1);
   await expect.poll(async () => (await own("sketch-shape")).length, { timeout: 10_000 }).toBe(1);
+  // The drawings the work made for itself are named in the language of the page.
+  const names = Object.values((await api("/works/" + id)).drawings as Record<string, { source: string; name: string }>)
+    .filter((d) => d.source.startsWith("// drawy:"))
+    .map((d) => d.name)
+    .sort();
+  expect(names).toEqual(["Hand-drawn line", "Hand-drawn shape"]);
   await expect.poll(() => count("Sketch")).toBe(1);
   // Out again: an Excalidraw file with the drawn parts as pictures and the link bound to
   // them, and the blocks and links as a Mermaid flowchart.

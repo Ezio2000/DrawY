@@ -47,6 +47,7 @@ import { inked, type Brought } from "../../../../modules/interchange/index.ts";
 import { union } from "../../../../modules/contracts/geometry.ts";
 import { api } from "../api.ts";
 import { clipOf, type Incoming } from "../interchange.ts";
+import { dictionaries } from "../i18n.tsx";
 import { SessionError, type Context } from "./types.ts";
 
 /* Everything a person does to a work by hand, whatever they do it with: each operation
@@ -93,6 +94,11 @@ const textSize = (scale: number) => Math.round(Math.min(96, Math.max(14, 22 / sc
 export function editOps(ctx: Context) {
   const fail = (error: unknown) => ctx.tell({ kind: "failed", error });
   const report = (p: Promise<unknown>) => void p.catch(fail);
+  /** A clip with the drawings it makes for the work named in the person's language. */
+  const named = (clip: Clip): Clip => {
+    const names = dictionaries[ctx.host.locale()].edit.made;
+    return { ...clip, drawings: clip.drawings.map((d) => ({ ...d, name: names[d.id] ?? d.name })) };
+  };
   const scene = () => ctx.scenes.sceneId;
   /** The work as shown, with the hand edits on their way laid on it. */
   const shown = () => ctx.edits.draft?.work ?? ctx.revisions.work;
@@ -414,7 +420,7 @@ export function editOps(ctx: Context) {
       if (!points.length) return;
       const s = scale(),
         sceneId = scene();
-      const clip = inked(points, { kind, width: Math.min(12, Math.max(1, Math.round((2 / s) * 2) / 2)), scale: s });
+      const clip = named(inked(points, { kind, width: Math.min(12, Math.max(1, Math.round((2 / s) * 2) / 2)), scale: s }));
       if (kind === "pen") {
         report(ctx.edits.commit((w) => paste(w, sceneId, clip).edit));
         return;
@@ -430,7 +436,8 @@ export function editOps(ctx: Context) {
      * comes in as a copy, as with a library drawing added by hand. Parts that could not
      * come in as they were (turned, seen through or flipped) are told of once placed. */
     async bring(brought: Brought): Promise<string | undefined> {
-      const { clip, adjusted } = brought;
+      const clip = named(brought.clip),
+        { adjusted } = brought;
       const pending = materializeBlank();
       if (pending) {
         const real = await pending;

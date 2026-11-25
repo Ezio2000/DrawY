@@ -385,7 +385,9 @@ function writable(work: Work, m: Instance) {
   const kind = kindOfSource(work.drawings[m.drawingId]?.source);
   if (kind === "sketch-line" || kind === "sketch-shape") return true;
   if (work.drawings[m.drawingId]) return false;
-  return m.drawingId === NODE || m.drawingId === CALLOUT || m.drawingId === b.text;
+  // A block with an icon, or with copies stacked behind it, is more than a shape and words.
+  if (m.drawingId === NODE) return !m.data.icon && !(Number(m.data.stack ?? 0) > 0);
+  return m.drawingId === CALLOUT || m.drawingId === b.text;
 }
 /** A picture a part goes out as, as a data URL. */
 export interface Picture {
@@ -554,7 +556,7 @@ export function toExcalidraw(
               }),
         }),
       );
-    } else if (!work.drawings[m.drawingId] && (m.drawingId === NODE || m.drawingId === CALLOUT)) {
+    } else if (writable(work, m) && (m.drawingId === NODE || m.drawingId === CALLOUT)) {
       const color = toneColor(style, d.tone, d.color);
       const fill =
         d.fillStyle === "solid"
