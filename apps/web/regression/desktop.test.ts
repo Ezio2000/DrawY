@@ -60,9 +60,10 @@ it("paints the drawing's words as laid out; shows a hand edit at once and lays t
   release();
   await settled();
   expect(await module("Alpha")).toMatchObject({ left: moved.left, mark: before.mark });
-  expect(await statuses()).toContain("1 change not saved\nDiscard changes\nSave as version 2");
+  // While editing by hand only the dot on the seal says the edits are not saved yet.
   expect(await seal("Version 1 · unsaved changes").count()).toBe(1);
-  // A further edit is counted at once: the bar stays while the revisions catch up, rather
+  expect((await statuses()).join()).not.toContain("not saved");
+  // A further edit is counted at once: the dot stays while the revisions catch up, rather
   // than leaving and coming back on every edit.
   let list!: () => void;
   const listed = new Promise<void>((r) => (list = r));
@@ -71,9 +72,9 @@ it("paints the drawing's words as laid out; shows a hand edit at once and lays t
     await route.continue();
   });
   await drag("Alpha");
-  await expect
-    .poll(async () => (await statuses()).join("|"))
-    .toContain("2 changes not saved\nDiscard changes\nSave as version 2");
+  await expect.poll(async () => (await module("Alpha"))!.left).not.toBe(moved.left);
+  await page.waitForTimeout(300);
+  expect(await seal("Version 1 · unsaved changes").count()).toBe(1);
   list();
   await page.unroute("**/api/works/*/revisions");
   await settled();
@@ -88,6 +89,9 @@ it("paints the drawing's words as laid out; shows a hand edit at once and lays t
   await drag("Alpha");
   await settled();
   expect(await module("Alpha")).toMatchObject({ left: moved.left, mark: before.mark });
+  // Done editing, the edits not saved are said over the composer.
+  await editing();
+  expect(await statuses()).toContain("1 change not saved\nDiscard changes\nSave as version 2");
   // Thrown away, which can be undone.
   await page.getByRole("button", { name: "Discard changes" }).click();
   await settled();
