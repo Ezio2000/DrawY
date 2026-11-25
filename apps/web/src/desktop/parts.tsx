@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, X, Check, FileInput, PenLine, Square } from "lucide-react";
+import { ChevronDown, X, Check, FileInput, PenLine } from "lucide-react";
 import * as Hand from "../ui/brand/icons.tsx";
 import type { Canvas, CanvasOptions, Pointed } from "../../../../modules/canvas/index.ts";
 import type { Target } from "../../../../modules/contracts/index.ts";
@@ -164,8 +164,8 @@ export function CanvasArea({
   setBoard: (change: Partial<BoardSettings>) => void;
   /** Shows the shortcuts and gestures. */
   help: () => void;
-  /** Takes up editing on a blank scene: with the pen, a box, or bringing something in. */
-  start: (how: "pen" | "box" | "bring") => void;
+  /** Takes up editing on a blank scene, or bringing something in. */
+  start: (how: "draw" | "bring") => void;
 }) {
   counted("canvas");
   const t = useT();
@@ -202,13 +202,9 @@ export function CanvasArea({
             <small>{t.work.start.editing}</small>
           ) : (
             <span className={cx("blank-start")}>
-              <button onClick={() => start("pen")}>
+              <button onClick={() => start("draw")}>
                 <PenLine size={15} />
-                {t.work.start.pen}
-              </button>
-              <button onClick={() => start("box")}>
-                <Square size={15} />
-                {t.work.start.box}
+                {t.work.start.draw}
               </button>
               <button onClick={() => start("bring")}>
                 <FileInput size={15} />

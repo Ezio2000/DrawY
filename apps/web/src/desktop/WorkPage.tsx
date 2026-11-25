@@ -273,7 +273,6 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           start={(how) => {
             if (!editing) edit();
             if (how === "bring") hand.setBringing(true);
-            else hand.setTool(how);
           }}
         />
         {editing && !locked && (

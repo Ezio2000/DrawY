@@ -298,8 +298,7 @@ const zh = {
     deleted: (title: string) => `已删除「${title}」`,
     blank: "这里还空着",
     start: {
-      pen: "自己画",
-      box: "放一个方框",
+      draw: "开始画",
       bring: "导入 Mermaid / Excalidraw",
       editing: "用左边的工具开始画，也可以直接粘贴 Mermaid 代码或 Excalidraw 内容",
     },
@@ -1787,8 +1786,7 @@ const en: Words = {
     deleted: (title) => `Deleted “${title}”`,
     blank: "Nothing here yet",
     start: {
-      pen: "Draw it yourself",
-      box: "Start with a box",
+      draw: "Start drawing",
       bring: "Import Mermaid / Excalidraw",
       editing: "Start with the tools on the left, or paste Mermaid code or Excalidraw content",
     },
