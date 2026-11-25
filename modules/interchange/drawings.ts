@@ -1,12 +1,13 @@
 import type { Drawing } from "../contracts/index.ts";
 
 /* The drawings hand-made and imported parts are drawn with when the library has none that
- * fits: a line drawn by hand, a shape as Excalidraw draws it, and a diagram written in
- * Mermaid. Each goes into a work as a drawing of its own, through a clip, so it is a part of
- * the work like any other: the author reads and changes it as it would its own code, and
- * nothing in the library, the author's prompts or its tools knows about them. Each source
- * opens with a mark, so a part drawn with one is known again on export whatever id the work
- * gave the drawing. */
+ * fits: a line drawn by hand, a shape as Excalidraw draws it, a picture as another tool
+ * showed it, and a diagram written in Mermaid. Each goes into a work as a drawing of its
+ * own, through a clip, so it is a part of the work like any other: the author reads and
+ * changes it as it would its own code, and nothing in the library, the author's prompts or
+ * its tools knows about them. The line, the shape and the diagram open with a mark, so a
+ * part drawn with one is known again on export whatever id the work gave the drawing; an
+ * imported picture goes out as a picture of itself like anything else. */
 
 const SKETCH_LINE = "// drawy:sketch-line";
 const SKETCH_SHAPE = "// drawy:sketch-shape";
@@ -219,6 +220,27 @@ return api.html(
     '<path d="' + strokes + '" fill="none" stroke="' + stroke + '" stroke-width="' + sw + '" stroke-linecap="round" stroke-linejoin="round"' + dash + "/></svg>" +
     (d.text ? '<div class="words">' + esc(d.text) + "</div>" : "") + "</div>",
 );`,
+};
+
+/** A picture brought in from another tool, its whole file filling the box with its margins
+ * and hard edges, as that tool showed it. The library's picture drawing fits a picture by
+ * its visible content and feathers a painted one into the paper, which would change an
+ * imported picture's size, place and edges. */
+export const importedPicture: Drawing = {
+  id: "imported-picture",
+  name: "导入的图片",
+  params: { material: { type: "picture" } },
+  source: `// A picture (data.material) as its whole file fills the box, margins and edges as they are.
+const info = api.materials[api.data.material];
+if (!info) throw Error("素材 " + api.data.material + " 不在作品中");
+const root = api.html('<div style="width:' + api.width + "px;height:" + api.height + 'px"></div>').firstElementChild;
+const img = document.createElement("img");
+img.src = info.url;
+img.alt = info.name;
+img.draggable = false;
+img.style.cssText = "display:block;width:100%;height:100%";
+root.append(img);
+return root;`,
 };
 
 /** A diagram written in Mermaid, drawn by the browser from its source and fitted to the

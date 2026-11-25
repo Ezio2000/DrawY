@@ -11,6 +11,7 @@ import { useOf } from "../materials/index.ts";
 import type { Side } from "../contracts/index.ts";
 import type { DrawingMaterial, Material } from "@drawy/materials/schema";
 import { boil } from "../../materials/streets.ts";
+import { importedPicture } from "../interchange/drawings.ts";
 
 /** Curated materials as the library serves them. */
 const seed = (name: string) =>
@@ -1436,6 +1437,40 @@ it("tints recolourable picture icons with the picture drawing's color parameter"
     document.querySelector('[data-module-id="icon"]')?.shadowRoot?.querySelector("img")?.getAttribute("src"),
   );
   expect(src).toBe("/materials/files/u-ring?color=%23275DAD");
+});
+
+it("draws a picture brought in from another tool as its whole file fills the box, margins and hard edges kept", async () => {
+  work.drawings[importedPicture.id] = importedPicture;
+  work.materials["u-photo"] = {
+    id: "u-photo",
+    kind: "picture",
+    name: "照片",
+    type: "scene",
+    style: null,
+    url: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect x="25" y="25" width="50" height="50"/></svg>')}`,
+    width: 50,
+    height: 50,
+    content: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
+    anchors: {},
+    opaque: true,
+    recolor: false,
+    status: "ready",
+  };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [{ id: "photo", label: "照片", drawingId: importedPicture.id, data: { material: "u-photo" }, bounds: { x: 40, y: 40, width: 120, height: 120 } }],
+    links: [],
+    checks: [],
+  };
+  delete work.scenes.root.interaction;
+  await open();
+  const drawn = await page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>('[data-module-id="photo"]')!;
+    const img = host.shadowRoot!.querySelector("img")!;
+    const [a, b] = [host.getBoundingClientRect(), img.getBoundingClientRect()];
+    return { width: b.width / a.width, height: b.height / a.height, left: b.left - a.left, top: b.top - a.top, mask: getComputedStyle(img).maskImage };
+  });
+  expect(drawn).toEqual({ width: 1, height: 1, left: 0, top: 0, mask: "none" });
 });
 
 it("patches untouched modules in place on AI updates and developing-to-ready picture transitions", async () => {

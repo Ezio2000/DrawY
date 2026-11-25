@@ -3,7 +3,7 @@ import { drawingOf, shownName } from "../contracts/index.ts";
 import { linkEnds } from "../contracts/geometry.ts";
 import { bound, type Clip } from "../editing/index.ts";
 import { ClipMaker, lineBox } from "./clip.ts";
-import { kindOfSource, simplify, sketchLine, sketchShape } from "./drawings.ts";
+import { importedPicture, kindOfSource, simplify, sketchLine, sketchShape } from "./drawings.ts";
 import { NODE, CALLOUT, toneColor } from "./library.ts";
 
 /* Excalidraw's scenes, in and out. A scene read in becomes parts of the work: its shapes
@@ -254,8 +254,8 @@ export function fromExcalidraw(
           {
             ...common,
             bounds: box,
-            drawingId: made.material(b.picture),
-            data: { material, fit: "cover" },
+            drawingId: made.drawing(importedPicture),
+            data: { material },
           },
           "picture",
         ),

@@ -16,6 +16,7 @@ import {
   simplify,
   sketchLine,
   sketchShape,
+  importedPicture,
   toExcalidraw,
   toMermaid,
   SeveralDiagrams,
@@ -95,6 +96,9 @@ describe("drawings made by hand and brought in", () => {
       expect(kindOfSource(d.source)).toBe(d.id);
     }
     expect(kindOfSource("return 1")).toBeUndefined();
+    // A picture brought in parses too, and is known by its drawing, not a mark.
+    expect(syntaxError(importedPicture.source)).toBeNull();
+    expect(kindOfSource(importedPicture.source)).toBeUndefined();
   });
 
   it("keeps the points that shape a stroke", () => {
@@ -172,14 +176,15 @@ describe("Excalidraw", () => {
       ["line-1", "sketch-line"],
       ["stroke-1", "sketch-line"],
       ["text-1", "label"],
-      ["picture-1", "picture"],
+      ["picture-1", "imported-picture"],
     ]);
     expect(by("shape-1").data).toMatchObject({ shape: "rectangle", text: "开始", fill: "#ffc9c9", fillStyle: "hachure", rounded: true });
     // Excalidraw's nested groups keep the outermost.
     expect(by("shape-1").group).toBe("outer");
     expect(by("shape-2").data).toMatchObject({ shape: "ellipse", stroke: "#1971c2", dashed: true, roughness: 0, fillStyle: "none" });
     expect(by("text-1").data).toMatchObject({ text: "说明", size: 28, align: "start" });
-    expect(by("picture-1").data).toEqual({ material: "pic-1", fit: "cover" });
+    // Its whole file fills the box, as Excalidraw showed it.
+    expect(by("picture-1").data).toEqual({ material: "pic-1" });
     // The bound arrow is a link with its words; the free one keeps its head at its end.
     expect(root.links).toHaveLength(1);
     expect(root.links[0]).toMatchObject({ drawingId: "arrow", from: { moduleId: "shape-1" }, to: { moduleId: "shape-2" }, data: { head: "open", label: "下一步" } });
@@ -232,7 +237,7 @@ describe("Excalidraw", () => {
     expect(said.y + said.height / 2).toBeCloseTo(arrow.y + arrow.points![1][1] / 2, 0);
     // Without a picture, a part is outlined and named.
     expect(of("picture-1")).toMatchObject({ type: "rectangle", strokeStyle: "dashed" });
-    expect(of("picture-1-text").text).toBe("picture");
+    expect(of("picture-1-text").text).toBe("导入的图片");
     // Read back, what was drawn by hand comes back the same.
     const back = pasted(blank(), fromExcalidraw(out, { [chart.fileId!]: "pic-2" }).clip, { "pic-2": photo("pic-2") }).work;
     const shapes = back.scenes.root.modules.filter((m) => m.drawingId === "sketch-shape");
