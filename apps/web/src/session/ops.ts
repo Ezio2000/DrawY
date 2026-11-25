@@ -306,8 +306,16 @@ export function editOps(ctx: Context) {
       }
       return place(picture(p, Math.round(240 / scale())), at);
     },
-    /** A library drawing, with its example data and size. */
-    async drawing(d: DrawingMaterial, at?: Point): Promise<string | undefined> {
+    /** A library drawing, with its example data and size. The library is browsed and
+     * searched without drawings' code and examples, so the whole drawing is read first. */
+    async drawing(shown: Pick<DrawingMaterial, "id">, at?: Point): Promise<string | undefined> {
+      let d: DrawingMaterial;
+      try {
+        d = await fromLibrary(shown.id);
+      } catch (e) {
+        fail(e);
+        return undefined;
+      }
       if (d.use === "link") {
         fail(new SessionError("linkDrawing"));
         return undefined;

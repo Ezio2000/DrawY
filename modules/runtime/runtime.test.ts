@@ -728,6 +728,49 @@ it("moves a midpoint-initialized range slider when checking it via capture", asy
   expect(shots.every((s) => s.errors.length === 0)).toBe(true);
   expect(shots[0].base64).not.toBe(shots[1].base64);
 }, 30000);
+it("draws every library drawing with no data at all, and with each of its lists emptied or holding a blank entry, without an error", async () => {
+  // A person can take a drawing in with nothing filled in, or empty a list in the editor;
+  // the drawing then shows less, never an error in place of itself.
+  const drawings = seed("drawings") as DrawingMaterial[];
+  work.materials = Object.fromEntries(
+    [
+      ...drawings.map((m) => ({ ...m, source: readFileSync(new URL(`../../content/seed/drawings/${m.id}.js`, import.meta.url), "utf8") }) as Material),
+      ...seed("pictures"),
+      ...seed("effects"),
+    ].map((m) => [m.id, useOf(m)!]),
+  );
+  let y = 0;
+  const at = (id: string, m: DrawingMaterial, data: Record<string, unknown>) => {
+    const placed = { id, label: id, drawingId: m.id, data, bounds: { x: 0, y, ...m.size } };
+    y += m.size.height + 60;
+    return placed;
+  };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: drawings
+      // The map draws from tiles a test has none of; its own tests cover it.
+      .filter((m) => m.use !== "link" && m.id !== "geomap")
+      .flatMap((m) => [
+        at(`${m.id}.none`, m, {}),
+        ...Object.entries(m.params)
+          .filter(([, p]) => p.type === "array")
+          .flatMap(([key]) => [
+            at(`${m.id}.${key}.empty`, m, { ...m.example, [key]: [] }),
+            // What the editor adds to a list emptied first: a blank entry.
+            at(`${m.id}.${key}.blank`, m, { ...m.example, [key]: [""] }),
+          ]),
+      ]),
+    links: [],
+    checks: [],
+  };
+  await open();
+  const failed = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("[data-module-id][data-error]")].map((h) => `${h.dataset.moduleId}: ${h.shadowRoot!.textContent}`),
+  );
+  // Only a picture with no picture named says so: it is how an author learns it left the
+  // id out, and a picture placed by hand always has one.
+  expect(failed).toEqual(["picture.none: Error: 素材 undefined 不在作品中"]);
+}, 60000);
 it("draws every library drawing from its example with words uncut at large sizes, and reports what is cut", async () => {
   const drawings = seed("drawings") as DrawingMaterial[];
   work.materials = Object.fromEntries(

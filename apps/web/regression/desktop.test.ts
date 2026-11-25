@@ -716,6 +716,16 @@ it("draws by hand with the pen, the arrow and the eraser; brings Mermaid and Exc
   await settled();
   expect(await own("sketch-line")).toEqual([]);
   await page.keyboard.press("Escape");
+  // A drawing taken from the library comes in with its example data, though the library
+  // is browsed without it.
+  await tray.getByRole("button", { name: "Drawings", exact: true }).click();
+  const shelf = page.getByRole("dialog", { name: "Drawings" });
+  await shelf.getByRole("textbox").fill("concentric");
+  await shelf.locator('button[data-tip="Concentric rings"]').click();
+  await expect
+    .poll(async () => (await rootOf(id)).modules.find((m: { drawingId: string }) => m.drawingId === "concentric")?.data.rings?.length, { timeout: 10_000 })
+    .toBe(3);
+  await page.keyboard.press("Escape");
   // Mermaid pasted onto the canvas: a flowchart comes in as blocks and links beside what
   // is drawn, selected.
   const paste = (text: string) =>
