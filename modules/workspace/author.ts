@@ -5,7 +5,7 @@ import { boxOf, type Instance, type Link, type LinkEnd, type Scene, type Work } 
 
 /** A module as the author writes it: its box in short form. */
 export const shortModule = ({ bounds, ...m }: Instance) => ({ ...m, bounds: boxOf(bounds) });
-const shortEnd = (end: LinkEnd) => (end.at === undefined ? end.moduleId : end);
+const shortEnd = (end: LinkEnd) => ("moduleId" in end && end.at === undefined ? end.moduleId : end);
 /** A link as the author writes it: an end that follows its module is that module's id. */
 export const shortLink = ({ from, to, ...l }: Link) => ({
   ...l,

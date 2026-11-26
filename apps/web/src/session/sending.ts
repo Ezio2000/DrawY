@@ -1,12 +1,14 @@
-import type { Run, Work } from "../../../../modules/contracts/index.ts";
+import type { LinkEnd, Run, Work } from "../../../../modules/contracts/index.ts";
 import { api } from "../api.ts";
 import type { Ask, Context, Focus } from "./types.ts";
 
+/** An end of a link as the author writes it: the module or link it is on, or its point. */
+const endWritten = (e: LinkEnd) => ("moduleId" in e ? e.moduleId : "linkId" in e ? `along ${e.linkId}` : `(${e.x}, ${e.y})`);
 /** What the author is told a request is about, under the request itself. */
 export function aboutOf(text: string, focus?: Focus) {
   const about = [
     ...(focus?.modules ?? []).map((x) => `Selected module: ${x.moduleId}\n${x.label}`),
-    ...(focus?.links ?? []).map((l) => `Selected link: ${l.id} (${l.from.moduleId} → ${l.to.moduleId})`),
+    ...(focus?.links ?? []).map((l) => `Selected link: ${l.id} (${endWritten(l.from)} → ${endWritten(l.to)})`),
   ];
   return about.length ? `${text}\n${about.join("\n")}` : text;
 }

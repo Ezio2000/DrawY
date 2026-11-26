@@ -1,6 +1,6 @@
 import { SceneRenderer, type PatchResult } from "../runtime/scene.ts";
-import { fit, union, zoom, type Camera } from "../contracts/geometry.ts";
-import { shownName } from "../contracts/index.ts";
+import { boxOutline, fit, nearestAlong, union, zoom, type Camera } from "../contracts/geometry.ts";
+import { endLink, endModule, shownName, type LinkEnd } from "../contracts/index.ts";
 import { plan, play, gesture, hatching } from "./ink.ts";
 import {
   carried,
@@ -44,6 +44,13 @@ export type Pointed =
       place: () => { rect: DOMRect; size: number };
     }
   | { kind: "picture"; moduleId: string; material: string };
+/** Where an end of a link would bind at a point: the end, where it lands on the scene, and
+ * the outline it lands on (to show), if any. */
+export interface Binding {
+  end: LinkEnd;
+  point: Point;
+  outline?: Point[];
+}
 /** An item of a module's data selected inside it, by the path its drawing marked it with. */
 export interface PartPick {
   moduleId: string;
@@ -88,23 +95,16 @@ export interface CanvasOptions {
   /** Modules dragged off with Alt held while editing: copies of them go that far from
    * where they stand, and they stay. */
   duplicate?: (ids: string[], by: Point) => void;
-  /** A link drawn while editing, from one module to another: between the sides named when
-   * it was drawn from a side's dot and dropped on a side, or between the modules as they
-   * face each other when drawn with the link tool. */
-  connect?: (
-    from: { moduleId: string; side?: Side },
-    to: { moduleId: string; side?: Side },
-  ) => void;
+  /** A link drawn while editing: from a side's dot, or with the arrow tool from where it
+   * was pressed to where it was let go, each end as it binds there (`bindingAt`); `upright`
+   * when it was drawn straight up or down, as a line rather than an arrow. */
+  connect?: (from: LinkEnd, to: LinkEnd, how?: { upright?: boolean }) => void;
   /** The dot on a side of a module pressed, or a link from it let go over the paper: a new
    * module like it is wanted there (beyond that side, when no point is given), linked to
    * it. */
   extend?: (from: { moduleId: string; side: Side }, at?: Point) => void;
-  /** An end of a link dragged onto a side of a module while editing. */
-  reconnect?: (
-    linkId: string,
-    end: "from" | "to",
-    to: { moduleId: string; side: Side },
-  ) => void;
+  /** An end of a link dragged elsewhere while editing, binding as it lands. */
+  reconnect?: (linkId: string, end: "from" | "to", to: LinkEnd) => void;
   /** A right click while editing, at a point on screen, after the selection has followed
    * it; for the menu of what can be done there. */
   menu?: (at: { x: number; y: number }) => void;
@@ -116,9 +116,10 @@ export interface CanvasOptions {
    * and a double click on the paper while editing, at its point. */
   place?: (at: Point, box?: Bounds) => void;
   /** A line drawn while editing, in scene units: with the pen, through the points the hand
-   * went; with the arrow tool, straight from the press to where it was let go. An arrow
-   * drawn from one module onto another is a link between them, asked for with `connect`. */
-  ink?: (points: Point[], how: { kind: "pen" | "arrow" }) => void;
+   * went; with the arrow tool, straight from the press to where it was let go, when neither
+   * end binds to anything (`upright` when drawn straight up or down). An arrow with an end
+   * on a module or a link is a link, asked for with `connect`. */
+  ink?: (points: Point[], how: { kind: "pen" | "arrow"; upright?: boolean }) => void;
   /** Modules and links rubbed out with the eraser while editing, by id. */
   erase?: (ids: string[]) => void;
   /** A scene has been drawn and is now on screen. */
@@ -142,7 +143,7 @@ const FIGURES = "'Sofia Sans Letters','Sofia Sans',system-ui,sans-serif";
 /** What a press does while editing: select and move, move the view, draw a box for
  * something new, draw a link from one module to another, draw a line freehand (pen) or
  * straight (arrow), or rub parts out (erase). */
-export type CanvasTool = "select" | "hand" | "draw" | "link" | "pen" | "arrow" | "erase";
+export type CanvasTool = "select" | "hand" | "draw" | "pen" | "arrow" | "erase";
 /** The eraser's mark on screen: a small ring where it rubs. */
 const ERASER = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="7" fill="rgba(255,255,255,.7)" stroke="#555" stroke-width="1.5"/></svg>')}") 10 10, cell`;
 /** The angle a straight line drawn with Shift held keeps to a multiple of. */
@@ -176,6 +177,14 @@ function placeOf(words: Element) {
         : rect.height * 0.8,
   };
 }
+const isFreeEnd = (end: LinkEnd) => !("moduleId" in end) && !("linkId" in end);
+/** Where a bound end stands: a side's middle, or the point found on the outline. */
+const middle = (end: LinkEnd, b: Bounds, found: Point): Point =>
+  "moduleId" in end && typeof end.at === "string"
+    ? { x: b.x + sidePoint[end.at].x * b.width, y: b.y + sidePoint[end.at].y * b.height }
+    : found;
+/** Whether a line from a to b runs upright, as a line drawn down from a box does. */
+const upright = (a: Point, b: Point) => Math.abs(b.x - a.x) * 5 < Math.abs(b.y - a.y);
 function distance(p: Point, a: Point, b: Point) {
   const dx = b.x - a.x,
     dy = b.y - a.y,
@@ -343,9 +352,9 @@ export class Canvas {
     | { kind: "draw"; start: Point; box?: Bounds }
     | { kind: "connect"; from: { moduleId: string; side?: Side } }
     | { kind: "relink"; linkId: string; end: "from" | "to" }
-    /** A line being drawn: the pen's every point, or the arrow's two ends; and the module
-     * an arrow began on, to link it to the one it ends on. */
-    | { kind: "ink"; points: Point[]; straight: boolean; from?: string }
+    /** A line being drawn: the pen's every point, or the arrow's two ends; and what the
+     * arrow's start binds to, to make it a link when either end binds. */
+    | { kind: "ink"; points: Point[]; straight: boolean; from?: Binding }
     /** The eraser going over parts: those it has touched go when it is lifted. */
     | { kind: "erase"; hit: Set<string>; last: { x: number; y: number } }
     | { kind: "press" }
@@ -455,7 +464,7 @@ export class Canvas {
     this.element.append(this.marquee);
     this.line.style.cssText =
       "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none;z-index:5;overflow:visible";
-    this.line.innerHTML = `<line stroke="${ACCENT}" stroke-width="1.5" stroke-dasharray="5 4" stroke-linecap="round"/><circle r="4" fill="${ACCENT}"/><circle data-target r="7" fill="#fff" stroke="${ACCENT}" stroke-width="2.5" style="display:none"/>`;
+    this.line.innerHTML = `<line stroke="${ACCENT}" stroke-width="1.5" stroke-dasharray="5 4" stroke-linecap="round"/><circle r="4" fill="${ACCENT}"/><circle data-target r="7" fill="#fff" stroke="${ACCENT}" stroke-width="2.5" style="display:none"/><path fill="none" stroke="${ACCENT}" stroke-opacity=".55" stroke-width="2" stroke-linejoin="round"/>`;
     this.element.append(this.line);
     this.ink.style.cssText =
       "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none;z-index:5;overflow:visible";
@@ -1053,13 +1062,13 @@ export class Canvas {
       if (
         !host ||
         (before?.scene.links.some((x) => x.id === l.id) &&
-          !done.has(l.from.moduleId) &&
-          !done.has(l.to.moduleId))
+          !done.has(endModule(l.from) ?? "") &&
+          !done.has(endModule(l.to) ?? ""))
       )
         continue;
       const ready = Math.max(
-        done.get(l.from.moduleId) ?? 0,
-        done.get(l.to.moduleId) ?? 0,
+        done.get(endModule(l.from) ?? "") ?? 0,
+        done.get(endModule(l.to) ?? "") ?? 0,
       );
       play(plan(host), Math.max(0, ready - 150), pace);
     }
@@ -1149,8 +1158,8 @@ export class Canvas {
       const host = renderer.host("link", id);
       if (!l || !host) continue;
       const ready = Math.max(
-        done.get(l.from.moduleId) ?? 0,
-        done.get(l.to.moduleId) ?? 0,
+        done.get(endModule(l.from) ?? "") ?? 0,
+        done.get(endModule(l.to) ?? "") ?? 0,
       );
       play(plan(host), Math.max(0, ready - 150), pace);
     }
@@ -1504,13 +1513,15 @@ export class Canvas {
     if (drawn) this.traces.set(id, trace);
     return trace;
   }
-  /** The link drawn nearest a point on screen, if one passes within a few pixels of it. */
-  private linkAt(clientX: number, clientY: number) {
+  /** The link drawn nearest a point on screen, if one passes within a few pixels of it,
+   * other than `skip`. */
+  private linkAt(clientX: number, clientY: number, skip?: string) {
     const p = this.toScene(clientX, clientY),
       slop = (this.touching ? FINGER_SLOP : SLOP) / this.camera.scale;
     let best: string | null = null,
       nearest = slop;
     for (const id of this.renderer.links.keys()) {
+      if (id === skip) continue;
       const t = this.traceOf(id);
       if (!t) continue;
       for (const b of t.boxes)
@@ -1817,7 +1828,7 @@ export class Canvas {
         ? this.gesture?.kind === "pan"
           ? "grabbing"
           : "grab"
-        : this.tool === "draw" || this.tool === "link" || this.tool === "pen" || this.tool === "arrow"
+        : this.tool === "draw" || this.tool === "pen" || this.tool === "arrow"
           ? "crosshair"
           : this.tool === "erase"
             ? ERASER
@@ -2306,15 +2317,8 @@ export class Canvas {
       this.gesture = { ...start, kind: "draw", start: this.toScene(e.clientX, e.clientY) };
       return capture();
     }
-    // The link tool draws a link from the module pressed to the one it is let go on.
-    if (this.editing && this.tool === "link") {
-      const from = this.moduleAt(e.clientX, e.clientY);
-      if (!from) return e.preventDefault();
-      this.gesture = { ...start, kind: "connect", from: { moduleId: from.id } };
-      return capture();
-    }
-    // The pen draws where it goes; the arrow tool a straight line from the press, which
-    // links two modules when it runs from one onto another.
+    // The pen draws where it goes; the arrow tool a straight line from the press, which is
+    // a link when either end binds to a module or another link.
     if (this.editing && (this.tool === "pen" || this.tool === "arrow")) {
       const straight = this.tool === "arrow";
       this.gesture = {
@@ -2322,7 +2326,7 @@ export class Canvas {
         kind: "ink",
         points: [this.toScene(e.clientX, e.clientY)],
         straight,
-        from: straight ? this.moduleAt(e.clientX, e.clientY, false)?.id : undefined,
+        from: straight ? this.bindingAt(e.clientX, e.clientY) : undefined,
       };
       this.paintInk();
       return capture();
@@ -2527,38 +2531,90 @@ export class Canvas {
     next();
   }
   /** The side of a module facing a point on screen, and where its middle is on screen. */
-  private sideToward(m: Instance, clientX: number, clientY: number) {
-    const side = facing(m.bounds, this.toScene(clientX, clientY)),
-      a = sidePoint[side],
-      { x, y, scale } = this.camera,
-      b = this.ghost.get(m.id) ?? m.bounds;
-    return {
-      side,
-      x: x + (b.x + a.x * b.width) * scale,
-      y: y + (b.y + a.y * b.height) * scale,
-    };
-  }
-  /** A dashed line from a point on screen to the pointer, or to the side of the module it
-   * is over, which is marked. */
-  private drawLine(from: Point, e: PointerEvent, skip: string) {
-    const over = this.moduleAt(e.clientX, e.clientY);
-    const target = over && over.id !== skip ? over : undefined;
-    const toward = target && this.sideToward(target, e.clientX, e.clientY);
-    const { x: ex, y: ey } = toward ?? this.local(e.clientX, e.clientY);
-    this.line.style.display = "block";
-    const [line, dot, ring] = [...this.line.children] as SVGElement[];
-    line.setAttribute("x1", String(from.x));
-    line.setAttribute("y1", String(from.y));
-    line.setAttribute("x2", String(ex));
-    line.setAttribute("y2", String(ey));
-    dot.setAttribute("cx", String(ex));
-    dot.setAttribute("cy", String(ey));
-    ring.style.display = toward ? "" : "none";
-    if (toward) {
-      ring.setAttribute("cx", String(toward.x));
-      ring.setAttribute("cy", String(toward.y));
+  /** What an end of a link binds to at a point on screen: the outline of a module it is
+   * near (the exact point on it, or a share along a line a module declares, as a drawn line
+   * does), a module it is inside (following it), a link it is on (a share of the way along
+   * it), or else that point of the scene. `skip` is what the other end is on. */
+  bindingAt(clientX: number, clientY: number, skip: { module?: string; link?: string } = {}): Binding {
+    const p = this.toScene(clientX, clientY),
+      reach = (this.touching ? FINGER_SLOP / 2 : SLOP) / this.camera.scale;
+    let best: Binding & { distance: number } | undefined;
+    for (const m of this.renderer.instances.values()) {
+      // The backdrop under the whole figure is not what a line is drawn to.
+      if (m.id === skip.module || this.beneath(m)) continue;
+      const b = this.ghost.get(m.id) ?? m.bounds;
+      if (p.x < b.x - reach || p.x > b.x + b.width + reach || p.y < b.y - reach || p.y > b.y + b.height + reach) continue;
+      const map = this.renderer.editMap(m.id);
+      const declared = !!map && JSON.stringify(map.outline) !== JSON.stringify(boxOutline(m.bounds));
+      const outline = map?.outline ?? boxOutline(b);
+      const near = nearestAlong(outline, p);
+      if (near.distance > reach || (best && best.distance <= near.distance)) continue;
+      const round = (n: number) => Math.round(n * 1000) / 1000;
+      let end: LinkEnd;
+      if (declared) end = { moduleId: m.id, at: { along: round(near.t) } };
+      else {
+        // Near a side's middle it takes the side, as people mean it; elsewhere the point.
+        const middle = sides.find((side) => {
+          const a = sidePoint[side];
+          return Math.hypot(b.x + a.x * b.width - p.x, b.y + a.y * b.height - p.y) <= reach;
+        });
+        end = middle
+          ? { moduleId: m.id, at: middle }
+          : { moduleId: m.id, at: [round((near.point.x - b.x) / b.width), round((near.point.y - b.y) / b.height)] };
+      }
+      const point = middle(end, b, near.point);
+      best = { end, point, outline, distance: near.distance };
     }
-    this.hoverOver(target?.id ?? null);
+    if (best) return { end: best.end, point: best.point, outline: best.outline };
+    // Inside a module, the end follows it: where it draws, else the smallest box holding the
+    // point, but not the backdrop under the whole figure.
+    const held = this.moduleAt(clientX, clientY);
+    const inside = this.moduleAt(clientX, clientY, false) ?? (held && !this.beneath(held) ? held : undefined);
+    if (inside && inside.id !== skip.module) {
+      const b = inside.bounds;
+      return { end: { moduleId: inside.id }, point: { x: b.x + b.width / 2, y: b.y + b.height / 2 }, outline: boxOutline(b) };
+    }
+    const along = this.linkAt(clientX, clientY, skip.link);
+    const line = along ? this.renderer.links.get(along) : undefined;
+    if (line) {
+      const { from, to } = this.renderer.ends(line);
+      const on = nearestAlong([from, to], p);
+      return { end: { linkId: line.id, along: Math.round(on.t * 1000) / 1000 }, point: on.point, outline: [from, to] };
+    }
+    const free = { x: Math.round(p.x * 2) / 2, y: Math.round(p.y * 2) / 2 };
+    return { end: free, point: free };
+  }
+  /** The line from where a link starts to the pointer, the outline the pointer would bind to
+   * drawn round, and a ring where it binds. Given no start, only what it would bind to. */
+  private showBinding(from: Binding | undefined, to: Binding | undefined) {
+    const { x, y, scale } = this.camera;
+    const on = (p: Point) => ({ x: x + p.x * scale, y: y + p.y * scale });
+    const [line, dot, ring, outline] = [...this.line.children] as SVGElement[];
+    if (!from && !to?.outline) {
+      this.line.style.display = "none";
+      return;
+    }
+    this.line.style.display = "block";
+    const end = to ? on(to.point) : undefined;
+    line.style.display = from && end ? "" : "none";
+    dot.style.display = from && end ? "" : "none";
+    if (from && end) {
+      const start = on(from.point);
+      line.setAttribute("x1", String(start.x));
+      line.setAttribute("y1", String(start.y));
+      line.setAttribute("x2", String(end.x));
+      line.setAttribute("y2", String(end.y));
+      dot.setAttribute("cx", String(start.x));
+      dot.setAttribute("cy", String(start.y));
+    }
+    const bound = to && !isFreeEnd(to.end);
+    ring.style.display = bound && end ? "" : "none";
+    if (bound && end) {
+      ring.setAttribute("cx", String(end.x));
+      ring.setAttribute("cy", String(end.y));
+    }
+    outline.setAttribute("d", to?.outline ? "M" + to.outline.map((p) => `${on(p).x.toFixed(1)} ${on(p).y.toFixed(1)}`).join("L") : "");
+    this.hoverOver(to && "moduleId" in to.end ? to.end.moduleId : null);
   }
   private move(e: PointerEvent) {
     const g = this.gesture;
@@ -2584,9 +2640,10 @@ export class Canvas {
         );
         this.hoverOver(m?.id ?? null, m ? null : (link ?? null));
         this.element.style.cursor = !m && link ? "pointer" : "";
-      } else if (this.editing && this.tool === "link" && !this.spacing)
-        this.hoverOver(this.moduleAt(e.clientX, e.clientY)?.id ?? null);
-      else if (this.editing && (this.tool === "arrow" || this.tool === "erase") && !this.spacing)
+      } else if (this.editing && this.tool === "arrow" && !this.spacing) {
+        // Where an arrow pressed here would start is shown before it is pressed.
+        this.showBinding(undefined, this.bindingAt(e.clientX, e.clientY));
+      } else if (this.editing && this.tool === "erase" && !this.spacing)
         this.hoverOver(this.moduleAt(e.clientX, e.clientY, false)?.id ?? null);
       return;
     }
@@ -2610,7 +2667,8 @@ export class Canvas {
           end = { x: a.x + Math.cos(turn) * len, y: a.y + Math.sin(turn) * len };
         }
         g.points = [a, end];
-        this.hoverOver(this.moduleAt(e.clientX, e.clientY, false)?.id ?? null);
+        const to = this.bindingAt(e.clientX, e.clientY, { module: g.from && endModule(g.from.end) });
+        this.showBinding(g.from, to.end && !isFreeEnd(to.end) ? to : undefined);
       } else
         for (const p of e.getCoalescedEvents?.() ?? [e]) {
           const at = this.toScene(p.clientX, p.clientY),
@@ -2813,23 +2871,15 @@ export class Canvas {
       const from = this.renderer.instances.get(g.from.moduleId);
       if (!from) return;
       // Without a side named, the link leaves by the side facing the pointer.
-      const a = sidePoint[g.from.side ?? facing(from.bounds, this.toScene(e.clientX, e.clientY))],
-        { x, y } = this.camera;
-      this.drawLine(
-        {
-          x: x + (from.bounds.x + a.x * from.bounds.width) * scale,
-          y: y + (from.bounds.y + a.y * from.bounds.height) * scale,
-        },
-        e,
-        from.id,
-      );
+      const a = sidePoint[g.from.side ?? facing(from.bounds, this.toScene(e.clientX, e.clientY))];
+      const start = { x: from.bounds.x + a.x * from.bounds.width, y: from.bounds.y + a.y * from.bounds.height };
+      this.showBinding({ end: { moduleId: from.id }, point: start }, this.bindingAt(e.clientX, e.clientY, { module: from.id }));
     } else if (g.kind === "relink") {
       const link = this.renderer.links.get(g.linkId);
       if (!link) return;
       const far = g.end === "from" ? "to" : "from",
-        p = this.renderer.ends(link)[far],
-        { x, y } = this.camera;
-      this.drawLine({ x: x + p.x * scale, y: y + p.y * scale }, e, link[far].moduleId);
+        p = this.renderer.ends(link)[far];
+      this.showBinding({ end: link[far], point: p }, this.bindingAt(e.clientX, e.clientY, { module: endModule(link[far]), link: link.id }));
     }
     this.paint();
   }
@@ -2999,10 +3049,13 @@ export class Canvas {
       this.options.commit?.(g.last.map((m) => ({ id: m.id, bounds: { ...m.bounds } })));
     }
     if (g.kind === "ink") {
-      const to = g.straight ? this.moduleAt(e.clientX, e.clientY, false) : undefined;
       this.hoverOver(null);
-      if (g.from && to && to.id !== g.from) this.options.connect?.({ moduleId: g.from }, { moduleId: to.id });
-      else if (!g.straight || g.moved) this.options.ink?.(g.points, { kind: g.straight ? "arrow" : "pen" });
+      this.showBinding(undefined, undefined);
+      const to = g.straight && g.from ? this.bindingAt(e.clientX, e.clientY, { module: endModule(g.from.end) }) : undefined;
+      const tall = g.points.length > 1 && upright(g.points[0], g.points.at(-1)!);
+      if (g.from && to && g.moved && (!isFreeEnd(g.from.end) || !isFreeEnd(to.end)))
+        this.options.connect?.(g.from.end, to.end, tall ? { upright: true } : undefined);
+      else if (!g.straight || g.moved) this.options.ink?.(g.points, g.straight ? { kind: "arrow", ...(tall ? { upright: true } : {}) } : { kind: "pen" });
     }
     if (g.kind === "erase" && g.hit.size) this.options.erase?.([...g.hit]);
     if (!g.moved && g.pickPart !== undefined) {
@@ -3045,25 +3098,24 @@ export class Canvas {
     if (g.kind === "connect" && !g.moved && g.from.side)
       this.options.extend?.({ moduleId: g.from.moduleId, side: g.from.side });
     if ((g.kind === "connect" || g.kind === "relink") && g.moved) {
-      const to = this.moduleAt(e.clientX, e.clientY);
       const here = this.toScene(e.clientX, e.clientY);
-      const at = to && { moduleId: to.id, side: facing(to.bounds, here) };
-      if (g.kind === "connect" && at && at.moduleId !== g.from.moduleId)
-        // A link drawn with the tool joins the modules as they face each other, then and
-        // after they move; one drawn from a side's dot keeps to the sides it was given.
-        this.options.connect?.(g.from, g.from.side ? at : { moduleId: at.moduleId });
-      // Let go over the paper, well clear of where it began, it ends in a new module there.
-      const source = this.renderer.instances.get(g.kind === "connect" ? g.from.moduleId : "");
-      if (g.kind === "connect" && !to && source && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 36)
-        this.options.extend?.(
-          { moduleId: source.id, side: g.from.side ?? facing(source.bounds, here) },
-          here,
-        );
-      if (g.kind === "relink" && at) {
+      this.showBinding(undefined, undefined);
+      if (g.kind === "connect") {
+        const to = this.bindingAt(e.clientX, e.clientY, { module: g.from.moduleId });
+        // From a side's dot onto something, a link between them; let go over the paper well
+        // clear of where it began, it ends in a new module there.
+        if (!isFreeEnd(to.end)) this.options.connect?.({ moduleId: g.from.moduleId, ...(g.from.side ? { at: g.from.side } : {}) }, to.end);
+        else if (Math.hypot(e.clientX - g.x, e.clientY - g.y) > 36) {
+          const source = this.renderer.instances.get(g.from.moduleId);
+          if (source) this.options.extend?.({ moduleId: source.id, side: g.from.side ?? facing(source.bounds, here) }, here);
+        }
+      } else {
         const link = this.renderer.links.get(g.linkId);
         const fixed = link?.[g.end === "from" ? "to" : "from"];
-        if (fixed && at.moduleId !== fixed.moduleId)
-          this.options.reconnect?.(g.linkId, g.end, at);
+        if (link && fixed) {
+          const to = this.bindingAt(e.clientX, e.clientY, { module: endModule(fixed), link: link.id });
+          this.options.reconnect?.(g.linkId, g.end, to.end);
+        }
       }
       this.hoverOver(null);
     }

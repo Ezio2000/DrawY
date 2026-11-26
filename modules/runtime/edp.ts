@@ -1,5 +1,6 @@
 import type { Bounds, Fields, Point } from "../contracts/index.ts";
 import { getAt, isItemId, textsIn } from "../contracts/index.ts";
+import { boxOutline } from "../contracts/geometry.ts";
 
 /* The editable drawing protocol: a drawing says which of what it draws stands for which of
  * its data, so a person can change it there. Words are a data path, a group of shapes an
@@ -160,14 +161,6 @@ const sampled = (d: string, root: Node): Point[] => {
     svg.remove();
   }
 };
-/** A box's outline from its top left, clockwise. */
-export const boxOutline = (b: Bounds): Point[] => [
-  { x: b.x, y: b.y },
-  { x: b.x + b.width, y: b.y },
-  { x: b.x + b.width, y: b.y + b.height },
-  { x: b.x, y: b.y + b.height },
-  { x: b.x, y: b.y },
-];
 /** What a drawn module declared, measured on the scene: `host` holds it at `bounds`. */
 export function measure(host: HTMLElement, bounds: Bounds, declared: Declared): EditMap | undefined {
   const root = host.shadowRoot;

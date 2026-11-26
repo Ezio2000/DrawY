@@ -931,3 +931,60 @@ it("draws by hand with the pen, the arrow and the eraser; brings Mermaid and Exc
   const mermaid = await page.evaluate(() => navigator.clipboard.readText());
   for (const line of ['a["Alpha"]', '(["Start"])', '-->|"yes"|']) expect(mermaid).toContain(line);
 }, 90_000);
+
+it("draws a sequence freehand: lines pulled down from boxes hang from them, messages between them stay where drawn and follow the boxes", async () => {
+  const id = await make();
+  await open(id);
+  await editing();
+  await settled();
+  const alpha = await rectOf("Alpha"),
+    beta = await rectOf("Beta");
+  // A scene unit on screen, and a point of the scene from one on screen.
+  const k = alpha.height / 120;
+  const sceneY = (y: number) => 100 + (y - alpha.y) / k;
+  const line = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    await page.keyboard.press("a");
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 4 });
+    await page.mouse.move(to.x, to.y, { steps: 4 });
+    await page.mouse.up();
+    await settled();
+  };
+  // Pulled down from each box's bottom edge into the paper: a link bound to the box, its
+  // other end free, drawn as a line.
+  await line({ x: alpha.cx, y: alpha.y + alpha.height }, { x: alpha.cx, y: alpha.y + alpha.height + 340 });
+  await line({ x: beta.cx, y: beta.y + beta.height }, { x: beta.cx, y: beta.y + beta.height + 340 });
+  let root = await rootOf(id);
+  expect(root.links).toMatchObject([
+    { from: { moduleId: "a", at: "bottom" }, data: { head: "none" } },
+    { from: { moduleId: "b", at: "bottom" }, data: { head: "none" } },
+  ]);
+  expect(root.links.every((l: { to: object }) => "x" in l.to && "y" in l.to)).toBe(true);
+  const [la, lb] = root.links.map((l: { id: string }) => l.id);
+  // Two messages from one line to the other, each where it was drawn.
+  const heights = [alpha.y + alpha.height + 100, alpha.y + alpha.height + 240];
+  for (const y of heights) await line({ x: alpha.cx, y }, { x: beta.cx, y });
+  root = await rootOf(id);
+  const messages = root.links.slice(2);
+  expect(messages).toMatchObject([
+    { from: { linkId: la }, to: { linkId: lb } },
+    { from: { linkId: la }, to: { linkId: lb } },
+  ]);
+  const lifeline = root.links[0];
+  const yOn = (along: number) => 220 + along * (lifeline.to.y - 220);
+  messages.forEach((m: { from: { along: number } }, i: number) => expect(Math.abs(yOn(m.from.along) - sceneY(heights[i]))).toBeLessThan(2));
+  // Dragging the first box takes its line along whole, and the messages' ends ride with it.
+  await page.keyboard.press("v");
+  const before = lifeline.to;
+  await drag("Alpha");
+  await settled();
+  root = await rootOf(id);
+  const moved = root.modules.find((m: { id: string }) => m.id === "a").bounds;
+  expect(root.links[0].to).toEqual({ x: before.x + (moved.x - 100), y: before.y + (moved.y - 100) });
+  expect(root.links.slice(2).map((m: { from: object }) => m.from)).toEqual(messages.map((m: { from: object }) => m.from));
+  // The message is drawn where its ends are now: its left end under the moved line.
+  const host = (await page.locator(`[data-link-id="${messages[0].id}"]`).boundingBox())!;
+  const shifted = await rectOf("Alpha");
+  expect(Math.abs(host.x + 48 * k - shifted.cx)).toBeLessThan(4);
+});

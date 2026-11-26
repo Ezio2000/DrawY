@@ -6,6 +6,7 @@ import type {
 } from "@drawy/materials/schema";
 import {
   type Bounds,
+  type LinkEnd,
   type Drawing,
   type Point,
   type Work,
@@ -30,6 +31,7 @@ import {
   paste,
   pasteLook,
   reattach,
+  removeDangling,
   removeParts,
   restyle,
   reverse,
@@ -183,9 +185,13 @@ export function editOps(ctx: Context) {
     reverse(links: string[]) {
       if (links.length) run((w, s) => reverse(w, s, links));
     },
-    /** Moves an end of a link onto a side of a module. */
-    reconnect(link: string, end: "from" | "to", to: { moduleId: string; side: Side }) {
-      run((w, s) => reattach(w, s, link, end, to.side, to.moduleId));
+    /** Moves an end of a link elsewhere: a module, a link or a free point. */
+    reconnect(link: string, end: "from" | "to", to: LinkEnd) {
+      run((w, s) => reattach(w, s, link, end, to));
+    },
+    /** Takes out the links in the scene that meet nothing at either end. */
+    removeDangling() {
+      run((w, s) => removeDangling(w, s));
     },
     /** Copies modules a step off, or as far as copies of them were dragged, with the links
      * between them; the copies are selected. */
@@ -335,16 +341,18 @@ export function editOps(ctx: Context) {
         fail(e);
       }
     },
-    /** Links one module to another, between the sides named or as they face each other,
-     * drawn like the scene's other links, or with the library's arrow when it has none. */
-    connect(from: { moduleId: string; side?: Side }, to: { moduleId: string; side?: Side }) {
+    /** Links two ends (each on a module, along a link or free), drawn like the scene's
+     * other links, or with the library's arrow when it has none; a link drawn upright is a
+     * line, without a head. */
+    connect(from: LinkEnd, to: LinkEnd, how?: { upright?: boolean }) {
       const w = shown(),
         sceneId = scene();
       if (!w) return;
       report(
         (async () => {
           const { look, own } = await linkWith(w, sceneId);
-          await ctx.edits.commit((work) => connect(work, sceneId, from, to, look, own).edit);
+          const drawn = how?.upright ? { ...look, data: { ...look.data, head: "none" } } : look;
+          await ctx.edits.commit((work) => connect(work, sceneId, from, to, drawn, own).edit);
         })(),
       );
     },
@@ -399,16 +407,16 @@ export function editOps(ctx: Context) {
     /** A line drawn on the canvas where it was drawn: a freehand stroke with the pen, which
      * stays in hand for the next; or a straight arrow, selected once drawn. Its width reads
      * as about two screen pixels in the view it is drawn in. */
-    async ink(points: Point[], kind: "pen" | "arrow"): Promise<string | undefined> {
+    async ink(points: Point[], kind: "pen" | "arrow", upright = false): Promise<string | undefined> {
       const pending = materializeBlank();
       if (pending) {
         const real = await pending;
-        return real ? real.ops.ink(points, kind) : undefined;
+        return real ? real.ops.ink(points, kind, upright) : undefined;
       }
       if (!points.length) return;
       const s = scale(),
         sceneId = scene();
-      const clip = named(inked(points, { kind, width: Math.min(12, Math.max(1, Math.round((2 / s) * 2) / 2)), scale: s }));
+      const clip = named(inked(points, { kind, upright, width: Math.min(12, Math.max(1, Math.round((2 / s) * 2) / 2)), scale: s }));
       if (kind === "pen") {
         report(ctx.edits.commit((w) => paste(w, sceneId, clip).edit));
         return;

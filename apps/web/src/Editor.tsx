@@ -55,6 +55,8 @@ import {
   type SharedField,
 } from "../../../modules/editing/index.ts";
 import { union } from "../../../modules/contracts/geometry.ts";
+import { endModule } from "../../../modules/contracts/index.ts";
+import { endName } from "./workPage.ts";
 import type {
   Bounds,
   Instance,
@@ -286,7 +288,7 @@ function Selected({
   const one = modules.length === 1 && !chosenLinks.length ? modules[0] : undefined;
   const grouped = modules.some((m) => m.group);
   const links = one
-    ? scene.links.filter((l) => l.from.moduleId === one.id || l.to.moduleId === one.id)
+    ? scene.links.filter((l) => endModule(l.from) === one.id || endModule(l.to) === one.id)
     : [];
   const drawing = one && (work.drawings[one.drawingId]?.name ?? work.materials[one.drawingId]?.name);
   return (
@@ -671,11 +673,7 @@ function Leads({
   );
 }
 
-/** A module's name as the editor shows it. */
-const nameIn = (work: Work, sceneId: string, id: string) => {
-  const m = work.scenes[sceneId]?.modules.find((x) => x.id === id);
-  return m ? shownName(work, m) : id;
-};
+
 /** A link of the selected module, as a row: a press selects the link to change it; it can
  * be turned round or taken out where it is. */
 function Connection({
@@ -694,8 +692,8 @@ function Connection({
   change: Change;
 }) {
   const t = useT();
-  const out = link.from.moduleId === from;
-  const other = nameIn(work, sceneId, out ? link.to.moduleId : link.from.moduleId);
+  const out = endModule(link.from) === from;
+  const other = endName(work, sceneId, out ? link.to : link.from, t);
   const words = ["label", "text", "title"]
     .map((k) => link.data[k])
     .find((v): v is string => typeof v === "string" && !!v);
@@ -754,23 +752,22 @@ function LinkPanel({
     locale = useLocale(),
     l = t.edit.linkPanel;
   const scene = work.scenes[sceneId];
-  const name = (id: string) => nameIn(work, sceneId, id);
   const modules = scene.modules;
   const end = (which: "from" | "to") => {
-    const other = link[which === "from" ? "to" : "from"].moduleId;
-    const at = link[which].at;
-    const side = Array.isArray(at) ? sideOf({ x: at[0], y: at[1] }) : at;
+    const here = link[which];
+    const other = endModule(link[which === "from" ? "to" : "from"]);
+    const on = endModule(here);
+    const at = "moduleId" in here ? here.at : undefined;
+    const side = Array.isArray(at) ? sideOf({ x: at[0], y: at[1] }) : typeof at === "string" ? at : null;
     // A new module is met on the side facing the other end, following it as things move.
     const moveTo = (moduleId: string, s?: (typeof sides)[number]) =>
-      void change((w) => reattach(w, sceneId, link.id, which, s, moduleId));
+      void change((w) => reattach(w, sceneId, link.id, which, s ? { moduleId, at: s } : { moduleId }));
     return (
       <div className={cx("link-end")}>
         <span className={cx("field-name")}>{which === "from" ? t.edit.linkEnds.from : t.edit.linkEnds.to}</span>
-        <select
-          className={cx("edit-select")}
-          value={link[which].moduleId}
-          onChange={(e) => moveTo(e.target.value)}
-        >
+        <select className={cx("edit-select")} value={on ?? ""} onChange={(e) => moveTo(e.target.value)}>
+          {/* An end along a link or at a point shows what it is on until a module is chosen. */}
+          {!on && <option value="">{endName(work, sceneId, here, t)}</option>}
           {modules
             .filter((x) => x.id !== other)
             .map((x) => (
@@ -779,16 +776,18 @@ function LinkPanel({
               </option>
             ))}
         </select>
-        <span className={cx("field-choice")} role="group" aria-label={l.side}>
-          <button aria-pressed={at === undefined} onClick={() => at !== undefined && moveTo(link[which].moduleId)}>
-            {t.edit.linkEnds.auto}
-          </button>
-          {sides.map((s) => (
-            <button key={s} aria-pressed={side === s} onClick={() => side !== s && moveTo(link[which].moduleId, s)}>
-              {t.edit.linkEnds.sides[s]}
+        {on && (
+          <span className={cx("field-choice")} role="group" aria-label={l.side}>
+            <button aria-pressed={at === undefined} onClick={() => at !== undefined && moveTo(on)}>
+              {t.edit.linkEnds.auto}
             </button>
-          ))}
-        </span>
+            {sides.map((s) => (
+              <button key={s} aria-pressed={side === s} onClick={() => side !== s && moveTo(on, s)}>
+                {t.edit.linkEnds.sides[s]}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
     );
   };
@@ -809,16 +808,16 @@ function LinkPanel({
             {l.heading}
           </span>
           <h3>
-            {name(link.from.moduleId)}
+            {endName(work, sceneId, link.from, t)}
             <ArrowRight size={15} />
-            {name(link.to.moduleId)}
+            {endName(work, sceneId, link.to, t)}
           </h3>
         </div>
         <Actions>
           <Act label={t.edit.linkEnds.reverse} tip={`${t.edit.linkEnds.reverse} · R`} onClick={() => ops.reverse([link.id])}>
             <ArrowRightLeft size={16} />
           </Act>
-          <Act label={l.selectEnds} onClick={() => canvas?.select([link.from.moduleId, link.to.moduleId])}>
+          <Act label={l.selectEnds} onClick={() => canvas?.select([endModule(link.from), endModule(link.to)].filter((x): x is string => !!x))}>
             <Group size={16} />
           </Act>
           <i />
@@ -901,7 +900,7 @@ function Links({
           </Act>
           <Act
             label={l.selectEnds}
-            onClick={() => canvas?.select(links.flatMap((x) => [x.from.moduleId, x.to.moduleId]))}
+            onClick={() => canvas?.select(links.flatMap((x) => [endModule(x.from), endModule(x.to)].filter((y): y is string => !!y)))}
           >
             <Group size={16} />
           </Act>

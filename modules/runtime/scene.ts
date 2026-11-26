@@ -9,8 +9,8 @@ import type {
   Target,
   MaterialUse,
 } from "../contracts/index.ts";
-import { drawingOf, labelOf } from "../contracts/index.ts";
-import { linkEnds, union } from "../contracts/geometry.ts";
+import { drawingOf, endLink, endModule, labelOf, withTokens } from "../contracts/index.ts";
+import { carried, linkEnds, union } from "../contracts/geometry.ts";
 import { editable, measure, strayPaths, unmarkedTexts, type Declared, type EditableAPI, type EditMap } from "./edp.ts";
 export type { EditMap } from "./edp.ts";
 
@@ -473,7 +473,8 @@ export class SceneRenderer {
           // The work's own definition, or a library drawing used as it is.
           const drawing = drawingOf(this.work, drawingId);
           if (!drawing) throw Error(`画法 ${drawingId} 不在作品中：在 drawings 里定义它，或用库里画法素材的 id`);
-          const full = { ...drawing.defaults, ...data };
+          // A colour written as a style token draws in the work's colour for it.
+          const full = withTokens(drawing.params, { ...drawing.defaults, ...data }, this.work.style);
           const result = await execute(
             drawing.source,
             apiFor(full, { width: bounds.width, height: bounds.height }, own.api),
@@ -556,10 +557,36 @@ export class SceneRenderer {
   private drawModule(m: Instance) {
     return this.draw(m.id, m.drawingId, m.bounds, m.data, "module");
   }
-  /** Where a link's ends meet their modules as they are now, in scene units, and the side
-   * each is on. */
-  ends(l: Pick<Link, "from" | "to">) {
-    return linkEnds(l, (id) => this.instances.get(id)!.bounds);
+  /** Where a link's ends are as the scene stands now, in scene units, and the side of its
+   * module each is on: on a module's box or the outline its drawing declares, along another
+   * link, or at a free point. */
+  ends(l: Pick<Link, "from" | "to">, depth = 0): ReturnType<typeof linkEnds> {
+    return linkEnds(l, {
+      box: (id) => this.instances.get(id)?.bounds,
+      outline: (id) => this.editMap(id)?.outline,
+      // A link riding on another, which may ride on a third; a ring of them goes nowhere.
+      line: (id) => {
+        const other = this.links.get(id);
+        return other && depth < 6 ? this.ends(other, depth + 1) : undefined;
+      },
+    });
+  }
+  /** The links that meet some modules, and those riding on them, however far. */
+  private meeting(modules: Set<string>) {
+    const out = new Set<string>();
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const l of this.links.values()) {
+        if (out.has(l.id)) continue;
+        const ends = [l.from, l.to];
+        if (ends.some((e) => modules.has(endModule(e) ?? "") || out.has(endLink(e) ?? ""))) {
+          out.add(l.id);
+          grew = true;
+        }
+      }
+    }
+    return out;
   }
   private drawLink(l: Link) {
     const { from, to } = this.ends(l);
@@ -578,18 +605,10 @@ export class SceneRenderer {
       toSide: to.side,
     });
   }
-  /** Draws the links, or only those meeting some modules. */
+  /** Draws the links, or only those meeting some modules (and those riding on them). */
   private drawLinks(meeting?: Set<string>) {
-    return Promise.all(
-      [...this.links.values()]
-        .filter(
-          (l) =>
-            !meeting ||
-            meeting.has(l.from.moduleId) ||
-            meeting.has(l.to.moduleId),
-        )
-        .map((l) => this.drawLink(l)),
-    );
+    const drawn = meeting && this.meeting(meeting);
+    return Promise.all([...this.links.values()].filter((l) => !drawn || drawn.has(l.id)).map((l) => this.drawLink(l)));
   }
   /** Puts modules at other places and sizes at once, without drawing anything again: a
    * resized module is stretched to its new box until `move` draws it at that size. */
@@ -614,10 +633,12 @@ export class SceneRenderer {
   async move(moves: { id: string; bounds: Bounds }[]) {
     const jobs: Promise<unknown>[] = [];
     const moved = new Set<string>();
+    const by = new Map<string, Point>();
     for (const move of moves) {
       const m = this.instances.get(move.id);
       if (!m) continue;
       moved.add(m.id);
+      by.set(m.id, { x: move.bounds.x - m.bounds.x, y: move.bounds.y - m.bounds.y });
       const sizeChanged =
         m.bounds.width !== move.bounds.width ||
         m.bounds.height !== move.bounds.height;
@@ -628,6 +649,11 @@ export class SceneRenderer {
           left: m.bounds.x + "px",
           top: m.bounds.y + "px",
         });
+    }
+    // A line hanging from a moved module by one end moves whole with it.
+    for (const l of this.links.values()) {
+      const next = carried(l, by);
+      if (next) Object.assign(l, next);
     }
     this.relayer();
     // Only the links that meet a moved module follow it.
@@ -812,12 +838,10 @@ export class SceneRenderer {
       const linkView = this.views.get("link:" + nextLink.id);
       const l = structuredClone(nextLink);
       this.links.set(l.id, l);
-      const endpointsInked =
-        inkedIds.has(l.from.moduleId) || inkedIds.has(l.to.moduleId);
-      const endpointsChanged =
-        endpointsInked ||
-        geometryChanged.has(l.from.moduleId) ||
-        geometryChanged.has(l.to.moduleId);
+      const touches = (ids: Set<string>) => [l.from, l.to].some((e) => ids.has(endModule(e) ?? ""));
+      const endpointsInked = touches(inkedIds);
+      // A link riding on another is drawn again with it, whatever moved that one.
+      const endpointsChanged = endpointsInked || touches(geometryChanged) || [l.from, l.to].some((e) => !!endLink(e));
       const linkChanged =
         !prevLink || !linkView || linkLook(before, prevLink) !== linkLook(work, l);
       const linkPicturesChanged =

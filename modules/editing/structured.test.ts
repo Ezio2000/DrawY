@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Material } from "@drawy/materials/schema";
-import { linkEnds } from "../contracts/geometry.ts";
+import { linkEnds, scenePlacing } from "../contracts/geometry.ts";
 import type { Bounds, Instance, Work } from "../contracts/index.ts";
 import { useOf } from "../materials/index.ts";
 import { fixture } from "../runtime/fixture.ts";
@@ -9,11 +9,13 @@ import { composed } from "./apply.ts";
 import {
   applied,
   connect,
+  danglingIn,
   dataPatch,
   duplicateItem,
   insertItem,
   itemOf,
   moveItem,
+  moveParts,
   removeItem,
   replace,
   retarget,
@@ -51,27 +53,46 @@ function sequenceWork() {
 }
 
 describe("diagnosis", () => {
-  it.fails("problem 1: messages drawn between two lifelines stay at the heights they were drawn at", () => {
+  it("problem 1: messages drawn between two lifelines stay at the heights they were drawn at, and follow their participants", () => {
     const work = blank();
     work.materials.label = curated("label").material;
     work.materials.arrow = curated("arrow").material;
-    work.scenes.root.modules = [
-      box("a", { x: 0, y: 200, width: 160, height: 60 }),
-      box("b", { x: 400, y: 200, width: 160, height: 60 }),
-      // The lines pulled down from each box, as the arrow tool leaves them today.
-      box("a-life", { x: 60, y: 260, width: 40, height: 340 }, "sketch-line"),
-      box("b-life", { x: 460, y: 260, width: 40, height: 340 }, "sketch-line"),
-    ];
+    work.scenes.root.modules = [box("a", { x: 0, y: 200, width: 160, height: 60 }), box("b", { x: 400, y: 200, width: 160, height: 60 })];
+    const look = { drawingId: "arrow", data: {} };
+    // A line pulled down from each box's bottom edge: bound there, free where it was let go.
     let w = work;
-    const ids: string[] = [];
-    for (const _y of [330, 470]) {
-      const { edit, id } = connect(w, "root", { moduleId: "a-life" }, { moduleId: "b-life" }, { drawingId: "arrow", data: {} });
-      w = applied(w, edit);
-      ids.push(id);
-    }
-    const boxes = new Map(w.scenes.root.modules.map((m) => [m.id, m.bounds]));
-    const heights = ids.map((id) => linkEnds(w.scenes.root.links.find((l) => l.id === id)!, (m) => boxes.get(m)!).from.y);
-    expect(heights).toEqual([330, 470]);
+    const lifeline = (m: string, x: number) => {
+      const made = connect(w, "root", { moduleId: m, at: "bottom" }, { x, y: 600 }, look);
+      w = applied(w, made.edit);
+      return made.id;
+    };
+    const la = lifeline("a", 80),
+      lb = lifeline("b", 480);
+    // Messages drawn from one lifeline to the other, at the heights they were drawn at.
+    const share = (y: number) => (y - 260) / (600 - 260);
+    const messages = [330, 470].map((y) => {
+      const made = connect(w, "root", { linkId: la, along: share(y) }, { linkId: lb, along: share(y) }, look);
+      w = applied(w, made.edit);
+      return made.id;
+    });
+    const at = (v: Work, id: string) => linkEnds(v.scenes.root.links.find((l) => l.id === id)!, scenePlacing(v.scenes.root));
+    expect(messages.map((id) => at(w, id).from)).toMatchObject([
+      { x: 80, y: 330 },
+      { x: 80, y: 470 },
+    ]);
+    // Dragging the first participant takes its lifeline and the messages' ends on it along.
+    const moved = applied(w, moveParts(w, "root", [{ id: "a", bounds: { x: 40, y: 230, width: 160, height: 60 } }]));
+    expect(at(moved, la)).toMatchObject({ from: { x: 120, y: 290 }, to: { x: 120, y: 630 } });
+    expect(messages.map((id) => at(moved, id))).toMatchObject([
+      { from: { x: 120, y: 360 }, to: { x: 480, y: 330 } },
+      { from: { x: 120, y: 500 }, to: { x: 480, y: 470 } },
+    ]);
+    // Taking a participant out leaves its lifeline where it was, loose; the messages on it
+    // keep to it.
+    const gone = applied(moved, { remove: { modules: ["a"] } });
+    expect(gone.scenes.root.links.find((l) => l.id === la)).toMatchObject({ from: { x: 120, y: 290 }, to: { x: 120, y: 630 } });
+    expect(danglingIn(gone, "root")).toEqual([la]);
+    expect(at(gone, messages[0]).from).toEqual({ x: 120, y: 360, side: null });
   });
   it("problem 3A: renaming a participant keeps every message on the participant it was on", () => {
     const work = sequenceWork();

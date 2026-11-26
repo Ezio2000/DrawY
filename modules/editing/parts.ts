@@ -5,11 +5,13 @@ import type {
   Instance,
   Link,
   ModuleEdit,
+  Point,
   Target,
   Work,
   WorkEdit,
 } from "../contracts/index.ts";
 import { boxOf, boxSchema, diffValue, instanceSchema } from "../contracts/index.ts";
+import { carried } from "../contracts/geometry.ts";
 import { lookFor, type Look } from "./fields.ts";
 import { drawingIds, fresh, partIds, sceneOf } from "./shared.ts";
 
@@ -84,15 +86,27 @@ const eachModule = (
   ids: string[],
   change: Omit<ModuleEdit, "id" | "scene">,
 ): WorkEdit => ({ modules: ids.map((id) => ({ id, scene: sceneId, ...change })) });
-/** Puts modules where they were dragged, nudged, aligned or typed in. */
+/** Puts modules where they were dragged, nudged, aligned or typed in; a line hanging from a
+ * moved module by one end, its other end free, moves whole with it. */
 export function moveParts(
   work: Work,
   sceneId: string,
   moves: { id: string; bounds: Bounds }[],
 ): WorkEdit {
-  sceneOf(work, sceneId);
+  const scene = sceneOf(work, sceneId);
+  const by = new Map<string, Point>();
+  for (const m of moves) {
+    const was = scene.modules.find((x) => x.id === m.id);
+    const now = tidy(m.bounds);
+    if (was) by.set(m.id, { x: now.x - was.bounds.x, y: now.y - was.bounds.y });
+  }
+  const links = scene.links.flatMap((l) => {
+    const next = carried(l, by);
+    return next ? [{ id: l.id, scene: sceneId, ...next }] : [];
+  });
   return {
     modules: moves.map((m) => ({ id: m.id, scene: sceneId, bounds: boxOf(tidy(m.bounds)) })),
+    ...(links.length ? { links } : {}),
   };
 }
 

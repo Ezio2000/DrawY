@@ -11,7 +11,7 @@ import { useOf } from "../materials/index.ts";
 import type { Side } from "../contracts/index.ts";
 import type { DrawingMaterial, Material } from "@drawy/materials/schema";
 import { boil } from "../../materials/streets.ts";
-import { importedPicture } from "../interchange/drawings.ts";
+import { importedPicture, sketchLine } from "../interchange/drawings.ts";
 
 /** Curated materials as the library serves them. */
 const seed = (name: string) =>
@@ -441,7 +441,7 @@ it("selects a link by its line while editing, drags its ends onto other modules 
   expect(await data("link")).toBe("next");
   expect(await data("selected")).toBe("");
   expect(await page.evaluate(() => window.drawyView.selectedLinks)).toEqual(["next"]);
-  // Its end is dragged onto another module, to the side facing where it is dropped.
+  // Its end is dragged into another module, which it then follows.
   const end = (await page.locator('[data-link-end="to"]').boundingBox())!;
   const target = await screen(160, 457);
   await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
@@ -451,7 +451,7 @@ it("selects a link by its line while editing, drags its ends onto other modules 
   expect(JSON.parse((await data("reconnected"))!)).toEqual({
     id: "next",
     end: "to",
-    to: { moduleId: "level-3", side: "left" },
+    to: { moduleId: "level-3" },
   });
   // Its words are changed where they are drawn.
   const words = (await page.locator('[data-link-id="next"] text').boundingBox())!;
@@ -1835,4 +1835,41 @@ it("marks every word a structured library drawing draws from its example as the 
   // The sequence diagram: three participants and five messages and a note are parts, with
   // slots round both lists and a lifeline for each participant.
   expect(found[0]).toMatchObject({ parts: 9, slots: 4 + 6, anchors: 3 });
+});
+it("draws links along a drawn line's own path, riding on other links and to free points, and moves a line hanging from a module with it", async () => {
+  work.drawings["sketch-line"] = sketchLine;
+  work.drawings.tinted = { id: "tinted", name: "块", source: "return api.html(`<div style='width:${api.width}px;height:${api.height}px;background:#cde'></div>`)" };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      { id: "a", drawingId: "tinted", bounds: { x: 0, y: 0, width: 100, height: 60 }, data: {} },
+      // A line drawn corner to corner of its box: links meet it along its path, not the box.
+      { id: "line", drawingId: "sketch-line", bounds: { x: 300, y: 0, width: 200, height: 200 }, data: { points: [[0, 0], [1, 1]] } },
+    ],
+    links: [
+      { id: "life", drawingId: "connector", from: { moduleId: "a", at: "bottom" }, to: { x: 50, y: 400 }, data: {} },
+      { id: "msg", drawingId: "connector", from: { linkId: "life", along: 0.5 }, to: { moduleId: "line", at: { along: 0.5 } }, data: {} },
+    ],
+    checks: [],
+  };
+  delete work.scenes.root.interaction;
+  await open();
+  const read = () =>
+    page.evaluate(() => {
+      const r = window.drawyView.renderer;
+      return { life: r.ends(r.links.get("life")!), msg: r.ends(r.links.get("msg")!), outline: window.drawyView.editMap("line")?.outline.length };
+    });
+  const before = await read();
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+  expect(before.life).toEqual({ from: { x: 50, y: 60, side: "bottom" }, to: { x: 50, y: 400, side: null } });
+  expect(before.msg.from).toEqual({ x: 50, y: 230, side: null });
+  // Halfway along the drawn diagonal, the middle of its box, not a point of the box's edge.
+  expect(before.msg.to.x).toBeCloseTo(400, 0);
+  expect(before.msg.to.y).toBeCloseTo(100, 0);
+  expect(before.outline).toBeGreaterThan(8);
+  // Moving the box moves the line hanging from it whole, and the message riding on it.
+  await page.evaluate(() => window.drawyView.renderer.move([{ id: "a", bounds: { x: 20, y: 40, width: 100, height: 60 } }]));
+  const after = await read();
+  expect(after.life).toEqual({ from: { x: 70, y: 100, side: "bottom" }, to: { x: 70, y: 440, side: null } });
+  expect(after.msg.from).toEqual({ x: 70, y: 270, side: null });
 });

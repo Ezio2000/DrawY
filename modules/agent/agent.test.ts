@@ -15,7 +15,7 @@ import { restore, writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { CutOff, generate, type Item } from "../models/index.ts";
 import { observe, Unavailable } from "../observation/index.ts";
-import { boxOf, costOf, guideTopics, labelOf, modelCatalogSchema, type Run, type Work } from "../contracts/index.ts";
+import { boxOf, costOf, endModule, guideTopics, labelOf, modelCatalogSchema, type Run, type Work } from "../contracts/index.ts";
 import { removeParts, setData } from "../editing/index.ts";
 import { tracer } from "../trace/index.ts";
 import { library as client, resolveStyle } from "../materials/index.ts";
@@ -965,7 +965,7 @@ it("holds a refused write for amending, so a correction carries only what was wr
   expect(results[4].problems.map((p: any) => p.at)).toEqual(["links.c.from", "links.c.to"]);
   const saved = store.work(work.id);
   expect(saved.title).toBe("另写");
-  expect(saved.scenes.root.links.map((l) => [l.id, l.from.moduleId, l.to.moduleId])).toEqual([
+  expect(saved.scenes.root.links.map((l) => [l.id, endModule(l.from), endModule(l.to)])).toEqual([
     ["ok", "m0", "m1"],
     ["a", "m1", "m3"],
     ["b", "m4", "m2"],

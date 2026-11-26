@@ -33,6 +33,7 @@ import { Title } from "./Title.tsx";
 import { useT, dictionaries } from "./i18n.tsx";
 import { AccountContext, useCan } from "./account.tsx";
 import { ago } from "./time.ts";
+import { useDevMode } from "./EditView.tsx";
 import { Badge, Entry, Group, Head, keep, keptValue, Loaded, read, Row, useLoaded } from "./SettingsParts.tsx";
 import { ImageSection, JudgeSection, LabelSection, SearchSection, WriterSection } from "./ModelSettings.tsx";
 
@@ -93,6 +94,7 @@ export function Settings() {
   const models = can("models.manage"),
     accounts = can("accounts.manage");
   const [tab, setTab] = useState<Tab>("preferences");
+  const [dev, setDev] = useDevMode();
   // What was kept from the last visit shows at once, and is replaced by what is read afresh
   // unless it has been changed in the meantime.
   const [kept] = useState(() => keptValue<Own>("own"));
@@ -190,6 +192,9 @@ export function Settings() {
                     });
                   }}
                 />
+              </Row>
+              <Row label={w.developer} hint={w.developerHint}>
+                <Switch checked={dev} onChange={setDev} />
               </Row>
             </Group>
           </section>

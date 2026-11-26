@@ -90,7 +90,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
   const chosenLinks = useSelect(session, (s) =>
     links.flatMap((id) => s.scene?.links.find((l) => l.id === id) ?? []),
   );
-  const linkNames = useSelect(session, (s) => chosenLinks.map((l) => nameIn(s, l.id)));
+  const linkNames = useSelect(session, (s) => chosenLinks.map((l) => nameIn(s, l.id, t)));
   const linkIds = chosenLinks.map((l) => l.id);
   const page = useWorkPage({ session, asking, feedback, focus: { modules: selected, links: chosenLinks } });
   const { sceneId, putAway, dismiss, detailId, setDetail, retyping, setRetyping, retyped } = page;

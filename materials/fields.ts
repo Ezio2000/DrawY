@@ -516,3 +516,24 @@ export function textsIn(fields: Fields, data: Record<string, unknown>) {
   for (const [key, f] of Object.entries(fields)) walk(f, data[key], key);
   return found;
 }
+/** Data with every colour its schema declares that names a style token (accent, ink…)
+ * given that token's colour, so a part coloured by the work's palette follows it. */
+export function withTokens(fields: Fields, data: Record<string, unknown>, style: Record<string, string>) {
+  const walk = (f: Field, v: unknown): unknown => {
+    if (f.type === "color") return typeof v === "string" && /^[a-z][a-z0-9]*$/i.test(v) && style[v] ? style[v] : v;
+    if (f.type === "list" && Array.isArray(v)) return v.map((x) => walk(f.item, x));
+    if ((f.type === "record" || f.type === "tree") && isRec(v)) {
+      const own = f.type === "tree" ? nodeFields(f) : f.fields;
+      const out: Record<string, unknown> = { ...v };
+      for (const [k, x] of Object.entries(v)) {
+        const inner = own[k] ?? (f.type === "record" ? f.rest : undefined);
+        if (inner) out[k] = walk(inner, x);
+      }
+      return out;
+    }
+    return v;
+  };
+  const out: Record<string, unknown> = { ...data };
+  for (const [k, f] of Object.entries(fields)) if (k in out) out[k] = walk(f, out[k]);
+  return out;
+}

@@ -150,6 +150,18 @@ describe("Excalidraw", () => {
     ],
   };
 
+  it("brings an arrow bound at one end in as a link, its other end free where it was", () => {
+    const half = {
+      elements: [
+        el({ id: "box", type: "rectangle", x: 0, y: 0, width: 100, height: 60, boundElements: [{ id: "down", type: "arrow" }] }),
+        el({ id: "down", type: "arrow", x: 50, y: 60, width: 0, height: 300, points: [[0, 0], [0, 300]], startBinding: { elementId: "box" }, endBinding: null, startArrowhead: null, endArrowhead: null }),
+      ],
+    };
+    const { clip } = fromExcalidraw(half, {});
+    expect(clip.modules.map((m) => m.drawingId)).toEqual(["sketch-shape"]);
+    expect(clip.links).toMatchObject([{ from: { moduleId: clip.modules[0].id }, to: { x: 50, y: 360 }, data: { head: "none" } }]);
+  });
+
   it("reads a file or the clipboard, and nothing else", () => {
     expect(readExcalidraw(JSON.stringify({ type: "excalidraw", version: 2, elements: [] }))).toEqual({ elements: [], files: {} });
     expect(readExcalidraw(JSON.stringify({ type: "excalidraw/clipboard", elements: [], files: { f: 1 } }))?.files).toEqual({ f: 1 });

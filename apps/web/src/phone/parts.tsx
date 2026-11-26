@@ -317,7 +317,7 @@ export function Actions({
   const s = useSelect(session, (s) => {
     const m = s.scene?.modules.find((x) => x.id === id);
     return {
-      name: nameIn(s, id),
+      name: nameIn(s, id, t),
       picture: m && s.work ? picturesIn(s.work, m)[0] : undefined,
       locked: s.locked,
     };

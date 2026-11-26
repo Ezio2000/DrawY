@@ -12,6 +12,7 @@ import {
   type LinkEdit,
   type LinkEnd,
   type ModuleEdit,
+  type Point,
   type Problem,
   type Scene,
   type SceneEdit,
@@ -19,6 +20,8 @@ import {
   type WorkEdit,
 } from "../contracts/index.ts";
 import { isListPatch, isRecord } from "../contracts/edit.ts";
+import { endLink, endModule } from "../contracts/index.ts";
+import { linkEnds, scenePlacing } from "../contracts/geometry.ts";
 
 /* An edit laid on a work, for both the workspace that commits it and the page that shows a
  * hand edit before the workspace has answered, so both lay it the same way. Everything wrong
@@ -49,9 +52,19 @@ function removal(
   const drop = (part: "modules" | "links", id: string) => {
     const scene = holder(work, part, id, current);
     if (!scene) return false;
+    // What met the part taken out keeps where it met it, as a free end.
+    const placing = scenePlacing(scene);
+    for (const l of scene.links) {
+      if (part === "links" && l.id === id) continue;
+      const on = (e: LinkEnd) => (part === "modules" ? endModule(e) : endLink(e)) === id;
+      if (!on(l.from) && !on(l.to)) continue;
+      const ends = linkEnds(l, placing);
+      const free = (p: Point) => ({ x: Math.round(p.x * 2) / 2, y: Math.round(p.y * 2) / 2 });
+      if (on(l.from)) l.from = free(ends.from);
+      if (on(l.to)) l.to = free(ends.to);
+    }
     if (part === "modules") {
       scene.modules = scene.modules.filter((m) => m.id !== id);
-      scene.links = scene.links.filter((l) => l.from.moduleId !== id && l.to.moduleId !== id);
       scene.checks = scene.checks.filter((c) => c.moduleId !== id);
     } else scene.links = scene.links.filter((l) => l.id !== id);
     return true;
@@ -291,7 +304,7 @@ export function readEdit(input: unknown): WorkEdit {
         issue.code === "unrecognized_keys"
           ? `不认识的字段 ${issue.keys.join("、")}`
           : issue.code === "invalid_union"
-            ? "写法不对：应该是模块 ID，或 {moduleId, at}，at 是 left、right、top、bottom 或 [x, y]"
+            ? "写法不对：应该是模块 ID、{moduleId, at}（at 是 left、right、top、bottom、[x, y] 或 {along}）、{linkId, along} 或 {x, y}"
             : issue.message,
     })),
   );

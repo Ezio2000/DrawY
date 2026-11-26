@@ -1,4 +1,5 @@
-import type { Bounds, Drawing, Instance, LinkEnd, Point, Side, Work, WorkEdit } from "../contracts/index.ts";
+import type { Bounds, Drawing, Instance, LinkEnd, Point, Scene, Side, Work, WorkEdit } from "../contracts/index.ts";
+import { endLink, endModule, isFree } from "../contracts/index.ts";
 import { facing } from "../contracts/geometry.ts";
 import { fieldsOf } from "./fields.ts";
 import { newModule } from "./parts.ts";
@@ -6,8 +7,9 @@ import { drawingIds, fresh, partIds, sceneOf } from "./shared.ts";
 export { facing, sideOf, sidePoint } from "../contracts/geometry.ts";
 export { sideNames as sides, type Side } from "../contracts/index.ts";
 
-/* Links a person draws between modules. Where a link meets a module belongs to the link's
- * end, so changing one link never touches a module or another link. */
+/* Links a person draws between modules, along other links and to free points. Where a link
+ * meets anything belongs to the link's end, so changing one link never touches a module or
+ * another link. */
 
 /** What a new link is drawn with: the scene's latest link, so a drawn connection looks
  * like the author's, or failing that any link in the work; its words are left behind. */
@@ -51,51 +53,69 @@ function newLink(
     ...(drawing ? { drawings: [drawing] } : {}),
   };
 }
-/** Connects one module to another with a link drawn as `look`: from and to the sides named,
- * or, for an end that names none, the side facing the other end, wherever the modules then
- * move. A library drawing the work does not have is taken in; `copy` gives the work its own
- * copy instead, when one of its drawings uses the library drawing's id. Returns the link's
- * id. */
+/** Why an end cannot be where it is asked to be in a scene, if it cannot: what it meets must
+ * be there, the two ends of a link cannot meet the same module, and a link cannot ride on
+ * itself or on a link that rides on it. */
+function misplaced(scene: Scene, linkId: string | undefined, end: LinkEnd, other: LinkEnd) {
+  const module = endModule(end),
+    line = endLink(end);
+  if (module && !scene.modules.some((m) => m.id === module)) return "元素不存在";
+  if (module && module === endModule(other)) return "连线要连到另一个元素";
+  if (line) {
+    if (!scene.links.some((l) => l.id === line)) return "连线不存在";
+    // Riding on a link that rides, however far, on this one would go round in a ring.
+    for (let at: string | undefined = line, n = 0; at && n < 32; n++) {
+      if (at === linkId) return "连线不能沿着自己";
+      const l = scene.links.find((x) => x.id === at);
+      at = l && (endLink(l.from) ?? endLink(l.to));
+    }
+  }
+  return null;
+}
+/** A short name for what an end meets, for the id of a link drawn to it. */
+const nameOfEnd = (e: LinkEnd) => endModule(e) ?? endLink(e) ?? "point";
+/** Connects two ends with a link drawn as `look`: each end on a module (a side, a point on
+ * it, a share along its outline, or following the side facing the other end), along
+ * another link, or free at a point. A library drawing the work does not have is taken in;
+ * `copy` gives the work its own copy instead, when one of its drawings uses the library
+ * drawing's id. Returns the link's id. */
 export function connect(
   work: Work,
   sceneId: string,
-  from: { moduleId: string; side?: Side },
-  to: { moduleId: string; side?: Side },
+  from: LinkEnd,
+  to: LinkEnd,
   look: { drawingId: string; data: Record<string, unknown> },
   copy?: Omit<Drawing, "id">,
 ): { edit: WorkEdit; id: string } {
   const scene = sceneOf(work, sceneId);
-  if (from.moduleId === to.moduleId) throw Error("连线要连到另一个元素");
-  if (![from, to].every((e) => scene.modules.some((m) => m.id === e.moduleId)))
-    throw Error("元素不存在");
-  const id = fresh(`${from.moduleId}-to-${to.moduleId}`, partIds(work));
-  const edit = newLink(
-    work,
-    { id, scene: sceneId, from: end(from.moduleId, from.side), to: end(to.moduleId, to.side) },
-    look,
-    copy,
-  );
+  const wrong = misplaced(scene, undefined, from, to) ?? misplaced(scene, undefined, to, from);
+  if (wrong) throw Error(wrong);
+  if (isFree(from) && isFree(to)) throw Error("连线至少要有一端连着东西");
+  const id = fresh(`${nameOfEnd(from)}-to-${nameOfEnd(to)}`, partIds(work));
+  const edit = newLink(work, { id, scene: sceneId, from, to }, look, copy);
   return { edit, id };
 }
-/** Moves one end of a link to a side of its module, or back to following the side facing the
- * other end, or, given another module, onto that one; a link never ends where it starts. */
-export function reattach(
-  work: Work,
-  sceneId: string,
-  linkId: string,
-  which: "from" | "to",
-  side: Side | undefined,
-  moduleId?: string,
-): WorkEdit {
+/** Moves one end of a link elsewhere: to a side of its module, back to following the side
+ * facing the other end, onto another module, along another link or to a free point. A link
+ * never ends where it starts. */
+export function reattach(work: Work, sceneId: string, linkId: string, which: "from" | "to", to: LinkEnd): WorkEdit {
   const scene = sceneOf(work, sceneId);
   const link = scene.links.find((l) => l.id === linkId);
   if (!link) throw Error("连线不存在");
-  const m = scene.modules.find((x) => x.id === (moduleId ?? link[which].moduleId));
-  if (!m) throw Error("元素不存在");
-  if (m.id === link[which === "from" ? "to" : "from"].moduleId)
-    throw Error("连线要连到另一个元素");
-  return { links: [{ id: linkId, scene: sceneId, [which]: end(m.id, side) }] };
+  const other = link[which === "from" ? "to" : "from"];
+  const wrong = misplaced(scene, linkId, to, other);
+  if (wrong) throw Error(wrong);
+  if (isFree(to) && isFree(other)) throw Error("连线至少要有一端连着东西");
+  return { links: [{ id: linkId, scene: sceneId, [which]: to }] };
 }
+/** Takes out the links of a scene that meet nothing at either end. */
+export function removeDangling(work: Work, sceneId: string): WorkEdit | null {
+  const links = sceneOf(work, sceneId).links.filter((l) => isFree(l.from) && isFree(l.to)).map((l) => l.id);
+  return links.length ? { remove: { links } } : null;
+}
+/** The links of a scene that meet nothing at either end, left when what they met went. */
+export const danglingIn = (work: Work, sceneId: string) =>
+  (work.scenes[sceneId]?.links ?? []).filter((l) => isFree(l.from) && isFree(l.to)).map((l) => l.id);
 /** Turns links round: what each came from it now goes to. */
 export function reverse(work: Work, sceneId: string, linkIds: string[]): WorkEdit {
   const links = sceneOf(work, sceneId).links.filter((l) => linkIds.includes(l.id));

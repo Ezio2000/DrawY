@@ -9,7 +9,7 @@ import type {
   WorkEdit,
 } from "../contracts/index.ts";
 import { union } from "../contracts/geometry.ts";
-import { materialsOfPart } from "../contracts/index.ts";
+import { endLink, endModule, isFree, materialsOfPart, type LinkEnd } from "../contracts/index.ts";
 import { drawingIds, fresh, partIds, sceneOf } from "./shared.ts";
 import { newModule } from "./parts.ts";
 
@@ -42,9 +42,22 @@ export function copy(work: Work, sceneId: string, ids: string[]): Clip | null {
   const modules = scene.modules.filter((m) => ids.includes(m.id));
   if (!modules.length) return null;
   const inside = new Set(modules.map((m) => m.id));
-  const links = scene.links.filter(
-    (l) => inside.has(l.from.moduleId) && inside.has(l.to.moduleId),
-  );
+  // Links between the modules copied, those hanging from them by one end with the other
+  // free, and links riding on the links taken: every end it has on something is taken too.
+  const taken = new Set<string>();
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const l of scene.links) {
+      if (taken.has(l.id)) continue;
+      const ends = [l.from, l.to];
+      const held = ends.every((e) => (isFree(e) ? true : endModule(e) ? inside.has(endModule(e)!) : taken.has(endLink(e)!)));
+      if (held && ends.some((e) => !isFree(e))) {
+        taken.add(l.id);
+        grew = true;
+      }
+    }
+  }
+  const links = scene.links.filter((l) => taken.has(l.id));
   const parts = [...modules, ...links];
   return structuredClone({
     kind: "drawy/clip" as const,
@@ -155,18 +168,27 @@ export function paste(
       bounds: { ...m.bounds, x: m.bounds.x + dx, y: m.bounds.y + dy },
     };
   });
-  const links = clip.links.map((l) => {
+  const linkOf = new Map<string, string>();
+  for (const l of clip.links) {
     const id = fresh(l.id, ids);
     ids.add(id);
-    return {
-      ...structuredClone(l),
-      id,
-      scene: sceneId,
-      drawingId: drawingOf.get(l.drawingId) ?? l.drawingId,
-      from: { ...l.from, moduleId: moduleOf.get(l.from.moduleId)! },
-      to: { ...l.to, moduleId: moduleOf.get(l.to.moduleId)! },
-    };
-  });
+    linkOf.set(l.id, id);
+  }
+  // Each end meets the copy of what it met; a free end goes as far as everything else.
+  const endOf = (e: LinkEnd): LinkEnd =>
+    "moduleId" in e
+      ? { ...e, moduleId: moduleOf.get(e.moduleId)! }
+      : "linkId" in e
+        ? { ...e, linkId: linkOf.get(e.linkId)! }
+        : { x: e.x + dx, y: e.y + dy };
+  const links = clip.links.map((l) => ({
+    ...structuredClone(l),
+    id: linkOf.get(l.id)!,
+    scene: sceneId,
+    drawingId: drawingOf.get(l.drawingId) ?? l.drawingId,
+    from: endOf(l.from),
+    to: endOf(l.to),
+  }));
   // A library drawing taken as the work's own is not taken from the library too.
   const materials = clip.materials.filter((id) => !copied.has(id));
   return {

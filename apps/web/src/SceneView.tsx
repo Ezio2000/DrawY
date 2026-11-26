@@ -177,7 +177,7 @@ export function SceneView({
       },
       commit: (m) => callbacks.current.commit(m),
       point: (p) => callbacks.current.point(p),
-      connect: (from, to) => callbacks.current.connect?.(from, to),
+      connect: (from, to, how) => callbacks.current.connect?.(from, to, how),
       extend: (from, at) => callbacks.current.extend?.(from, at),
       duplicate: (ids, by) => callbacks.current.duplicate?.(ids, by),
       reconnect: (id, end, to) => callbacks.current.reconnect?.(id, end, to),

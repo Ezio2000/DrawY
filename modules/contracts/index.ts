@@ -24,17 +24,26 @@ export const drawingSchema = z.object({
 /** One of the sides of a module, each at the middle of that side. */
 export const sideNames = ["left", "right", "top", "bottom"] as const;
 export type Side = (typeof sideNames)[number];
-/** Where a link meets a module: a side, or a point as a share of the module's size. */
+/** Where a link meets a module: a side, a point as a share of the module's size, or a
+ * place along the line round it (the outline its drawing declares, else its box from the
+ * top left, clockwise), as a share of that line's length. */
 export const endAtSchema = z.union([
   z.enum(sideNames),
   z.array(z.number()).length(2),
+  z.object({ along: z.number().min(0).max(1) }).strict(),
 ]);
-/** One end of a link. It belongs to the link: nothing is declared on the module, and without
- * `at` it takes the side facing the other end wherever the two modules are. */
-export const linkEndSchema = z.object({
-  moduleId: key,
-  at: endAtSchema.optional(),
-});
+/** One end of a link. It belongs to the link: nothing is declared on what it meets. On a
+ * module without `at` it takes the side facing the other end wherever the two are; on
+ * another link it stays at a share of the way between that link's ends; free, it stays at a
+ * point of the scene. */
+export const moduleEndSchema = z.object({ moduleId: key, at: endAtSchema.optional() });
+export const lineEndSchema = z.object({ linkId: key, along: z.number().min(0).max(1) });
+export const freeEndSchema = z.object({ x: z.number(), y: z.number() });
+export const linkEndSchema = z.union([moduleEndSchema, lineEndSchema, freeEndSchema]);
+/** The module an end meets, the link it rides on, or neither: a free end. */
+export const endModule = (end: LinkEnd) => ("moduleId" in end ? end.moduleId : undefined);
+export const endLink = (end: LinkEnd) => ("linkId" in end ? end.linkId : undefined);
+export const isFree = (end: LinkEnd): end is z.infer<typeof freeEndSchema> => !("moduleId" in end) && !("linkId" in end);
 // Layout comes before content, in the order writes stream, so a composition can be
 // sketched while its drawing code is still arriving.
 export const instanceSchema = z.object({
@@ -381,9 +390,9 @@ const partScene = key
   .optional()
   .describe("The scene a new part goes in; leave out for the current scene. A known id is found wherever it is");
 const linkEndEdit = z
-  .union([key, linkEndSchema.strict()])
+  .union([key, moduleEndSchema.strict(), lineEndSchema.strict(), freeEndSchema.strict()])
   .describe(
-    'A module id, which meets it on the side facing the other end and follows as they move; or {moduleId, at} with a side (left, right, top, bottom) or a point [x, y] on it, each 0..1',
+    "A module id, which meets it on the side facing the other end and follows as they move; {moduleId, at} with a side (left, right, top, bottom), a point [x, y] on it (each 0..1) or {along: t}, a share of the way round its outline; {linkId, along: t}, a share of the way along another link, as a message rides a lifeline; or {x, y}, a free point of the scene",
   );
 // Fields stay in the order of a whole record: layout streams before content.
 const moduleEditSchema = z
@@ -487,8 +496,8 @@ export const workEditSchema = z
       .describe("Style tokens to change; null deletes one"),
     remove: z
       .object({
-        modules: z.array(key).optional().describe("Also deletes their links and checks"),
-        links: z.array(key).optional(),
+        modules: z.array(key).optional().describe("Also deletes their checks; the links meeting them keep where they met as free ends"),
+        links: z.array(key).optional().describe("Links riding on them keep where they met as free ends"),
         drawings: z.array(key).optional(),
         scenes: z.array(key).optional().describe("Also deletes the scenes under them; modules that led there lead nowhere"),
         details: z.array(key).optional().describe("Modules that opened them open nothing"),

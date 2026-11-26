@@ -3,7 +3,7 @@ import { ChevronDown, X, Check, FileInput, PenLine } from "lucide-react";
 import * as Hand from "../ui/brand/icons.tsx";
 import type { Canvas, CanvasOptions, PartPick, Pointed } from "../../../../modules/canvas/index.ts";
 import { shownName, type Target } from "../../../../modules/contracts/index.ts";
-import { carried, trailOf } from "../../../../modules/editing/index.ts";
+import { carried, danglingIn, trailOf } from "../../../../modules/editing/index.ts";
 import { cx } from "../cx.ts";
 import { SelectionBar } from "../EditBar.tsx";
 import { EditMenu } from "../EditMenu.tsx";
@@ -272,7 +272,7 @@ export function EditOverlay({
   ask: () => void;
 }) {
   counted("overlay");
-  const { some, within, holds, work, sceneId } = useSelect(session, (s) => {
+  const { some, within, holds, loose, work, sceneId } = useSelect(session, (s) => {
     const modules = s.scene?.modules ?? [];
     const groups = ids.map((id) => modules.find((m) => m.id === id)?.group);
     const group = groups[0];
@@ -284,6 +284,8 @@ export function EditOverlay({
         groups.every((g) => g === group) &&
         modules.filter((m) => m.group === group).length > ids.length,
       holds: carried(modules, ids).length > 0,
+      // Links left meeting nothing at either end, once what they met went.
+      loose: danglingIn(s.shown!, s.sceneId).length > 0,
       work: s.shown!,
       sceneId: s.sceneId,
     };
@@ -315,6 +317,7 @@ export function EditOverlay({
           holds={holds}
           clipped={hand.clipped}
           brushed={hand.brushed}
+          loose={loose}
           close={() => hand.setMenu(undefined)}
           ask={ask}
           fit={() => canvas?.fit(true, 520, "whole")}

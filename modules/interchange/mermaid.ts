@@ -1,5 +1,5 @@
 import type { Bounds, Work } from "../contracts/index.ts";
-import { drawingOf, labelOf } from "../contracts/index.ts";
+import { drawingOf, endModule, labelOf } from "../contracts/index.ts";
 import { bound, type Clip } from "../editing/index.ts";
 import { ClipMaker, lineBox } from "./clip.ts";
 import { kindOfSource, mermaidDiagram, sketchLine } from "./drawings.ts";
@@ -241,7 +241,7 @@ export function toMermaid(work: Work, sceneId: string): string | null {
   const scene = work.scenes[sceneId];
   const own = (drawingId: string) => kindOfSource(work.drawings[drawingId]?.source);
   const diagrams = scene.modules.filter((m) => own(m.drawingId) === "mermaid");
-  const linked = new Set(scene.links.flatMap((l) => [l.from.moduleId, l.to.moduleId]));
+  const linked = new Set(scene.links.flatMap((l) => [endModule(l.from), endModule(l.to)].filter((id): id is string => !!id)));
   const blocks = scene.modules.filter(
     (m) =>
       linked.has(m.id) ||
@@ -293,8 +293,9 @@ export function toMermaid(work: Work, sceneId: string): string | null {
     lines.push(`  ${names.get(m.id)}${open}${quoted(words)}${close}`);
   }
   for (const l of scene.links) {
-    const from = names.get(l.from.moduleId),
-      to = names.get(l.to.moduleId);
+    // A flowchart joins blocks: a link with an end along a line or at a point has no place in it.
+    const from = names.get(endModule(l.from) ?? ""),
+      to = names.get(endModule(l.to) ?? "");
     if (!from || !to) continue;
     const drawing = drawingOf(work, l.drawingId);
     const d = { ...(drawing?.defaults ?? {}), ...l.data } as Record<string, unknown>;

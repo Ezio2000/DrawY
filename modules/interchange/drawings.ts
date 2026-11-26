@@ -49,7 +49,7 @@ export const sketchLine: Drawing = {
 // A line drawn by hand through data.points (shares of the box): a smooth curve when
 // data.smooth, else straight segments; data.head puts an arrowhead at its end (both ends
 // with data.both), seen through as much as data.opacity leaves. The line keeps its width
-// whatever the box's size.
+// whatever the box's size, and links meet it along its path.
 const d = api.data, t = api.theme;
 const W = api.width, H = api.height;
 const pts = (Array.isArray(d.points) ? d.points : [])
@@ -90,6 +90,8 @@ const heads = head !== "none" && pts.length > 1
   ? tip(pts[pts.length - 1], behind(pts)) + (d.both ? tip(pts[0], behind([...pts].reverse())) : "")
   : "";
 const dash = d.dashed ? ' stroke-dasharray="' + f(w * 3) + " " + f(w * 2.5) + '"' : "";
+// Links meet the line itself, anywhere along it, rather than its box.
+if (pts.length > 1) api.outline(path);
 return api.svg(
   '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" style="overflow:visible">' +
     '<path d="' + path + '" fill="none" stroke="transparent" stroke-width="' + (w + 12) + '" stroke-linecap="round"/>' +

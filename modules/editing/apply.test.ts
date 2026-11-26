@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fixture } from "../runtime/fixture.ts";
 import { EditRejected, labelOf, shownName, type Problem, type Work, type WorkEdit } from "../contracts/index.ts";
-import { linkEnds } from "../contracts/geometry.ts";
+import { linkEnds, scenePlacing } from "../contracts/geometry.ts";
 import { writeExample, EDIT_EXAMPLE } from "../agent/prompts.ts";
 import { writeSchema } from "../agent/tools.ts";
 import { validateWork } from "../workspace/index.ts";
@@ -119,7 +119,7 @@ describe("data, defaults and style merge the same way", () => {
 
 describe("links own where they meet a module", () => {
   const ends = (w: Work, id: string) =>
-    linkEnds(w.scenes.root.links.find((l) => l.id === id)!, (m) => w.scenes.root.modules.find((x) => x.id === m)!.bounds);
+    linkEnds(w.scenes.root.links.find((l) => l.id === id)!, scenePlacing(w.scenes.root));
   it("joins the sides facing each other for two module ids, as an arrow by default", () => {
     const next = written(work(), { links: [{ id: "l", from: "left", to: "right", data: { label: "去" } }] });
     expect(next.scenes.root.links[0]).toEqual({
@@ -158,12 +158,26 @@ describe("links own where they meet a module", () => {
 });
 
 describe("what remove takes along", () => {
-  it("removes a module with its links and checks", () => {
-    const w = written(work(), { links: [{ id: "l", from: "left", to: "right" }] });
+  it("removes a module with its checks, the links meeting it keeping where they met it as free ends", () => {
+    const w = written(work(), {
+      links: [
+        { id: "l", from: "left", to: "right" },
+        { id: "m", from: { linkId: "l", along: 0.5 }, to: { x: 300, y: 300 } },
+      ],
+    });
     w.scenes.root.checks = [{ moduleId: "left", selector: "button" }];
     const next = written(w, { remove: { modules: ["left"] } });
-    expect(next.scenes.root.links).toEqual([]);
+    // The link met the left box on its right side, facing the other box.
+    expect(next.scenes.root.links[0]).toMatchObject({ from: { x: 100, y: 50 }, to: { moduleId: "right" } });
     expect(next.scenes.root.checks).toEqual([]);
+    // A link riding on a link taken out keeps its place there too.
+    const gone = written(next, { remove: { links: ["l"] } });
+    expect(gone.scenes.root.links).toEqual([expect.objectContaining({ id: "m", from: { x: 300, y: 50 }, to: { x: 300, y: 300 } })]);
+    // What an end meets must be in the scene, and links cannot ride on each other in a ring.
+    expect(problems(() => written(w, { links: [{ id: "n", from: { linkId: "nope", along: 0 }, to: "right" }] })).map((p) => p.at)).toEqual(["links.n.from"]);
+    expect(
+      problems(() => written(w, { links: [{ id: "l", from: { linkId: "m", along: 0.5 } }] })).map((p) => p.problem),
+    ).toEqual(expect.arrayContaining([expect.stringMatching(/绕成了一圈/)]));
   });
   it("removes a scene with those under it, and what led there leads nowhere", () => {
     const w = work();

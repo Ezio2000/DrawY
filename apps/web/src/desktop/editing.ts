@@ -26,10 +26,10 @@ import { useT } from "../i18n.tsx";
  * the canvas, or placed at a press. */
 export const shapes = ["box", "pill", "circle", "diamond", "cylinder", "document", "callout"] as const;
 export type Shape = (typeof shapes)[number];
-/** What a press on the canvas does while editing: select and move, move the view, link two
- * modules, place words, draw a shape, draw a line freehand (pen) or straight (arrow), or
- * rub parts out. */
-export type Tool = "select" | "hand" | "link" | "text" | "pen" | "arrow" | "erase" | Shape;
+/** What a press on the canvas does while editing: select and move, move the view, place
+ * words, draw a shape, draw a line freehand (pen) or straight (arrow: a link wherever an end
+ * lands on a module or a link), or rub parts out. */
+export type Tool = "select" | "hand" | "text" | "pen" | "arrow" | "erase" | Shape;
 const isShape = (tool: Tool): tool is Shape => (shapes as readonly string[]).includes(tool);
 
 /** The library drawing a shape is drawn with, the data that makes it that shape around its
@@ -48,7 +48,7 @@ const stamps: Record<
 };
 /** The canvas's tool for each of the editor's. */
 const canvasTool = (tool: Tool): CanvasTool =>
-  tool === "select" || tool === "hand" || tool === "link" || tool === "pen" || tool === "arrow" || tool === "erase"
+  tool === "select" || tool === "hand" || tool === "pen" || tool === "arrow" || tool === "erase"
     ? tool
     : "draw";
 
@@ -241,9 +241,9 @@ export function useEditing({
 
   /** A line drawn with the pen, which stays in hand for the next, or with the arrow tool,
    * after which the hand takes the selecting tool again, as drawing apps do. */
-  const ink = (points: Point[], how: { kind: "pen" | "arrow" }) => {
+  const ink = (points: Point[], how: { kind: "pen" | "arrow"; upright?: boolean }) => {
     if (how.kind === "arrow") setTool("select");
-    void base.ink(points, how.kind);
+    void base.ink(points, how.kind, how.upright);
   };
 
   // Copy, cut and paste go through the system clipboard: parts copied in one tab or work
@@ -410,7 +410,7 @@ const toolKeys: Record<string, Tool> = {
   KeyV: "select",
   KeyH: "hand",
   KeyT: "text",
-  KeyL: "link",
+  KeyL: "arrow",
   KeyP: "pen",
   KeyA: "arrow",
   KeyE: "erase",

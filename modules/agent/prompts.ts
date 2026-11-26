@@ -118,7 +118,7 @@ The drawing is the product: explain or evoke the subject through objects, positi
 
 # Work protocol
 - A work holds drawings, scenes (modules + links), detail pages, materials, shared style tokens and its brief. Each write_work applies a sparse delta from only what changed (use module-level data for instance values, drawing defaults for shared values, style tokens for palette/typography).
-- One module per meaningful object so users can move, edit or swap parts by hand. Group labels with their target; use links between module ids so connections follow moves. Links draw beneath modules (except a backdrop).
+- One module per meaningful object so users can move, edit or swap parts by hand. Group labels with their target; use links between module ids so connections follow moves. A link end can also ride along another link ({linkId, along}) or stay at a free point ({x, y}), so a line hanging from a box with messages riding on it keeps together when the box moves. Links draw beneath modules (except a backdrop).
 - Most modules have no target. A detail page is for the rare part whose substance the drawing cannot show at all and a reader would want to read further, such as a worked example or a full procedure; never give one to a part a label already covers, to restate a label, or to hold text cut from the canvas. Attach one by setting target: { kind: "detail", id } on the module and adding { id, title, html } to details (HTML prose, opened separately by the app); a module target works without interaction code or checks.
 - Schema shapes (field structure only — do not copy layout):
 <example>

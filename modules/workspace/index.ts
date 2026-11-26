@@ -16,8 +16,11 @@ import {
   normalizeData,
   validateData,
   walkFields,
+  endLink,
+  endModule,
   type DataProblem,
   type Fields,
+  type Link,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { take, used, resolveStyle } from "../materials/index.ts";
@@ -241,13 +244,31 @@ export function problemsIn(work: Work, pending = new Set<string>()): Problem[] {
         add(`${where}.target`, `模块 ${m.id} 点开的${m.target.kind === "scene" ? "场景" : "详情"} ${m.target.id} 不存在`);
     }
     const known = () => scene.modules.map((m) => m.id).join("、") || "（空）";
+    const links = new Map(scene.links.map((l) => [l.id, l]));
     for (const l of scene.links) {
       const where = `links.${l.id}`;
       if (!drawingOf(work, l.drawingId) && !pending.has(l.drawingId))
         drawingMissing(where, `连线 ${l.id}`, l.drawingId);
-      for (const side of ["from", "to"] as const)
-        if (!modules.has(l[side].moduleId) && !pending.has(l[side].moduleId))
-          add(`${where}.${side}`, `连线 ${l.id} 的一端 ${l[side].moduleId} 不在场景 ${scene.id} 里；这个场景有 ${known()}`);
+      for (const side of ["from", "to"] as const) {
+        const end = l[side];
+        const module = endModule(end),
+          line = endLink(end);
+        if (module && !modules.has(module) && !pending.has(module))
+          add(`${where}.${side}`, `连线 ${l.id} 的一端 ${module} 不在场景 ${scene.id} 里；这个场景有 ${known()}`);
+        if (line && !links.has(line) && !pending.has(line))
+          add(`${where}.${side}`, `连线 ${l.id} 的一端沿着的连线 ${line} 不在场景 ${scene.id} 里`);
+      }
+      // A link riding on links that ride back on it would have nowhere to be.
+      const seen = new Set<string>();
+      for (let at: Link | undefined = l; at; ) {
+        if (seen.has(at.id)) {
+          add(where, `连线 ${l.id} 沿着的连线又沿着它，绕成了一圈`);
+          break;
+        }
+        seen.add(at.id);
+        const next: string | undefined = endLink(at.from) ?? endLink(at.to);
+        at = next ? links.get(next) : undefined;
+      }
     }
     for (const [i, c] of scene.checks.entries())
       if (!modules.has(c.moduleId) && !pending.has(c.moduleId))
