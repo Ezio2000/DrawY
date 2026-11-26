@@ -44,6 +44,22 @@ export const linkEndSchema = z.union([moduleEndSchema, lineEndSchema, freeEndSch
 export const endModule = (end: LinkEnd) => ("moduleId" in end ? end.moduleId : undefined);
 export const endLink = (end: LinkEnd) => ("linkId" in end ? end.linkId : undefined);
 export const isFree = (end: LinkEnd): end is z.infer<typeof freeEndSchema> => !("moduleId" in end) && !("linkId" in end);
+/** Whether a link rides, by either end and however far along the links it rides on, on the
+ * link `on`: a link riding on one that rides back on it would have nowhere to be. */
+export function ridesOn(link: Pick<Link, "from" | "to">, on: string, linkOf: (id: string) => Pick<Link, "from" | "to"> | undefined) {
+  const seen = new Set<string>();
+  const next = [link];
+  for (let at = next.pop(); at; at = next.pop())
+    for (const id of [endLink(at.from), endLink(at.to)]) {
+      if (!id) continue;
+      if (id === on) return true;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const l = linkOf(id);
+      if (l) next.push(l);
+    }
+  return false;
+}
 // Layout comes before content, in the order writes stream, so a composition can be
 // sketched while its drawing code is still arriving.
 export const instanceSchema = z.object({

@@ -109,7 +109,9 @@ export function sequenceFrom(read: MermaidSequence, was?: Partial<SequenceData>)
     seen.add(id);
     m.id = id;
   }
-  return { participants, messages, notes, fragments, ...(read.numbered ? { numbered: true } : {}) };
+  // Numbering the text no longer asks for is turned off, not left out, so it goes.
+  const numbered = read.numbered ? { numbered: true } : was?.numbered ? { numbered: false } : {};
+  return { participants, messages, notes, fragments, ...numbered };
 }
 
 const said = (s: unknown) => String(s ?? "").replace(/[\n;#]/g, " ").trim();

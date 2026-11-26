@@ -390,7 +390,17 @@ export class Canvas {
     /** An item of a module's list dragged along its rows to another place. */
     | { kind: "reorder"; moduleId: string; list: string; item: string | number; axis: "x" | "y"; to?: number }
     /** A handle of a part dragged: onto an item it can refer to, or along to change a value. */
-    | { kind: "handle"; moduleId: string; handle: EditMap["handles"][number]; data: Record<string, unknown>; to?: string; value?: unknown }
+    | {
+        kind: "handle";
+        moduleId: string;
+        handle: EditMap["handles"][number];
+        /** The data drawn, defaults filled in, that the handle changes. */
+        data: Record<string, unknown>;
+        /** The module's own data before the drag, drawn again when it is let go of. */
+        was: Record<string, unknown>;
+        to?: string;
+        value?: unknown;
+      }
     /** A drag from one item's region to another's, making a new item between them. */
     | { kind: "create"; moduleId: string; list: string; between: [string, string]; fields?: Record<string, unknown>; rows: "x" | "y"; from: string; start: Point; to?: string }
   );
@@ -1708,10 +1718,11 @@ export class Canvas {
   refit() {
     if (this.automatic) this.fit(true, 520);
   }
-  /** The drawing as a whole: its modules and the sketches of those on the way. */
+  /** The drawing as a whole: its modules, its links, and the sketches of those on the way. */
   private extent() {
     return union([
       ...[...this.renderer.instances.values()].map((m) => m.bounds),
+      ...this.renderer.linkBoxes(),
       ...[...this.sketches.values()].map((s) => s.bounds),
     ]);
   }
@@ -2538,7 +2549,7 @@ export class Canvas {
       const h = shown.handles[Number(editHandle)];
       const m = this.renderer.instances.get(shown.moduleId);
       if (h && m) {
-        this.gesture = { ...start, kind: "handle", moduleId: m.id, handle: h, data: this.drawnData(m) };
+        this.gesture = { ...start, kind: "handle", moduleId: m.id, handle: h, data: this.drawnData(m), was: m.data };
         return capture();
       }
     }
@@ -3214,16 +3225,22 @@ export class Canvas {
     clearTimeout(this.holding);
     const g = this.gesture;
     if (e && g && e.pointerId !== g.pointer && g.kind !== "pinch") return;
-    if (g && (g.kind === "move" || g.kind === "resize")) this.drag(g.moves);
-    if (g) this.finish();
+    this.abandon();
+  }
+  /** Lets go of the gesture without keeping what it did: what it moved goes back, and a
+   * value a handle showed as it was dragged is drawn as it was. */
+  private abandon() {
+    const g = this.gesture;
+    if (!g) return;
+    if (g.kind === "move" || g.kind === "resize") this.drag(g.moves);
+    if (g.kind === "handle" && g.value !== undefined) this.renderer.redraw(g.moduleId, g.was);
+    this.finish();
   }
   /** Two fingers: what the first began is let go, and the view follows both, zooming as
    * they spread or close and moving as they move together. */
   private pinch(e: PointerEvent) {
     clearTimeout(this.holding);
-    const g = this.gesture;
-    if (g && (g.kind === "move" || g.kind === "resize")) this.drag(g.moves);
-    if (g) this.finish();
+    this.abandon();
     const [a, b] = [...this.touches.values()];
     this.element.setPointerCapture(e.pointerId);
     e.preventDefault();

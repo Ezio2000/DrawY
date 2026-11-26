@@ -18,9 +18,9 @@ import {
   walkFields,
   endLink,
   endModule,
+  ridesOn,
   type DataProblem,
   type Fields,
-  type Link,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { take, used, resolveStyle } from "../materials/index.ts";
@@ -258,17 +258,7 @@ export function problemsIn(work: Work, pending = new Set<string>()): Problem[] {
         if (line && !links.has(line) && !pending.has(line))
           add(`${where}.${side}`, `连线 ${l.id} 的一端沿着的连线 ${line} 不在场景 ${scene.id} 里`);
       }
-      // A link riding on links that ride back on it would have nowhere to be.
-      const seen = new Set<string>();
-      for (let at: Link | undefined = l; at; ) {
-        if (seen.has(at.id)) {
-          add(where, `连线 ${l.id} 沿着的连线又沿着它，绕成了一圈`);
-          break;
-        }
-        seen.add(at.id);
-        const next: string | undefined = endLink(at.from) ?? endLink(at.to);
-        at = next ? links.get(next) : undefined;
-      }
+      if (ridesOn(l, l.id, (id) => links.get(id))) add(where, `连线 ${l.id} 沿着的连线又沿着它，绕成了一圈`);
     }
     for (const [i, c] of scene.checks.entries())
       if (!modules.has(c.moduleId) && !pending.has(c.moduleId))

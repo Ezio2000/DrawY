@@ -9,6 +9,7 @@ import { catchUp } from "../agent/conversation.ts";
 import { moveParts } from "../editing/index.ts";
 import {
   emptySettings,
+  fieldsSchema,
   defaultCatalog,
   historyOf,
   type Work,
@@ -146,6 +147,39 @@ describe("user owned works", () => {
     for (const w of [reopened.work(work.id), reopened.revision(work.id, work.revision)])
       expect(w.materials.apple).toMatchObject({ type: "object" });
     expect(JSON.stringify(reopened.work(work.id))).not.toContain('"role"');
+  });
+  it("turns the parameters drawings held before schemas into fields, in works and revisions", () => {
+    const store = db.scoped(register(db, "params", "abcdef").id);
+    const work = createWork(store, "old");
+    const drawing = {
+      id: "card",
+      name: "card",
+      source: "return api.svg('<svg/>')",
+      defaults: {},
+      params: {
+        tone: { label: "色调", type: "choice", options: ["warm", "cool"] },
+        size: { label: "大小", type: "number", min: 1, max: 9, step: 1 },
+        title: { type: "text", min: 1 },
+      },
+    };
+    const held = { id: "steps", kind: "drawing", name: "steps", source: "return 1", defaults: {}, params: { tone: { type: "choice", options: ["a", "b"] } } };
+    // As a version before this one saved it.
+    for (const table of ["works", "revisions"])
+      db.db
+        .prepare(`UPDATE ${table} SET data=json_set(json_set(data, '$.drawings', json(?)), '$.materials', json(?))`)
+        .run(JSON.stringify({ card: drawing }), JSON.stringify({ steps: held }));
+    db.db.prepare("DELETE FROM system WHERE key='work-format'").run();
+    const reopened = new Storage(dir).scoped(store.userId);
+    for (const w of [reopened.work(work.id), reopened.revision(work.id, work.revision)]) {
+      const params = w.drawings.card.params!;
+      expect(fieldsSchema.safeParse(params).success).toBe(true);
+      expect(params.tone).toEqual({ label: { zh: "色调", en: "色调" }, type: "choice", options: [{ value: "warm" }, { value: "cool" }] });
+      expect(params.size).toEqual({ label: { zh: "大小", en: "大小" }, type: "number", min: 1, max: 9, step: 1 });
+      expect(params.title).toEqual({ type: "text" });
+      const m = w.materials.steps;
+      if (m.kind !== "drawing") throw Error("steps is a drawing");
+      expect(m.params.tone).toEqual({ type: "choice", options: [{ value: "a" }, { value: "b" }] });
+    }
   });
   it("keeps the version of library code a work took, through every later write", async () => {
     const store = db.scoped(register(db, "a", "abcdef").id);

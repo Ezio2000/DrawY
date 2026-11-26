@@ -149,8 +149,17 @@ export class SceneRenderer {
     this.element.style.cssText =
       "position:absolute;inset:0;pointer-events:none";
   }
+  /** The whole scene: its modules and the lines between their links' ends, which a free
+   * end or one riding on a line can take past every module. */
   get bounds() {
-    return union([...this.instances.values()].map((m) => m.bounds));
+    return union([...[...this.instances.values()].map((m) => m.bounds), ...this.linkBoxes()]);
+  }
+  /** The box each link's two ends span. */
+  linkBoxes(): Bounds[] {
+    return [...this.links.values()].map((l) => {
+      const { from, to } = this.ends(l);
+      return { x: Math.min(from.x, to.x), y: Math.min(from.y, to.y), width: Math.abs(from.x - to.x), height: Math.abs(from.y - to.y) };
+    });
   }
   /** The element that holds a drawn module or link. */
   host(kind: "module" | "link", id: string) {
@@ -833,11 +842,14 @@ export class SceneRenderer {
         w.drawings[l.drawingId] ?? null,
       ]);
     const drawnLinks: string[] = [];
+    // Every link is in place before any is drawn, as a link riding on another reads its
+    // ends from that one, wherever it stands in the list.
+    const prevLinks = new Map(scene.links.map((l) => [l.id, this.links.get(l.id)]));
+    for (const l of scene.links) this.links.set(l.id, structuredClone(l));
     for (const nextLink of scene.links) {
-      const prevLink = this.links.get(nextLink.id);
+      const prevLink = prevLinks.get(nextLink.id);
       const linkView = this.views.get("link:" + nextLink.id);
-      const l = structuredClone(nextLink);
-      this.links.set(l.id, l);
+      const l = this.links.get(nextLink.id)!;
       const touches = (ids: Set<string>) => [l.from, l.to].some((e) => ids.has(endModule(e) ?? ""));
       const endpointsInked = touches(inkedIds);
       // A link riding on another is drawn again with it, whatever moved that one.

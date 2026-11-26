@@ -1,5 +1,5 @@
 import type { Bounds, Drawing, Instance, LinkEnd, Point, Scene, Side, Work, WorkEdit } from "../contracts/index.ts";
-import { endLink, endModule, isFree } from "../contracts/index.ts";
+import { endLink, endModule, isFree, ridesOn } from "../contracts/index.ts";
 import { facing } from "../contracts/geometry.ts";
 import { fieldsOf } from "./fields.ts";
 import { newModule } from "./parts.ts";
@@ -64,11 +64,8 @@ function misplaced(scene: Scene, linkId: string | undefined, end: LinkEnd, other
   if (line) {
     if (!scene.links.some((l) => l.id === line)) return "连线不存在";
     // Riding on a link that rides, however far, on this one would go round in a ring.
-    for (let at: string | undefined = line, n = 0; at && n < 32; n++) {
-      if (at === linkId) return "连线不能沿着自己";
-      const l = scene.links.find((x) => x.id === at);
-      at = l && (endLink(l.from) ?? endLink(l.to));
-    }
+    const linkOf = (id: string) => scene.links.find((l) => l.id === id);
+    if (linkId && (line === linkId || ridesOn(linkOf(line)!, linkId, linkOf))) return "连线不能沿着自己";
   }
   return null;
 }

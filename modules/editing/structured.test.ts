@@ -146,6 +146,19 @@ describe("items of a drawing's data", () => {
     const both = composed(whole, { modules: [{ id: "seq", data: { messages: { "#m1": { label: "一" } } } }] });
     expect((both as { modules: { data: { messages: { label: string }[] } }[] }).modules[0].data.messages.map((m) => m.label)).toEqual(["一", "查询用户"]);
   });
+  it("adds to a list of references or of places as a copy of its last, never an empty value", () => {
+    const work = sequenceWork();
+    const w1 = applied(work, insertItem(work, "root", "seq", "notes.#n1.over").edit);
+    expect(data(w1).notes[0].over).toEqual(["server", "server"]);
+    const map = blank();
+    const { material, example } = curated("geomap");
+    map.materials.geomap = material;
+    map.scenes.root.modules = [{ ...box("map", { x: 0, y: 0, width: 640, height: 360 }, "geomap"), data: structuredClone(example) }];
+    const route = (example as { routes: { id: string; points: unknown[] }[] }).routes[0];
+    const w2 = applied(map, insertItem(map, "root", "map", `routes.#${route.id}.points`).edit);
+    const points = (w2.scenes.root.modules[0].data as typeof example & { routes: { points: unknown[] }[] }).routes[0].points;
+    expect(points).toEqual([...route.points, route.points.at(-1)]);
+  });
   it("inserts, moves, copies and takes out items with what referred to them, as the smallest patch", () => {
     const work = sequenceWork();
     // A new message between the first two, made as the schema makes one, after Enter's rule.
@@ -259,6 +272,12 @@ describe("structure edited on the canvas", () => {
     // say of it, by its place.
     const was = { ...data, messages: data.messages.map((m) => (m.id === "m1" ? { ...m, id: "first", accent: true } : m)) };
     expect(sequenceFrom(read, was).messages[0]).toEqual({ id: "first", accent: true, from: "web", to: "api", label: "登录" });
+    // Deleting autonumber turns the numbering off, as a change of the data.
+    const unnumbered = sequenceFrom({ ...read, numbered: false }, data);
+    expect(unnumbered.numbered).toBe(false);
+    expect(dataPatch({ numbered: data.numbered }, { numbered: unnumbered.numbered })).toEqual({ numbered: false });
+    expect(sequenceSource(unnumbered)).not.toContain("autonumber");
+    expect("numbered" in sequenceFrom({ ...read, numbered: false })).toBe(false);
   });
 });
 

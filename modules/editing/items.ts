@@ -153,7 +153,20 @@ function placeOf(list: unknown[], item: string | number) {
 }
 /** A new item as the schema makes one, or as a rule makes it after another. */
 function made(f: Extract<Field, { type: "list" }>, list: unknown[], path: string, values?: Record<string, unknown>) {
-  const base = structuredClone(f.new ?? (isRecordList(f) ? {} : f.item.type === "number" ? 0 : ""));
+  // A reference, a place or a pair added after others starts as a copy of the last, to be
+  // changed from there: nothing empty is one.
+  const copied = ["ref", "geo", "list"].includes(f.item.type) && list.length ? list.at(-1) : undefined;
+  const item = f.item;
+  const blank = isRecordList(f)
+    ? {}
+    : item.type === "number"
+      ? 0
+      : item.type === "geo"
+        ? [0, 0]
+        : item.type === "list"
+          ? Array.from({ length: item.min ?? 0 }, () => (item.item.type === "number" ? 0 : ""))
+          : "";
+  const base = structuredClone(f.new ?? copied ?? blank);
   if (!isRecordList(f)) return values?.value ?? base;
   return { id: freshId(list, path), ...(isRecord(base) ? base : {}), ...(values ?? {}) };
 }

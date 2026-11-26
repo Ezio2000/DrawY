@@ -6,6 +6,7 @@ import { writeExample, EDIT_EXAMPLE } from "../agent/prompts.ts";
 import { writeSchema } from "../agent/tools.ts";
 import { validateWork } from "../workspace/index.ts";
 import { applied, composed, layOn, readEdit } from "./apply.ts";
+import { reattach } from "./links.ts";
 
 /** A work with two modules apart from each other and no links, to connect. */
 function work(): Work {
@@ -178,6 +179,15 @@ describe("what remove takes along", () => {
     expect(
       problems(() => written(w, { links: [{ id: "l", from: { linkId: "m", along: 0.5 } }] })).map((p) => p.problem),
     ).toEqual(expect.arrayContaining([expect.stringMatching(/绕成了一圈/)]));
+    // A ring through the other ends, both links grounded on another by their first.
+    const ring = { links: [
+      { id: "a", from: { linkId: "l", along: 0.2 }, to: { linkId: "b", along: 0.5 } },
+      { id: "b", from: { linkId: "l", along: 0.8 }, to: { linkId: "a", along: 0.5 } },
+    ] };
+    expect(problems(() => written(w, ring)).map((p) => p.problem)).toEqual(expect.arrayContaining([expect.stringMatching(/绕成了一圈/)]));
+    // Nor can reattaching an end close one.
+    const open = written(w, { links: [ring.links[0], { ...ring.links[1], to: { x: 0, y: 0 } }] });
+    expect(() => reattach(open, "root", "b", "to", { linkId: "a", along: 0.5 })).toThrow(/沿着自己/);
   });
   it("removes a scene with those under it, and what led there leads nowhere", () => {
     const w = work();

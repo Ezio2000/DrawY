@@ -150,6 +150,15 @@ const keeper = (ctx: Ctx) => ({
   },
 });
 
+/** The items of a list of the part's data that a reference names, and the field they are
+ * called by. */
+function referable(ctx: Ctx, to: string) {
+  const list = getAt(drawn(ctx.work, ctx.part), to);
+  const items = Array.isArray(list) ? list.filter(isRecord) : [];
+  const listField = fieldAt(drawingOf(ctx.work, ctx.part.drawingId)?.params ?? {}, to);
+  const title = listField?.type === "list" ? (listField.title ?? shownFields(listField.item).find(([, x]) => x.type === "text")?.[0]) : undefined;
+  return { items, title };
+}
 /** A single value in the control its kind takes, compact enough for a table's cell. */
 function Plain({ ctx, path, field, value, label, cell }: { ctx: Ctx; path: string; field: Field; value: unknown; label: string; cell?: boolean }) {
   const t = useT();
@@ -210,10 +219,7 @@ function Plain({ ctx, path, field, value, label, cell }: { ctx: Ctx; path: strin
         </select>
       );
     case "ref": {
-      const list = getAt(drawn(ctx.work, ctx.part), field.to);
-      const items = Array.isArray(list) ? list.filter(isRecord) : [];
-      const listField = fieldAt(drawingOf(ctx.work, ctx.part.drawingId)?.params ?? {}, field.to);
-      const title = listField?.type === "list" ? (listField.title ?? shownFields(listField.item).find(([, x]) => x.type === "text")?.[0]) : undefined;
+      const { items, title } = referable(ctx, field.to);
       return (
         <select className={cx("edit-select")} data-cell={cell || undefined} aria-label={label} value={String(value ?? "")} onChange={(e) => keep(path, e.target.value || undefined)}>
           {!items.some((x) => x.id === value) && <option value="">{t.edit.contentEditor.none}</option>}
@@ -237,11 +243,36 @@ function Plain({ ctx, path, field, value, label, cell }: { ctx: Ctx; path: strin
       );
     }
     case "geo": {
+      // A place of the list it names, by id, or a point given as longitude and latitude.
+      const c = t.edit.contentEditor;
       const at = Array.isArray(value) ? value : [];
+      const coordinates = (
+        <>
+          <Typed value={String(at[0] ?? "")} label={c.lon} numeric onDone={(s) => Number.isFinite(Number(s)) && keep(path, [Number(s), Number(at[1] ?? 0)])} />
+          <Typed value={String(at[1] ?? "")} label={c.lat} numeric onDone={(s) => Number.isFinite(Number(s)) && keep(path, [Number(at[0] ?? 0), Number(s)])} />
+        </>
+      );
+      if (!field.to) return <span className={cx("cell-pair")}>{coordinates}</span>;
+      const { items, title } = referable(ctx, field.to);
+      const place = typeof value === "string" ? items.find((x) => x.id === value) : undefined;
       return (
         <span className={cx("cell-pair")}>
-          <Typed value={String(at[0] ?? "")} label={t.edit.contentEditor.lon} numeric onDone={(s) => Number.isFinite(Number(s)) && keep(path, [Number(s), Number(at[1] ?? 0)])} />
-          <Typed value={String(at[1] ?? "")} label={t.edit.contentEditor.lat} numeric onDone={(s) => Number.isFinite(Number(s)) && keep(path, [Number(at[0] ?? 0), Number(s)])} />
+          <select
+            className={cx("edit-select")}
+            data-cell={cell || undefined}
+            aria-label={label}
+            value={typeof value === "string" ? value : ""}
+            // Leaving a place for coordinates starts them where the place is.
+            onChange={(e) => keep(path, e.target.value || (place ? [Number(place.lon ?? 0), Number(place.lat ?? 0)] : [0, 0]))}
+          >
+            <option value="">{c.coordinates}</option>
+            {items.map((x, i) => (
+              <option key={String(x.id ?? i)} value={String(x.id ?? "")}>
+                {String((title && x[title]) || c.item(i + 1))}
+              </option>
+            ))}
+          </select>
+          {typeof value !== "string" && coordinates}
         </span>
       );
     }
@@ -386,6 +417,29 @@ function ListEditor({ ctx, path, field, items, name }: { ctx: Ctx; path: string;
                 }
               }}
             />
+            {remover(i)}
+          </li>
+        ))}
+      </ol>
+    );
+  } else if (field.item.type !== "record" && field.item.type !== "tree") {
+    // Single values that are not words, each a row with its own control: a reference, a
+    // place, a pair of numbers.
+    const item = field.item;
+    body = (
+      <ol className={cx("rows")}>
+        {items.map((v, i) => (
+          <li key={i} ref={(el) => void (order.rows.current[i] = el)} data-drop={order.dragging?.to === i || undefined}>
+            {order.handle(i, c.drag)}
+            {item.type === "list" ? (
+              <span className={cx("cell-pair")}>
+                {Array.from({ length: Math.max(item.min ?? 0, Array.isArray(v) ? v.length : 0) }, (_, j) => (
+                  <Plain key={j} ctx={ctx} path={`${at(i)}.${j}`} field={item.item} value={Array.isArray(v) ? v[j] : undefined} label={`${c.item(i + 1)} · ${j + 1}`} cell />
+                ))}
+              </span>
+            ) : (
+              <Plain ctx={ctx} path={at(i)} field={item} value={v} label={c.item(i + 1)} cell />
+            )}
             {remover(i)}
           </li>
         ))}

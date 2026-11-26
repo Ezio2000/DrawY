@@ -1042,6 +1042,15 @@ it("lays the editing panel out by schema: one screen for a structured drawing, a
     await page.mouse.click(seq.cx, seq.cy);
     await settled();
     await check("时序图");
+    // A note opened shows whom it is over as participants to choose, not an empty form.
+    const over = await page.evaluate(async () => {
+      const panel = document.querySelector("[data-side-body]")!;
+      const row = [...panel.querySelectorAll("li")].find((li) => [...li.querySelectorAll("input")].some((i) => i.value === "密码加盐哈希"))!;
+      row.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click();
+      await new Promise((r) => setTimeout(r, 250));
+      return [...row.querySelectorAll("select")].map((s) => s.value);
+    });
+    expect(over).toContain("server");
     await page.mouse.click(seq.cx, seq.cy);
     await settled();
     expect(await page.locator("[data-part-crumbs]").innerText()).toMatch(/消息\s*1/);
@@ -1292,6 +1301,19 @@ it("changes a chart's values on the canvas: a bar's top dragged, its number rety
   await page.keyboard.press("Meta+A");
   await page.keyboard.type("80");
   await page.keyboard.press("Enter");
+  await settled();
+  expect((await dataOf("bars")).items[0].value).toBe(80);
+  // A drag the system takes away leaves the bar drawn as it was, nothing kept.
+  const [again] = await shown();
+  await page.mouse.move(again.x, again.y);
+  await page.mouse.down();
+  await page.mouse.move(again.x, again.y - 40, { steps: 6 });
+  await expect.poll(() => wordsAt("80").then(() => true, () => false)).toBe(false);
+  await page.evaluate(({ x, y }) => {
+    document.elementFromPoint(x, y)!.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: 1, pointerType: "mouse" }));
+  }, { x: again.x, y: again.y - 40 });
+  await page.mouse.up();
+  await expect.poll(() => wordsAt("80").then(() => true, () => false)).toBe(true);
   await settled();
   expect((await dataOf("bars")).items[0].value).toBe(80);
   // The gauge selected alone shows its needle's handle; dragged past the right end, below

@@ -1944,4 +1944,28 @@ it("draws links along a drawn line's own path, riding on other links and to free
   const after = await read();
   expect(after.life).toEqual({ from: { x: 70, y: 100, side: "bottom" }, to: { x: 70, y: 440, side: null } });
   expect(after.msg.from).toEqual({ x: 70, y: 270, side: null });
+  // A link listed before the one it rides on is drawn from that one's new place.
+  await page.evaluate(async () => {
+    const next = structuredClone(window.drawyData.work);
+    const scene = next.scenes.root;
+    // The box stays where it was moved: only the lifeline changes.
+    scene.modules.find((m) => m.id === "a")!.bounds = { x: 20, y: 40, width: 100, height: 60 };
+    const life = scene.links.find((l) => l.id === "life")!;
+    life.to = { x: 90, y: 640 };
+    scene.links = [scene.links.find((l) => l.id === "msg")!, life];
+    window.drawyView.update(next, scene, false);
+    await new Promise((r) => setTimeout(r, 100));
+  });
+  const reordered = await page.evaluate(() => {
+    const r = window.drawyView.renderer;
+    const host = document.querySelector<HTMLElement>('[data-link-id="msg"]')!;
+    return { ends: r.ends(r.links.get("msg")!), left: parseFloat(host.style.left), top: parseFloat(host.style.top), bounds: r.bounds };
+  });
+  // The scene reaches down to the lifeline's free end, far below every module, so an export
+  // and fitting the view take it in.
+  expect(reordered.bounds.y + reordered.bounds.height).toBe(640);
+  // Halfway down the lengthened lifeline, from (70, 100) to (90, 640).
+  expect(reordered.ends.from).toEqual({ x: 80, y: 370, side: null });
+  expect(reordered.left).toBeCloseTo(80 - 48, 0);
+  expect(reordered.top).toBeCloseTo(Math.min(350, reordered.ends.to.y) - 48, 0);
 });
