@@ -75,10 +75,34 @@ export class Unexpressed extends Error {
 /** The words of what a diagram says that the sequence drawing would lose, if any: such a
  * diagram is kept as Mermaid draws it rather than read into the drawing. */
 export function unexpressed(read: MermaidSequence): string[] {
-  return [...new Set(read.messages.flatMap((m) => (UNEXPRESSED[m.type] ? [UNEXPRESSED[m.type]] : [])))];
+  return [
+    ...new Set(
+      read.messages.flatMap((m) =>
+        UNEXPRESSED[m.type]
+          ? [UNEXPRESSED[m.type]]
+          : isMessage(m) && !MESSAGE_KINDS[m.type]
+            ? [OTHER_ARROWS[m.type] ?? "half arrows"]
+            : [],
+      ),
+    ),
+  ];
 }
 const KINDS: Record<string, string> = { actor: "actor", database: "database", queue: "queue" };
-const DOTTED = new Set<number>([LINE.DOTTED, LINE.DOTTED_CROSS, LINE.DOTTED_OPEN, LINE.DOTTED_POINT, LINE.BIDIRECTIONAL_DOTTED]);
+/** The messages the drawing draws, by the line Mermaid reads: `->>` a call, `-->>` a reply,
+ * `-)` an asynchronous message. */
+const MESSAGE_KINDS: Record<number, string> = { [LINE.SOLID]: "sync", [LINE.DOTTED]: "reply", [LINE.SOLID_POINT]: "async" };
+/** Lines between participants the drawing has no message for, as Mermaid writes them. */
+const OTHER_ARROWS: Record<number, string> = {
+  [LINE.SOLID_OPEN]: "->",
+  [LINE.DOTTED_OPEN]: "-->",
+  [LINE.SOLID_CROSS]: "-x",
+  [LINE.DOTTED_CROSS]: "--x",
+  [LINE.DOTTED_POINT]: "--)",
+  [LINE.BIDIRECTIONAL_SOLID]: "<<->>",
+  [LINE.BIDIRECTIONAL_DOTTED]: "<<-->>",
+};
+/** Whether a line is a message from one participant to another, whatever its arrow. */
+const isMessage = (m: MermaidSequence["messages"][number]) => !!m.from && !!m.to && m.type !== LINE.NOTE;
 
 type Item = Record<string, unknown> & { id: string };
 export interface SequenceData {
@@ -150,7 +174,7 @@ export function sequenceFrom(read: MermaidSequence, was?: Partial<SequenceData>)
     } else if (m.from && m.to && idOf.has(m.from) && idOf.has(m.to)) {
       const i = messages.length;
       const prior = keep(was?.messages, i);
-      const kind = DOTTED.has(m.type) ? "reply" : m.type === LINE.SOLID_OPEN ? "async" : "sync";
+      const kind = MESSAGE_KINDS[m.type] ?? "sync";
       const { kind: _k, from: _f, to: _t, label: _l, ...rest } = prior ?? ({} as Item);
       messages.push({ ...rest, id: messageId(typeof prior?.id === "string" ? prior.id : undefined), from: idOf.get(m.from)!, to: idOf.get(m.to)!, label: m.text, ...(kind === "sync" ? {} : { kind }) });
     }

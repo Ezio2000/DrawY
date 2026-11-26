@@ -891,6 +891,18 @@ it("draws by hand with the pen, the arrow and the eraser; brings Mermaid and Exc
   const ship = root.modules.find((m: { data: { title?: string } }) => m.data.title === "Ship");
   expect(ship.bounds.x).toBeGreaterThan(740);
   expect(root.links.filter((l: { data: { label?: string } }) => l.data.label === "yes")).toHaveLength(1);
+  // A sequence diagram comes in as the library's own, through Mermaid's parser: calls,
+  // replies and asynchronous messages as their kinds, an alt's else as a section of it.
+  await paste("sequenceDiagram\n  participant W as Web\n  participant A as API\n  alt ok\n  W->>A: login\n  A-->>W: token\n  else locked\n  A-)W: notify\n  end");
+  await expect.poll(async () => (await sequenceOf(id))?.messages.length, { timeout: 15_000 }).toBe(3);
+  const brought = (await sequenceOf(id))! as unknown as { messages: { kind?: string }[]; fragments: { kind: string; label: string; sections?: { label: string }[] }[] };
+  expect(brought.messages.map((m) => m.kind ?? "sync")).toEqual(["sync", "reply", "async"]);
+  expect(brought.fragments).toMatchObject([{ kind: "alt", label: "ok", sections: [{ label: "locked" }] }]);
+  // One with an arrow the drawing has no kind for is kept as Mermaid draws it.
+  await paste("sequenceDiagram\n  W-xA: cancel");
+  await expect
+    .poll(async () => (await rootOf(id)).modules.some((m: { data: { source?: string } }) => m.data.source?.includes("W-xA")), { timeout: 15_000 })
+    .toBe(true);
   // An Excalidraw shape keeps its hand-drawn look and its words; turned there, it comes in
   // upright, and the page says so.
   await paste(
@@ -910,7 +922,7 @@ it("draws by hand with the pen, the arrow and the eraser; brings Mermaid and Exc
     .filter((d) => d.source.startsWith("// drawy:"))
     .map((d) => d.name)
     .sort();
-  expect(names).toEqual(["Hand-drawn line", "Hand-drawn shape"]);
+  expect(names).toEqual(["Hand-drawn line", "Hand-drawn shape", "Mermaid diagram"]);
   await expect.poll(() => count("Sketch")).toBe(1);
   // Out again: an Excalidraw file with the drawn parts as pictures and the link bound to
   // them, and the blocks and links as a Mermaid flowchart.

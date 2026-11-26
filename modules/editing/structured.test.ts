@@ -166,6 +166,23 @@ describe("items of a drawing's data", () => {
     const points = (w2.scenes.root.modules[0].data as typeof example & { routes: { points: unknown[] }[] }).routes[0].points;
     expect(points).toEqual([...route.points, route.points.at(-1)]);
   });
+  it("adds to lists of switches, choices and numbers a value their schema accepts", () => {
+    const work = blank();
+    const params: Fields = {
+      flags: { type: "list", item: { type: "boolean" } },
+      modes: { type: "list", item: { type: "choice", options: [{ value: "fast" }, { value: "slow" }] } },
+      sizes: { type: "list", item: { type: "number", min: 5, max: 9 } },
+    };
+    work.drawings.own = { id: "own", name: "自画", source: "return api.svg('<svg/>')", params };
+    work.scenes.root.modules = [{ ...box("own", { x: 0, y: 0, width: 200, height: 100 }, "own"), data: { flags: [], modes: [], sizes: [] } }];
+    let w = work;
+    for (const list of ["flags", "modes", "sizes"]) w = applied(w, insertItem(w, "root", "own", list).edit);
+    const made = w.scenes.root.modules[0].data;
+    expect(made).toEqual({ flags: [false], modes: ["fast"], sizes: [5] });
+    const problems: DataProblem[] = [];
+    validateData(params, made, "data", problems);
+    expect(problems).toEqual([]);
+  });
   it("adds, moves, copies and takes out items of a list its drawing does not declare, as the panel shows it", () => {
     const work = blank();
     work.drawings.own = { id: "own", name: "自画", source: "return api.svg('<svg/>')", params: {} };
@@ -251,7 +268,7 @@ describe("structure edited on the canvas", () => {
         { from: "db", to: "api", text: "结果", type: 1 },
         { text: "", type: 11 },
         { from: "api", to: "api", text: "校验", type: 2, placement: 2 },
-        { from: "api", to: "web", text: "推送", type: 5 },
+        { from: "api", to: "web", text: "推送", type: 24 },
       ],
       numbered: true,
     };
@@ -309,7 +326,7 @@ describe("structure edited on the canvas", () => {
           { from: "api", to: "db", text: "查询", type: 0 },
           { from: "db", to: "api", text: "结果", type: 1 },
           { text: "重试", type: 10 },
-          { from: "api", to: "web", text: "推送", type: 5 },
+          { from: "api", to: "web", text: "推送", type: 24 },
           { text: "", type: 11 },
         ],
       },
@@ -334,9 +351,9 @@ describe("sections of a fragment", () => {
       { from: "api", to: "web", text: "失败", type: 1 },
       { text: "", type: 14 },
       { text: "同时", type: 19 },
-      { from: "web", to: "api", text: "心跳", type: 5 },
+      { from: "web", to: "api", text: "心跳", type: 24 },
       { text: "然后", type: 20 },
-      { from: "web", to: "api", text: "上报", type: 5 },
+      { from: "web", to: "api", text: "上报", type: 24 },
       { text: "", type: 21 },
     ],
     numbered: false,
@@ -353,6 +370,12 @@ describe("sections of a fragment", () => {
     expect(unexpressed(read)).toEqual([]);
     // What the drawing cannot say is named, for the diagram to be kept as Mermaid draws it.
     expect(unexpressed({ ...read, messages: [...read.messages, { from: "api", to: "api", text: "", type: 17 }, { text: "x", type: 30 }] })).toEqual(["activate", "break"]);
+    // A message's arrow the drawing has no kind for is named the way Mermaid writes it.
+    const arrows = [3, 4, 5, 6, 25, 33, 34, 41].map((type) => ({ from: "web", to: "api", text: "", type }));
+    expect(unexpressed({ ...read, messages: arrows })).toEqual(["-x", "--x", "->", "-->", "--)", "<<->>", "<<-->>", "half arrows"]);
+    // The three it has are read as their kinds: a call, a reply, an asynchronous message.
+    const kinds = sequenceFrom({ ...read, messages: [0, 1, 24].map((type) => ({ from: "web", to: "api", text: "", type })) }).messages;
+    expect(kinds.map((m) => m.kind ?? "sync")).toEqual(["sync", "reply", "async"]);
   });
   it("takes a section out with the message it starts from, and checks what it refers to", () => {
     const work = sequenceWork();

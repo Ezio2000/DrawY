@@ -183,6 +183,27 @@ function placeOf(list: unknown[], item: string | number) {
   if (i < 0 || i >= list.length) throw Error("条目不存在");
   return i;
 }
+/** The least value a field takes that its schema accepts: nothing typed yet, off, its first
+ * choice, a number in its range, a list of as few items as it holds. */
+function blankOf(f: Field): unknown {
+  switch (f.type) {
+    case "record":
+    case "tree":
+      return {};
+    case "number":
+      return Math.min(Math.max(0, f.min ?? 0), f.max ?? Infinity);
+    case "boolean":
+      return false;
+    case "choice":
+      return f.options[0].value;
+    case "geo":
+      return [0, 0];
+    case "list":
+      return Array.from({ length: f.min ?? 0 }, () => blankOf(f.item));
+    default:
+      return "";
+  }
+}
 /** A new item as the schema makes one, or as a rule makes it after another. */
 function made(f: Extract<Field, { type: "list" }>, list: unknown[], path: string, data: Record<string, unknown>, values?: Record<string, unknown>) {
   const item = f.item;
@@ -196,16 +217,7 @@ function made(f: Extract<Field, { type: "list" }>, list: unknown[], path: string
     if (id !== undefined) return id;
   }
   const copied = ["geo", "list"].includes(item.type) && list.length ? list.at(-1) : undefined;
-  const blank = isRecordList(f)
-    ? {}
-    : item.type === "number"
-      ? 0
-      : item.type === "geo"
-        ? [0, 0]
-        : item.type === "list"
-          ? Array.from({ length: item.min ?? 0 }, () => (item.item.type === "number" ? 0 : ""))
-          : "";
-  const base = structuredClone(f.new ?? copied ?? blank);
+  const base = structuredClone(f.new ?? copied ?? blankOf(item));
   if (!isRecordList(f)) return values?.value ?? base;
   return { id: freshId(list, path), ...(isRecord(base) ? base : {}), ...(values ?? {}) };
 }

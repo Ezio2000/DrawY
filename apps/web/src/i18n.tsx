@@ -502,7 +502,7 @@ const zh = {
     bring: {
       title: "导入",
       heading: "导入 Mermaid 或 Excalidraw",
-      hint: "粘贴 Mermaid 代码或 Excalidraw 内容，也可以打开 .excalidraw / .mmd 文件。流程图会变成可以单独拖动、改字的方框和连线，其他 Mermaid 图整幅放入、代码随时可改；Excalidraw 的形状保留手绘的样子。",
+      hint: "粘贴 Mermaid 代码或 Excalidraw 内容，也可以打开 .excalidraw / .mmd 文件。流程图会变成可以单独拖动、改字的方框和连线，时序图会变成可以逐条改的参与者和消息（用到它画不了的写法时整幅放入），其他 Mermaid 图整幅放入、代码随时可改；Excalidraw 的形状保留手绘的样子。",
       placeholder: "flowchart LR\n  A[想法] --> B{可行吗?}\n  B -->|是| C[动手画]\n  B -->|否| A",
       open: "打开文件…",
       submit: "导入",
@@ -2013,7 +2013,7 @@ const en: Words = {
     bring: {
       title: "Import",
       heading: "Import Mermaid or Excalidraw",
-      hint: "Paste Mermaid code or Excalidraw content, or open a .excalidraw / .mmd file. A flowchart becomes boxes and links you can move and retype one by one; other Mermaid diagrams come in whole with their code still editable; Excalidraw shapes keep their hand-drawn look.",
+      hint: "Paste Mermaid code or Excalidraw content, or open a .excalidraw / .mmd file. A flowchart becomes boxes and links you can move and retype one by one, a sequence diagram participants and messages you can change one by one (whole, if it uses what that cannot draw); other Mermaid diagrams come in whole with their code still editable; Excalidraw shapes keep their hand-drawn look.",
       placeholder: "flowchart LR\n  A[Idea] --> B{Will it work?}\n  B -->|Yes| C[Draw it]\n  B -->|No| A",
       open: "Open a file…",
       submit: "Import",
