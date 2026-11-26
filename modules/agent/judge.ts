@@ -117,7 +117,7 @@ export async function judgeIdeas(
   return { chosen, scores, input };
 }
 
-/** A claim the author made of a look, as the judge found it in the picture. */
+/** A visual baseline check on a look, as the judge found it in the picture. */
 export interface Checked {
   claim: string;
   /** How likely the picture shows it, by the judge. */
@@ -126,15 +126,23 @@ export interface Checked {
   holds: boolean;
 }
 
-/** Asks the judge whether the pictures of a look show each claim the author made of them,
- * one yes-or-no question a claim: eyes other than the author's own, which pass what they
- * meant to draw. The pictures go at medium resolution, enough to read labels and years.
- * Throws when the judge does not answer within ten seconds or leaves a claim unanswered. */
+/** Fixed visual baseline checks applied to overview screenshots by the judge.
+ * Kept objective and layout-focused so verdicts do not drift across turns. */
+export const BASELINE_CHECKS: readonly string[] = [
+  "所有文字和标注清晰可读，没有互相重叠、被图形遮挡或被边缘截断",
+  "所有主体图形、图标和模块都完整落在画布内，没有被边缘意外裁切或出现突兀的矩形底框裁切痕",
+  "连线、箭头或辅助分隔线不会意外穿过无关的文字或主体图标",
+];
+
+/** Asks the judge whether the pictures of an overview look pass each fixed visual baseline
+ * check, one yes-or-no question a check: eyes other than the author's own. The pictures go
+ * at medium resolution, enough to read labels and spot overlaps or clipping. Throws when
+ * the judge does not answer within ten seconds or leaves a check unanswered. */
 export async function checkClaims(
   judge: NonNullable<Settings["judge"]>,
-  claims: string[],
   pictures: string[],
   signal: AbortSignal,
+  claims: readonly string[] = BASELINE_CHECKS,
 ): Promise<{ checked: Checked[]; input: number }> {
   const parts: Part[] = [
     { type: "text", text: pictures.length > 1 ? "作品的画面（同一次查看的几张截图）：\n" : "作品的画面：\n" },

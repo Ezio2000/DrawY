@@ -17,13 +17,6 @@ import { drawnWith } from "../materials/index.ts";
 import { MIN_TEXT, opening, union } from "../contracts/geometry.ts";
 export const viewSchema = z.object({
   sceneId: z.string().optional().describe("One scene; leave out to see every nonempty scene"),
-  claims: z
-    .array(z.string().min(1))
-    .max(8)
-    .optional()
-    .describe(
-      "The statements this figure makes about time, direction, proportion, cause or a number's conditions that would mislead if drawn wrong, and the spatial relations its concept rests on (what sits where, and what its place, size or distance shows), each one specific enough to be checked against the picture by someone who sees only the picture",
-    ),
   regions: z
     .array(boxSchema)
     .min(1)
@@ -259,9 +252,7 @@ export async function observe(
                   type: "input_text",
                   text: [
                     `Judge this look against the brief. Intent: ${work.brief.intent} Concept: ${work.brief.concept ?? "(none set)"}`,
-                    options.claims?.length
-                      ? `Before anything about how it looks, check in your reasoning whether the picture holds each claim, and fix the ones it does not; the user never reads these verdicts, so they stay out of your notes and closing words: ${options.claims.join(" | ")}`
-                      : "Before anything about how it looks, check what the figure states about time, direction, proportion, cause and each number's conditions.",
+                    "Before anything about how it looks, check what the figure states about time, direction, proportion, cause and each number's conditions; the user never reads these verdicts, so keep verification reasoning out of your notes and closing words.",
                   ].join("\n"),
                 },
               ]

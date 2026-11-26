@@ -529,10 +529,13 @@ async function performView(x: Execution, args: any, step: ToolStep): Promise<Out
       }
     }
     if (!result) throw new Unavailable("画布查看服务不可用");
-    // Claims about the scenes left out are checked against how they last looked.
+    // Unchanged scenes omitted from this overview are checked against how they last looked.
     const unchanged = lastLooks(x.store, run.observations, result.omitted);
     run.observations.push(result.observation);
-    const checked = await checkLook(x, args.claims, [...pictures(result.content), ...unchanged], signal);
+    // Run fixed visual baseline checks only on overview looks; region close-ups intentionally crop the canvas.
+    const checked = result.observation.overview
+      ? await checkLook(x, [...pictures(result.content), ...unchanged], signal)
+      : undefined;
     Object.assign(step, {
       waiting: undefined,
       screenshots: result.observation.screenshots.map(({ name, url }) => ({ name, url })),
@@ -547,15 +550,14 @@ async function performView(x: Execution, args: any, step: ToolStep): Promise<Out
     run.status = "running";
   }
 }
-/** Has the judge, when there is one, look in a look's pictures for each claim the author made
- * of them, and bills it. Without a judge, claims or pictures, or when the judge cannot answer,
- * the author's own reading of the look is all there is. */
-async function checkLook(x: Execution, claims: unknown, shown: string[], signal: AbortSignal) {
+/** Has the judge, when there is one, run the fixed visual baseline checks on an overview
+ * look's pictures, and bills it. Without a judge or pictures, or when the judge cannot
+ * answer, the author's own reading of the look is all there is. */
+async function checkLook(x: Execution, shown: string[], signal: AbortSignal) {
   const judge = x.ctx.settings.judge;
-  const made = Array.isArray(claims) ? claims.filter((c): c is string => typeof c === "string" && !!c.trim()) : [];
-  if (!judge || !made.length || !shown.length) return undefined;
+  if (!judge || !shown.length) return undefined;
   try {
-    const { checked, input } = await checkClaims(judge, made, shown, signal);
+    const { checked, input } = await checkClaims(judge, shown, signal);
     spendJudge(x.run, input);
     return checked;
   } catch {
@@ -581,12 +583,12 @@ function lastLooks(store: UserStore, observations: Observation[], sceneIds: stri
     }
   });
 }
-/** What the judge found, as the author is told it beside the look. */
+/** What the judge found of the visual baseline checks, as the author is told it beside the look. */
 function told(checked: Checked[]) {
   const missed = checked.filter((c) => !c.holds).map((c) => c.claim);
   return missed.length
-    ? `An independent check of these pictures finds they do not show yet: ${missed.join(" | ")}. Before anything about how it looks, make the picture show each of these, or where a claim was wrong, make what the picture shows true.`
-    : "An independent check of these pictures finds they show every claim you made.";
+    ? `An independent visual baseline check flagged: ${missed.join(" | ")}. Inspect the screenshot and fix real issues in the next write.`
+    : "An independent visual baseline check passed all visual baseline checks.";
 }
 /** What the search budget had left before this call, which is already among the steps. */
 function takeSearch(x: Execution, call: Call) {
