@@ -137,7 +137,7 @@ it("sends each scene's modules once, only what changed since, and a close-up alo
       shot({ label: "1440px / 局部" }),
     ];
     const regions = [[0, 0, 100, 100]];
-    const first = await look({ regions, claims: ["库存只在写入后变化"] });
+    const first = await look({ regions });
     // With one scene drawn, a close-up needs no scene named; the first look is still whole.
     expect(asked(0)).toMatchObject({
       id: "root",
@@ -145,7 +145,7 @@ it("sends each scene's modules once, only what changed since, and a close-up alo
       regions: [{ x: 0, y: 0, width: 100, height: 100 }],
     });
     expect(first.observation.overview).toBe(true);
-    expect(first.content[0].text).toContain("库存只在写入后变化");
+    expect(first.content[0].text).toContain("Judge this look against the brief.");
     const [whole, close] = texts(first.content);
     expect(whole.modules.map((m: { id: string }) => m.id)).toEqual(modules.map((m) => m.id));
     expect(whole.modules[0]).not.toHaveProperty("label");
