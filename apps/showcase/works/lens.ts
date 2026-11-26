@@ -61,11 +61,11 @@ export const lens: ShowcaseSource = {
           id: "optics",
           name: say("透镜光路", "Rays through a lens"),
           params: {
-            rays: { label: say("光线条数", "Rays"), type: "number", min: 5, max: 41, step: 2 },
-            rings: { label: say("菲涅耳透镜的圈数", "Rings of the Fresnel lens"), type: "number", min: 2, max: 16, step: 1 },
-            thick: { label: say("凸透镜中间的厚度", "Thickness of the convex lens"), type: "number", min: 40, max: 200, step: 5 },
-            every: { label: say("自动换下一步（秒）", "Seconds before the next step"), type: "number", min: 0, max: 20, step: 0.5 },
-            light: { label: say("光的颜色", "Colour of the light"), type: "color" },
+            rays: { label: { zh: "光线条数", en: "Rays" }, type: "number", min: 5, max: 41, step: 2 },
+            rings: { label: { zh: "菲涅耳透镜的圈数", en: "Rings of the Fresnel lens" }, type: "number", min: 2, max: 16, step: 1 },
+            thick: { label: { zh: "凸透镜中间的厚度", en: "Thickness of the convex lens" }, type: "number", min: 40, max: 200, step: 5 },
+            every: { label: { zh: "自动换下一步（秒）", en: "Seconds before the next step" }, type: "number", min: 0, max: 20, step: 0.5 },
+            light: { label: { zh: "光的颜色", en: "Colour of the light" }, type: "color" },
           },
           defaults: {
             lamp: [250, 392],

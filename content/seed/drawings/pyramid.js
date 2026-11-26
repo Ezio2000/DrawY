@@ -39,9 +39,7 @@ const from = d.color || t.accent || "#d97757",
 const solid = (d.fillStyle ?? "solid") === "solid";
 const size = Number(d.size ?? 15);
 const funnel = d.shape === "funnel";
-const levels = (d.levels || []).map((l) =>
-  typeof l === "string" ? { label: l } : l,
-);
+const levels = d.levels || [];
 const n = Math.max(1, levels.length);
 const noted = levels.some((l) => l.note);
 const SW = noted ? W * 0.6 : W,
@@ -58,8 +56,11 @@ const fit = (s, room) => {
   const w = ctx.measureText(String(s ?? "")).width || 1;
   return Math.max(size * 0.6, Math.min(size, (size * room) / w));
 };
-let out = "";
+let out = "",
+  drawn = "";
 levels.forEach((l, i) => {
+  const path = api.path("levels", l, i);
+  let out = "";
   const ya = i * (bandH + gap),
     yb = ya + bandH;
   const c = mix(from, to, n > 1 ? i / (n - 1) : 0);
@@ -69,13 +70,17 @@ levels.forEach((l, i) => {
   const ym = (ya + yb) / 2;
   // Text in the narrow top of a pyramid sits low, where the band is widest.
   const ty = funnel || i ? ym : ya + bandH * 0.68;
-  out += `<text x="${cx}" y="${ty}" text-anchor="middle" font-size="${fit(l.label, half(ty) * 2 - size * 0.8)}" font-weight="600" fill="${solid ? paper : ink}">${esc(l.label)}</text>`;
+  out += `<text x="${cx}" y="${ty}" text-anchor="middle" font-size="${fit(l.label, half(ty) * 2 - size * 0.8)}" font-weight="600" fill="${solid ? paper : ink}"${api.text(path + ".label")}>${esc(l.label)}</text>`;
   if (l.note) {
     const edge = cx + half(ym);
     out += `<path class="leader" d="M${edge + size * 0.5} ${ym}H${SW + size * 1.2}" stroke="${muted}" stroke-width="1" stroke-dasharray="2 3"/><circle class="leader" cx="${edge + size * 0.5}" cy="${ym}" r="2" fill="${muted}"/>`;
-    out += `<text x="${SW + size * 1.6}" y="${ym}" font-size="${size * 0.88}" fill="${ink}">${esc(l.note)}</text>`;
+    out += `<text x="${SW + size * 1.6}" y="${ym}" font-size="${size * 0.88}" fill="${ink}"${api.text(path + ".note")}>${esc(l.note)}</text>`;
   }
+  drawn += `<g${api.part(path, { reorder: "y" })}>${out}</g>`;
+  api.slot("levels", i, { x: cx, y: Math.max(2, ya - gap / 2) });
 });
+if (levels.length) api.slot("levels", levels.length, { x: cx, y: H - 2 });
+out = drawn;
 const svg = api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(t.font || "system-ui")}" dominant-baseline="central">${out}</svg>`,
 );

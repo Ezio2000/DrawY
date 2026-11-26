@@ -50,7 +50,10 @@ export class Versions {
     return w && this.wentBack?.at === w.revision ? this.wentBack : undefined;
   }
   get undoable() {
-    return !!this.back || this.ctx.revisions.counted.before !== undefined;
+    return !!this.back || this.ctx.history.canUndo || this.ctx.revisions.counted.before !== undefined;
+  }
+  get redoable() {
+    return !this.back && this.ctx.history.canRedo;
   }
 
   /** Saves the hand edits made since the latest version as a version of their own. */
@@ -69,6 +72,7 @@ export class Versions {
     const from = this.work.revision;
     if (!latest) return this.work;
     const w = await this.restoring(latest.revision);
+    this.ctx.history.clear();
     this.wentTo({ at: w.revision, from, to: { kind: "discarded" } });
     return w;
   }
@@ -82,6 +86,7 @@ export class Versions {
       v.revisions.includes(revision),
     )?.number;
     const w = await this.restoring(revision);
+    this.ctx.history.clear();
     this.wentTo(
       number !== undefined
         ? { at: w.revision, from, to: { kind: "version", version: number } }
@@ -89,7 +94,9 @@ export class Versions {
     );
   }
 
-  /** Takes back going back to a version, else the latest request or hand edit as a whole. */
+  /** Takes back going back to a version; else the last step of hand editing made here;
+   * else, with none to go back over (the work just opened, or changed from elsewhere), the
+   * latest request or hand edit as a whole, as the server counts them. */
   async undo() {
     if (!this.undoable) return;
     const back = this.back;
@@ -98,6 +105,17 @@ export class Versions {
       await this.restoring(back.from);
       return;
     }
+    if (this.ctx.history.canUndo) {
+      await this.ctx.edits.settled();
+      await this.ctx.history.undo();
+      return;
+    }
     await this.apply(() => api<Work>("/works/" + this.ctx.id + "/undo", "POST"));
+  }
+  /** Makes again the step of hand editing last undone here. */
+  async redo() {
+    if (!this.redoable) return;
+    await this.ctx.edits.settled();
+    await this.ctx.history.redo();
   }
 }

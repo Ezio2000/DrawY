@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fixture } from "../runtime/fixture.ts";
 import { validateWork } from "../workspace/index.ts";
-import { workEditSchema, type MaterialUse, type Work, type WorkEdit } from "../contracts/index.ts";
+import { endModule, workEditSchema, type MaterialUse, type Work, type WorkEdit } from "../contracts/index.ts";
 import {
   add,
   addScene,
@@ -36,7 +36,6 @@ import {
   replace,
   resized,
   restack,
-  restOf,
   restyle,
   reverse,
   scaled,
@@ -76,7 +75,7 @@ const label: MaterialUse = {
   params: {
     text: { type: "text" },
     size: { type: "number", min: 8, max: 72, step: 1 },
-    align: { type: "choice", options: ["start", "center", "end"] },
+    align: { type: "choice", options: [{ value: "start" }, { value: "center" }, { value: "end" }] },
     color: { type: "color" },
   },
 };
@@ -85,13 +84,13 @@ describe("hand edits", () => {
   it("offers the values a drawing declares, then the plain values in the data, words first", () => {
     const work = fixture();
     work.drawings.tier.params = {
-      tip: { label: "说明", type: "text" },
-      color: { label: "底色", type: "color" },
+      tip: { label: { zh: "说明", en: "Tip" }, type: "text" },
+      color: { label: { zh: "底色", en: "Fill" }, type: "color" },
     };
     expect(fieldsOf(work, module(work, "level-0"))).toEqual([
       {
         key: "tip",
-        label: "说明",
+        label: { zh: "说明", en: "Tip" },
         type: "text",
         value: "发挥潜能",
         set: true,
@@ -106,7 +105,7 @@ describe("hand edits", () => {
       },
       {
         key: "color",
-        label: "底色",
+        label: { zh: "底色", en: "Fill" },
         type: "color",
         value: "#d68c6c",
         set: true,
@@ -416,6 +415,7 @@ describe("hand edits", () => {
           added: ["text"],
           removed: ["control"],
           changed: ["level-0"],
+          items: {},
           moved: ["heading"],
           restacked: false,
           retitled: false,
@@ -534,8 +534,8 @@ describe("hand edits reach what the author writes", () => {
     const first = connect(
       work,
       "root",
-      { moduleId: "heading", side: "bottom" },
-      { moduleId: "level-0", side: "top" },
+      { moduleId: "heading", at: "bottom" },
+      { moduleId: "level-0", at: "top" },
       { drawingId: "connector", data: { label: "看", color: "#000" } },
     );
     const linked = apply(work, first.edit);
@@ -547,34 +547,34 @@ describe("hand edits reach what the author writes", () => {
       to: { moduleId: "level-0", at: "top" },
     });
     expect(scene(linked).modules).toEqual(scene(work).modules);
-    const again = connect(linked, "root", { moduleId: "level-1", side: "left" }, { moduleId: "level-2", side: "right" }, linkLook(linked, "root")!);
+    const again = connect(linked, "root", { moduleId: "level-1", at: "left" }, { moduleId: "level-2", at: "right" }, linkLook(linked, "root")!);
     const twice = apply(linked, again.edit);
     expect(scene(twice).links[1]).toMatchObject({
       from: { at: "left" },
       to: { at: "right" },
       data: { color: "#000" },
     });
-    const moved = apply(twice, reattach(twice, "root", link.id, "to", "left"));
-    expect(scene(moved).links[0].to.at).toBe("left");
+    const moved = apply(twice, reattach(twice, "root", link.id, "to", { moduleId: "level-0", at: "left" }));
+    expect(scene(moved).links[0].to).toEqual({ moduleId: "level-0", at: "left" });
     // Without a side it goes back to following the side facing the other end.
-    expect(scene(apply(twice, reattach(twice, "root", link.id, "to", undefined))).links[0].to).toEqual({ moduleId: "level-0" });
+    expect(scene(apply(twice, reattach(twice, "root", link.id, "to", { moduleId: "level-0" }))).links[0].to).toEqual({ moduleId: "level-0" });
     const turned = apply(moved, reverse(moved, "root", [link.id]));
-    expect(scene(turned).links[0].from.moduleId).toBe("level-0");
+    expect(scene(turned).links[0].from).toMatchObject({ moduleId: "level-0" });
     // An end dragged onto another module goes to the side it was dropped on.
-    const elsewhere = apply(turned, reattach(turned, "root", link.id, "to", "right", "level-3"));
+    const elsewhere = apply(turned, reattach(turned, "root", link.id, "to", { moduleId: "level-3", at: "right" }));
     expect(scene(elsewhere).links[0].to).toEqual({ moduleId: "level-3", at: "right" });
     // A link never ends at the module it starts from.
-    expect(() => reattach(turned, "root", link.id, "to", "left", "level-0")).toThrow();
+    expect(() => reattach(turned, "root", link.id, "to", { moduleId: "level-0", at: "left" })).toThrow();
     // A link's words are changed in its data.
     const said = apply(linked, replace(linked, "root", link.id, "text", "看", "查看"));
     expect(scene(said).links[0].data.label).toBe("查看");
     expect(replace(linked, "root", link.id, "text", "不在", "x")).toBeNull();
     expect(() =>
-      connect(work, "root", { moduleId: "heading", side: "top" }, { moduleId: "heading", side: "left" }, { drawingId: "connector", data: {} }),
+      connect(work, "root", { moduleId: "heading", at: "top" }, { moduleId: "heading", at: "left" }, { drawingId: "connector", data: {} }),
     ).toThrow();
     // A library drawing the work does not have yet is taken in.
     expect(
-      connect(work, "root", { moduleId: "heading", side: "top" }, { moduleId: "level-0", side: "top" }, { drawingId: "arrow", data: {} }).edit.materials,
+      connect(work, "root", { moduleId: "heading", at: "top" }, { moduleId: "level-0", at: "top" }, { drawingId: "arrow", data: {} }).edit.materials,
     ).toEqual(["arrow"]);
   });
 
@@ -633,12 +633,6 @@ describe("hand edits reach what the author writes", () => {
     );
     expect(module(rewritten, "heading")).toMatchObject({ label: "新的", data: { x: [1, 2] } });
     expect(() => setModule(work, "root", "heading", { label: 3 })).toThrow();
-  });
-
-  it("leaves lists and records to the data editor", () => {
-    const work = fixture();
-    const part = { ...module(work, "level-0"), data: { ...module(work, "level-0").data, items: [{ a: 1 }], side: "left" } };
-    expect(restOf(work, part)).toEqual(["items", "side"]);
   });
 
   it("adds a library drawing with the data that shows it", () => {
@@ -826,7 +820,7 @@ describe("hand edits as a drawing app has them", () => {
     const twice = apply(linked, connect(linked, "root", { moduleId: "b" }, { moduleId: "c" }, look).edit);
     const ids = twice.scenes.root.links.map((l) => l.id);
     const turned = apply(twice, reverse(twice, "root", ids));
-    expect(turned.scenes.root.links.map((l) => [l.from.moduleId, l.to.moduleId])).toEqual([
+    expect(turned.scenes.root.links.map((l) => [endModule(l.from), endModule(l.to)])).toEqual([
       ["b", "a"],
       ["c", "b"],
     ]);
@@ -931,14 +925,14 @@ describe("hand edits as a drawing app has them", () => {
     const dropped = extend(work, "root", { moduleId: "a", side: "right" }, { at: { x: 50, y: 1320 }, gap: 60, words: "新" }, { drawingId: "connector", data: {} });
     const there = apply(work, dropped.edit);
     expect(module(there, dropped.id).bounds).toMatchObject({ x: 0, y: 1300 });
-    expect(scene(there).links.at(-1)!.to.at).toBe("top");
+    expect(scene(there).links.at(-1)!.to).toMatchObject({ at: "top" });
   });
 
   it("links without naming sides, copies a step each way, and adds a drawing to a box drawn for it", () => {
     const work = row();
     const linked = apply(work, connect(work, "root", { moduleId: "a" }, { moduleId: "b" }, { drawingId: "connector", data: {} }).edit);
     expect(scene(linked).links.at(-1)).toMatchObject({ from: { moduleId: "a" }, to: { moduleId: "b" } });
-    expect(scene(linked).links.at(-1)!.from.at).toBeUndefined();
+    expect(scene(linked).links.at(-1)!.from).toEqual({ moduleId: "a" });
     const copied = duplicate(work, "root", ["a"], { x: 300, y: -40 });
     expect(module(apply(work, copied.edit), copied.ids[0]).bounds).toMatchObject({ x: 300, y: 960 });
     const drawn = add(

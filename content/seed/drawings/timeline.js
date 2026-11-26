@@ -49,11 +49,12 @@ const laid = events.map((e, i) => {
   const dShift = dLeft < dateUsed[dSide] ? size * 1.05 : 0;
   dateUsed[dSide] = Math.max(dateUsed[dSide], dRight);
   if (dShift > 0) shiftedDates[dSide].push([dLeft, dRight]);
-  return { e, x, up, dateStr, dShift };
+  return { e, i, x, up, dateStr, dShift };
 });
 // Pass 2: place event labels, clearing both shifted dates on the same side and sibling labels.
 const used = { up: [-Infinity, -Infinity], down: [-Infinity, -Infinity] };
-laid.forEach(({ e, x, up, dateStr, dShift }) => {
+laid.forEach(({ e, i, x, up, dateStr, dShift }) => {
+  const path = api.path("events", e, i);
   const side = up ? "up" : "down",
     c = e.accent ? accent : ink;
   const tw = Math.max(
@@ -68,13 +69,19 @@ laid.forEach(({ e, x, up, dateStr, dShift }) => {
   const baseStem = size * ((hitsShiftedDate ? 3.5 : 2.2) + (e.note ? 0.6 : 0));
   const stem = baseStem + tier * size * (e.note ? 2.8 : 1.9);
   const ty = up ? y - stem : y + stem;
-  out += `<line x1="${x}" x2="${x}" y1="${y}" y2="${up ? ty + size * 0.6 : ty - size * 0.9}" stroke="${muted}" stroke-width="1"/>`;
-  out += `<circle cx="${x}" cy="${y}" r="${e.accent ? 5 : 3.6}" fill="${e.accent ? accent : t.paper || "#fff"}" stroke="${c}" stroke-width="1.6"/>`;
-  out += `<text x="${x}" y="${up ? y + size * 1.5 + dShift : y - size * 0.8 - dShift}" text-anchor="middle" font-size="${size * 0.85}" fill="${muted}">${esc(dateStr)}</text>`;
-  out += `<text x="${x}" y="${up ? ty : ty + size * 0.2}" text-anchor="middle" font-size="${size}" font-weight="600" fill="${c}">${esc(e.label ?? "")}</text>`;
+  let item = `<line x1="${x}" x2="${x}" y1="${y}" y2="${up ? ty + size * 0.6 : ty - size * 0.9}" stroke="${muted}" stroke-width="1"/>`;
+  item += `<circle cx="${x}" cy="${y}" r="${e.accent ? 5 : 3.6}" fill="${e.accent ? accent : t.paper || "#fff"}" stroke="${c}" stroke-width="1.6"/>`;
+  // A date written out is the event's words; without one its place on the axis is shown.
+  item += `<text x="${x}" y="${up ? y + size * 1.5 + dShift : y - size * 0.8 - dShift}" text-anchor="middle" font-size="${size * 0.85}" fill="${muted}"${e.date != null ? api.text(path + ".date") : ""}>${esc(dateStr)}</text>`;
+  item += `<text x="${x}" y="${up ? ty : ty + size * 0.2}" text-anchor="middle" font-size="${size}" font-weight="600" fill="${c}"${api.text(path + ".label")}>${esc(e.label ?? "")}</text>`;
   if (e.note)
-    out += `<text x="${x}" y="${up ? ty - size * 1.25 : ty + size * 1.4}" text-anchor="middle" font-size="${size * 0.82}" fill="${muted}">${esc(e.note)}</text>`;
+    item += `<text x="${x}" y="${up ? ty - size * 1.25 : ty + size * 1.4}" text-anchor="middle" font-size="${size * 0.82}" fill="${muted}"${api.text(path + ".note")}>${esc(e.note)}</text>`;
+  out += `<g${api.part(path)}>${item}</g>`;
+  // Where an event stands on the axis is its time: dragged along, it changes.
+  if (!even) api.handle(path + ".at", { kind: "scalar", at: { x, y }, axis: "x", scale: span / (x1 - x0) });
 });
+// A new event goes at the end of the axis; its time places it.
+api.slot("events", events.length, { x: x1 + size * 0.4, y: y - size * 1.2 });
 return api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}">${out}</svg>`,
 );

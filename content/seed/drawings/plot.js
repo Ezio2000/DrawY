@@ -35,12 +35,8 @@ const esc = (s) =>
     /[&<>"]/g,
     (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch],
   );
-const xt = Array.isArray(xs.ticks)
-  ? xs.ticks
-  : nice(xs.min, xs.max, Number(xs.ticks ?? 5));
-const yt = Array.isArray(ys.ticks)
-  ? ys.ticks
-  : nice(ys.min, ys.max, Number(ys.ticks ?? 4));
+const xt = nice(xs.min, xs.max, Number(xs.ticks ?? 5));
+const yt = nice(ys.min, ys.max, Number(ys.ticks ?? 4));
 let out = "";
 if (d.grid) {
   for (const v of yt)
@@ -54,9 +50,9 @@ for (const v of xt)
 for (const v of yt)
   out += `<line x1="${pad.l - 4}" x2="${pad.l}" y1="${Y(v)}" y2="${Y(v)}" stroke="${ink}"/><text x="${pad.l - 7}" y="${Y(v)}" text-anchor="end" dominant-baseline="central" font-size="${size}" fill="${muted}">${esc(ys.format ? ys.format.replace("{}", v) : v)}</text>`;
 if (xs.label)
-  out += `<text x="${pad.l + pw}" y="${H - size * 0.35}" text-anchor="end" font-size="${size}" fill="${ink}">${esc(xs.label)}</text>`;
+  out += `<text x="${pad.l + pw}" y="${H - size * 0.35}" text-anchor="end" font-size="${size}" fill="${ink}"${api.text("x.label")}>${esc(xs.label)}</text>`;
 if (ys.label)
-  out += `<text x="${pad.l}" y="${size * 1.1}" text-anchor="start" font-size="${size}" fill="${ink}">${esc(ys.label)}</text>`;
+  out += `<text x="${pad.l}" y="${size * 1.1}" text-anchor="start" font-size="${size}" fill="${ink}"${api.text("y.label")}>${esc(ys.label)}</text>`;
 const palette = [t.accent || "#d97757", t.accent2 || "#4a7fa8", ink, muted];
 const clampY = (y) => Y(Math.max(ys.min, Math.min(ys.max, y)));
 const computed = (d.series || []).map((s, i) => {
@@ -71,10 +67,7 @@ const computed = (d.series || []).map((s, i) => {
   ).filter(([, y]) => Number.isFinite(y));
   return { s, pts, color: s.color || palette[i % palette.length] };
 });
-if (d.fillBetween) {
-  const fb = Array.isArray(d.fillBetween)
-    ? { from: d.fillBetween[0], to: d.fillBetween[1] }
-    : d.fillBetween;
+for (const fb of d.fillBetween || []) {
   const a = computed[fb.from ?? 0],
     b = computed[fb.to ?? 1];
   if (a?.pts.length >= 2 && b?.pts.length >= 2) {
@@ -114,7 +107,12 @@ if (d.fillBetween) {
     }
   }
 }
-computed.forEach(({ s, pts, color }) => {
+// A point on the plot read back as data, for dragging a measured point.
+const unX = (x) => Math.round((xs.min + ((x - pad.l) / pw) * (xs.max - xs.min)) * 1000) / 1000;
+const unY = (y) => Math.round((ys.min + ((pad.t + ph - y) / ph) * (ys.max - ys.min)) * 1000) / 1000;
+computed.map(({ s, pts, color }, i) => {
+  const item = api.path("series", s, i);
+  let out = "";
   if (s.area && pts.length) {
     const line = pts.map(([x, y], k) => `${k ? "L" : "M"}${X(x).toFixed(1)} ${clampY(y).toFixed(1)}`).join("");
     const base = clampY(ys.min).toFixed(1);
@@ -127,11 +125,19 @@ computed.forEach(({ s, pts, color }) => {
   if (s.dots)
     for (const [x, y] of pts)
       out += `<circle cx="${X(x)}" cy="${Y(y)}" r="3.2" fill="${color}"/>`;
+  // Measured points drag where they are measured.
+  if (!s.fn)
+    (s.points || []).forEach(([x, y], k) => {
+      if (Number.isFinite(y)) api.handle(`${item}.points.${k}`, { kind: "point", at: { x: X(x), y: Y(y) }, unproject: (px, py) => [unX(px), unY(py)] });
+    });
   if (s.label && pts.length) {
     const [x, y] = pts[pts.length - 1];
     const py = clampY(y);
-    out += `<text x="${X(x) - 4}" y="${py < pad.t + size ? py + size * 1.3 : py - size * 0.8}" text-anchor="end" font-size="${size}" fill="${color}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4">${esc(s.label)}</text>`;
+    out += `<text x="${X(x) - 4}" y="${py < pad.t + size ? py + size * 1.3 : py - size * 0.8}" text-anchor="end" font-size="${size}" fill="${color}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4"${api.text(item + ".label")}>${esc(s.label)}</text>`;
   }
+  return out;
+}).forEach((curve, i) => {
+  out += `<g${api.part(api.path("series", computed[i].s, i))}>${curve}</g>`;
 });
 // The current value on the first curve, with guides down to both axes.
 const mark = d.marker && (d.series || [])[0];
@@ -151,10 +157,12 @@ if (mark) {
     const text =
       d.marker.label ??
       (ys.format ? ys.format.replace("{}", y.toFixed(2)) : y.toFixed(2));
+    // The marker drags along the curve.
+    api.handle("marker.x", { kind: "scalar", at: { x: X(x), y: Y(y) }, axis: "x", scale: (xs.max - xs.min) / pw });
     // Near the right edge the words turn back over the plot; near the top they go below.
     const flip = X(x) > pad.l + pw * 0.62;
     const low = Y(y) < pad.t + size * 1.2;
-    out += `<text x="${X(x) + (flip ? -9 : 9)}" y="${Y(y) + (low ? size * 1.3 : -9)}" text-anchor="${flip ? "end" : "start"}" font-size="${size}" fill="${color}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4">${esc(text)}</text>`;
+    out += `<text x="${X(x) + (flip ? -9 : 9)}" y="${Y(y) + (low ? size * 1.3 : -9)}" text-anchor="${flip ? "end" : "start"}" font-size="${size}" fill="${color}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4"${d.marker.label != null ? api.text("marker.label") : ""}>${esc(text)}</text>`;
   }
 }
 return api.svg(

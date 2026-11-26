@@ -9,55 +9,57 @@ export const targetSchema = z.object({
   kind: z.enum(["scene", "detail"]),
   id: key,
 });
-/** The kinds of value a person can change by hand, each with its own plain control. */
-export const paramTypes = [
-  "text",
-  "number",
-  "boolean",
-  "color",
-  "picture",
-  "choice",
-] as const;
-/** How a person changes one value of a drawing's instance data without touching code. A
- * value in `defaults` gets a control without one; this names it and bounds it. */
-export const paramSchema = z.object({
-  label: z
-    .string()
-    .min(1)
-    .optional()
-    .describe("What a person editing the work calls it, in the user's language"),
-  type: z.enum(paramTypes),
-  options: z
-    .array(z.string().min(1))
-    .min(2)
-    .optional()
-    .describe("The values a choice offers"),
-  min: z.number().optional(),
-  max: z.number().optional(),
-  step: z.number().positive().optional(),
-});
+import { fieldSchema, fieldsSchema, type Field, type Fields } from "@drawy/materials/fields";
+export * from "@drawy/materials/fields";
 const dataSchema = z.record(z.string(), z.unknown());
 export const drawingSchema = z.object({
   id: key,
   name: key,
-  params: z.record(z.string(), paramSchema).optional(),
+  params: fieldsSchema
+    .optional()
+    .describe("The data it reads, as a schema: every list, record and value its code reads from api.data"),
   defaults: dataSchema.optional(),
   source: z.string().min(1),
 });
 /** One of the sides of a module, each at the middle of that side. */
 export const sideNames = ["left", "right", "top", "bottom"] as const;
 export type Side = (typeof sideNames)[number];
-/** Where a link meets a module: a side, or a point as a share of the module's size. */
+/** Where a link meets a module: a side, a point as a share of the module's size, or a
+ * place along the line round it (the outline its drawing declares, else its box from the
+ * top left, clockwise), as a share of that line's length. */
 export const endAtSchema = z.union([
   z.enum(sideNames),
   z.array(z.number()).length(2),
+  z.object({ along: z.number().min(0).max(1) }).strict(),
 ]);
-/** One end of a link. It belongs to the link: nothing is declared on the module, and without
- * `at` it takes the side facing the other end wherever the two modules are. */
-export const linkEndSchema = z.object({
-  moduleId: key,
-  at: endAtSchema.optional(),
-});
+/** One end of a link. It belongs to the link: nothing is declared on what it meets. On a
+ * module without `at` it takes the side facing the other end wherever the two are; on
+ * another link it stays at a share of the way between that link's ends; free, it stays at a
+ * point of the scene. */
+export const moduleEndSchema = z.object({ moduleId: key, at: endAtSchema.optional() });
+export const lineEndSchema = z.object({ linkId: key, along: z.number().min(0).max(1) });
+export const freeEndSchema = z.object({ x: z.number(), y: z.number() });
+export const linkEndSchema = z.union([moduleEndSchema, lineEndSchema, freeEndSchema]);
+/** The module an end meets, the link it rides on, or neither: a free end. */
+export const endModule = (end: LinkEnd) => ("moduleId" in end ? end.moduleId : undefined);
+export const endLink = (end: LinkEnd) => ("linkId" in end ? end.linkId : undefined);
+export const isFree = (end: LinkEnd): end is z.infer<typeof freeEndSchema> => !("moduleId" in end) && !("linkId" in end);
+/** Whether a link rides, by either end and however far along the links it rides on, on the
+ * link `on`: a link riding on one that rides back on it would have nowhere to be. */
+export function ridesOn(link: Pick<Link, "from" | "to">, on: string, linkOf: (id: string) => Pick<Link, "from" | "to"> | undefined) {
+  const seen = new Set<string>();
+  const next = [link];
+  for (let at = next.pop(); at; at = next.pop())
+    for (const id of [endLink(at.from), endLink(at.to)]) {
+      if (!id) continue;
+      if (id === on) return true;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const l = linkOf(id);
+      if (l) next.push(l);
+    }
+  return false;
+}
 // Layout comes before content, in the order writes stream, so a composition can be
 // sketched while its drawing code is still arriving.
 export const instanceSchema = z.object({
@@ -167,15 +169,16 @@ export type MaterialUse =
       name: string;
       source: string;
       defaults: Record<string, unknown>;
-      /** The parameters a person can change by hand; the app names them itself. */
-      params: Record<string, Omit<Param, "label">>;
+      /** The data it reads, as a schema. */
+      params: Fields;
+      /** Taken before drawings declared all the data they read: the schema leaves out its
+       * lists and records, so data it does not declare is not refused. */
+      partial?: true;
     }
   | { id: string; kind: "effect"; version?: number; name: string; defs: string };
 export type Point = z.infer<typeof pointSchema>;
 export type Bounds = z.infer<typeof boundsSchema>;
 export type Target = z.infer<typeof targetSchema>;
-export type Param = z.infer<typeof paramSchema>;
-export type ParamType = Param["type"];
 export type Drawing = z.infer<typeof drawingSchema>;
 export type Instance = z.infer<typeof instanceSchema>;
 export type Link = z.infer<typeof linkSchema>;
@@ -373,8 +376,9 @@ export function stepBefore(history: RevisionSummary[], revision: number): number
 /* A change to a work, the one form the author's write_work and every hand edit share. Each
  * record names what it changes by id and says nothing about the rest:
  * - a record with a known id changes only the fields it gives, a new id adds the record;
- * - objects (data, defaults, params, style) merge key by key, null deleting a key;
- * - a list given whole replaces the list; given as an object keyed by position it changes
+ * - objects (data, defaults, style) merge key by key, null deleting a key; params too, but
+ *   each field given takes the place of what was declared for its key;
+ * - a list given whole replaces the list; given as an object keyed by position or `#id` it changes
  *   those items (see mergeValue);
  * - long text (a drawing's source, a script, a detail's page) changes whole or by edits;
  * - remove goes first and takes along what can no longer stand without what it removed.
@@ -384,7 +388,7 @@ const dataPatch = (what: string) =>
     .record(z.string(), z.unknown())
     .optional()
     .describe(
-      `${what}; keys you give change, others stay, null deletes one. A list you give replaces the list; {"2":{"value":5}} changes its item 2 alone, and position = its length appends`,
+      `${what}; keys you give change, others stay, null deletes one. A list you give replaces the list; {"#m3":{"label":"…"}} changes the item with id m3 alone, {"#m3":null} deletes it and a new id appends; {"2":{"value":5}} changes item 2 by position`,
     );
 /** A boxed position and size as every edit and the author's reading of a work write it. */
 export const boxSchema = z
@@ -406,9 +410,9 @@ const partScene = key
   .optional()
   .describe("The scene a new part goes in; leave out for the current scene. A known id is found wherever it is");
 const linkEndEdit = z
-  .union([key, linkEndSchema.strict()])
+  .union([key, moduleEndSchema.strict(), lineEndSchema.strict(), freeEndSchema.strict()])
   .describe(
-    'A module id, which meets it on the side facing the other end and follows as they move; or {moduleId, at} with a side (left, right, top, bottom) or a point [x, y] on it, each 0..1',
+    "A module id, which meets it on the side facing the other end and follows as they move; {moduleId, at} with a side (left, right, top, bottom), a point [x, y] on it (each 0..1) or {along: t}, a share of the way round its outline; {linkId, along: t}, a share of the way along another link, as a message rides a lifeline; or {x, y}, a free point of the scene",
   );
 // Fields stay in the order of a whole record: layout streams before content.
 const moduleEditSchema = z
@@ -475,9 +479,9 @@ const drawingEditSchema = z
       .describe("A new drawing starts as a copy of this one, in the work or the library: name, params, defaults and source"),
     name: key.optional(),
     params: z
-      .record(z.string(), paramSchema.nullable())
+      .record(z.string(), fieldSchema.nullable())
       .optional()
-      .describe("Names and bounds for the controls a person gets for data keys; null takes one out"),
+      .describe("The schema of the data keys it reads, each given whole; null takes one out"),
     defaults: dataPatch("Values every module drawn with it has unless its own data says otherwise: the place for sizes, colours and words it reads"),
     source: z.string().min(1).optional().describe("Its code, whole; a new drawing needs it unless it has from"),
     edits: z.array(textEditSchema).optional().describe("Small changes to its code, applied in order"),
@@ -512,8 +516,8 @@ export const workEditSchema = z
       .describe("Style tokens to change; null deletes one"),
     remove: z
       .object({
-        modules: z.array(key).optional().describe("Also deletes their links and checks"),
-        links: z.array(key).optional(),
+        modules: z.array(key).optional().describe("Also deletes their checks; the links meeting them keep where they met as free ends"),
+        links: z.array(key).optional().describe("Links riding on them keep where they met as free ends"),
         drawings: z.array(key).optional(),
         scenes: z.array(key).optional().describe("Also deletes the scenes under them; modules that led there lead nowhere"),
         details: z.array(key).optional().describe("Modules that opened them open nothing"),

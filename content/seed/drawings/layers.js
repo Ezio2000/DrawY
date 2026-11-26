@@ -24,9 +24,7 @@ const ink = t.ink || "#222",
 const tone = d.color || t.accent2 || accent;
 const sw = Math.max(1, Number(t.stroke ?? 1.6) * 0.8);
 const size = Number(d.size ?? 14);
-const layers = (d.layers || []).map((l) =>
-  typeof l === "string" ? { label: l } : l,
-);
+const layers = d.layers || [];
 const n = Math.max(1, layers.length);
 const gap = size * 0.5;
 const bandH = (H - gap * (n - 1)) / n;
@@ -45,17 +43,28 @@ const labelW =
 const r = Math.min(12, bandH / 3);
 let out = "";
 layers.forEach((l, i) => {
+  const path = api.path("layers", l, i);
   const y = i * (bandH + gap);
+  api.slot("layers", i, { x: W / 2, y: Math.max(2, y - gap / 2) });
+  if (i === layers.length - 1) api.slot("layers", layers.length, { x: W / 2, y: H - 2 });
   const c = l.accent ? accent : tone;
   const items = (l.items || []).map(String);
-  out += `<rect x="${sw / 2}" y="${y}" width="${W - sw}" height="${bandH}" rx="${r}" fill="${c}" fill-opacity="${l.accent ? 0.16 : i % 2 ? 0.07 : 0.11}"${l.accent ? ` stroke="${c}" stroke-width="${sw}"` : ""}/>`;
+  let band = "";
+  out += `<g${api.part(path, { reorder: "y" })}>`;
+  band += `<rect x="${sw / 2}" y="${y}" width="${W - sw}" height="${bandH}" rx="${r}" fill="${c}" fill-opacity="${l.accent ? 0.16 : i % 2 ? 0.07 : 0.11}"${l.accent ? ` stroke="${c}" stroke-width="${sw}"` : ""}/>`;
   const cx = items.length ? size * 1.1 : W / 2;
   const anchor = items.length ? "start" : "middle";
   const ty = y + bandH / 2 - (l.note ? size * 0.5 : 0);
-  out += `<text x="${cx}" y="${ty}" text-anchor="${anchor}" font-size="${size}" font-weight="600" fill="${l.accent ? accent : ink}">${esc(l.label)}</text>`;
+  band += `<text x="${cx}" y="${ty}" text-anchor="${anchor}" font-size="${size}" font-weight="600" fill="${l.accent ? accent : ink}"${api.text(path + ".label")}>${esc(l.label)}</text>`;
   if (l.note)
-    out += `<text x="${cx}" y="${ty + size * 1.25}" text-anchor="${anchor}" font-size="${size * 0.8}" fill="${muted}">${esc(l.note)}</text>`;
-  if (!items.length) return;
+    band += `<text x="${cx}" y="${ty + size * 1.25}" text-anchor="${anchor}" font-size="${size * 0.8}" fill="${muted}"${api.text(path + ".note")}>${esc(l.note)}</text>`;
+  out += band;
+  // A layer without items takes its first after its words.
+  if (!items.length) {
+    api.slot(path + ".items", 0, { x: W - size * 1.2, y: y + bandH / 2 });
+    out += "</g>";
+    return;
+  }
   // Chips share the rest of the band evenly; long words shrink rather than spill.
   const x0 = labelW,
     x1 = W - size * 0.7,
@@ -71,9 +80,13 @@ layers.forEach((l, i) => {
         (size * 0.92 * (cw - size)) / (measure(item, size * 0.92) || 1),
       ),
     );
-    out += `<rect x="${x}" y="${y + (bandH - ch) / 2}" width="${cw}" height="${ch}" rx="${Math.min(8, ch / 3)}" fill="${paper}" stroke="${c}" stroke-opacity=".7" stroke-width="${sw}"/>`;
-    out += `<text x="${x + cw / 2}" y="${y + bandH / 2}" text-anchor="middle" font-size="${fs}" fill="${ink}">${esc(item)}</text>`;
+    const chip = `${path}.items.${j}`;
+    out += `<g${api.part(chip, { reorder: "x" })}><rect x="${x}" y="${y + (bandH - ch) / 2}" width="${cw}" height="${ch}" rx="${Math.min(8, ch / 3)}" fill="${paper}" stroke="${c}" stroke-opacity=".7" stroke-width="${sw}"/>`;
+    out += `<text x="${x + cw / 2}" y="${y + bandH / 2}" text-anchor="middle" font-size="${fs}" fill="${ink}"${api.text(chip)}>${esc(item)}</text></g>`;
+    api.slot(path + ".items", j, { x: x - cg / 2, y: y + bandH / 2 });
   });
+  api.slot(path + ".items", items.length, { x: x1 + size * 0.35, y: y + bandH / 2 });
+  out += "</g>";
 });
 const svg = api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}" dominant-baseline="central">${out}</svg>`,

@@ -66,7 +66,6 @@ const letters: Partial<Record<Tool, string>> = {
   circle: "O",
   diamond: "D",
   text: "T",
-  link: "L",
   pen: "P",
   arrow: "A",
   erase: "E",
@@ -168,7 +167,6 @@ export function EditTray({
       </span>
       <i />
       {item("text", <Type size={17} />)}
-      {item("link", <Spline size={17} />)}
       {item("arrow", <MoveUpRight size={17} />)}
       {item("pen", <PenLine size={17} />)}
       {item("erase", <Eraser size={17} />)}

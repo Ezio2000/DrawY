@@ -70,6 +70,9 @@ export function SceneView({
   resizable = true,
   fill,
   hold,
+  part,
+  parts,
+  items,
   start,
 }: {
   work: Work;
@@ -118,6 +121,13 @@ export function SceneView({
   resizable?: boolean;
   /** A finger held still on the canvas, once the selection has followed it. */
   hold?: CanvasOptions["hold"];
+  /** A part of the module selected was selected inside it, or none is; and when parts can
+   * be selected (while editing, by default). */
+  part?: CanvasOptions["part"];
+  parts?: CanvasOptions["parts"];
+  /** What is done to the items of a drawing's lists on the canvas while editing: a new one at
+   * a place, one moved, a reference pointed elsewhere, a value dragged, one made between two. */
+  items?: Pick<CanvasOptions, "insert" | "reorder" | "retarget" | "setValue" | "create">;
   /** How far the automatic view may zoom past the whole drawing to fill the screen. */
   fill?: number;
   /** Ways to start on a blank scene by hand, under the note that it is blank. */
@@ -133,9 +143,9 @@ export function SceneView({
     // work goes from the spinner straight to the picture, without a blank page between.
     [shown, setShown] = useState(false),
     [error, setError] = useState("");
-  const callbacks = useRef({ open, select, commit, point, connect, extend, duplicate, reconnect, menu, place: placeAt, ink, erase, view, quiet, hold });
+  const callbacks = useRef({ open, select, commit, point, connect, extend, duplicate, reconnect, menu, place: placeAt, ink, erase, view, quiet, hold, part, items });
   const picked = useRef<{ key: string; ids: string[]; links: string[] } | null>(null);
-  callbacks.current = { open, select, commit, point, connect, extend, duplicate, reconnect, menu, place: placeAt, ink, erase, view, quiet, hold };
+  callbacks.current = { open, select, commit, point, connect, extend, duplicate, reconnect, menu, place: placeAt, ink, erase, view, quiet, hold, part, items };
   // While editing, the automatic view also keeps clear of the tools and rulers at its edges.
   const boarded = useRef(false);
   boarded.current = editing && !disabled;
@@ -171,12 +181,18 @@ export function SceneView({
       },
       commit: (m) => callbacks.current.commit(m),
       point: (p) => callbacks.current.point(p),
-      connect: (from, to) => callbacks.current.connect?.(from, to),
+      connect: (from, to, how) => callbacks.current.connect?.(from, to, how),
       extend: (from, at) => callbacks.current.extend?.(from, at),
       duplicate: (ids, by) => callbacks.current.duplicate?.(ids, by),
       reconnect: (id, end, to) => callbacks.current.reconnect?.(id, end, to),
       menu: (at) => callbacks.current.menu?.(at),
       ...(hold ? { hold: (at: { x: number; y: number }) => callbacks.current.hold?.(at) } : {}),
+      ...(part ? { part: (p: Parameters<NonNullable<CanvasOptions["part"]>>[0]) => callbacks.current.part?.(p), parts } : {}),
+      insert: (at) => callbacks.current.items?.insert?.(at),
+      reorder: (at) => callbacks.current.items?.reorder?.(at),
+      retarget: (at) => callbacks.current.items?.retarget?.(at),
+      setValue: (at) => callbacks.current.items?.setValue?.(at),
+      create: (at) => callbacks.current.items?.create?.(at),
       place: (at, box) => callbacks.current.place?.(at, box),
       ink: (points, how) => callbacks.current.ink?.(points, how),
       erase: (ids) => callbacks.current.erase?.(ids),

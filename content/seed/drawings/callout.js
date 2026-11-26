@@ -68,10 +68,12 @@ if (side === "left") {
 }
 p += `V${b.y + r}Q${b.x} ${b.y} ${b.x + r} ${b.y}Z`;
 const effect = d.effect ? ` filter="${api.effect(d.effect)}"` : "";
+// Links meet the bubble on its outline, tail and all.
+api.outline(p);
 return api.html(`<style>
 .bubble{position:relative;width:${W}px;height:${H}px}
 svg{position:absolute;inset:0;overflow:visible}
 .words{position:absolute;left:${b.x + size * 0.9}px;top:${b.y + size * 0.5}px;width:${b.w - size * 1.8}px;height:${b.h - size}px;display:flex;flex-direction:column;justify-content:center;gap:${size * 0.2}px;text-align:${d.align === "center" ? "center" : "left"};font-family:${esc(t.font || "system-ui")};color:${solid ? paper : ink}}
 .text{font-size:${size}px;line-height:1.4;overflow-wrap:anywhere;text-wrap:pretty}
 .who{font-size:${size * 0.8}px;font-weight:700;color:${solid ? paper : color}}
-</style><div class="bubble"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><path d="${p}" fill="${solid ? color : paper}" stroke="${color}" stroke-width="${sw}" stroke-linejoin="round"${d.dashed ? ` stroke-dasharray="${sw * 4} ${sw * 3}"` : ""}${effect}/></svg><div class="words">${d.speaker ? `<div class="who">${esc(d.speaker)}</div>` : ""}<div class="text">${esc(d.text)}</div></div></div>`);
+</style><div class="bubble"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><path d="${p}" fill="${solid ? color : paper}" stroke="${color}" stroke-width="${sw}" stroke-linejoin="round"${d.dashed ? ` stroke-dasharray="${sw * 4} ${sw * 3}"` : ""}${effect}/></svg><div class="words">${d.speaker ? `<div class="who"${api.text("speaker")}>${esc(d.speaker)}</div>` : ""}<div class="text"${api.text("text")}>${esc(d.text)}</div></div></div>`);

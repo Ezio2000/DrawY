@@ -10,7 +10,9 @@ import { simplify, sketchLine } from "./drawings.ts";
 export * from "./drawings.ts";
 export * from "./excalidraw.ts";
 export * from "./mermaid.ts";
+export * from "./sequence.ts";
 export { ClipMaker } from "./clip.ts";
+export { SEQUENCE } from "./library.ts";
 
 /** A line drawn on the canvas, as a clip of one part where it was drawn: a freehand
  * stroke smoothed through the points that shape it, or a straight line with a head.
@@ -18,7 +20,7 @@ export { ClipMaker } from "./clip.ts";
  * what the hand drew to about half a pixel. */
 export function inked(
   points: Point[],
-  how: { kind: "pen" | "arrow"; width: number; scale: number; color?: string },
+  how: { kind: "pen" | "arrow"; width: number; scale: number; color?: string; upright?: boolean },
 ): Clip {
   const made = new ClipMaker();
   const pen = how.kind === "pen";
@@ -30,7 +32,8 @@ export function inked(
       drawingId: made.drawing(sketchLine),
       data: {
         points: shares,
-        ...(pen ? { smooth: kept.length > 2 } : { head: "filled" }),
+        // An arrow drawn straight up or down is more often a line than an arrow.
+        ...(pen ? { smooth: kept.length > 2 } : how.upright ? {} : { head: "filled" }),
         ...(how.width !== 2 ? { width: how.width } : {}),
         ...(how.color ? { color: how.color } : {}),
       },

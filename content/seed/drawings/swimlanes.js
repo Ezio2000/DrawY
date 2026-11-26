@@ -67,10 +67,11 @@ const box = (along, cross) =>
     : { x: cross[0], y: along[0], w: cross[1], h: along[1] };
 const line = (x1, y1, x2, y2, dash = "") =>
   `<path d="M${x1} ${y1}L${x2} ${y2}" stroke="${muted}" stroke-opacity=".6" stroke-width="${sw}"${dash ? ` stroke-dasharray="${dash}"` : ""}/>`;
-const words = (x, y, label, note, color, bold = true) =>
-  `<text x="${x}" y="${y - (note ? size * 0.5 : 0)}" text-anchor="middle" font-size="${size}" font-weight="${bold ? 700 : 600}" fill="${color}">${esc(label)}</text>` +
+// A lane or stage written as words alone is those words; a record names them by label.
+const words = (x, y, label, note, color, bold, path, plain) =>
+  `<text x="${x}" y="${y - (note ? size * 0.5 : 0)}" text-anchor="middle" font-size="${size}" font-weight="${bold ? 700 : 600}" fill="${color}"${api.text(plain ? path : path + ".label")}>${esc(label)}</text>` +
   (note
-    ? `<text x="${x}" y="${y + size * 0.8}" text-anchor="middle" font-size="${size * 0.8}" fill="${muted}">${esc(note)}</text>`
+    ? `<text x="${x}" y="${y + size * 0.8}" text-anchor="middle" font-size="${size * 0.8}" fill="${muted}"${api.text(path + ".note")}>${esc(note)}</text>`
     : "");
 let out = `<rect x="${sw / 2}" y="${sw / 2}" width="${W - sw}" height="${H - sw}" rx="${r}" fill="none" stroke="${muted}" stroke-opacity=".6" stroke-width="${sw}"/>`;
 // Bands first, so the stage tints and rules lie over them.
@@ -94,15 +95,24 @@ lanes.forEach((l, i) => {
   if (i || m)
     out += across ? line(0, c0, W, c0) : line(c0, 0, c0, H);
   const b = box([0, head], [c0, cl]);
-  out += `<rect x="${b.x + sw}" y="${b.y + sw}" width="${b.w - sw}" height="${b.h - 2 * sw}" fill="${c}" fill-opacity=".14"/>`;
-  out += words(b.x + b.w / 2, b.y + b.h / 2, l.label, l.note, l.accent || l.color ? c : ink);
+  const path = api.path("lanes", l, i);
+  // A lane is its header; its band is where things in it stand.
+  out += `<g${api.part(path, { reorder: across ? "y" : "x" })}><rect x="${b.x + sw}" y="${b.y + sw}" width="${b.w - sw}" height="${b.h - 2 * sw}" fill="${c}" fill-opacity=".14"/>${words(b.x + b.w / 2, b.y + b.h / 2, l.label, l.note, l.accent || l.color ? c : ink, true, path, typeof (d.lanes || [])[i] === "string")}</g>`;
+  api.slot("lanes", i, across ? { x: b.x + b.w / 2, y: c0 } : { x: c0, y: b.y + b.h / 2 });
 });
+if (lanes.length) {
+  const [c0, cl] = laneAt(lanes.length - 1);
+  api.slot("lanes", lanes.length, across ? { x: head / 2, y: Math.min(H - 4, c0 + cl) } : { x: Math.min(W - 4, c0 + cl), y: head / 2 });
+}
 stages.forEach((s, j) => {
   const [a0, al] = stageAt(j);
   if (j) out += across ? line(a0, top, a0, H, `${sw * 3} ${sw * 3}`) : line(top, a0, W, a0, `${sw * 3} ${sw * 3}`);
   const b = box([a0, al], [0, top]);
-  out += words(b.x + b.w / 2, b.y + b.h / 2, s.label, s.note, s.accent ? s.color || accent : ink, false);
+  const path = api.path("stages", s, j);
+  out += `<g${api.part(path, { reorder: across ? "x" : "y" })}><rect class="plain" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="transparent"/>${words(b.x + b.w / 2, b.y + b.h / 2, s.label, s.note, s.accent ? s.color || accent : ink, false, path, typeof (d.stages || [])[j] === "string")}</g>`;
+  api.slot("stages", j, across ? { x: a0, y: top / 2 } : { x: top / 2, y: a0 });
 });
+if (m) api.slot("stages", m, across ? { x: W - 4, y: top / 2 } : { x: top / 2, y: H - 4 });
 out += across ? line(head, 0, head, H) : line(0, head, W, head);
 const svg = api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}" dominant-baseline="central">${out}</svg>`,

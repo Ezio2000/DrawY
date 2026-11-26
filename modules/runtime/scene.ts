@@ -9,14 +9,16 @@ import type {
   Target,
   MaterialUse,
 } from "../contracts/index.ts";
-import { drawingOf, labelOf } from "../contracts/index.ts";
-import { linkEnds, union } from "../contracts/geometry.ts";
+import { drawingOf, endLink, endModule, labelOf, withTokens } from "../contracts/index.ts";
+import { carried, linkEnds, union } from "../contracts/geometry.ts";
+import { editable, measure, strayPaths, unmarkedTexts, type Declared, type EditableAPI, type EditMap } from "./edp.ts";
+export type { EditMap } from "./edp.ts";
 
 export interface SceneOptions {
   open: (target: Target) => void;
   error: (message: string) => void;
 }
-export interface DrawingAPI {
+export interface DrawingAPI extends EditableAPI {
   data: Record<string, unknown>;
   width: number;
   height: number;
@@ -68,6 +70,12 @@ type View = {
   revision: number;
   materials: Set<string>;
   usesPictures: boolean;
+  /** Where it was last drawn, and what its drawing declared there. */
+  bounds?: Bounds;
+  data?: Record<string, unknown>;
+  declared?: Declared;
+  /** Its declarations measured, for the revision and box they were measured at. */
+  measured?: { key: string; map: EditMap | undefined };
 };
 export interface PatchResult {
   /** Modules newly added or whose drawing, data, or size changed. */
@@ -141,8 +149,17 @@ export class SceneRenderer {
     this.element.style.cssText =
       "position:absolute;inset:0;pointer-events:none";
   }
+  /** The whole scene: its modules and the lines between their links' ends, which a free
+   * end or one riding on a line can take past every module. */
   get bounds() {
-    return union([...this.instances.values()].map((m) => m.bounds));
+    return union([...[...this.instances.values()].map((m) => m.bounds), ...this.linkBoxes()]);
+  }
+  /** The box each link's two ends span. */
+  linkBoxes(): Bounds[] {
+    return [...this.links.values()].map((l) => {
+      const { from, to } = this.ends(l);
+      return { x: Math.min(from.x, to.x), y: Math.min(from.y, to.y), width: Math.abs(from.x - to.x), height: Math.abs(from.y - to.y) };
+    });
   }
   /** The element that holds a drawn module or link. */
   host(kind: "module" | "link", id: string) {
@@ -421,10 +438,15 @@ export class SceneRenderer {
               return Reflect.ownKeys(target);
             },
           });
+        // What the module's own drawing declares; a drawing it draws inside itself declares
+        // nothing, as its paths would name that drawing's data.
+        const own = editable(true);
         const apiFor = (
           data: Record<string, unknown>,
           size: { width: number; height: number },
+          edp: EditableAPI = editable(false).api,
         ): DrawingAPI => ({
+          ...edp,
           data,
           ...size,
           theme: this.work.style,
@@ -460,12 +482,11 @@ export class SceneRenderer {
           // The work's own definition, or a library drawing used as it is.
           const drawing = drawingOf(this.work, drawingId);
           if (!drawing) throw Error(`画法 ${drawingId} 不在作品中：在 drawings 里定义它，或用库里画法素材的 id`);
+          // A colour written as a style token draws in the work's colour for it.
+          const full = withTokens(drawing.params, { ...drawing.defaults, ...data }, this.work.style);
           const result = await execute(
             drawing.source,
-            apiFor({ ...drawing.defaults, ...data }, {
-              width: bounds.width,
-              height: bounds.height,
-            }),
+            apiFor(full, { width: bounds.width, height: bounds.height }, own.api),
           );
           if (stale()) {
             for (const fn of cleanup.splice(0)) fn();
@@ -501,6 +522,13 @@ export class SceneRenderer {
             result,
           );
           host.removeAttribute("data-error");
+          view.bounds = { ...bounds };
+          view.data = full;
+          view.declared = own.declared;
+          view.measured = undefined;
+          // A path that leads nowhere in the data is the drawing's mistake, told like any other.
+          const stray = strayPaths(host.shadowRoot!, own.declared, full);
+          if (stray.length) this.options.error(`${id}: 画法标注的数据路径不在数据里：${stray.join("、")}`);
           if (kind === "module") {
             const m = this.instances.get(id)!;
             host.title = labelOf(m);
@@ -517,13 +545,57 @@ export class SceneRenderer {
       })(),
     );
   }
+  /** What a drawn module or link offers to edit, measured on the scene where it is drawn
+   * now; kept until it is drawn again or moves. */
+  editMap(id: string, kind: "module" | "link" = "module"): EditMap | undefined {
+    const view = this.views.get(kind + ":" + id);
+    if (!view?.declared || !view.bounds || !view.host.isConnected) return undefined;
+    const bounds = kind === "module" ? (this.instances.get(id)?.bounds ?? view.bounds) : view.bounds;
+    const key = JSON.stringify([view.revision, bounds]);
+    if (view.measured?.key !== key) view.measured = { key, map: measure(view.host, bounds, view.declared) };
+    return view.measured.map;
+  }
+  /** Words from a module's data its drawing shows without marking them as that data, by path. */
+  unmarked(id: string) {
+    const view = this.views.get("module:" + id);
+    const m = this.instances.get(id);
+    const fields = m && drawingOf(this.work, m.drawingId)?.params;
+    if (!view?.data || !fields || !view.host.shadowRoot) return [];
+    return unmarkedTexts(view.host.shadowRoot, fields, view.data);
+  }
   private drawModule(m: Instance) {
     return this.draw(m.id, m.drawingId, m.bounds, m.data, "module");
   }
-  /** Where a link's ends meet their modules as they are now, in scene units, and the side
-   * each is on. */
-  ends(l: Pick<Link, "from" | "to">) {
-    return linkEnds(l, (id) => this.instances.get(id)!.bounds);
+  /** Where a link's ends are as the scene stands now, in scene units, and the side of its
+   * module each is on: on a module's box or the outline its drawing declares, along another
+   * link, or at a free point. */
+  ends(l: Pick<Link, "from" | "to">, depth = 0): ReturnType<typeof linkEnds> {
+    return linkEnds(l, {
+      box: (id) => this.instances.get(id)?.bounds,
+      outline: (id) => this.editMap(id)?.outline,
+      // A link riding on another, which may ride on a third; a ring of them goes nowhere.
+      line: (id) => {
+        const other = this.links.get(id);
+        return other && depth < 6 ? this.ends(other, depth + 1) : undefined;
+      },
+    });
+  }
+  /** The links that meet some modules, and those riding on them, however far. */
+  private meeting(modules: Set<string>) {
+    const out = new Set<string>();
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const l of this.links.values()) {
+        if (out.has(l.id)) continue;
+        const ends = [l.from, l.to];
+        if (ends.some((e) => modules.has(endModule(e) ?? "") || out.has(endLink(e) ?? ""))) {
+          out.add(l.id);
+          grew = true;
+        }
+      }
+    }
+    return out;
   }
   private drawLink(l: Link) {
     const { from, to } = this.ends(l);
@@ -542,18 +614,10 @@ export class SceneRenderer {
       toSide: to.side,
     });
   }
-  /** Draws the links, or only those meeting some modules. */
+  /** Draws the links, or only those meeting some modules (and those riding on them). */
   private drawLinks(meeting?: Set<string>) {
-    return Promise.all(
-      [...this.links.values()]
-        .filter(
-          (l) =>
-            !meeting ||
-            meeting.has(l.from.moduleId) ||
-            meeting.has(l.to.moduleId),
-        )
-        .map((l) => this.drawLink(l)),
-    );
+    const drawn = meeting && this.meeting(meeting);
+    return Promise.all([...this.links.values()].filter((l) => !drawn || drawn.has(l.id)).map((l) => this.drawLink(l)));
   }
   /** Puts modules at other places and sizes at once, without drawing anything again: a
    * resized module is stretched to its new box until `move` draws it at that size. */
@@ -578,10 +642,12 @@ export class SceneRenderer {
   async move(moves: { id: string; bounds: Bounds }[]) {
     const jobs: Promise<unknown>[] = [];
     const moved = new Set<string>();
+    const by = new Map<string, Point>();
     for (const move of moves) {
       const m = this.instances.get(move.id);
       if (!m) continue;
       moved.add(m.id);
+      by.set(m.id, { x: move.bounds.x - m.bounds.x, y: move.bounds.y - m.bounds.y });
       const sizeChanged =
         m.bounds.width !== move.bounds.width ||
         m.bounds.height !== move.bounds.height;
@@ -593,9 +659,16 @@ export class SceneRenderer {
           top: m.bounds.y + "px",
         });
     }
+    // A line hanging from a moved module by one end moves whole with it.
+    for (const l of this.links.values()) {
+      const next = carried(l, by);
+      if (next) Object.assign(l, next);
+    }
     this.relayer();
-    // Only the links that meet a moved module follow it.
-    await Promise.all([...jobs, this.drawLinks(moved)]);
+    // Only the links that meet a moved module follow it, those meeting one drawn again at
+    // its new size once it is, as they may meet it along the outline it draws.
+    await Promise.all(jobs);
+    await this.drawLinks(moved);
   }
   set(id: string, data: Record<string, unknown>) {
     const m = this.instances.get(id)!;
@@ -697,6 +770,8 @@ export class SceneRenderer {
     const inkedIds = new Set<string>();
     const moved: { id: string; dx: number; dy: number }[] = [];
     const geometryChanged = new Set<string>();
+    /** Modules being drawn again, whose outline is known once they are. */
+    const redrawn = new Set<string>();
     const developed: { moduleId: string; materialId: string }[] = [];
     for (const next of scene.modules) {
       const was = this.instances.get(next.id),
@@ -717,6 +792,7 @@ export class SceneRenderer {
       if (!was || !host || look(before, was) !== look(work, m)) {
         inked.push(m);
         inkedIds.add(m.id);
+        redrawn.add(m.id);
         jobs.push(this.drawModule(m));
         if (options?.hideNew && !host) {
           const created = this.views.get("module:" + m.id)?.host;
@@ -735,6 +811,7 @@ export class SceneRenderer {
         for (const materialId of usedDeveloped)
           developed.push({ moduleId: m.id, materialId });
         jobs.push(this.drawModule(m));
+        redrawn.add(m.id);
         continue;
       }
       if (was.bounds.x !== m.bounds.x || was.bounds.y !== m.bounds.y) {
@@ -771,17 +848,22 @@ export class SceneRenderer {
         w.drawings[l.drawingId] ?? null,
       ]);
     const drawnLinks: string[] = [];
+    // A link meeting a module along the outline it draws waits for it to be drawn again.
+    const alongRedrawn = (e: Link["from"]) =>
+      "moduleId" in e && redrawn.has(e.moduleId) && typeof e.at === "object" && !Array.isArray(e.at);
+    if (scene.links.some((l) => alongRedrawn(l.from) || alongRedrawn(l.to))) await Promise.all(jobs);
+    // Every link is in place before any is drawn, as a link riding on another reads its
+    // ends from that one, wherever it stands in the list.
+    const prevLinks = new Map(scene.links.map((l) => [l.id, this.links.get(l.id)]));
+    for (const l of scene.links) this.links.set(l.id, structuredClone(l));
     for (const nextLink of scene.links) {
-      const prevLink = this.links.get(nextLink.id);
+      const prevLink = prevLinks.get(nextLink.id);
       const linkView = this.views.get("link:" + nextLink.id);
-      const l = structuredClone(nextLink);
-      this.links.set(l.id, l);
-      const endpointsInked =
-        inkedIds.has(l.from.moduleId) || inkedIds.has(l.to.moduleId);
-      const endpointsChanged =
-        endpointsInked ||
-        geometryChanged.has(l.from.moduleId) ||
-        geometryChanged.has(l.to.moduleId);
+      const l = this.links.get(nextLink.id)!;
+      const touches = (ids: Set<string>) => [l.from, l.to].some((e) => ids.has(endModule(e) ?? ""));
+      const endpointsInked = touches(inkedIds);
+      // A link riding on another is drawn again with it, whatever moved that one.
+      const endpointsChanged = endpointsInked || touches(geometryChanged) || [l.from, l.to].some((e) => !!endLink(e));
       const linkChanged =
         !prevLink || !linkView || linkLook(before, prevLink) !== linkLook(work, l);
       const linkPicturesChanged =

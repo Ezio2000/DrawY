@@ -34,21 +34,26 @@ let out = "";
 items.forEach((it, i) => {
   const y = row * (i + 0.5);
   const cx = bs / 2 + sw;
+  const path = api.path("items", it, i);
+  let item = `<rect class="plain" x="0" y="${y - row / 2}" width="${W}" height="${row}" fill="transparent"/>`;
   if (marker === "check") {
-    out += `<rect x="${sw}" y="${y - bs / 2}" width="${bs}" height="${bs}" rx="${bs * 0.22}" fill="${it.done ? color : paper}" stroke="${it.done ? color : muted}" stroke-width="${sw}"/>`;
+    item += `<rect x="${sw}" y="${y - bs / 2}" width="${bs}" height="${bs}" rx="${bs * 0.22}" fill="${it.done ? color : paper}" stroke="${it.done ? color : muted}" stroke-width="${sw}"/>`;
     if (it.done)
-      out += `<path d="M${cx - bs * 0.26} ${y + bs * 0.02}l${bs * 0.18} ${bs * 0.2}l${bs * 0.34} ${-bs * 0.4}" fill="none" stroke="${paper}" stroke-width="${Math.max(1.6, bs * 0.13)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+      item += `<path d="M${cx - bs * 0.26} ${y + bs * 0.02}l${bs * 0.18} ${bs * 0.2}l${bs * 0.34} ${-bs * 0.4}" fill="none" stroke="${paper}" stroke-width="${Math.max(1.6, bs * 0.13)}" stroke-linecap="round" stroke-linejoin="round"/>`;
   } else if (marker === "number") {
-    out += `<circle cx="${cx}" cy="${y}" r="${bs / 2}" fill="${color}"/><text x="${cx}" y="${y}" text-anchor="middle" font-size="${bs * 0.6}" font-weight="700" fill="${paper}">${i + 1}</text>`;
+    item += `<circle cx="${cx}" cy="${y}" r="${bs / 2}" fill="${color}"/><text x="${cx}" y="${y}" text-anchor="middle" font-size="${bs * 0.6}" font-weight="700" fill="${paper}">${i + 1}</text>`;
   } else
-    out += `<circle cx="${cx}" cy="${y}" r="${bs * 0.2}" fill="${color}"/>`;
+    item += `<circle cx="${cx}" cy="${y}" r="${bs * 0.2}" fill="${color}"/>`;
   const tx = bs + sw + size * 0.7;
   const ty = it.note ? y - size * 0.5 : y;
   const done = marker === "check" && it.done;
-  out += `<text x="${tx}" y="${ty}" font-size="${size}" fill="${done ? muted : ink}"${it.accent ? ' font-weight="700"' : ""}${done && d.strike !== false ? ' text-decoration="line-through"' : ""}>${esc(it.label)}</text>`;
+  item += `<text x="${tx}" y="${ty}" font-size="${size}" fill="${done ? muted : ink}"${it.accent ? ' font-weight="700"' : ""}${done && d.strike !== false ? ' text-decoration="line-through"' : ""}${api.text(typeof (d.items || [])[i] === "string" ? path : path + ".label")}>${esc(it.label)}</text>`;
   if (it.note)
-    out += `<text x="${tx}" y="${ty + size * 1.25}" font-size="${size * 0.82}" fill="${muted}">${esc(it.note)}</text>`;
+    item += `<text x="${tx}" y="${ty + size * 1.25}" font-size="${size * 0.82}" fill="${muted}"${api.text(path + ".note")}>${esc(it.note)}</text>`;
+  out += `<g${api.part(path, { reorder: "y" })}>${item}</g>`;
+  api.slot("items", i, { x: cx, y: y - row / 2 });
 });
+if (items.length) api.slot("items", items.length, { x: bs / 2 + sw, y: H - 2 });
 const svg = api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}" dominant-baseline="central">${out}</svg>`,
 );

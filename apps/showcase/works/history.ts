@@ -47,8 +47,8 @@ export const history: ShowcaseSource = {
           id: "towers",
           name: say("按比例画的灯塔时间线", "A timeline of towers to scale"),
           params: {
-            perMetre: { label: say("每米多少像素", "Pixels per metre"), type: "number", min: 1, max: 6, step: 0.1 },
-            every: { label: say("自动讲下一座（秒）", "Seconds before the next"), type: "number", min: 1, max: 20, step: 0.5 },
+            perMetre: { label: { zh: "每米多少像素", en: "Pixels per metre" }, type: "number", min: 1, max: 6, step: 0.1 },
+            every: { label: { zh: "自动讲下一座（秒）", en: "Seconds before the next" }, type: "number", min: 1, max: 20, step: 0.5 },
           },
           defaults: { ground: 590, perMetre: 3.2, left: 110, right: 40, every: 5, breakAfter: 2, card: [240, 104, 620] },
           source: code("towers-history"),

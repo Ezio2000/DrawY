@@ -1,10 +1,11 @@
-import { SceneRenderer, type PatchResult } from "../runtime/scene.ts";
-import { fit, union, zoom, type Camera } from "../contracts/geometry.ts";
-import { shownName } from "../contracts/index.ts";
+import { SceneRenderer, type EditMap, type PatchResult } from "../runtime/scene.ts";
+import { boxOutline, fit, nearestAlong, union, zoom, type Camera } from "../contracts/geometry.ts";
+import { drawingOf, endLink, endModule, fieldAt, getAt, parsePath, setAt as setIn, shownName, type LinkEnd } from "../contracts/index.ts";
 import { plan, play, gesture, hatching } from "./ink.ts";
 import {
   carried,
   facing,
+  itemOf,
   handles,
   resized,
   scaled,
@@ -37,11 +38,25 @@ export type Pointed =
       moduleId: string;
       link?: boolean;
       text: string;
+      /** The data path the drawing marked these words as, when it marked them. */
+      path?: string;
       /** Where the words are on screen now, and their size there; the view may have
        * moved since they were pointed at. */
       place: () => { rect: DOMRect; size: number };
     }
   | { kind: "picture"; moduleId: string; material: string };
+/** Where an end of a link would bind at a point: the end, where it lands on the scene, and
+ * the outline it lands on (to show), if any. */
+export interface Binding {
+  end: LinkEnd;
+  point: Point;
+  outline?: Point[];
+}
+/** An item of a module's data selected inside it, by the path its drawing marked it with. */
+export interface PartPick {
+  moduleId: string;
+  path: string;
+}
 export interface CanvasOptions {
   camera?: Camera;
   /** Whether modules can be moved and resized: a selected module follows a drag. */
@@ -71,28 +86,36 @@ export interface CanvasOptions {
   select: (selection: Selection[], links: string[]) => void;
   /** A double click on words or a picture in a module. */
   point?: (pointed: Pointed) => void;
+  /** A part of the one module selected was selected inside it, or none is any more. Given,
+   * a second press on a module selected alone selects the part of its drawing under it;
+   * while editing, or always with `parts: "always"` (a page that does not edit). */
+  part?: (part: PartPick | null) => void;
+  parts?: "editing" | "always";
+  /** A place for a new item of a list pressed (its "+"), inside a module. */
+  insert?: (at: { moduleId: string; list: string; index: number }) => void;
+  /** An item of a list dragged to another place in it. */
+  reorder?: (at: { moduleId: string; list: string; item: string | number; to: number }) => void;
+  /** A reference's handle dropped on an item it can refer to, as a message's end on a lifeline. */
+  retarget?: (at: { moduleId: string; path: string; to: string }) => void;
+  /** A value dragged by its handle to another: a number, or a place on a map. */
+  setValue?: (at: { moduleId: string; path: string; value: unknown }) => void;
+  /** A drag from one item's region to another's that makes a new item between them. */
+  create?: (at: { moduleId: string; list: string; index: number; values: Record<string, unknown> }) => void;
   cameraChanged?: (camera: Camera) => void;
   commit?: (moves: { id: string; bounds: Bounds }[]) => void;
   /** Modules dragged off with Alt held while editing: copies of them go that far from
    * where they stand, and they stay. */
   duplicate?: (ids: string[], by: Point) => void;
-  /** A link drawn while editing, from one module to another: between the sides named when
-   * it was drawn from a side's dot and dropped on a side, or between the modules as they
-   * face each other when drawn with the link tool. */
-  connect?: (
-    from: { moduleId: string; side?: Side },
-    to: { moduleId: string; side?: Side },
-  ) => void;
+  /** A link drawn while editing: from a side's dot, or with the arrow tool from where it
+   * was pressed to where it was let go, each end as it binds there (`bindingAt`); `upright`
+   * when it was drawn straight up or down, as a line rather than an arrow. */
+  connect?: (from: LinkEnd, to: LinkEnd, how?: { upright?: boolean }) => void;
   /** The dot on a side of a module pressed, or a link from it let go over the paper: a new
    * module like it is wanted there (beyond that side, when no point is given), linked to
    * it. */
   extend?: (from: { moduleId: string; side: Side }, at?: Point) => void;
-  /** An end of a link dragged onto a side of a module while editing. */
-  reconnect?: (
-    linkId: string,
-    end: "from" | "to",
-    to: { moduleId: string; side: Side },
-  ) => void;
+  /** An end of a link dragged elsewhere while editing, binding as it lands. */
+  reconnect?: (linkId: string, end: "from" | "to", to: LinkEnd) => void;
   /** A right click while editing, at a point on screen, after the selection has followed
    * it; for the menu of what can be done there. */
   menu?: (at: { x: number; y: number }) => void;
@@ -104,9 +127,10 @@ export interface CanvasOptions {
    * and a double click on the paper while editing, at its point. */
   place?: (at: Point, box?: Bounds) => void;
   /** A line drawn while editing, in scene units: with the pen, through the points the hand
-   * went; with the arrow tool, straight from the press to where it was let go. An arrow
-   * drawn from one module onto another is a link between them, asked for with `connect`. */
-  ink?: (points: Point[], how: { kind: "pen" | "arrow" }) => void;
+   * went; with the arrow tool, straight from the press to where it was let go, when neither
+   * end binds to anything (`upright` when drawn straight up or down). An arrow with an end
+   * on a module or a link is a link, asked for with `connect`. */
+  ink?: (points: Point[], how: { kind: "pen" | "arrow"; upright?: boolean }) => void;
   /** Modules and links rubbed out with the eraser while editing, by id. */
   erase?: (ids: string[]) => void;
   /** A scene has been drawn and is now on screen. */
@@ -130,7 +154,7 @@ const FIGURES = "'Sofia Sans Letters','Sofia Sans',system-ui,sans-serif";
 /** What a press does while editing: select and move, move the view, draw a box for
  * something new, draw a link from one module to another, draw a line freehand (pen) or
  * straight (arrow), or rub parts out (erase). */
-export type CanvasTool = "select" | "hand" | "draw" | "link" | "pen" | "arrow" | "erase";
+export type CanvasTool = "select" | "hand" | "draw" | "pen" | "arrow" | "erase";
 /** The eraser's mark on screen: a small ring where it rubs. */
 const ERASER = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="7" fill="rgba(255,255,255,.7)" stroke="#555" stroke-width="1.5"/></svg>')}") 10 10, cell`;
 /** The angle a straight line drawn with Shift held keeps to a multiple of. */
@@ -164,6 +188,22 @@ function placeOf(words: Element) {
         : rect.height * 0.8,
   };
 }
+/** Data with a value dragged by a handle: a record's fields given whole merge into it (a
+ * place moved on a map), anything else is set at the path. */
+function pointValue(data: Record<string, unknown>, path: string, value: unknown) {
+  const at = getAt(data, path);
+  const merged =
+    value && typeof value === "object" && !Array.isArray(value) && at && typeof at === "object" && !Array.isArray(at) ? { ...at, ...value } : value;
+  return setIn(data, path, merged) as Record<string, unknown> | null;
+}
+const isFreeEnd = (end: LinkEnd) => !("moduleId" in end) && !("linkId" in end);
+/** Where a bound end stands: a side's middle, or the point found on the outline. */
+const middle = (end: LinkEnd, b: Bounds, found: Point): Point =>
+  "moduleId" in end && typeof end.at === "string"
+    ? { x: b.x + sidePoint[end.at].x * b.width, y: b.y + sidePoint[end.at].y * b.height }
+    : found;
+/** Whether a line from a to b runs upright, as a line drawn down from a box does. */
+const upright = (a: Point, b: Point) => Math.abs(b.x - a.x) * 5 < Math.abs(b.y - a.y);
 function distance(p: Point, a: Point, b: Point) {
   const dx = b.x - a.x,
     dy = b.y - a.y,
@@ -209,6 +249,21 @@ export class Canvas {
    * can be dragged at once, and Shift adds to the selection. */
   private editing = false;
   private selection: string[] = [];
+  /** The part selected inside the one module selected, and the one the pointer is over. */
+  private chosenPart: PartPick | null = null;
+  private hoveredPart: PartPick | null = null;
+  private partBox = document.createElement("div");
+  private partHover = document.createElement("div");
+  /** More parts selected with the first, by Shift, in the same module. */
+  private moreParts: string[] = [];
+  private partBoxes: HTMLDivElement[] = [];
+  /** The "+" of the place for a new item nearest the pointer, the handles of the parts
+   * selected, where a dragged item would go, and the region a drag would drop on. */
+  private slotMark?: HTMLButtonElement;
+  private nearSlot: { list: string; index: number; at: Point } | null = null;
+  private handleMarks: HTMLButtonElement[] = [];
+  private dropLine = document.createElement("div");
+  private target = document.createElement("div");
   private outlines: HTMLDivElement[] = [];
   private hovered: string | null = null;
   private hover = document.createElement("div");
@@ -280,6 +335,9 @@ export class Canvas {
     pointer: number;
     /** Whether a finger made it. */
     touch: boolean;
+    /** A press on the one module selected: let go without a drag, it selects the part of
+     * the drawing it landed on (none where it landed on no part). */
+    pickPart?: PartPick | null;
   } & (
     | { kind: "pan"; camera: Camera }
     | {
@@ -323,12 +381,28 @@ export class Canvas {
     | { kind: "draw"; start: Point; box?: Bounds }
     | { kind: "connect"; from: { moduleId: string; side?: Side } }
     | { kind: "relink"; linkId: string; end: "from" | "to" }
-    /** A line being drawn: the pen's every point, or the arrow's two ends; and the module
-     * an arrow began on, to link it to the one it ends on. */
-    | { kind: "ink"; points: Point[]; straight: boolean; from?: string }
+    /** A line being drawn: the pen's every point, or the arrow's two ends; and what the
+     * arrow's start binds to, to make it a link when either end binds. */
+    | { kind: "ink"; points: Point[]; straight: boolean; from?: Binding }
     /** The eraser going over parts: those it has touched go when it is lifted. */
     | { kind: "erase"; hit: Set<string>; last: { x: number; y: number } }
     | { kind: "press" }
+    /** An item of a module's list dragged along its rows to another place. */
+    | { kind: "reorder"; moduleId: string; list: string; item: string | number; axis: "x" | "y"; to?: number }
+    /** A handle of a part dragged: onto an item it can refer to, or along to change a value. */
+    | {
+        kind: "handle";
+        moduleId: string;
+        handle: EditMap["handles"][number];
+        /** The data drawn, defaults filled in, that the handle changes. */
+        data: Record<string, unknown>;
+        /** The module's own data before the drag, drawn again when it is let go of. */
+        was: Record<string, unknown>;
+        to?: string;
+        value?: unknown;
+      }
+    /** A drag from one item's region to another's, making a new item between them. */
+    | { kind: "create"; moduleId: string; list: string; between: [string, string]; fields?: Record<string, unknown>; rows: "x" | "y"; from: string; start: Point; to?: string }
   );
   /** The fingers on the canvas now, where they are on screen. */
   private touches = new Map<number, Point>();
@@ -369,6 +443,15 @@ export class Canvas {
     this.hover.style.cssText =
       "position:absolute;border:1px solid rgba(51,102,214,.5);border-radius:2px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
     this.element.append(this.hover);
+    // A part inside a module is drawn round in a finer line than the module itself.
+    this.partBox.style.cssText =
+      `position:absolute;border:1px solid ${ACCENT};border-radius:2px;pointer-events:none;display:none;z-index:4;box-sizing:border-box;outline:2px solid rgba(255,255,255,.7);outline-offset:0`;
+    this.partHover.style.cssText =
+      "position:absolute;border:1px dashed rgba(51,102,214,.7);border-radius:2px;pointer-events:none;display:none;z-index:4;box-sizing:border-box";
+    this.element.append(this.partBox, this.partHover);
+    this.dropLine.style.cssText = `position:absolute;background:${ACCENT};pointer-events:none;display:none;z-index:5;border-radius:1px`;
+    this.target.style.cssText = `position:absolute;border:1.5px solid ${ACCENT};background:rgba(51,102,214,.08);border-radius:3px;pointer-events:none;display:none;z-index:4;box-sizing:border-box`;
+    this.element.append(this.dropLine, this.target);
     const english = /^en/i.test(document.documentElement.lang);
     // Controls are pressed by their invisible place, which grows to a fingertip on touch.
     const finger = fingers(),
@@ -414,6 +497,17 @@ export class Canvas {
       this.frame.append(dot);
     }
     this.element.append(this.frame);
+    // A new item goes in at a place a drawing offers: a plus in a dashed ring of the blue pencil.
+    this.slotMark = control(
+      { slot: "" },
+      hit(24),
+      `width:18px;height:18px;border-radius:50%;background:linear-gradient(${ACCENT},${ACCENT}) center/8px 1.5px no-repeat,linear-gradient(${ACCENT},${ACCENT}) center/1.5px 8px no-repeat,#fff;border:1.5px dashed ${ACCENT}`,
+      english ? "Add one here" : "在这里添加一项",
+    ) as HTMLButtonElement;
+    this.slotMark.style.display = "none";
+    this.slotMark.style.zIndex = "5";
+    this.slotMark.style.cursor = "copy";
+    this.element.append(this.slotMark);
     this.groupBox.style.cssText =
       "position:absolute;border:1px dashed rgba(51,102,214,.5);border-radius:3px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
     this.element.append(this.groupBox);
@@ -429,7 +523,7 @@ export class Canvas {
     this.element.append(this.marquee);
     this.line.style.cssText =
       "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none;z-index:5;overflow:visible";
-    this.line.innerHTML = `<line stroke="${ACCENT}" stroke-width="1.5" stroke-dasharray="5 4" stroke-linecap="round"/><circle r="4" fill="${ACCENT}"/><circle data-target r="7" fill="#fff" stroke="${ACCENT}" stroke-width="2.5" style="display:none"/>`;
+    this.line.innerHTML = `<line stroke="${ACCENT}" stroke-width="1.5" stroke-dasharray="5 4" stroke-linecap="round"/><circle r="4" fill="${ACCENT}"/><circle data-target r="7" fill="#fff" stroke="${ACCENT}" stroke-width="2.5" style="display:none"/><path fill="none" stroke="${ACCENT}" stroke-opacity=".55" stroke-width="2" stroke-linejoin="round"/>`;
     this.element.append(this.line);
     this.ink.style.cssText =
       "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none;z-index:5;overflow:visible";
@@ -1027,13 +1121,13 @@ export class Canvas {
       if (
         !host ||
         (before?.scene.links.some((x) => x.id === l.id) &&
-          !done.has(l.from.moduleId) &&
-          !done.has(l.to.moduleId))
+          !done.has(endModule(l.from) ?? "") &&
+          !done.has(endModule(l.to) ?? ""))
       )
         continue;
       const ready = Math.max(
-        done.get(l.from.moduleId) ?? 0,
-        done.get(l.to.moduleId) ?? 0,
+        done.get(endModule(l.from) ?? "") ?? 0,
+        done.get(endModule(l.to) ?? "") ?? 0,
       );
       play(plan(host), Math.max(0, ready - 150), pace);
     }
@@ -1123,8 +1217,8 @@ export class Canvas {
       const host = renderer.host("link", id);
       if (!l || !host) continue;
       const ready = Math.max(
-        done.get(l.from.moduleId) ?? 0,
-        done.get(l.to.moduleId) ?? 0,
+        done.get(endModule(l.from) ?? "") ?? 0,
+        done.get(endModule(l.to) ?? "") ?? 0,
       );
       play(plan(host), Math.max(0, ready - 150), pace);
     }
@@ -1238,6 +1332,26 @@ export class Canvas {
         : undefined;
     if (over) box(this.hover, over.bounds);
     else this.hover.style.display = "none";
+    const partBox = (p: PartPick | null) => {
+      const m = p && this.renderer.instances.get(p.moduleId);
+      const found = m && !this.ghost.has(m.id) && this.renderer.editMap(m.id)?.parts.find((x) => x.path === p.path);
+      return found ? found.box : undefined;
+    };
+    const chosenBox = partBox(this.chosenPart);
+    if (chosenBox) box(this.partBox, chosenBox);
+    else this.partBox.style.display = "none";
+    const more = this.chosenPart ? this.moreParts.map((path) => partBox({ moduleId: this.chosenPart!.moduleId, path })) : [];
+    while (this.partBoxes.length < more.length) {
+      const el = this.partBox.cloneNode() as HTMLDivElement;
+      this.element.append(el);
+      this.partBoxes.push(el);
+    }
+    this.partBoxes.forEach((el, i) => (more[i] ? box(el, more[i]!) : (el.style.display = "none")));
+    this.paintEditMarks();
+    const hoverBox =
+      this.hoveredPart && this.hoveredPart.path !== this.chosenPart?.path && !this.gesture ? partBox(this.hoveredPart) : undefined;
+    if (hoverBox) box(this.partHover, hoverBox);
+    else this.partHover.style.display = "none";
     this.paintLinks();
     this.paintTargets();
     for (const fn of this.watchers) fn();
@@ -1466,13 +1580,15 @@ export class Canvas {
     if (drawn) this.traces.set(id, trace);
     return trace;
   }
-  /** The link drawn nearest a point on screen, if one passes within a few pixels of it. */
-  private linkAt(clientX: number, clientY: number) {
+  /** The link drawn nearest a point on screen, if one passes within a few pixels of it,
+   * other than `skip`. */
+  private linkAt(clientX: number, clientY: number, skip?: string) {
     const p = this.toScene(clientX, clientY),
       slop = (this.touching ? FINGER_SLOP : SLOP) / this.camera.scale;
     let best: string | null = null,
       nearest = slop;
     for (const id of this.renderer.links.keys()) {
+      if (id === skip) continue;
       const t = this.traceOf(id);
       if (!t) continue;
       for (const b of t.boxes)
@@ -1602,10 +1718,11 @@ export class Canvas {
   refit() {
     if (this.automatic) this.fit(true, 520);
   }
-  /** The drawing as a whole: its modules and the sketches of those on the way. */
+  /** The drawing as a whole: its modules, its links, and the sketches of those on the way. */
   private extent() {
     return union([
       ...[...this.renderer.instances.values()].map((m) => m.bounds),
+      ...this.renderer.linkBoxes(),
       ...[...this.sketches.values()].map((s) => s.bounds),
     ]);
   }
@@ -1779,7 +1896,7 @@ export class Canvas {
         ? this.gesture?.kind === "pan"
           ? "grabbing"
           : "grab"
-        : this.tool === "draw" || this.tool === "link" || this.tool === "pen" || this.tool === "arrow"
+        : this.tool === "draw" || this.tool === "pen" || this.tool === "arrow"
           ? "crosshair"
           : this.tool === "erase"
             ? ERASER
@@ -1802,10 +1919,16 @@ export class Canvas {
   get selectedLinks() {
     return [...this.linkSelection];
   }
+  /** What is selected now: the modules and the links. */
+  picked() {
+    return { modules: [...this.selection], links: [...this.linkSelection] };
+  }
   /** Selects modules, and links with them or alone; nothing, given none. */
   select(ids: string[], links: string[] = []) {
     this.selection = [...new Set(ids)].filter((id) => this.renderer.instances.has(id));
     this.linkSelection = [...new Set(links)].filter((id) => this.renderer.links.has(id));
+    if (this.chosenPart && (this.selection.length !== 1 || this.selection[0] !== this.chosenPart.moduleId || this.linkSelection.length))
+      this.setPart(null);
     this.options.select(
       this.selection.map((id) => {
         const m = this.renderer.instances.get(id)!;
@@ -1814,6 +1937,124 @@ export class Canvas {
       [...this.linkSelection],
     );
     this.paint();
+  }
+  /** The part selected inside the one module selected. */
+  get selectedPart() {
+    return this.chosenPart ? { ...this.chosenPart } : null;
+  }
+  /** Selects a part of a module (and the module alone with it), or no part. */
+  selectPart(part: PartPick | null) {
+    if (part && (this.selection.length !== 1 || this.selection[0] !== part.moduleId)) this.select([part.moduleId]);
+    this.setPart(part);
+    this.paint();
+  }
+  private setPart(part: PartPick | null, more: string[] = []) {
+    this.moreParts = part ? more.filter((p) => p !== part.path) : [];
+    if (this.chosenPart?.moduleId === part?.moduleId && this.chosenPart?.path === part?.path) return;
+    this.chosenPart = part;
+    this.options.part?.(part ? { ...part } : null);
+  }
+  /** The marks of what can be edited inside the module selected: the handles of the parts
+   * selected, or of the module itself, and the "+" of the place for a new item nearest the
+   * pointer. */
+  private paintEditMarks() {
+    const { x, y, scale } = this.camera;
+    const on = (p: Point) => ({ left: x + p.x * scale + "px", top: y + p.y * scale + "px" });
+    const handles = this.gesture ? [] : (this.shownHandles()?.handles ?? []);
+    while (this.handleMarks.length < handles.length) {
+      const mark = control(
+        { editHandle: String(this.handleMarks.length) },
+        fingers() ? 44 : 18,
+        `width:11px;height:11px;border-radius:50%;background:#fff;border:2px solid ${ACCENT};box-shadow:0 1px 3px rgba(0,0,0,.2)`,
+        /^en/i.test(document.documentElement.lang) ? "Drag to change" : "拖动来改",
+      ) as HTMLButtonElement;
+      mark.style.zIndex = "5";
+      mark.style.cursor = "grab";
+      this.element.append(mark);
+      this.handleMarks.push(mark);
+    }
+    this.handleMarks.forEach((mark, i) => {
+      const h = handles[i];
+      mark.style.display = h ? "grid" : "none";
+      if (h) Object.assign(mark.style, on(h.at));
+    });
+    const slot = this.slotMark!;
+    const near = this.nearSlot;
+    slot.style.display = near && this.editing && !this.gesture && this.tool === "select" ? "grid" : "none";
+    if (near) Object.assign(slot.style, on(near.at));
+  }
+  /** The handles marked, in order: those of the parts selected, or with only the module
+   * selected while editing, those of its own values (a gauge's reading, a now line) that
+   * belong to no part. */
+  private shownHandles() {
+    const moduleId = this.chosenPart?.moduleId ?? (this.editing && this.selection.length === 1 ? this.selection[0] : undefined);
+    const m = moduleId && this.editing ? this.renderer.editMap(moduleId) : undefined;
+    if (!moduleId || !m) return undefined;
+    const paths = this.chosenPart ? this.selectedParts.map((p) => p.path) : undefined;
+    // A part's handles are its own (a place on a chart moving the whole item) and its values'.
+    const under = (h: { path: string }, p: string) => h.path === p || h.path.startsWith(p + ".");
+    const handles = m.handles.filter((h) => (paths ? paths.some((p) => under(h, p)) : !m.parts.some((q) => under(h, q.path))));
+    return { moduleId, handles };
+  }
+  /** A module's data as its drawing draws it: its own over the drawing's defaults. */
+  private drawnData(m: Instance) {
+    return { ...(drawingOf(this.renderer.work, m.drawingId)?.defaults ?? {}), ...m.data };
+  }
+  /** The smallest region an item declared as what can be referred to, under a point. */
+  private anchorAt(map: EditMap, clientX: number, clientY: number, list?: string) {
+    const p = this.toScene(clientX, clientY);
+    return map.anchors
+      .filter((a) => (!list || a.list === list) && p.x >= a.box.x && p.x <= a.box.x + a.box.width && p.y >= a.box.y && p.y <= a.box.y + a.box.height)
+      .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height)[0];
+  }
+  /** The list a reference field of a list's items refers into, by the module's schema. */
+  private refersTo(m: Instance, list: string, field: string) {
+    const f = fieldAt(drawingOf(this.renderer.work, m.drawingId)?.params ?? {}, `${list}.0.${field}`);
+    return f?.type === "ref" ? f.to : undefined;
+  }
+  /** The places for new items of a list a module offers, along an axis. */
+  private nearestSlot(map: EditMap, list: string, p: Point, axis: "x" | "y") {
+    return map.slots
+      .filter((s) => s.list === list)
+      .sort((a, b) => Math.abs(a.at[axis] - p[axis]) - Math.abs(b.at[axis] - p[axis]))[0];
+  }
+  /** The parts selected inside the one module selected, the first first. */
+  get selectedParts(): PartPick[] {
+    return this.chosenPart ? [this.chosenPart, ...this.moreParts.map((path) => ({ moduleId: this.chosenPart!.moduleId, path }))] : [];
+  }
+  /** Marked words of a module under a path, as a double click on them points at them: what
+   * a new item is typed into once it is drawn. */
+  wordsAt(moduleId: string, path: string): Extract<Pointed, { kind: "text" }> | undefined {
+    const root = this.renderer.host("module", moduleId)?.shadowRoot;
+    const marked = [...(root?.querySelectorAll("[data-edp-text]") ?? [])].find((el) => {
+      const at = el.getAttribute("data-edp-text")!;
+      return at === path || at.startsWith(path + ".");
+    });
+    if (!marked) return undefined;
+    return { kind: "text", moduleId, text: marked.textContent?.trim() ?? "", path: marked.getAttribute("data-edp-text")!, place: () => placeOf(marked) };
+  }
+  /** What a module offers to edit, measured where it is drawn now. */
+  editMap(moduleId: string) {
+    return this.renderer.editMap(moduleId);
+  }
+  /** Words of a module's data its drawing shows without marking them as that data. */
+  unmarked(moduleId: string) {
+    return this.renderer.unmarked(moduleId);
+  }
+  /** Whether parts of modules can be selected now. */
+  private get partsOn() {
+    return !!this.options.part && (this.editing || this.options.parts === "always");
+  }
+  /** The smallest part of a module's drawing under a point on screen. */
+  private partAt(m: Instance, clientX: number, clientY: number): PartPick | null {
+    const map = this.renderer.editMap(m.id);
+    if (!map) return null;
+    const p = this.toScene(clientX, clientY),
+      slop = (this.touching ? FINGER_SLOP / 2 : 2) / this.camera.scale;
+    const under = map.parts
+      .filter(({ box: b }) => p.x >= b.x - slop && p.x <= b.x + b.width + slop && p.y >= b.y - slop && p.y <= b.y + b.height + slop)
+      .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height)[0];
+    return under ? { moduleId: m.id, path: under.path } : null;
   }
   /** The one link selected, alone: its ends can be dragged elsewhere. */
   private get onlyLink() {
@@ -1970,6 +2211,24 @@ export class Canvas {
     this.near = near;
     this.paint();
   }
+  /** The place for a new item nearest the pointer, in the module selected alone. */
+  private hoverSlot(clientX: number, clientY: number) {
+    const map = this.editing && this.partsOn && this.selection.length === 1 ? this.renderer.editMap(this.selection[0]) : undefined;
+    const p = this.toScene(clientX, clientY),
+      reach = 16 / this.camera.scale;
+    const near = map?.slots
+      .map((s) => ({ s, d: Math.hypot(s.at.x - p.x, s.at.y - p.y) }))
+      .filter((x) => x.d <= reach)
+      .sort((a, b) => a.d - b.d)[0]?.s ?? null;
+    if (near?.list === this.nearSlot?.list && near?.index === this.nearSlot?.index) return;
+    this.nearSlot = near;
+    this.paintEditMarks();
+  }
+  private hoverPart(part: PartPick | null) {
+    if (this.hoveredPart?.path === part?.path && this.hoveredPart?.moduleId === part?.moduleId) return;
+    this.hoveredPart = part;
+    this.paint();
+  }
   private hoverOver(id: string | null, link: string | null = null) {
     if (this.hovered === id && this.hoveredLink === link) return;
     this.hovered = id;
@@ -2019,6 +2278,16 @@ export class Canvas {
         .map((n) => n.textContent)
         .join("")
         .trim();
+    // Words the drawing marked as a value of its data change that value, wherever they are.
+    const marked = inner.closest("[data-edp-text]");
+    if (marked) {
+      e.preventDefault();
+      getSelection()?.removeAllRanges();
+      const path = marked.getAttribute("data-edp-text")!;
+      const part = this.partsOn && this.partAt(picked.module!, e.clientX, e.clientY);
+      if (part) this.selectPart(part);
+      return this.options.point({ kind: "text", moduleId, path, text: marked.textContent?.trim() ?? "", place: () => placeOf(marked) });
+    }
     let el: Element | null = inner.closest("tspan,text");
     if (!el) {
       el = inner;
@@ -2053,7 +2322,7 @@ export class Canvas {
   ): Extract<Pointed, { kind: "text" }> | undefined {
     const root = this.renderer.host("module", moduleId)?.shadowRoot;
     if (!root) return undefined;
-    const found: { words: Element; text: string; rect: DOMRect; size: number }[] = [];
+    const found: { words: Element; text: string; rect: DOMRect; size: number; path?: string }[] = [];
     const seen = new Set<Element>();
     const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     while (walk.nextNode()) {
@@ -2061,12 +2330,26 @@ export class Canvas {
         parent = node.parentElement;
       const own = node.textContent?.trim();
       if (!own || !parent || parent.closest("style,script,defs")) continue;
-      const words = parent.closest("text") ?? parent;
+      const marked = parent.closest("[data-edp-text]");
+      const words = marked ?? parent.closest("text") ?? parent;
       if (seen.has(words)) continue;
       seen.add(words);
       const { rect, size } = placeOf(words);
       if (!rect.width || !rect.height) continue;
-      found.push({ words, text: words instanceof SVGElement ? words.textContent!.trim() : own, rect, size });
+      found.push({
+        words,
+        text: marked || words instanceof SVGElement ? words.textContent!.trim() : own,
+        rect,
+        size,
+        ...(marked ? { path: marked.getAttribute("data-edp-text")! } : {}),
+      });
+    }
+    // With a part of the module selected, its words are the ones meant.
+    const part = this.chosenPart?.moduleId === moduleId ? this.chosenPart.path : undefined;
+    const inPart = part ? found.filter((f) => f.path === part || f.path?.startsWith(part + ".")) : [];
+    if (inPart.length) {
+      const { words, text, path } = inPart[0];
+      return { kind: "text", moduleId, text, path, place: () => placeOf(words) };
     }
     if (!found.length) return undefined;
     const away = (r: DOMRect) =>
@@ -2080,11 +2363,12 @@ export class Canvas {
       found.reduce((best, f) =>
         f.size * Math.min(f.text.length, 12) > best.size * Math.min(best.text.length, 12) ? f : best,
       );
-    const { words, text } = chosen;
+    const { words, text, path } = chosen;
     return {
       kind: "text",
       moduleId,
       text,
+      ...(path ? { path } : {}),
       place: () => placeOf(words),
     };
   }
@@ -2198,15 +2482,8 @@ export class Canvas {
       this.gesture = { ...start, kind: "draw", start: this.toScene(e.clientX, e.clientY) };
       return capture();
     }
-    // The link tool draws a link from the module pressed to the one it is let go on.
-    if (this.editing && this.tool === "link") {
-      const from = this.moduleAt(e.clientX, e.clientY);
-      if (!from) return e.preventDefault();
-      this.gesture = { ...start, kind: "connect", from: { moduleId: from.id } };
-      return capture();
-    }
-    // The pen draws where it goes; the arrow tool a straight line from the press, which
-    // links two modules when it runs from one onto another.
+    // The pen draws where it goes; the arrow tool a straight line from the press, which is
+    // a link when either end binds to a module or another link.
     if (this.editing && (this.tool === "pen" || this.tool === "arrow")) {
       const straight = this.tool === "arrow";
       this.gesture = {
@@ -2214,7 +2491,7 @@ export class Canvas {
         kind: "ink",
         points: [this.toScene(e.clientX, e.clientY)],
         straight,
-        from: straight ? this.moduleAt(e.clientX, e.clientY, false)?.id : undefined,
+        from: straight ? this.bindingAt(e.clientX, e.clientY) : undefined,
       };
       this.paintInk();
       return capture();
@@ -2259,6 +2536,23 @@ export class Canvas {
       };
       return capture();
     }
+    // The "+" of a place for a new item puts one in there.
+    if (control?.dataset.slot !== undefined && this.nearSlot && this.selection.length === 1) {
+      this.options.insert?.({ moduleId: this.selection[0], list: this.nearSlot.list, index: this.nearSlot.index });
+      this.gesture = { ...start, kind: "press" };
+      return capture();
+    }
+    // A handle of a part selected, or of the module, is dragged: onto what it can refer to, or along.
+    const editHandle = control?.dataset.editHandle;
+    const shown = editHandle !== undefined ? this.shownHandles() : undefined;
+    if (shown) {
+      const h = shown.handles[Number(editHandle)];
+      const m = this.renderer.instances.get(shown.moduleId);
+      if (h && m) {
+        this.gesture = { ...start, kind: "handle", moduleId: m.id, handle: h, data: this.drawnData(m), was: m.data };
+        return capture();
+      }
+    }
     // An end of the one link selected is dragged onto another module, or another side.
     const end = control?.dataset.linkEnd as "from" | "to" | undefined;
     const only = this.onlyLink;
@@ -2302,6 +2596,51 @@ export class Canvas {
     // the selection or takes it out.
     const deep = this.editing && (e.metaKey || e.ctrlKey);
     const was = !!m && selection.includes(m.id);
+    // Inside the module selected alone, while editing: Shift adds a part to the parts
+    // selected; a part selected is dragged to another place in its list; a drag from an
+    // item's region to another's makes a new item between them.
+    if (m && was && this.editing && this.partsOn && selection.length === 1 && !links.length && !e.altKey && !deep) {
+      const under = this.partAt(m, e.clientX, e.clientY);
+      const map = this.renderer.editMap(m.id);
+      if (under && e.shiftKey && this.chosenPart?.moduleId === m.id) {
+        const paths = this.selectedParts.map((p) => p.path);
+        const next = paths.includes(under.path) ? paths.filter((p) => p !== under.path) : [...paths, under.path];
+        this.setPart(next.length ? { moduleId: m.id, path: next[0] } : null, next.slice(1));
+        this.paint();
+        this.gesture = { ...start, kind: "press" };
+        return capture();
+      }
+      const chosen = !!under && this.selectedParts.some((p) => p.path === under.path);
+      const reorder = under && map?.parts.find((p) => p.path === under.path)?.reorder;
+      const item = under && itemOf(under.path);
+      if (chosen && reorder && item) {
+        this.gesture = { ...start, pickPart: under, kind: "reorder", moduleId: m.id, list: item.list, item: item.item, axis: reorder };
+        return capture();
+      }
+      const anchor = !under && map ? this.anchorAt(map, e.clientX, e.clientY) : undefined;
+      const make = anchor && map?.creates.find((c) => this.refersTo(m, c.list, c.between[0]) === anchor.list);
+      if (anchor && make) {
+        this.gesture = {
+          ...start,
+          pickPart: null,
+          kind: "create",
+          moduleId: m.id,
+          list: make.list,
+          between: make.between,
+          fields: make.fields,
+          rows: make.rows ?? "y",
+          from: anchor.id,
+          start: this.toScene(e.clientX, e.clientY),
+        };
+        return capture();
+      }
+    }
+    // A second press on a module selected alone goes into it, as a second press goes into
+    // a group: to the part of its drawing under the press.
+    const pickPart =
+      m && was && this.partsOn && selection.length === 1 && !links.length && !e.shiftKey && !deep
+        ? this.partAt(m, e.clientX, e.clientY)
+        : undefined;
     let narrow: string | undefined;
     if (m && this.editing && e.shiftKey) {
       const unit = this.unitOf(m, deep);
@@ -2330,6 +2669,7 @@ export class Canvas {
       const copy = this.editing && e.altKey && !!this.options.duplicate;
       this.gesture = {
         ...start,
+        pickPart,
         kind: "move",
         moves: moving.map((v) => ({ id: v.id, bounds: { ...v.bounds } })),
         others: others(copy ? new Set() : new Set(moving.map((v) => v.id))),
@@ -2337,7 +2677,7 @@ export class Canvas {
         narrow,
       };
       if (copy) this.element.style.cursor = "copy";
-    } else this.gesture = { ...start, kind: "pan", camera: { ...this.camera } };
+    } else this.gesture = { ...start, pickPart, kind: "pan", camera: { ...this.camera } };
     capture();
   }
   /** Shows the guides a dragged box snapped to, in scene units. */
@@ -2412,38 +2752,90 @@ export class Canvas {
     next();
   }
   /** The side of a module facing a point on screen, and where its middle is on screen. */
-  private sideToward(m: Instance, clientX: number, clientY: number) {
-    const side = facing(m.bounds, this.toScene(clientX, clientY)),
-      a = sidePoint[side],
-      { x, y, scale } = this.camera,
-      b = this.ghost.get(m.id) ?? m.bounds;
-    return {
-      side,
-      x: x + (b.x + a.x * b.width) * scale,
-      y: y + (b.y + a.y * b.height) * scale,
-    };
-  }
-  /** A dashed line from a point on screen to the pointer, or to the side of the module it
-   * is over, which is marked. */
-  private drawLine(from: Point, e: PointerEvent, skip: string) {
-    const over = this.moduleAt(e.clientX, e.clientY);
-    const target = over && over.id !== skip ? over : undefined;
-    const toward = target && this.sideToward(target, e.clientX, e.clientY);
-    const { x: ex, y: ey } = toward ?? this.local(e.clientX, e.clientY);
-    this.line.style.display = "block";
-    const [line, dot, ring] = [...this.line.children] as SVGElement[];
-    line.setAttribute("x1", String(from.x));
-    line.setAttribute("y1", String(from.y));
-    line.setAttribute("x2", String(ex));
-    line.setAttribute("y2", String(ey));
-    dot.setAttribute("cx", String(ex));
-    dot.setAttribute("cy", String(ey));
-    ring.style.display = toward ? "" : "none";
-    if (toward) {
-      ring.setAttribute("cx", String(toward.x));
-      ring.setAttribute("cy", String(toward.y));
+  /** What an end of a link binds to at a point on screen: the outline of a module it is
+   * near (the exact point on it, or a share along a line a module declares, as a drawn line
+   * does), a module it is inside (following it), a link it is on (a share of the way along
+   * it), or else that point of the scene. `skip` is what the other end is on. */
+  bindingAt(clientX: number, clientY: number, skip: { module?: string; link?: string } = {}): Binding {
+    const p = this.toScene(clientX, clientY),
+      reach = (this.touching ? FINGER_SLOP / 2 : SLOP) / this.camera.scale;
+    let best: Binding & { distance: number } | undefined;
+    for (const m of this.renderer.instances.values()) {
+      // The backdrop under the whole figure is not what a line is drawn to.
+      if (m.id === skip.module || this.beneath(m)) continue;
+      const b = this.ghost.get(m.id) ?? m.bounds;
+      if (p.x < b.x - reach || p.x > b.x + b.width + reach || p.y < b.y - reach || p.y > b.y + b.height + reach) continue;
+      const map = this.renderer.editMap(m.id);
+      const declared = !!map && JSON.stringify(map.outline) !== JSON.stringify(boxOutline(m.bounds));
+      const outline = map?.outline ?? boxOutline(b);
+      const near = nearestAlong(outline, p);
+      if (near.distance > reach || (best && best.distance <= near.distance)) continue;
+      const round = (n: number) => Math.round(n * 1000) / 1000;
+      let end: LinkEnd;
+      if (declared) end = { moduleId: m.id, at: { along: round(near.t) } };
+      else {
+        // Near a side's middle it takes the side, as people mean it; elsewhere the point.
+        const middle = sides.find((side) => {
+          const a = sidePoint[side];
+          return Math.hypot(b.x + a.x * b.width - p.x, b.y + a.y * b.height - p.y) <= reach;
+        });
+        end = middle
+          ? { moduleId: m.id, at: middle }
+          : { moduleId: m.id, at: [round((near.point.x - b.x) / b.width), round((near.point.y - b.y) / b.height)] };
+      }
+      const point = middle(end, b, near.point);
+      best = { end, point, outline, distance: near.distance };
     }
-    this.hoverOver(target?.id ?? null);
+    if (best) return { end: best.end, point: best.point, outline: best.outline };
+    // Inside a module, the end follows it: where it draws, else the smallest box holding the
+    // point, but not the backdrop under the whole figure.
+    const held = this.moduleAt(clientX, clientY);
+    const inside = this.moduleAt(clientX, clientY, false) ?? (held && !this.beneath(held) ? held : undefined);
+    if (inside && inside.id !== skip.module) {
+      const b = inside.bounds;
+      return { end: { moduleId: inside.id }, point: { x: b.x + b.width / 2, y: b.y + b.height / 2 }, outline: boxOutline(b) };
+    }
+    const along = this.linkAt(clientX, clientY, skip.link);
+    const line = along ? this.renderer.links.get(along) : undefined;
+    if (line) {
+      const { from, to } = this.renderer.ends(line);
+      const on = nearestAlong([from, to], p);
+      return { end: { linkId: line.id, along: Math.round(on.t * 1000) / 1000 }, point: on.point, outline: [from, to] };
+    }
+    const free = { x: Math.round(p.x * 2) / 2, y: Math.round(p.y * 2) / 2 };
+    return { end: free, point: free };
+  }
+  /** The line from where a link starts to the pointer, the outline the pointer would bind to
+   * drawn round, and a ring where it binds. Given no start, only what it would bind to. */
+  private showBinding(from: Binding | undefined, to: Binding | undefined) {
+    const { x, y, scale } = this.camera;
+    const on = (p: Point) => ({ x: x + p.x * scale, y: y + p.y * scale });
+    const [line, dot, ring, outline] = [...this.line.children] as SVGElement[];
+    if (!from && !to?.outline) {
+      this.line.style.display = "none";
+      return;
+    }
+    this.line.style.display = "block";
+    const end = to ? on(to.point) : undefined;
+    line.style.display = from && end ? "" : "none";
+    dot.style.display = from && end ? "" : "none";
+    if (from && end) {
+      const start = on(from.point);
+      line.setAttribute("x1", String(start.x));
+      line.setAttribute("y1", String(start.y));
+      line.setAttribute("x2", String(end.x));
+      line.setAttribute("y2", String(end.y));
+      dot.setAttribute("cx", String(start.x));
+      dot.setAttribute("cy", String(start.y));
+    }
+    const bound = to && !isFreeEnd(to.end);
+    ring.style.display = bound && end ? "" : "none";
+    if (bound && end) {
+      ring.setAttribute("cx", String(end.x));
+      ring.setAttribute("cy", String(end.y));
+    }
+    outline.setAttribute("d", to?.outline ? "M" + to.outline.map((p) => `${on(p).x.toFixed(1)} ${on(p).y.toFixed(1)}`).join("L") : "");
+    this.hoverOver(to && "moduleId" in to.end ? to.end.moduleId : null);
   }
   private move(e: PointerEvent) {
     const g = this.gesture;
@@ -2464,11 +2856,16 @@ export class Canvas {
       if (this.editing && this.tool === "select" && !this.spacing) {
         const { module: m, link } = this.pick(e.clientX, e.clientY);
         this.nearSide(e);
+        this.hoverPart(
+          m && this.partsOn && this.selection.length === 1 && this.selection[0] === m.id ? this.partAt(m, e.clientX, e.clientY) : null,
+        );
+        this.hoverSlot(e.clientX, e.clientY);
         this.hoverOver(m?.id ?? null, m ? null : (link ?? null));
         this.element.style.cursor = !m && link ? "pointer" : "";
-      } else if (this.editing && this.tool === "link" && !this.spacing)
-        this.hoverOver(this.moduleAt(e.clientX, e.clientY)?.id ?? null);
-      else if (this.editing && (this.tool === "arrow" || this.tool === "erase") && !this.spacing)
+      } else if (this.editing && this.tool === "arrow" && !this.spacing) {
+        // Where an arrow pressed here would start is shown before it is pressed.
+        this.showBinding(undefined, this.bindingAt(e.clientX, e.clientY));
+      } else if (this.editing && this.tool === "erase" && !this.spacing)
         this.hoverOver(this.moduleAt(e.clientX, e.clientY, false)?.id ?? null);
       return;
     }
@@ -2492,7 +2889,8 @@ export class Canvas {
           end = { x: a.x + Math.cos(turn) * len, y: a.y + Math.sin(turn) * len };
         }
         g.points = [a, end];
-        this.hoverOver(this.moduleAt(e.clientX, e.clientY, false)?.id ?? null);
+        const to = this.bindingAt(e.clientX, e.clientY, { module: g.from && endModule(g.from.end) });
+        this.showBinding(g.from, to.end && !isFreeEnd(to.end) ? to : undefined);
       } else
         for (const p of e.getCoalescedEvents?.() ?? [e]) {
           const at = this.toScene(p.clientX, p.clientY),
@@ -2511,6 +2909,7 @@ export class Canvas {
       clearTimeout(this.holding);
     }
     if (!g.moved) return;
+    if (g.kind === "reorder" || g.kind === "create" || g.kind === "handle") return this.dragInside(g, e);
     const scale = this.camera.scale;
     // Snapping lines a dragged box up with its neighbours; Cmd or Ctrl turns it off.
     const snapping = this.editing && this.snapping.guides && !e.metaKey && !e.ctrlKey;
@@ -2695,25 +3094,72 @@ export class Canvas {
       const from = this.renderer.instances.get(g.from.moduleId);
       if (!from) return;
       // Without a side named, the link leaves by the side facing the pointer.
-      const a = sidePoint[g.from.side ?? facing(from.bounds, this.toScene(e.clientX, e.clientY))],
-        { x, y } = this.camera;
-      this.drawLine(
-        {
-          x: x + (from.bounds.x + a.x * from.bounds.width) * scale,
-          y: y + (from.bounds.y + a.y * from.bounds.height) * scale,
-        },
-        e,
-        from.id,
-      );
+      const a = sidePoint[g.from.side ?? facing(from.bounds, this.toScene(e.clientX, e.clientY))];
+      const start = { x: from.bounds.x + a.x * from.bounds.width, y: from.bounds.y + a.y * from.bounds.height };
+      this.showBinding({ end: { moduleId: from.id }, point: start }, this.bindingAt(e.clientX, e.clientY, { module: from.id }));
     } else if (g.kind === "relink") {
       const link = this.renderer.links.get(g.linkId);
       if (!link) return;
       const far = g.end === "from" ? "to" : "from",
-        p = this.renderer.ends(link)[far],
-        { x, y } = this.camera;
-      this.drawLine({ x: x + p.x * scale, y: y + p.y * scale }, e, link[far].moduleId);
+        p = this.renderer.ends(link)[far];
+      this.showBinding({ end: link[far], point: p }, this.bindingAt(e.clientX, e.clientY, { module: endModule(link[far]), link: link.id }));
     }
     this.paint();
+  }
+  /** A drag inside the module selected: an item to another place in its list, a new item
+   * from one region to another, or a part's handle. */
+  private dragInside(g: Extract<NonNullable<Canvas["gesture"]>, { kind: "reorder" | "create" | "handle" }>, e: PointerEvent) {
+    const map = this.renderer.editMap(g.moduleId);
+    const m = this.renderer.instances.get(g.moduleId);
+    if (!map || !m) return;
+    const p = this.toScene(e.clientX, e.clientY);
+    const { x, y, scale } = this.camera;
+    const showTarget = (b?: Bounds) => {
+      if (!b) return void (this.target.style.display = "none");
+      const on = this.shown(b);
+      Object.assign(this.target.style, { display: "block", left: on.x + "px", top: on.y + "px", width: on.width + "px", height: on.height + "px" });
+    };
+    if (g.kind === "reorder") {
+      const slot = this.nearestSlot(map, g.list, p, g.axis);
+      g.to = slot?.index;
+      const part = map.parts.find((q) => q.path === `${g.list}.${typeof g.item === "number" ? g.item : "#" + g.item}`);
+      if (!slot || !part) return void (this.dropLine.style.display = "none");
+      // The line across where it would go.
+      const across = g.axis === "y" ? { left: x + part.box.x * scale, top: y + slot.at.y * scale - 1, width: part.box.width * scale, height: 2 } : { left: x + slot.at.x * scale - 1, top: y + part.box.y * scale, width: 2, height: part.box.height * scale };
+      Object.assign(this.dropLine.style, { display: "block", left: across.left + "px", top: across.top + "px", width: across.width + "px", height: across.height + "px" });
+      return;
+    }
+    if (g.kind === "create") {
+      const to = this.anchorAt(map, e.clientX, e.clientY, this.refersTo(m, g.list, g.between[1]));
+      g.to = to?.id;
+      showTarget(to?.box);
+      const point = to ? { x: to.box.x + to.box.width / 2, y: p.y } : p;
+      this.showBinding({ end: { x: g.start.x, y: g.start.y }, point: g.start }, { end: { x: point.x, y: point.y }, point });
+      return;
+    }
+    const h = g.handle;
+    if (h.kind === "ref") {
+      const list = (() => {
+        const f = fieldAt(drawingOf(this.renderer.work, m.drawingId)?.params ?? {}, h.path);
+        return f?.type === "ref" ? f.to : undefined;
+      })();
+      const to = list ? this.anchorAt(map, e.clientX, e.clientY, list) : undefined;
+      g.to = to?.id;
+      showTarget(to?.box);
+      this.showBinding({ end: { x: h.at.x, y: h.at.y }, point: h.at }, { end: { x: p.x, y: p.y }, point: p });
+      return;
+    }
+    // A number dragged along its axis, or a place moved on a map, shown as it goes.
+    let value: unknown;
+    if (h.kind === "scalar") {
+      const was = Number(getAt(g.data, h.path) ?? 0);
+      const along = (h.axis ?? "y") === "x" ? p.x - h.at.x : p.y - h.at.y;
+      value = Math.round((was + along * (h.scale ?? 1)) * 100) / 100;
+    } else if (h.unproject) value = h.unproject(p.x - m.bounds.x, p.y - m.bounds.y);
+    if (value === undefined) return;
+    g.value = value;
+    const next = pointValue(g.data, h.path, value);
+    if (next) this.renderer.redraw(m.id, next);
   }
   /** The line being drawn, where it is on screen. */
   private paintInk() {
@@ -2765,6 +3211,8 @@ export class Canvas {
     this.marquee.style.display = "none";
     this.origin.style.display = "none";
     this.line.style.display = "none";
+    this.dropLine.style.display = "none";
+    this.target.style.display = "none";
     this.gaps = [];
     this.showGuides([]);
     this.showReadout(null);
@@ -2777,16 +3225,22 @@ export class Canvas {
     clearTimeout(this.holding);
     const g = this.gesture;
     if (e && g && e.pointerId !== g.pointer && g.kind !== "pinch") return;
-    if (g && (g.kind === "move" || g.kind === "resize")) this.drag(g.moves);
-    if (g) this.finish();
+    this.abandon();
+  }
+  /** Lets go of the gesture without keeping what it did: what it moved goes back, and a
+   * value a handle showed as it was dragged is drawn as it was. */
+  private abandon() {
+    const g = this.gesture;
+    if (!g) return;
+    if (g.kind === "move" || g.kind === "resize") this.drag(g.moves);
+    if (g.kind === "handle" && g.value !== undefined) this.renderer.redraw(g.moduleId, g.was);
+    this.finish();
   }
   /** Two fingers: what the first began is let go, and the view follows both, zooming as
    * they spread or close and moving as they move together. */
   private pinch(e: PointerEvent) {
     clearTimeout(this.holding);
-    const g = this.gesture;
-    if (g && (g.kind === "move" || g.kind === "resize")) this.drag(g.moves);
-    if (g) this.finish();
+    this.abandon();
     const [a, b] = [...this.touches.values()];
     this.element.setPointerCapture(e.pointerId);
     e.preventDefault();
@@ -2881,12 +3335,41 @@ export class Canvas {
       this.options.commit?.(g.last.map((m) => ({ id: m.id, bounds: { ...m.bounds } })));
     }
     if (g.kind === "ink") {
-      const to = g.straight ? this.moduleAt(e.clientX, e.clientY, false) : undefined;
       this.hoverOver(null);
-      if (g.from && to && to.id !== g.from) this.options.connect?.({ moduleId: g.from }, { moduleId: to.id });
-      else if (!g.straight || g.moved) this.options.ink?.(g.points, { kind: g.straight ? "arrow" : "pen" });
+      this.showBinding(undefined, undefined);
+      const to = g.straight && g.from ? this.bindingAt(e.clientX, e.clientY, { module: endModule(g.from.end) }) : undefined;
+      const tall = g.points.length > 1 && upright(g.points[0], g.points.at(-1)!);
+      if (g.from && to && g.moved && (!isFreeEnd(g.from.end) || !isFreeEnd(to.end)))
+        this.options.connect?.(g.from.end, to.end, tall ? { upright: true } : undefined);
+      else if (!g.straight || g.moved) this.options.ink?.(g.points, g.straight ? { kind: "arrow", ...(tall ? { upright: true } : {}) } : { kind: "pen" });
     }
     if (g.kind === "erase" && g.hit.size) this.options.erase?.([...g.hit]);
+    if (g.moved && g.kind === "reorder" && g.to !== undefined) {
+      const list = getAt(this.drawnData(this.renderer.instances.get(g.moduleId)!), g.list);
+      const from = Array.isArray(list) ? (typeof g.item === "number" ? g.item : list.findIndex((x) => (x as { id?: unknown })?.id === g.item)) : -1;
+      const to = from >= 0 && g.to > from ? g.to - 1 : g.to;
+      if (from >= 0 && to !== from) this.options.reorder?.({ moduleId: g.moduleId, list: g.list, item: g.item, to });
+    }
+    if (g.moved && g.kind === "create" && g.to !== undefined) {
+      const map = this.renderer.editMap(g.moduleId);
+      const slot = map && this.nearestSlot(map, g.list, this.toScene(e.clientX, e.clientY), g.rows);
+      const list = getAt(this.drawnData(this.renderer.instances.get(g.moduleId)!), g.list);
+      this.options.create?.({
+        moduleId: g.moduleId,
+        list: g.list,
+        index: slot?.index ?? (Array.isArray(list) ? list.length : 0),
+        values: { ...(g.fields ?? {}), [g.between[0]]: g.from, [g.between[1]]: g.to },
+      });
+    }
+    if (g.moved && g.kind === "handle") {
+      if (g.handle.kind === "ref" && g.to !== undefined) this.options.retarget?.({ moduleId: g.moduleId, path: g.handle.path, to: g.to });
+      else if (g.handle.kind !== "ref" && g.value !== undefined) this.options.setValue?.({ moduleId: g.moduleId, path: g.handle.path, value: g.value });
+      else this.renderer.redraw(g.moduleId, this.renderer.instances.get(g.moduleId)!.data);
+    }
+    if (!g.moved && g.pickPart !== undefined) {
+      this.setPart(g.pickPart);
+      this.paint();
+    }
     // A zone pressed without a drag is selected, or with Shift joins the selection or
     // leaves it.
     if (g.kind === "marquee" && !g.moved && g.on) {
@@ -2923,25 +3406,24 @@ export class Canvas {
     if (g.kind === "connect" && !g.moved && g.from.side)
       this.options.extend?.({ moduleId: g.from.moduleId, side: g.from.side });
     if ((g.kind === "connect" || g.kind === "relink") && g.moved) {
-      const to = this.moduleAt(e.clientX, e.clientY);
       const here = this.toScene(e.clientX, e.clientY);
-      const at = to && { moduleId: to.id, side: facing(to.bounds, here) };
-      if (g.kind === "connect" && at && at.moduleId !== g.from.moduleId)
-        // A link drawn with the tool joins the modules as they face each other, then and
-        // after they move; one drawn from a side's dot keeps to the sides it was given.
-        this.options.connect?.(g.from, g.from.side ? at : { moduleId: at.moduleId });
-      // Let go over the paper, well clear of where it began, it ends in a new module there.
-      const source = this.renderer.instances.get(g.kind === "connect" ? g.from.moduleId : "");
-      if (g.kind === "connect" && !to && source && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 36)
-        this.options.extend?.(
-          { moduleId: source.id, side: g.from.side ?? facing(source.bounds, here) },
-          here,
-        );
-      if (g.kind === "relink" && at) {
+      this.showBinding(undefined, undefined);
+      if (g.kind === "connect") {
+        const to = this.bindingAt(e.clientX, e.clientY, { module: g.from.moduleId });
+        // From a side's dot onto something, a link between them; let go over the paper well
+        // clear of where it began, it ends in a new module there.
+        if (!isFreeEnd(to.end)) this.options.connect?.({ moduleId: g.from.moduleId, ...(g.from.side ? { at: g.from.side } : {}) }, to.end);
+        else if (Math.hypot(e.clientX - g.x, e.clientY - g.y) > 36) {
+          const source = this.renderer.instances.get(g.from.moduleId);
+          if (source) this.options.extend?.({ moduleId: source.id, side: g.from.side ?? facing(source.bounds, here) }, here);
+        }
+      } else {
         const link = this.renderer.links.get(g.linkId);
         const fixed = link?.[g.end === "from" ? "to" : "from"];
-        if (fixed && at.moduleId !== fixed.moduleId)
-          this.options.reconnect?.(g.linkId, g.end, at);
+        if (link && fixed) {
+          const to = this.bindingAt(e.clientX, e.clientY, { module: endModule(fixed), link: link.id });
+          this.options.reconnect?.(g.linkId, g.end, to.end);
+        }
       }
       this.hoverOver(null);
     }

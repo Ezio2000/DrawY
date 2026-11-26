@@ -41,6 +41,24 @@ export function useBoard() {
   return [board, set] as const;
 }
 
+const DEV = "drawy.edit.dev";
+const devListeners = new Set<(on: boolean) => void>();
+/** Whether the editor shows what only someone who writes drawings needs: drawing code and
+ * schema, records as JSON, scene scripts and detail pages as HTML. Off unless turned on in
+ * the account's settings; every editor open in the page follows the switch at once. */
+export function useDevMode() {
+  const [on, setOn] = useState(() => stored(DEV) === "1");
+  useEffect(() => {
+    devListeners.add(setOn);
+    return () => void devListeners.delete(setOn);
+  }, []);
+  const set = (next: boolean) => {
+    store(DEV, next ? "1" : "0");
+    for (const fn of devListeners) fn(next);
+  };
+  return [on, set] as const;
+}
+
 /** A step between a ruler's figures that reads at this scale: 1, 2 or 5 times a power of
  * ten, at least some sixty pixels apart, and how many parts it is divided into. */
 function stepFor(scale: number) {

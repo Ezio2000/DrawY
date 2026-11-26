@@ -58,9 +58,7 @@ const palette = (n) =>
         muted,
       ][i % 6],
   );
-const items = (d.items || []).map((it) =>
-  Array.isArray(it) ? { label: it[0], value: it[1] } : it,
-);
+const items = d.items || [];
 const n = Math.max(1, items.length);
 const max = Number(
   d.max ?? Math.max(...items.map((i) => Number(i.value) || 0), 1),
@@ -68,6 +66,9 @@ const max = Number(
 const unit = d.unit ?? "";
 const base = d.color || accent2;
 const fmt = (v) => `${v}${unit}`;
+// The number is the item's value and the unit after it the drawing's, each changed where it is.
+const valued = (it, path) =>
+  `<tspan${api.text(path + ".value")}>${esc(it.value)}</tspan>${unit ? `<tspan${api.text("unit")}>${esc(unit)}</tspan>` : ""}`;
 const lying = d.orientation === "horizontal";
 let out = "";
 if (lying) {
@@ -81,28 +82,41 @@ if (lying) {
   const slot = H / n,
     bh = Math.min(slot * 0.62, size * 2.4);
   out += `<path d="M${lw} 0V${H}" stroke="${ink}" stroke-width="${sw}"/>`;
+  const span = W - lw - vw;
   items.forEach((it, i) => {
+    const path = api.path("items", it, i);
     const y = slot * (i + 0.5),
-      w = Math.max(0, ((W - lw - vw) * Number(it.value)) / max);
+      w = Math.max(0, (span * Number(it.value)) / max);
     const c = it.color || (it.accent ? accent : base);
-    out += `<text x="${lw - size * 0.6}" y="${y}" text-anchor="end" font-size="${size}" fill="${ink}">${esc(it.label)}</text>`;
-    out += `<path d="M${lw} ${y - bh / 2}H${lw + w - Math.min(6, w)}q${Math.min(6, w)} 0 ${Math.min(6, w)} ${Math.min(6, w)}V${y + bh / 2 - Math.min(6, w)}q0 ${Math.min(6, w)} ${-Math.min(6, w)} ${Math.min(6, w)}H${lw}Z" fill="${c}"/>`;
-    out += `<text x="${lw + w + size * 0.5}" y="${y}" font-size="${size * 0.9}" font-weight="600" fill="${it.accent ? accent : ink}">${esc(fmt(it.value))}</text>`;
+    let bar = `<text x="${lw - size * 0.6}" y="${y}" text-anchor="end" font-size="${size}" fill="${ink}"${api.text(path + ".label")}>${esc(it.label)}</text>`;
+    bar += `<path d="M${lw} ${y - bh / 2}H${lw + w - Math.min(6, w)}q${Math.min(6, w)} 0 ${Math.min(6, w)} ${Math.min(6, w)}V${y + bh / 2 - Math.min(6, w)}q0 ${Math.min(6, w)} ${-Math.min(6, w)} ${Math.min(6, w)}H${lw}Z" fill="${c}"/>`;
+    bar += `<text x="${lw + w + size * 0.5}" y="${y}" font-size="${size * 0.9}" font-weight="600" fill="${it.accent ? accent : ink}">${valued(it, path)}</text>`;
+    out += `<g${api.part(path, { reorder: "y" })}>${bar}</g>`;
+    // The bar's end drags its value.
+    api.handle(path + ".value", { kind: "scalar", at: { x: lw + w, y }, axis: "x", scale: max / span });
+    api.slot("items", i, { x: lw / 2, y: slot * i });
   });
+  if (items.length) api.slot("items", items.length, { x: lw / 2, y: H });
 } else {
   const top = size * 1.8,
     bottom = H - size * 2.2;
   const slot = W / n,
     bw = Math.min(slot * 0.58, size * 5);
   items.forEach((it, i) => {
+    const path = api.path("items", it, i);
     const x = slot * (i + 0.5),
       h = Math.max(0, ((bottom - top) * Number(it.value)) / max);
     const c = it.color || (it.accent ? accent : base);
     const rr = Math.min(6, h, bw / 2);
-    out += `<path d="M${x - bw / 2} ${bottom}V${bottom - h + rr}q0 ${-rr} ${rr} ${-rr}H${x + bw / 2 - rr}q${rr} 0 ${rr} ${rr}V${bottom}Z" fill="${c}"/>`;
-    out += `<text x="${x}" y="${bottom - h - size * 0.8}" text-anchor="middle" font-size="${size * 0.9}" font-weight="600" fill="${it.accent ? accent : ink}">${esc(fmt(it.value))}</text>`;
-    out += `<text x="${x}" y="${bottom + size * 1.1}" text-anchor="middle" font-size="${size}" fill="${ink}">${esc(it.label)}</text>`;
+    let bar = `<path d="M${x - bw / 2} ${bottom}V${bottom - h + rr}q0 ${-rr} ${rr} ${-rr}H${x + bw / 2 - rr}q${rr} 0 ${rr} ${rr}V${bottom}Z" fill="${c}"/>`;
+    bar += `<text x="${x}" y="${bottom - h - size * 0.8}" text-anchor="middle" font-size="${size * 0.9}" font-weight="600" fill="${it.accent ? accent : ink}">${valued(it, path)}</text>`;
+    bar += `<text x="${x}" y="${bottom + size * 1.1}" text-anchor="middle" font-size="${size}" fill="${ink}"${api.text(path + ".label")}>${esc(it.label)}</text>`;
+    out += `<g${api.part(path, { reorder: "x" })}>${bar}</g>`;
+    // The bar's top drags its value: up is more.
+    api.handle(path + ".value", { kind: "scalar", at: { x, y: bottom - h }, axis: "y", scale: -max / (bottom - top) });
+    api.slot("items", i, { x: slot * i, y: bottom });
   });
+  if (items.length) api.slot("items", items.length, { x: W, y: bottom });
   out += `<path d="M0 ${bottom}H${W}" stroke="${ink}" stroke-width="${sw}"/>`;
 }
 const svg = api.svg(

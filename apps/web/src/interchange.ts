@@ -10,14 +10,20 @@ import {
   picturesFor,
   readExcalidraw,
   readMermaid,
+  sequenceBlock,
+  sequenceFrom,
   SeveralDiagrams,
+  unexpressed,
+  Unexpressed,
   toExcalidraw,
   toMermaid,
   type Brought,
   type ExcalidrawElement,
   type ExcalidrawFile,
   type Flowchart,
+  type MermaidSequence,
   type Picture,
+  type SequenceData,
 } from "../../../modules/interchange/index.ts";
 import { api } from "./api.ts";
 import { loadBindings } from "./bindings.ts";
@@ -49,7 +55,13 @@ export async function clipOf(what: Incoming): Promise<Brought> {
     const scene = readExcalidraw(what.text)!;
     return fromExcalidraw(scene, await upload(scene.elements, scene.files));
   }
-  const clip = isFlowchart(what.source) ? fromFlowchart(await layout(what.source)) : mermaidBlock(what.source, await measure(what.source));
+  // A sequence diagram saying what the library's drawing cannot is kept as Mermaid draws it.
+  const sequence = isSequence(what.source) ? await sequenceRead(what.source) : undefined;
+  const clip = isFlowchart(what.source)
+    ? fromFlowchart(await layout(what.source))
+    : sequence && !unexpressed(sequence).length
+      ? sequenceBlock(sequenceFrom(sequence))
+      : mermaidBlock(what.source, await measure(what.source));
   return { clip, adjusted: { upright: 0, opaque: 0, flipped: 0 } };
 }
 
@@ -78,6 +90,42 @@ async function mermaid() {
   const m = (await import("mermaid")).default;
   m.initialize({ startOnLoad: false, securityLevel: "loose", theme: "neutral" });
   return m;
+}
+/** Whether Mermaid source is a sequence diagram, which comes in as the library's own. */
+const isSequence = (source: string) => /^\s*sequenceDiagram\b/m.test(source.replace(/^\s*%%.*$/gm, ""));
+/** A sequence diagram's data as Mermaid's own parser reads its source, keeping the ids and
+ * what Mermaid does not say of `was`, the data it was written from. Throws Mermaid's error
+ * where the source does not parse, and `Unexpressed` where it says what the drawing cannot. */
+export async function readSequence(source: string, was?: Partial<SequenceData>): Promise<SequenceData> {
+  const read = await sequenceRead(source);
+  const lost = unexpressed(read);
+  if (lost.length) throw new Unexpressed(lost);
+  return sequenceFrom(read, was);
+}
+/** What Mermaid's parser reads from a sequence diagram's source. */
+async function sequenceRead(source: string): Promise<MermaidSequence> {
+  const m = await mermaid();
+  const diagram = await m.mermaidAPI.getDiagramFromText(source);
+  const db = diagram.db as unknown as {
+    getActorKeys(): string[];
+    getActor(key: string): { name: string; description: string; type: string };
+    getMessages(): { from?: string; to?: string; message: unknown; type?: number; placement?: number }[];
+    showSequenceNumbers(): boolean;
+  };
+  return {
+    actors: db.getActorKeys().map((key) => {
+      const a = db.getActor(key);
+      return { key, name: a.description || a.name, type: a.type };
+    }),
+    messages: db.getMessages().map((x) => ({
+      from: x.from,
+      to: x.to,
+      text: typeof x.message === "string" ? plain(x.message) : "",
+      type: x.type ?? 0,
+      placement: x.placement,
+    })),
+    numbered: db.showSequenceNumbers(),
+  };
 }
 /** Mermaid's drawing of the source, laid in the page at its own size so its parts can be
  * measured; `use` reads it before it is taken away. */

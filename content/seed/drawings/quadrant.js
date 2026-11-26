@@ -41,7 +41,7 @@ order.forEach((q, i) => {
   const lit = d.highlight === q;
   out += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="${lit ? accent : muted}" fill-opacity="${lit ? 0.14 : 0.07}"${lit ? ` stroke="${accent}" stroke-width="${sw}"` : ""}/>`;
   if (names[i])
-    out += `<text x="${right ? x + w - size * 0.8 : x + size * 0.8}" y="${low ? y + h - size * 0.9 : y + size * 1.1}" text-anchor="${right ? "end" : "start"}" font-size="${size}" font-weight="600" fill="${lit ? accent : muted}">${esc(names[i])}</text>`;
+    out += `<text x="${right ? x + w - size * 0.8 : x + size * 0.8}" y="${low ? y + h - size * 0.9 : y + size * 1.1}" text-anchor="${right ? "end" : "start"}" font-size="${size}" font-weight="600" fill="${lit ? accent : muted}"${api.text("quadrants." + i)}>${esc(names[i])}</text>`;
 });
 // Axes along the outer edges, pointing towards high.
 const hl = Math.max(7, sw * 4.5),
@@ -52,11 +52,11 @@ out += `<g stroke="${ink}" stroke-width="${sw}" stroke-linecap="round" fill="non
 out += `<path d="M${x1} ${axisY}l${-hl} ${-hw}v${hw * 2}z" fill="${ink}"/><path d="M${axisX} ${y0}l${-hw} ${hl}h${hw * 2}z" fill="${ink}"/>`;
 const small = size * 0.8;
 if (ax.low)
-  out += `<text x="${x0}" y="${axisY + size * 1.1}" font-size="${small}" fill="${muted}">${esc(ax.low)}</text>`;
+  out += `<text x="${x0}" y="${axisY + size * 1.1}" font-size="${small}" fill="${muted}"${api.text("x.low")}>${esc(ax.low)}</text>`;
 if (ax.high)
-  out += `<text x="${x1 - hl * 1.4}" y="${axisY + size * 1.1}" text-anchor="end" font-size="${small}" fill="${muted}">${esc(ax.high)}</text>`;
+  out += `<text x="${x1 - hl * 1.4}" y="${axisY + size * 1.1}" text-anchor="end" font-size="${small}" fill="${muted}"${api.text("x.high")}>${esc(ax.high)}</text>`;
 if (ax.label)
-  out += `<text x="${mx}" y="${axisY + size * 1.2}" text-anchor="middle" font-size="${size}" font-weight="600" fill="${ink}">${esc(ax.label)}</text>`;
+  out += `<text x="${mx}" y="${axisY + size * 1.2}" text-anchor="middle" font-size="${size}" font-weight="600" fill="${ink}"${api.text("x.label")}>${esc(ax.label)}</text>`;
 const rot = (x, y, s, extra) =>
   `<text x="${x}" y="${y}" transform="rotate(-90 ${x} ${y})" ${extra}>${esc(s)}</text>`;
 if (ay.low)
@@ -64,30 +64,38 @@ if (ay.low)
     axisX - size * 1.1,
     y1,
     ay.low,
-    `font-size="${small}" fill="${muted}"`,
+    `font-size="${small}" fill="${muted}"${api.text("y.low")}`,
   );
 if (ay.high)
   out += rot(
     axisX - size * 1.1,
     y0 + hl * 1.4,
     ay.high,
-    `text-anchor="end" font-size="${small}" fill="${muted}"`,
+    `text-anchor="end" font-size="${small}" fill="${muted}"${api.text("y.high")}`,
   );
 if (ay.label)
   out += rot(
     axisX - size * 1.2,
     my,
     ay.label,
-    `text-anchor="middle" font-size="${size}" font-weight="600" fill="${ink}"`,
+    `text-anchor="middle" font-size="${size}" font-weight="600" fill="${ink}"${api.text("y.label")}`,
   );
-for (const it of d.items || []) {
+// A place on the chart read back as an item's x and y, each 0..1.
+const share = (v) => Math.round(Math.min(1, Math.max(0, v)) * 100) / 100;
+(d.items || []).forEach((it, i) => {
+  const path = api.path("items", it, i);
   const x = x0 + Math.min(1, Math.max(0, Number(it.x))) * (x1 - x0),
     y = y1 - Math.min(1, Math.max(0, Number(it.y))) * (y1 - y0);
   const c = it.accent ? accent : ink;
-  out += `<circle cx="${x}" cy="${y}" r="${size * 0.38}" fill="${c}" stroke="${paper}" stroke-width="2"/>`;
+  let item = `<circle cx="${x}" cy="${y}" r="${size * 0.38}" fill="${c}" stroke="${paper}" stroke-width="2"/>`;
   if (it.label)
-    out += `<text x="${x + size * 0.75}" y="${y}" font-size="${size * 0.9}" fill="${c}" paint-order="stroke" stroke="${paper}" stroke-width="4" stroke-linejoin="round">${esc(it.label)}</text>`;
-}
+    item += `<text x="${x + size * 0.75}" y="${y}" font-size="${size * 0.9}" fill="${c}" paint-order="stroke" stroke="${paper}" stroke-width="4" stroke-linejoin="round"${api.text(path + ".label")}>${esc(it.label)}</text>`;
+  out += `<g${api.part(path)}>${item}</g>`;
+  // The dot drags where the item stands.
+  api.handle(path, { kind: "point", at: { x, y }, unproject: (px, py) => ({ x: share((px - x0) / (x1 - x0)), y: share((y1 - py) / (y1 - y0)) }) });
+});
+// A new item goes in the middle, to be dragged where it stands.
+api.slot("items", (d.items || []).length, { x: mx, y: my });
 const svg = api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(t.font || "system-ui")}" dominant-baseline="central">${out}</svg>`,
 );

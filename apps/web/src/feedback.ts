@@ -1,3 +1,4 @@
+import { localize } from "../../../modules/contracts/messages.ts";
 import type { Words } from "./i18n.tsx";
 import { SessionError } from "./session/types.ts";
 import { Store } from "./session/store.ts";
@@ -10,7 +11,8 @@ export const EXPLAIN_FOR = 6000;
 
 /** What went wrong last and what went well, as the app says them; a store, so only the
  * parts of a page that show them are drawn again when they come and go. The session's
- * reasons are worded here, for every page that does not word them its own way. */
+ * reasons are worded here, for every page that does not word them its own way, and what
+ * the shared editing code refuses is put into the page's language. */
 export class Feedback extends Store<{ error: string; notice: string }> {
   private state = { error: "", notice: "" };
   private timers: Partial<Record<"error" | "notice", ReturnType<typeof setTimeout>>> = {};
@@ -38,7 +40,8 @@ export class Feedback extends Store<{ error: string; notice: string }> {
         imagesOnly: t.composer.imagesOnly,
       }[error.reason];
     }
-    return error instanceof Error ? error.message : String(error);
+    // An edit checked here says what is wrong in the server's words, put into the reader's.
+    return localize(error instanceof Error ? error.message : String(error), this.words().locale);
   }
   fail = (error: unknown) => this.show("error", this.describe(error));
   say = (text: string, ms?: number) => this.show("notice", text, ms);

@@ -22,6 +22,7 @@ import {
   Trash2,
   Type,
   Ungroup,
+  Unlink,
 } from "lucide-react";
 import type { EditOps } from "./desktop/editing.ts";
 import { cx } from "./cx.ts";
@@ -56,6 +57,8 @@ export function EditMenu({
   holds,
   clipped,
   brushed,
+  loose,
+  wraps = [],
   close,
   ask,
   fit,
@@ -75,6 +78,10 @@ export function EditMenu({
   clipped: boolean;
   /** Whether a look has been copied, to give to the selection. */
   brushed: boolean;
+  /** Whether the scene has links meeting nothing at either end. */
+  loose: boolean;
+  /** Ways to wrap the items selected inside a module in one that spans them. */
+  wraps?: { label: string; run: () => void }[];
   close: () => void;
   ask: () => void;
   /** Shows the whole drawing. */
@@ -107,10 +114,12 @@ export function EditMenu({
     { label: m.pasteLook, icon: <PaintRoller size={size} />, key: "Alt+Mod+V", run: ops.pasteLook, off: !brushed },
   ];
   const paste: Item = { label: m.paste, icon: <ClipboardPaste size={size} />, key: "Mod+V", run: () => ops.paste(), off: !clipped };
-  // What is selected can always be asked about or taken out, last.
+  // What is selected can always be asked about or taken out, last; and links left loose
+  // when what they met was taken out can be taken out together.
   const last: Item[] = [
     { label: m.ask, icon: <MessageSquareQuote size={size} />, run: ask },
     { label: m.remove, icon: <Trash2 size={size} />, key: "Delete", run: ops.remove, danger: true },
+    ...(loose ? [{ label: t.edit.linkEnds.removeLoose, icon: <Unlink size={size} />, run: ops.removeDangling, danger: true }] : []),
   ];
   const same: Item = { label: m.selectSame, icon: <SquareStack size={size} />, run: ops.selectSame };
   const items: Item[] = links.length && !some
@@ -124,6 +133,8 @@ export function EditMenu({
       ]
     : some
     ? [
+        ...wraps.map((w): Item => ({ label: w.label, icon: <BoxSelect size={size} />, run: w.run })),
+        ...(wraps.length ? ["-" as const] : []),
         { label: m.cut, icon: <Scissors size={size} />, key: "Mod+X", run: ops.cut },
         { label: m.copy, icon: <Copy size={size} />, key: "Mod+C", run: () => void ops.copy() },
         paste,
@@ -154,6 +165,7 @@ export function EditMenu({
         "-",
         { label: m.fit, icon: <Scan size={size} />, key: "Shift+1", run: fit },
         { label: m.askAll, icon: <MessageSquareQuote size={size} />, run: ask },
+        ...(loose ? ["-" as const, { label: t.edit.linkEnds.removeLoose, icon: <Unlink size={size} />, run: ops.removeDangling, danger: true }] : []),
       ];
   return (
     <div ref={ref} className={cx("edit-menu")} role="menu" style={{ left: at.x, top: at.y }}>

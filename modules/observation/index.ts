@@ -289,6 +289,7 @@ export async function observe(
                   ? {
                       figure: figure(work, s),
                       ...(s.text?.clipped.length ? { clippedText: s.text.clipped } : {}),
+                      ...(s.text?.unmarked.length ? { unmarkedText: s.text.unmarked } : {}),
                       ...moduleReport(work, s, earlier.reported),
                     }
                   : {}),

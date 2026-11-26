@@ -111,6 +111,27 @@ describe("a write as a whole", () => {
     expect(saved.drawings["my-node"].defaults).toMatchObject({ size: 30 });
     expect(saved.scenes.root.modules.at(-1)!.drawingId).toBe("my-node");
   });
+  it("refuses data a library drawing does not declare, unless it was taken before drawings declared all of it", async () => {
+    const held = (partial: boolean): Work => {
+      const work = fixture();
+      work.materials.bars = {
+        id: "bars", kind: "drawing", version: 1, name: "bars", source: "return api.svg('<svg/>')", defaults: {},
+        params: { tone: { type: "choice", options: [{ value: "warm" }, { value: "cool" }] } },
+        ...(partial ? { partial: true as const } : {}),
+      };
+      work.scenes.root.modules.push({ id: "chart", label: "chart", bounds: { x: 0, y: 0, width: 200, height: 100 }, drawingId: "bars", data: { tone: "warm" } });
+      return work;
+    };
+    const write = { modules: [{ id: "chart", data: { items: [{ label: "a", value: 1 }] } }] };
+    const now = held(false);
+    const found = await refusal(() => writeWork(storeWith(now), now.id, write, { cause }));
+    expect(found.map((p) => p.at)).toEqual(["modules.chart.data.items"]);
+    const old = held(true);
+    const store = db.scoped(register(db, "earlier", "abcdef").id);
+    store.commit({ ...old, revision: 0 }, 0, { kind: "edit" });
+    const { work: saved } = await writeWork(store, old.id, write, { cause });
+    expect(saved.scenes.root.modules.find((m) => m.id === "chart")!.data).toMatchObject({ items: [{ label: "a", value: 1 }] });
+  });
 });
 
 describe("a blank canvas", () => {
@@ -126,5 +147,84 @@ describe("a blank canvas", () => {
     const store = db.scoped(register(db, "hand2", "abcdef").id);
     const blank = createWork(store, "未命名画布");
     await expect(writeWork(store, blank.id, { modules: [text] }, { cause })).rejects.toThrow("set_brief");
+  });
+});
+
+describe("data a drawing's schema reads", () => {
+  const seq = (data: Record<string, unknown>) => ({ id: "seq", bounds: [0, 0, 640, 360], drawingId: "sequence", data });
+  it("gives items ids, reads names written for references, and refuses what names nothing", async () => {
+    const work = fixture();
+    const store = storeWith(work);
+    const { work: saved } = await writeWork(
+      store,
+      work.id,
+      {
+        modules: [
+          seq({
+            participants: ["Browser", { label: "服务器" }],
+            messages: [{ from: "Browser", to: "服务器", label: "请求" }],
+          }),
+        ],
+      },
+      { cause },
+    );
+    const data = saved.scenes.root.modules.at(-1)!.data as { participants: { id: string; label: string }[]; messages: { id: string; from: string; to: string }[] };
+    expect(data.participants.map((p) => p.label)).toEqual(["Browser", "服务器"]);
+    expect(data.participants[0].id).toBe("browser");
+    expect(data.participants[1].id).toMatch(/^l[a-z0-9]+$/);
+    expect(data.messages[0]).toMatchObject({ from: "browser", to: data.participants[1].id });
+    expect(data.messages[0].id).toBeTruthy();
+    // A name that is nowhere, or among two, is refused where it is written.
+    const found = await refusal(() =>
+      writeWork(
+        store,
+        work.id,
+        { modules: [seq({ participants: ["A", "A", "B"], messages: [{ from: "A", to: "C", label: "x", kind: "shout" }] })] },
+        { cause },
+      ),
+    );
+    expect(found.map((p) => p.at)).toEqual([
+      "modules.seq.data.messages.0.from",
+      "modules.seq.data.messages.0.to",
+      "modules.seq.data.messages.0.kind",
+    ]);
+    expect(found[0].problem).toMatch(/有 2 项同名/);
+    expect(found[1].problem).toMatch(/participants 里没有 "C"/);
+  });
+  it("changes, appends and deletes items by id, taking along what referred to them", async () => {
+    const work = fixture();
+    const store = storeWith(work);
+    await writeWork(
+      store,
+      work.id,
+      {
+        modules: [
+          seq({
+            participants: [{ id: "a", label: "A" }, { id: "b", label: "B" }, { id: "c", label: "C" }],
+            messages: [
+              { id: "m1", from: "a", to: "b", label: "1" },
+              { id: "m2", from: "b", to: "c", label: "2" },
+              { id: "m3", from: "c", to: "a", label: "3" },
+            ],
+            notes: [{ id: "n1", over: ["a", "c"], text: "跨两人" }],
+          }),
+        ],
+      },
+      { cause },
+    );
+    const { work: saved } = await writeWork(
+      store,
+      work.id,
+      { modules: [{ id: "seq", data: { participants: { "#c": null, "#d": { label: "D" } }, messages: { "#m1": { label: "一" } } } }] },
+      { cause },
+    );
+    const data = saved.scenes.root.modules.at(-1)!.data as Record<string, { id: string }[]>;
+    expect(data.participants.map((p) => p.id)).toEqual(["a", "b", "d"]);
+    // The messages to and from C went with it; the note over A and C stays over A.
+    expect(data.messages).toEqual([{ id: "m1", from: "a", to: "b", label: "一" }]);
+    expect(data.notes).toEqual([{ id: "n1", over: ["a"], text: "跨两人" }]);
+    // A key a library drawing does not read is refused.
+    const found = await refusal(() => writeWork(store, work.id, { modules: [{ id: "seq", data: { actors: ["A"] } }] }, { cause }));
+    expect(found[0]).toMatchObject({ at: "modules.seq.data.actors" });
   });
 });

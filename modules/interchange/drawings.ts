@@ -1,4 +1,4 @@
-import type { Drawing } from "../contracts/index.ts";
+import type { ChoiceOption, Drawing, Field } from "../contracts/index.ts";
 
 /* The drawings hand-made and imported parts are drawn with when the library has none that
  * fits: a line drawn by hand, a shape as Excalidraw draws it, a picture as another tool
@@ -8,6 +8,16 @@ import type { Drawing } from "../contracts/index.ts";
  * its tools knows about them. The line, the shape and the diagram open with a mark, so a
  * part drawn with one is known again on export whatever id the work gave the drawing; an
  * imported picture goes out as a picture of itself like anything else. */
+
+const L = (zh: string, en: string) => ({ zh, en });
+/** A choice among named options, each as the editor shows it. */
+const among = (zh: string, en: string, ...options: [string, string, string][]): Field => ({
+  type: "choice",
+  label: L(zh, en),
+  options: options.map(([value, z, e]): ChoiceOption => ({ value, label: L(z, e) })),
+});
+const value = (type: "color" | "boolean" | "text" | "picture", zh: string, en: string): Field => ({ type, label: L(zh, en) });
+const amount = (zh: string, en: string, min: number, max: number, step: number): Field => ({ type: "number", label: L(zh, en), min, max, step });
 
 const SKETCH_LINE = "// drawy:sketch-line";
 const SKETCH_SHAPE = "// drawy:sketch-shape";
@@ -20,20 +30,26 @@ export const sketchLine: Drawing = {
   id: "sketch-line",
   name: "手绘线",
   params: {
-    color: { type: "color" },
-    width: { type: "number", min: 0.5, max: 24, step: 0.5 },
-    head: { type: "choice", options: ["none", "filled", "open"] },
-    both: { type: "boolean" },
-    dashed: { type: "boolean" },
-    smooth: { type: "boolean" },
-    opacity: { type: "number", min: 0.05, max: 1, step: 0.05 },
+    points: {
+      type: "list",
+      label: L("经过的点", "Points"),
+      item: { type: "list", item: { type: "number" }, min: 2, max: 2 },
+      description: "[x, y] shares of the box, in drawing order",
+    },
+    color: value("color", "颜色", "Colour"),
+    width: amount("线宽", "Line width", 0.5, 24, 0.5),
+    head: among("箭头", "Arrowhead", ["none", "无", "None"], ["filled", "实心", "Filled"], ["open", "开口", "Open"]),
+    both: value("boolean", "两端都有箭头", "Both ends"),
+    dashed: value("boolean", "虚线", "Dashed"),
+    smooth: value("boolean", "平滑", "Smooth"),
+    opacity: amount("浓淡", "Opacity", 0.05, 1, 0.05),
   },
   defaults: { width: 2, head: "none", both: false, dashed: false, smooth: false, opacity: 1 },
   source: `${SKETCH_LINE}
 // A line drawn by hand through data.points (shares of the box): a smooth curve when
 // data.smooth, else straight segments; data.head puts an arrowhead at its end (both ends
 // with data.both), seen through as much as data.opacity leaves. The line keeps its width
-// whatever the box's size.
+// whatever the box's size, and links meet it along its path.
 const d = api.data, t = api.theme;
 const W = api.width, H = api.height;
 const pts = (Array.isArray(d.points) ? d.points : [])
@@ -74,6 +90,8 @@ const heads = head !== "none" && pts.length > 1
   ? tip(pts[pts.length - 1], behind(pts)) + (d.both ? tip(pts[0], behind([...pts].reverse())) : "")
   : "";
 const dash = d.dashed ? ' stroke-dasharray="' + f(w * 3) + " " + f(w * 2.5) + '"' : "";
+// Links meet the line itself, anywhere along it, rather than its box.
+if (pts.length > 1) api.outline(path);
 return api.svg(
   '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" style="overflow:visible">' +
     '<path d="' + path + '" fill="none" stroke="transparent" stroke-width="' + (w + 12) + '" stroke-linecap="round"/>' +
@@ -89,19 +107,21 @@ export const sketchShape: Drawing = {
   id: "sketch-shape",
   name: "手绘形状",
   params: {
-    text: { type: "text" },
-    shape: { type: "choice", options: ["rectangle", "ellipse", "diamond"] },
-    stroke: { type: "color" },
-    fill: { type: "color" },
-    fillStyle: { type: "choice", options: ["hachure", "cross-hatch", "solid", "none"] },
-    strokeWidth: { type: "number", min: 0.5, max: 12, step: 0.5 },
-    dashed: { type: "boolean" },
-    roughness: { type: "number", min: 0, max: 3, step: 0.5 },
-    rounded: { type: "boolean" },
-    size: { type: "number", min: 8, max: 120, step: 1 },
-    textColor: { type: "color" },
-    align: { type: "choice", options: ["left", "center", "right"] },
-    opacity: { type: "number", min: 0.05, max: 1, step: 0.05 },
+    text: value("text", "文字", "Words"),
+    shape: among("形状", "Shape", ["rectangle", "矩形", "Rectangle"], ["ellipse", "椭圆", "Ellipse"], ["diamond", "菱形", "Diamond"]),
+    stroke: value("color", "描边色", "Outline"),
+    fill: value("color", "填充色", "Fill"),
+    fillStyle: among("填充方式", "Fill style", ["hachure", "斜线", "Hachure"], ["cross-hatch", "交叉线", "Cross-hatch"], ["solid", "实色", "Solid"], ["none", "无", "None"]),
+    strokeWidth: amount("线宽", "Line width", 0.5, 12, 0.5),
+    dashed: value("boolean", "虚线", "Dashed"),
+    roughness: amount("手绘感", "Roughness", 0, 3, 0.5),
+    rounded: value("boolean", "圆角", "Rounded"),
+    // Any size, as words brought in from another tool keep theirs; typed rather than slid.
+    size: { type: "number", label: L("字号", "Font size"), min: 1, step: 1 },
+    textColor: value("color", "文字颜色", "Text colour"),
+    align: among("对齐", "Align", ["left", "左", "Left"], ["center", "中", "Centre"], ["right", "右", "Right"]),
+    opacity: amount("浓淡", "Opacity", 0.05, 1, 0.05),
+    seed: { type: "number", label: L("形状变化", "Variation"), description: "fixes how the lines waver" },
   },
   defaults: {
     shape: "rectangle",
@@ -229,7 +249,7 @@ return api.html(
 export const importedPicture: Drawing = {
   id: "imported-picture",
   name: "导入的图片",
-  params: { material: { type: "picture" } },
+  params: { material: value("picture", "图片", "Picture") },
   source: `// A picture (data.material) as its whole file fills the box, margins and edges as they are.
 const info = api.materials[api.data.material];
 if (!info) throw Error("素材 " + api.data.material + " 不在作品中");
@@ -249,7 +269,7 @@ return root;`,
 export const mermaidDiagram: Drawing = {
   id: "mermaid",
   name: "Mermaid 图",
-  params: { source: { type: "text" } },
+  params: { source: { type: "text", long: true, label: L("Mermaid 代码", "Mermaid code") } },
   source: `${MERMAID}
 // A diagram written in Mermaid (data.source), drawn by the browser and fitted to the box.
 const root = await api.mermaid(String(api.data.source || ""));

@@ -6,7 +6,7 @@ import { WorkDetail } from "../SceneView.tsx";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { Dialog } from "../ui/dialogs.tsx";
 import type { Material } from "@drawy/materials/schema";
-import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
+import type { Canvas, PartPick, Pointed } from "../../../../modules/canvas/index.ts";
 import type { Selection } from "../../../../modules/contracts/index.ts";
 import { cx } from "../cx.ts";
 import { useT } from "../i18n.tsx";
@@ -65,6 +65,8 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     chosen: (m: Material) => void;
   }>();
   const [canvas, setCanvas] = useState<Canvas>();
+  // The part selected inside the one module selected, named in the crumbs over the canvas.
+  const [part, setPart] = useState<PartPick | null>(null);
   // The sheet of shortcuts, and how the drawing board is set up.
   const [help, setHelp] = useState(false);
   const [board, setBoard] = useBoard();
@@ -88,11 +90,11 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
   const chosenLinks = useSelect(session, (s) =>
     links.flatMap((id) => s.scene?.links.find((l) => l.id === id) ?? []),
   );
-  const linkNames = useSelect(session, (s) => chosenLinks.map((l) => nameIn(s, l.id)));
+  const linkNames = useSelect(session, (s) => chosenLinks.map((l) => nameIn(s, l.id, t)));
   const linkIds = chosenLinks.map((l) => l.id);
   const page = useWorkPage({ session, asking, feedback, focus: { modules: selected, links: chosenLinks } });
   const { sceneId, putAway, dismiss, detailId, setDetail, retyping, setRetyping, retyped } = page;
-  const { restore, undo, enter, open, ask, swap, stop, send, resume } = page;
+  const { restore, undo, redo, enter, open, ask, swap, stop, send, resume } = page;
   // The latest reply shows under the canvas until it is put away.
   const replying = !putAway && !working && !waiting;
   const deselect = () => (canvas ? canvas.select([]) : (setSelected([]), setLinks([])));
@@ -146,9 +148,10 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
       removeEventListener("keydown", key);
     };
   }, [scenes]);
-  // Cmd/Ctrl+Z takes back the latest step, unless a field is being typed in; Cmd/Ctrl+S
+  // Cmd/Ctrl+Z takes back the latest step and Shift+Cmd/Ctrl+Z or Cmd/Ctrl+Y makes it again,
+  // unless a field is being typed in; Cmd/Ctrl+S
   // saves the hand edits as a version; Escape ends a preview, or puts the reply away.
-  const keys = useRef({ replying, journal, detailId, undo: () => {}, dismiss });
+  const keys = useRef({ replying, journal, detailId, undo: () => {}, redo: () => {}, dismiss });
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const s = session.get(),
@@ -158,6 +161,9 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
       if (mod && k === "z" && !e.shiftKey && !typing) {
         e.preventDefault();
         if (!s.working && !s.preview && s.undoable) keys.current.undo();
+      } else if (mod && ((k === "z" && e.shiftKey) || (k === "y" && !e.shiftKey)) && !typing) {
+        e.preventDefault();
+        if (!s.working && !s.preview && s.redoable) keys.current.redo();
       } else if (mod && k === "s" && s.unsaved) {
         e.preventDefault();
         if (!s.locked) void attempt(session.save);
@@ -171,7 +177,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     return () => removeEventListener("keydown", key);
   }, [session]);
 
-  keys.current = { replying, journal, detailId, undo, dismiss };
+  keys.current = { replying, journal, detailId, undo, redo, dismiss };
   /** Words or a picture pointed at on the canvas: words are changed where they are, a
    * picture is swapped for one from the library. What the work cannot change by itself is
    * written up for the author to do. */
@@ -252,6 +258,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           rename={(title) => void attempt(() => session.rename(title))}
           drafting={panel === "drafts"}
           versions={() => toggle("drafts")}
+          part={part}
         />
         <CanvasArea
           session={session}
@@ -266,6 +273,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             setLinks(links);
           }}
           point={point}
+          part={setPart}
           hand={hand}
           board={board}
           setBoard={setBoard}
@@ -285,6 +293,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             links={linkIds}
             retyping={!!retyping}
             ask={() => ask()}
+            part={part}
           />
         )}
         {retyping && stage.current && (
@@ -335,7 +344,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             onClick={() => setTucked(false)}
           >
             <PanelRightOpen size={16} />
-            <span>{t.edit.tabs.properties}</span>
+            <span>{t.edit.panel.label}</span>
           </button>
         )}
         <WorkDetail session={session} detailId={detailId} close={() => setDetail(undefined)} />
@@ -372,6 +381,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           </header>
           <section
             className={cx("side-body")}
+            data-side-body
             ref={conversation}
             onWheel={(e) => {
               if (!journal) return;
@@ -391,6 +401,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
                 pick={pick}
                 enter={enter}
                 ask={() => ask()}
+                part={part}
               />
             ) : drafting ? (
               <WorkDrafts session={session} restore={restore} feedback={feedback} />

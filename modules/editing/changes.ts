@@ -1,4 +1,4 @@
-import type { Instance, Link, Scene, Work } from "../contracts/index.ts";
+import { isItemId, type Instance, type Link, type Scene, type Work } from "../contracts/index.ts";
 
 /* What changed between two revisions of a work, so the author is told what the person
  * changed by hand and keeps it. */
@@ -15,8 +15,32 @@ function same(a: unknown, b: unknown): boolean {
     ka.every((k) => same((a as any)[k], (b as any)[k]))
   );
 }
+type Item = { id: string };
+const items = (v: unknown): Item[] | null =>
+  Array.isArray(v) && v.every((x) => x && typeof x === "object" && isItemId((x as Item).id)) ? (v as Item[]) : null;
+/** What changed in the lists of a part's data, item by item and by id, so the author is told
+ * "messages: m6 added; m3 changed" rather than only that the part changed. Lists without
+ * ids are left to the record the author is shown. */
+export function itemChanges(before: Record<string, unknown>, after: Record<string, unknown>): string[] {
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])].flatMap((key) => {
+    const a = items(before[key]) ?? (before[key] === undefined ? [] : null),
+      b = items(after[key]) ?? (after[key] === undefined ? [] : null);
+    if (!a || !b || (!a.length && !b.length) || same(a, b)) return [];
+    const was = new Map(a.map((x) => [x.id, x])),
+      now = new Set(b.map((x) => x.id));
+    const kept = b.filter((x) => was.has(x.id));
+    const parts = [
+      ...[["added", b.filter((x) => !was.has(x.id)).map((x) => x.id)], ["removed", a.filter((x) => !now.has(x.id)).map((x) => x.id)], ["changed", kept.filter((x) => !same(x, was.get(x.id))).map((x) => x.id)]].flatMap(([word, ids]) =>
+        ids.length ? [`${(ids as string[]).join(", ")} ${word}`] : [],
+      ),
+      ...(kept.map((x) => x.id).join() !== a.filter((x) => now.has(x.id)).map((x) => x.id).join() ? ["reordered"] : []),
+    ];
+    return parts.length ? [`${key}: ${parts.join("; ")}`] : [];
+  });
+}
 /** What changed in a work between two of its revisions: per scene, the parts added,
- * removed, changed in what they show, and only moved or resized, and whether the scene
+ * removed, changed in what they show (with the items of their lists changed), and only
+ * moved or resized, and whether the scene
  * itself (its title, parent, script or checks) changed; the scenes added and removed whole;
  * the drawings and details added, changed or removed; and whether its shared style changed. */
 export function changesBetween(before: Work, after: Work) {
@@ -34,14 +58,18 @@ export function changesBetween(before: Work, after: Work) {
     const added: string[] = [],
       changed: string[] = [],
       moved: string[] = [];
+    const listed: Record<string, string[]> = {};
     for (const p of now) {
       const o = old.get(p.id);
       if (!o) added.push(p.id);
       else if (
         !same({ ...o, bounds: null }, { ...p, bounds: null }) ||
         source(before, o) !== source(after, p)
-      )
+      ) {
         changed.push(p.id);
+        const lines = itemChanges(o.data ?? {}, p.data ?? {});
+        if (lines.length) listed[p.id] = lines;
+      }
       else if ("bounds" in p && !same(p.bounds, (o as Instance).bounds))
         moved.push(p.id);
     }
@@ -66,7 +94,7 @@ export function changesBetween(before: Work, after: Work) {
       retitled ||
       scriptChanged ||
       checksChanged
-      ? [{ id: scene.id, added, removed, changed, moved, restacked, retitled, scriptChanged, checksChanged }]
+      ? [{ id: scene.id, added, removed, changed, items: listed, moved, restacked, retitled, scriptChanged, checksChanged }]
       : [];
   });
   const records = <T>(a: Record<string, T>, b: Record<string, T>) => ({

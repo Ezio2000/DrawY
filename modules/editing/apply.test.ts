@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { fixture } from "../runtime/fixture.ts";
 import { EditRejected, labelOf, shownName, type Problem, type Work, type WorkEdit } from "../contracts/index.ts";
-import { linkEnds } from "../contracts/geometry.ts";
+import { linkEnds, scenePlacing } from "../contracts/geometry.ts";
 import { writeExample, EDIT_EXAMPLE } from "../agent/prompts.ts";
 import { writeSchema } from "../agent/tools.ts";
 import { validateWork } from "../workspace/index.ts";
 import { applied, composed, layOn, readEdit } from "./apply.ts";
+import { reattach } from "./links.ts";
+import { revert } from "./history.ts";
 
 /** A work with two modules apart from each other and no links, to connect. */
 function work(): Work {
@@ -119,7 +121,7 @@ describe("data, defaults and style merge the same way", () => {
 
 describe("links own where they meet a module", () => {
   const ends = (w: Work, id: string) =>
-    linkEnds(w.scenes.root.links.find((l) => l.id === id)!, (m) => w.scenes.root.modules.find((x) => x.id === m)!.bounds);
+    linkEnds(w.scenes.root.links.find((l) => l.id === id)!, scenePlacing(w.scenes.root));
   it("joins the sides facing each other for two module ids, as an arrow by default", () => {
     const next = written(work(), { links: [{ id: "l", from: "left", to: "right", data: { label: "去" } }] });
     expect(next.scenes.root.links[0]).toEqual({
@@ -158,12 +160,35 @@ describe("links own where they meet a module", () => {
 });
 
 describe("what remove takes along", () => {
-  it("removes a module with its links and checks", () => {
-    const w = written(work(), { links: [{ id: "l", from: "left", to: "right" }] });
+  it("removes a module with its checks, the links meeting it keeping where they met it as free ends", () => {
+    const w = written(work(), {
+      links: [
+        { id: "l", from: "left", to: "right" },
+        { id: "m", from: { linkId: "l", along: 0.5 }, to: { x: 300, y: 300 } },
+      ],
+    });
     w.scenes.root.checks = [{ moduleId: "left", selector: "button" }];
     const next = written(w, { remove: { modules: ["left"] } });
-    expect(next.scenes.root.links).toEqual([]);
+    // The link met the left box on its right side, facing the other box.
+    expect(next.scenes.root.links[0]).toMatchObject({ from: { x: 100, y: 50 }, to: { moduleId: "right" } });
     expect(next.scenes.root.checks).toEqual([]);
+    // A link riding on a link taken out keeps its place there too.
+    const gone = written(next, { remove: { links: ["l"] } });
+    expect(gone.scenes.root.links).toEqual([expect.objectContaining({ id: "m", from: { x: 300, y: 50 }, to: { x: 300, y: 300 } })]);
+    // What an end meets must be in the scene, and links cannot ride on each other in a ring.
+    expect(problems(() => written(w, { links: [{ id: "n", from: { linkId: "nope", along: 0 }, to: "right" }] })).map((p) => p.at)).toEqual(["links.n.from"]);
+    expect(
+      problems(() => written(w, { links: [{ id: "l", from: { linkId: "m", along: 0.5 } }] })).map((p) => p.problem),
+    ).toEqual(expect.arrayContaining([expect.stringMatching(/绕成了一圈/)]));
+    // A ring through the other ends, both links grounded on another by their first.
+    const ring = { links: [
+      { id: "a", from: { linkId: "l", along: 0.2 }, to: { linkId: "b", along: 0.5 } },
+      { id: "b", from: { linkId: "l", along: 0.8 }, to: { linkId: "a", along: 0.5 } },
+    ] };
+    expect(problems(() => written(w, ring)).map((p) => p.problem)).toEqual(expect.arrayContaining([expect.stringMatching(/绕成了一圈/)]));
+    // Nor can reattaching an end close one.
+    const open = written(w, { links: [ring.links[0], { ...ring.links[1], to: { x: 0, y: 0 } }] });
+    expect(() => reattach(open, "root", "b", "to", { linkId: "a", along: 0.5 })).toThrow(/沿着自己/);
   });
   it("removes a scene with those under it, and what led there leads nowhere", () => {
     const w = work();
@@ -249,12 +274,17 @@ describe("drawings and text", () => {
   const source = `const s = api.data.size; return api.svg('<svg font-size="16" data-a="16"></svg>');`;
   const withDrawing = (extra = {}) => written(work(), { drawings: [{ id: "cup", source, ...extra }] });
   it("takes a name by default and keeps what a change leaves out", () => {
-    const w = withDrawing({ defaults: { size: 18 }, params: { size: { label: "字号", type: "number" } } });
+    const w = withDrawing({ defaults: { size: 18 }, params: { size: { label: { zh: "字号", en: "Font size" }, type: "number" } } });
     expect(w.drawings.cup).toMatchObject({ name: "cup", defaults: { size: 18 } });
     const next = written(w, { drawings: [{ id: "cup", defaults: { size: 20 } }] });
     expect(next.drawings.cup).toEqual({ ...w.drawings.cup, defaults: { size: 20 } });
     const unset = written(next, { drawings: [{ id: "cup", params: { size: null } }] });
     expect(unset.drawings.cup.params).toEqual({});
+    // A field is given whole: what it leaves out goes, so going back to an earlier one works.
+    const bounded = written(w, { drawings: [{ id: "cup", params: { size: { type: "number", min: 10, max: 20 } } }] });
+    expect(bounded.drawings.cup.params!.size).toEqual({ type: "number", min: 10, max: 20 });
+    const back = written(bounded, revert(bounded, w));
+    expect(back.drawings.cup.params).toEqual(w.drawings.cup.params);
     expect(problems(() => written(work(), { drawings: [{ id: "new" }] }))[0].problem).toMatch(/画法 new 是新增的/);
   });
   it("edits its code in place, finding exactly what it names", () => {
@@ -327,6 +357,9 @@ describe("two edits as one", () => {
     });
     const next = written(work(), composed(held, fix));
     expect(next.scenes.root.links[0].to).toEqual({ moduleId: "b" });
+    // An end corrected to another kind of end is that end alone.
+    const free = composed({ links: [{ id: "l", from: { moduleId: "ghost", at: "bottom" }, to: "b" }] }, { links: [{ id: "l", from: { x: 50, y: 100 } }] });
+    expect(free.links).toEqual([{ id: "l", from: { x: 50, y: 100 }, to: "b" }]);
   });
   it("drops what the correction removes from what it holds, and leaves unrelated writes alone", () => {
     const held = { links: [{ id: "bad", from: "a", to: "ghost" }, { id: "good", from: "a", to: "b" }] };

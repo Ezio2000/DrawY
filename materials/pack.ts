@@ -9,7 +9,7 @@ import {
   kindSchema,
   materialTypeSchema,
   namesSchema,
-  paramSchema,
+  fieldsSchema,
   pictureTypes,
   typeIdSchema,
   unitBoxSchema,
@@ -17,6 +17,7 @@ import {
   type Bindings,
   type Material,
 } from "./schema.ts";
+import { normalizeData, unlabelled, validateData, type DataProblem } from "./fields.ts";
 
 /** The format of a material pack: what a material project hands the library. A pack is a
  * directory holding
@@ -89,7 +90,8 @@ export const packedSchema = z.discriminatedUnion("kind", [
     ...common,
     kind: z.literal("drawing"),
     source: z.string().min(1),
-    params: z.record(z.string(), paramSchema),
+    params: fieldsSchema,
+    defaults: z.record(z.string(), z.unknown()).default({}),
     use: z.enum(["module", "link"]),
     size: z.object({ width: z.number().positive(), height: z.number().positive() }),
     example: z.record(z.string(), z.unknown()),
@@ -184,6 +186,21 @@ export function readPack(dir: string, library: Library) {
       problems.push(`${m.id}: 已属于${held.pack ? "素材源 " + held.pack : "用户素材"}，不能覆盖`);
     const isStyle = (id: string) => ids.get(id)?.kind === "style" || existing(id)?.kind === "style";
     if (m.style && !isStyle(m.style)) problems.push(`${m.id}: 未知风格 ${m.style}`);
+    if (m.kind === "drawing") {
+      // Every value a drawing reads is named in both languages and explained to the author,
+      // and its example and defaults are data its schema holds as written.
+      for (const at of unlabelled(m.params)) problems.push(`${m.id}: 字段 ${at} 缺少中英文名称`);
+      for (const [key, f] of Object.entries(m.params))
+        if (!f.description) problems.push(`${m.id}: 字段 ${key} 缺少 description`);
+      const found: DataProblem[] = [];
+      for (const [what, data] of [["example", m.example], ["defaults", m.defaults]] as const) {
+        const shaped = normalizeData(m.params, data, what, found);
+        if (JSON.stringify(shaped) !== JSON.stringify(data)) found.push({ at: what, problem: "列表的每一项要写全 id，引用写 id" });
+        validateData(m.params, data, what, found);
+        for (const key of Object.keys(data)) if (!m.params[key]) found.push({ at: `${what}.${key}`, problem: "没有声明这个字段" });
+      }
+      for (const p of found) problems.push(`${m.id}: ${p.at} ${p.problem}`);
+    }
     if (m.kind === "style")
       for (const e of m.effects)
         if (ids.get(e)?.kind !== "effect" && existing(e)?.kind !== "effect")

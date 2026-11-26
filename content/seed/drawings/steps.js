@@ -98,21 +98,35 @@ for (let i = 0; i + 1 < n; i++) {
 }
 steps.forEach((s, i) => {
   const p = at(i);
+  const path = api.path("steps", s, i);
   const sc = s.color || color;
   const state =
     cur < 0 ? "plain" : i < cur ? "done" : i === cur ? "current" : "todo";
   const fill = state === "todo" ? paper : sc;
+  let item = "";
   if (state === "current")
-    out += `<circle cx="${p.x}" cy="${p.y}" r="${r + 5}" fill="none" stroke="${sc}" stroke-opacity=".35" stroke-width="${sw * 2}"/>`;
-  out += `<circle cx="${p.x}" cy="${p.y}" r="${r}" fill="${fill}" stroke="${state === "todo" ? muted : sc}" stroke-width="${sw}"/>`;
-  out += `<text x="${p.x}" y="${p.y}" text-anchor="middle" font-size="${r * 0.95}" font-weight="700" fill="${state === "todo" ? muted : paper}">${esc(s.number ?? i + 1)}</text>`;
+    item += `<circle cx="${p.x}" cy="${p.y}" r="${r + 5}" fill="none" stroke="${sc}" stroke-opacity=".35" stroke-width="${sw * 2}"/>`;
+  item += `<circle cx="${p.x}" cy="${p.y}" r="${r}" fill="${fill}" stroke="${state === "todo" ? muted : sc}" stroke-width="${sw}"/>`;
+  // A number the step gives is its data; otherwise it is its place, drawn by the drawing.
+  item += `<text x="${p.x}" y="${p.y}" text-anchor="middle" font-size="${r * 0.95}" font-weight="700" fill="${state === "todo" ? muted : paper}"${s.number != null ? api.text(path + ".number") : ""}>${esc(s.number ?? i + 1)}</text>`;
   const lx = down ? p.x + r + size * 0.9 : p.x,
     ly = down ? p.y - (s.note ? size * 0.55 : 0) : p.y + r + size * 1.3;
   const anchor = down ? "start" : "middle";
-  out += `<text x="${lx}" y="${ly}" text-anchor="${anchor}" font-size="${size * 1.05}" font-weight="600" fill="${state === "todo" ? muted : ink}">${esc(s.label)}</text>`;
+  // A step written as words alone is those words; a record names them by label.
+  const words = typeof (d.steps || [])[i] === "string" ? path : path + ".label";
+  item += `<text x="${lx}" y="${ly}" text-anchor="${anchor}" font-size="${size * 1.05}" font-weight="600" fill="${state === "todo" ? muted : ink}"${api.text(words)}>${esc(s.label)}</text>`;
   if (s.note)
-    out += `<text x="${lx}" y="${ly + size * 1.35}" text-anchor="${anchor}" font-size="${size * 0.82}" fill="${muted}">${esc(s.note)}</text>`;
+    item += `<text x="${lx}" y="${ly + size * 1.35}" text-anchor="${anchor}" font-size="${size * 0.82}" fill="${muted}"${api.text(path + ".note")}>${esc(s.note)}</text>`;
+  out += `<g${api.part(path, { reorder: down ? "y" : "x" })}>${item}</g>`;
 });
+// Before each step, and after the last, a new one can go.
+for (let i = 0; i <= steps.length; i++) {
+  const a = at(Math.max(0, i - 1)),
+    b = at(Math.min(steps.length - 1, i));
+  const gap = down ? (n > 1 ? (H - 2 * r) / (n - 1) / 2 : r * 2) : W / n / 2;
+  const mid = i === 0 ? (down ? { x: b.x, y: b.y - gap } : { x: b.x - gap, y: b.y }) : i === steps.length ? (down ? { x: a.x, y: a.y + gap } : { x: a.x + gap, y: a.y }) : { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  if (steps.length) api.slot("steps", i, { x: Math.max(4, Math.min(W - 4, mid.x)), y: Math.max(4, Math.min(H - 4, mid.y)) });
+}
 const svg = api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}" dominant-baseline="central">${out}</svg>`,
 );

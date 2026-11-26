@@ -1,9 +1,10 @@
 import type { Bounds, Work } from "../contracts/index.ts";
-import { drawingOf, labelOf } from "../contracts/index.ts";
+import { drawingOf, endModule, labelOf } from "../contracts/index.ts";
 import { bound, type Clip } from "../editing/index.ts";
 import { ClipMaker, lineBox } from "./clip.ts";
 import { kindOfSource, mermaidDiagram, sketchLine } from "./drawings.ts";
-import { CALLOUT, NODE } from "./library.ts";
+import { CALLOUT, NODE, SEQUENCE } from "./library.ts";
+import { sequenceSource, type SequenceData } from "./sequence.ts";
 
 /* Mermaid, in and out. A flowchart read in becomes blocks and links of the work, laid out
  * where Mermaid lays them out and drawn in the work's style, so it is edited like anything
@@ -202,6 +203,15 @@ function loop(made: ClipMaker, e: Flowchart["edges"][number], box: Bounds, group
     );
   }
 }
+/** A sequence diagram as the library's sequence drawing, at a size that gives each
+ * participant and message room. */
+export function sequenceBlock(data: SequenceData): Clip {
+  const made = new ClipMaker();
+  const width = Math.max(360, data.participants.length * 180),
+    height = Math.max(240, 120 + (data.messages.length + data.notes.length) * 56);
+  made.module({ bounds: { x: 0, y: 0, width, height }, drawingId: made.material(SEQUENCE), data: { ...data } }, "diagram");
+  return made.clip();
+}
 /** A diagram of any other kind, whole: drawn from its source at the size Mermaid drew it. */
 export function mermaidBlock(source: string, size: { width: number; height: number }): Clip {
   const made = new ClipMaker();
@@ -240,8 +250,11 @@ export class SeveralDiagrams extends Error {
 export function toMermaid(work: Work, sceneId: string): string | null {
   const scene = work.scenes[sceneId];
   const own = (drawingId: string) => kindOfSource(work.drawings[drawingId]?.source);
+  // A scene holding a sequence diagram alone is that diagram.
+  const sequences = scene.modules.filter((m) => m.drawingId === SEQUENCE && !work.drawings[m.drawingId]);
+  if (sequences.length === 1 && scene.modules.length === 1) return sequenceSource(sequences[0].data as Partial<SequenceData>);
   const diagrams = scene.modules.filter((m) => own(m.drawingId) === "mermaid");
-  const linked = new Set(scene.links.flatMap((l) => [l.from.moduleId, l.to.moduleId]));
+  const linked = new Set(scene.links.flatMap((l) => [endModule(l.from), endModule(l.to)].filter((id): id is string => !!id)));
   const blocks = scene.modules.filter(
     (m) =>
       linked.has(m.id) ||
@@ -293,8 +306,9 @@ export function toMermaid(work: Work, sceneId: string): string | null {
     lines.push(`  ${names.get(m.id)}${open}${quoted(words)}${close}`);
   }
   for (const l of scene.links) {
-    const from = names.get(l.from.moduleId),
-      to = names.get(l.to.moduleId);
+    // A flowchart joins blocks: a link with an end along a line or at a point has no place in it.
+    const from = names.get(endModule(l.from) ?? ""),
+      to = names.get(endModule(l.to) ?? "");
     if (!from || !to) continue;
     const drawing = drawingOf(work, l.drawingId);
     const d = { ...(drawing?.defaults ?? {}), ...l.data } as Record<string, unknown>;

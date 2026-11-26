@@ -5,8 +5,8 @@ import type {
   PictureMaterial,
 } from "@drawy/materials/schema";
 import {
-  paramTypes,
   type Bounds,
+  type LinkEnd,
   type Drawing,
   type Point,
   type Work,
@@ -31,6 +31,11 @@ import {
   paste,
   pasteLook,
   reattach,
+  removeDangling,
+  removeItem,
+  setAt,
+  composed,
+  applied,
   removeParts,
   restyle,
   reverse,
@@ -56,31 +61,12 @@ import { SessionError, type Context } from "./types.ts";
  * goes and how big it is follow the view it is drawn on. Each reports its own failure to
  * the host, so it can be called and forgotten. */
 
-/** A library drawing as a drawing of the work's own. */
+/** A library drawing as a drawing of the work's own: its schema, defaults and code. */
 function ownCopy(m: DrawingMaterial, locale: "zh" | "en"): Omit<Drawing, "id"> {
-  const editable = Object.entries(m.params).filter(([, p]) =>
-    (paramTypes as readonly string[]).includes(p.type),
-  );
-  const defaults = Object.entries(m.params).filter(([, p]) => p.default !== undefined);
   return {
     name: m.name[locale],
-    ...(editable.length
-      ? {
-          params: Object.fromEntries(
-            editable.map(([k, { type, options, min, max, step }]) => [
-              k,
-              {
-                type: type as (typeof paramTypes)[number],
-                ...(options ? { options } : {}),
-                ...(min !== undefined ? { min, max, step } : {}),
-              },
-            ]),
-          ),
-        }
-      : {}),
-    ...(defaults.length
-      ? { defaults: Object.fromEntries(defaults.map(([k, p]) => [k, p.default])) }
-      : {}),
+    ...(Object.keys(m.params).length ? { params: structuredClone(m.params) } : {}),
+    ...(Object.keys(m.defaults ?? {}).length ? { defaults: structuredClone(m.defaults) } : {}),
     source: m.source,
   };
 }
@@ -203,9 +189,49 @@ export function editOps(ctx: Context) {
     reverse(links: string[]) {
       if (links.length) run((w, s) => reverse(w, s, links));
     },
-    /** Moves an end of a link onto a side of a module. */
-    reconnect(link: string, end: "from" | "to", to: { moduleId: string; side: Side }) {
-      run((w, s) => reattach(w, s, link, end, to.side, to.moduleId));
+    /** Moves an end of a link elsewhere: a module, a link or a free point. */
+    reconnect(link: string, end: "from" | "to", to: LinkEnd) {
+      run((w, s) => reattach(w, s, link, end, to));
+    },
+    /** Makes one hand edit of the scene in view, from the work as it then stands; a
+     * failure is told as any other. Resolves once it is shown or refused. */
+    edit(make: (w: Work, sceneId: string) => WorkEdit | null) {
+      const sceneId = scene();
+      const job = ctx.edits.commit((w) => make(w, sceneId));
+      report(job);
+      return job.then(
+        () => true,
+        () => false,
+      );
+    },
+    /** Takes an item out of a part's list, with what referred to it, and tells how many
+     * went along. */
+    removeItem(partId: string, list: string, item: string | number) {
+      let along = 0;
+      void ops.edit((w, s) => {
+        const r = removeItem(w, s, partId, list, item);
+        along = r.along;
+        return r.edit;
+      }).then((done) => done && along && ctx.tell({ kind: "along", count: along }));
+    },
+    /** Sets values of the item at a path in a part's data, as a part selected on the canvas
+     * is given a look from the bar beside it. */
+    setItem(partId: string, path: string, values: Record<string, unknown>) {
+      run((w, s) => {
+        let edit: WorkEdit | null = null;
+        let at = w;
+        for (const [key, value] of Object.entries(values)) {
+          const next = setAt(at, s, partId, `${path}.${key}`, value);
+          if (!next) continue;
+          edit = edit ? (composed(edit, next) as WorkEdit) : next;
+          at = applied(at, next);
+        }
+        return edit;
+      });
+    },
+    /** Takes out the links in the scene that meet nothing at either end. */
+    removeDangling() {
+      run((w, s) => removeDangling(w, s));
     },
     /** Copies modules a step off, or as far as copies of them were dragged, with the links
      * between them; the copies are selected. */
@@ -355,16 +381,18 @@ export function editOps(ctx: Context) {
         fail(e);
       }
     },
-    /** Links one module to another, between the sides named or as they face each other,
-     * drawn like the scene's other links, or with the library's arrow when it has none. */
-    connect(from: { moduleId: string; side?: Side }, to: { moduleId: string; side?: Side }) {
+    /** Links two ends (each on a module, along a link or free), drawn like the scene's
+     * other links, or with the library's arrow when it has none; a link drawn upright is a
+     * line, without a head. */
+    connect(from: LinkEnd, to: LinkEnd, how?: { upright?: boolean }) {
       const w = shown(),
         sceneId = scene();
       if (!w) return;
       report(
         (async () => {
           const { look, own } = await linkWith(w, sceneId);
-          await ctx.edits.commit((work) => connect(work, sceneId, from, to, look, own).edit);
+          const drawn = how?.upright ? { ...look, data: { ...look.data, head: "none" } } : look;
+          await ctx.edits.commit((work) => connect(work, sceneId, from, to, drawn, own).edit);
         })(),
       );
     },
@@ -419,16 +447,16 @@ export function editOps(ctx: Context) {
     /** A line drawn on the canvas where it was drawn: a freehand stroke with the pen, which
      * stays in hand for the next; or a straight arrow, selected once drawn. Its width reads
      * as about two screen pixels in the view it is drawn in. */
-    async ink(points: Point[], kind: "pen" | "arrow"): Promise<string | undefined> {
+    async ink(points: Point[], kind: "pen" | "arrow", upright = false): Promise<string | undefined> {
       const pending = materializeBlank();
       if (pending) {
         const real = await pending;
-        return real ? real.ops.ink(points, kind) : undefined;
+        return real ? real.ops.ink(points, kind, upright) : undefined;
       }
       if (!points.length) return;
       const s = scale(),
         sceneId = scene();
-      const clip = named(inked(points, { kind, width: Math.min(12, Math.max(1, Math.round((2 / s) * 2) / 2)), scale: s }));
+      const clip = named(inked(points, { kind, upright, width: Math.min(12, Math.max(1, Math.round((2 / s) * 2) / 2)), scale: s }));
       if (kind === "pen") {
         report(ctx.edits.commit((w) => paste(w, sceneId, clip).edit));
         return;

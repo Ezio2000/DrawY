@@ -79,9 +79,10 @@ for (const side of sides) {
     const bx = cx + dir * (cw / 2 + gap1 + bw / 2);
     const sx = cx + (dir * cw) / 2 - dir * 4;
     const ex = bx - (dir * bw) / 2;
+    const path = api.path("branches", b, i);
     lines += `<path d="M${sx} ${cy}C${(sx + ex) / 2} ${cy} ${(sx + ex) / 2} ${by} ${ex} ${by}" stroke="${col}" stroke-width="${sw * 1.8}"/>`;
-    shapes += `<rect x="${bx - bw / 2}" y="${by - bh / 2}" width="${bw}" height="${bh}" rx="${bh / 2}" fill="${col}" fill-opacity=".15" stroke="${col}" stroke-width="${sw}"/>`;
-    words += `<text x="${bx}" y="${by}" text-anchor="middle" font-size="${size}" font-weight="700" fill="${ink}">${esc(b.label)}</text>`;
+    // A branch is its pill and its name, one part to select and drag up or down.
+    shapes += `<g${api.part(path, { reorder: "y" })}><rect x="${bx - bw / 2}" y="${by - bh / 2}" width="${bw}" height="${bh}" rx="${bh / 2}" fill="${col}" fill-opacity=".15" stroke="${col}" stroke-width="${sw}"/><text x="${bx}" y="${by}" text-anchor="middle" dominant-baseline="central" font-size="${size}" font-weight="700" fill="${ink}"${api.text(typeof (d.branches || [])[i] === "string" ? path : path + ".label")}>${esc(b.label)}</text></g>`;
     const kids = (b.children || []).map(String);
     const rowH = Math.min(
       size * 2.4,
@@ -94,12 +95,21 @@ for (const side of sides) {
       const tw = measure(kid, size * 0.92);
       const under = ky + size * 0.55;
       lines += `<path d="M${kx0} ${by}C${(kx0 + kx1) / 2} ${by} ${(kx0 + kx1) / 2} ${under} ${kx1} ${under}H${kx1 + dir * (tw + size * 0.4)}" stroke="${col}" stroke-width="${sw}" stroke-opacity=".8"/>`;
-      words += `<text x="${kx1 + dir * size * 0.2}" y="${ky - size * 0.1}" text-anchor="${dir > 0 ? "start" : "end"}" font-size="${size * 0.92}" fill="${ink}">${esc(kid)}</text>`;
+      const at = `${path}.children.${j}`;
+      words += `<text x="${kx1 + dir * size * 0.2}" y="${ky - size * 0.1}" text-anchor="${dir > 0 ? "start" : "end"}" font-size="${size * 0.92}" fill="${ink}"${api.part(at, { reorder: "y" })}${api.text(at)}>${esc(kid)}</text>`;
+      api.slot(`${path}.children`, j, { x: kx1 + dir * size * 0.2, y: ky - rowH / 2 });
+    });
+    // A new point goes after the branch's last, or is its first.
+    api.slot(`${path}.children`, kids.length, {
+      x: bx + dir * (bw / 2 + gap2 + size * 0.4),
+      y: kids.length ? by + ((kids.length - 1) / 2) * rowH + rowH / 2 : by,
     });
   });
 }
 shapes += `<rect x="${cx - cw / 2}" y="${cy - ch / 2}" width="${cw}" height="${ch}" rx="${ch / 2}" fill="${d.color || ink}"/>`;
-words += `<text x="${cx}" y="${cy}" text-anchor="middle" font-size="${cs}" font-weight="700" fill="${paper}">${esc(d.center)}</text>`;
+words += `<text x="${cx}" y="${cy}" text-anchor="middle" font-size="${cs}" font-weight="700" fill="${paper}"${api.text("center")}>${esc(d.center)}</text>`;
+// A new branch grows from under the centre.
+api.slot("branches", branches.length, { x: cx, y: Math.min(H - 4, cy + ch / 2 + size) });
 const svg = api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}"><g fill="none" stroke-linecap="round">${lines}</g>${shapes}<g dominant-baseline="central">${words}</g></svg>`,
 );

@@ -32,8 +32,13 @@ export class EditRejected extends DomainError {
 export const isRecord = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
 const POSITION = /^\d+$/;
-/** A list with items changed by position. Positions mean the list as it stands before this
- * change, however many of them delete, and one past its end appends. */
+/** A key of a list patch: a position, or `#id` for the item of a list of records with that id. */
+const ITEM = /^(\d+|#[A-Za-z0-9_-]{1,64})$/;
+export const isListPatch = (patch: unknown): patch is Record<string, unknown> =>
+  isRecord(patch) && Object.keys(patch).length > 0 && Object.keys(patch).every((k) => ITEM.test(k));
+/** A list with items changed by position or by id. Positions and ids mean the list as it
+ * stands before this change, however many of them delete; one past its end, or an id it
+ * does not hold, appends. */
 function mergedList(
   list: unknown[],
   patch: Record<string, unknown>,
@@ -41,13 +46,26 @@ function mergedList(
   problems: Problem[],
 ) {
   const next = [...list];
-  const gone: number[] = [];
-  const places = Object.keys(patch)
-    .map(Number)
-    .sort((a, b) => a - b);
+  const gone = new Set<number>();
+  const appended: unknown[] = [];
+  const keyed = Object.keys(patch).sort(
+    (a, b) => (a.startsWith("#") ? 1 : 0) - (b.startsWith("#") ? 1 : 0) || Number(a) - Number(b),
+  );
   let end = list.length;
-  for (const place of places) {
-    const change = patch[place];
+  for (const key of keyed) {
+    const change = patch[key];
+    if (key.startsWith("#")) {
+      const id = key.slice(1);
+      const place = list.findIndex((item) => isRecord(item) && item.id === id);
+      if (place < 0) {
+        if (change === null) problems.push({ at: `${at}.${key}`, problem: `${at} 里没有 id 为 ${id} 的一项` });
+        else if (!isRecord(change)) problems.push({ at: `${at}.${key}`, problem: `新的一项 ${id} 要写成记录` });
+        else appended.push(mergeValue({ id }, change, `${at}.${key}`, problems));
+      } else if (change === null) gone.add(place);
+      else next[place] = mergeValue(list[place], change, `${at}.${key}`, problems);
+      continue;
+    }
+    const place = Number(key);
     if (place > end || (place === end && change === null)) {
       problems.push({
         at: `${at}.${place}`,
@@ -55,25 +73,24 @@ function mergedList(
       });
       continue;
     }
-    if (change === null) gone.push(place);
+    if (change === null) gone.add(place);
     else if (place === end) {
       next.push(isRecord(change) ? mergeValue({}, change, `${at}.${place}`, problems) : change);
       end++;
     } else next[place] = mergeValue(list[place], change, `${at}.${place}`, problems);
   }
-  for (const place of gone.reverse()) next.splice(place, 1);
-  return next;
+  return [...next.filter((_, i) => !gone.has(i)), ...appended];
 }
 /** A value with a change laid on it: objects merge key by key with null deleting a key
- * (RFC 7386), a list takes an object keyed by position to change some items, and anything
- * else replaces what was there. */
+ * (RFC 7386), a list takes an object keyed by position or `#id` to change some items, and
+ * anything else replaces what was there. */
 export function mergeValue(
   base: unknown,
   patch: unknown,
   at: string,
   problems: Problem[],
 ): unknown {
-  if (Array.isArray(base) && isRecord(patch) && Object.keys(patch).every((k) => POSITION.test(k)))
+  if (Array.isArray(base) && isRecord(patch) && Object.keys(patch).every((k) => ITEM.test(k)))
     return mergedList(base, patch, at, problems);
   if (!isRecord(patch)) return patch;
   const next: Record<string, unknown> = isRecord(base) ? { ...base } : {};
@@ -178,6 +195,7 @@ export function drawingOf(work: Work, id: string) {
       source: use.source,
       defaults: use.defaults,
       params: use.params,
+      partial: use.partial,
     };
   return undefined;
 }

@@ -11,7 +11,7 @@ import { useOf } from "../materials/index.ts";
 import type { Side } from "../contracts/index.ts";
 import type { DrawingMaterial, Material } from "@drawy/materials/schema";
 import { boil } from "../../materials/streets.ts";
-import { importedPicture } from "../interchange/drawings.ts";
+import { importedPicture, sketchLine } from "../interchange/drawings.ts";
 
 /** Curated materials as the library serves them. */
 const seed = (name: string) =>
@@ -441,7 +441,7 @@ it("selects a link by its line while editing, drags its ends onto other modules 
   expect(await data("link")).toBe("next");
   expect(await data("selected")).toBe("");
   expect(await page.evaluate(() => window.drawyView.selectedLinks)).toEqual(["next"]);
-  // Its end is dragged onto another module, to the side facing where it is dropped.
+  // Its end is dragged into another module, which it then follows.
   const end = (await page.locator('[data-link-end="to"]').boundingBox())!;
   const target = await screen(160, 457);
   await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
@@ -451,7 +451,7 @@ it("selects a link by its line while editing, drags its ends onto other modules 
   expect(JSON.parse((await data("reconnected"))!)).toEqual({
     id: "next",
     end: "to",
-    to: { moduleId: "level-3", side: "left" },
+    to: { moduleId: "level-3" },
   });
   // Its words are changed where they are drawn.
   const words = (await page.locator('[data-link-id="next"] text').boundingBox())!;
@@ -770,7 +770,7 @@ it("draws every library drawing with no data at all, and with each of its lists 
       .flatMap((m) => [
         at(`${m.id}.none`, m, {}),
         ...Object.entries(m.params)
-          .filter(([, p]) => p.type === "array")
+          .filter(([, p]) => p.type === "list")
           .flatMap(([key]) => [
             at(`${m.id}.${key}.empty`, m, { ...m.example, [key]: [] }),
             // What the editor adds to a list emptied first: a blank entry.
@@ -1780,4 +1780,268 @@ it("lays out plans, comparisons, part labels, group frames and replicas from the
   expect(look.host.label).toMatchObject({ text: "应用主机", x: 15 * 0.8 });
   // Two copies, the paper under the block, and the block itself.
   expect(look.copies).toBe(4);
+});
+it("problem 3B: a numbered message's words are marked as its data, the number drawn apart", async () => {
+  const sequence = seed("drawings").find((m) => m.id === "sequence") as DrawingMaterial;
+  work.materials = { sequence: libraryDrawing("sequence") };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [{ id: "seq", label: "seq", drawingId: "sequence", data: { ...sequence.example, numbered: true }, bounds: { x: 0, y: 0, ...sequence.size } }],
+    links: [],
+    checks: [],
+  };
+  await open();
+  const marked = await page.evaluate(() =>
+    [...document.querySelector('[data-module-id="seq"]')!.shadowRoot!.querySelectorAll("[data-edp-text]")].map((el) => el.textContent),
+  );
+  // The words a person retypes are the label alone; "1." is drawn in an element of its own.
+  expect(marked).toContain("登录请求");
+});
+
+it("divides an alt into its branches with dashed lines, each a part with its condition marked", async () => {
+  const sequence = seed("drawings").find((m) => m.id === "sequence") as DrawingMaterial;
+  const example = structuredClone(sequence.example) as { messages: { id: string }[]; fragments: Record<string, unknown>[] };
+  const [first, , third] = example.messages;
+  example.fragments = [{ id: "f1", kind: "alt", label: "密码正确", from: first.id, to: third.id, sections: [{ id: "s1", from: third.id, label: "密码错误" }] }];
+  work.materials = { sequence: libraryDrawing("sequence") };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [{ id: "seq", label: "seq", drawingId: "sequence", data: example, bounds: { x: 0, y: 0, ...sequence.size } }],
+    links: [],
+    checks: [],
+  };
+  await open();
+  const found = await page.evaluate(() => {
+    const map = window.drawyView.editMap("seq")!;
+    return {
+      parts: map.parts.map((p) => p.path),
+      texts: map.texts.map((t) => t.path),
+      unmarked: window.drawyView.unmarked("seq"),
+      dashed: window.drawyView.renderer.host("module", "seq")!.shadowRoot!.querySelectorAll('[data-edp-part="fragments.#f1.sections.#s1"] path[stroke-dasharray]').length,
+    };
+  });
+  expect(found.parts).toContain("fragments.#f1.sections.#s1");
+  expect(found.texts).toContain("fragments.#f1.sections.#s1.label");
+  expect(found.dashed).toBe(1);
+  expect(found.unmarked).toEqual([]);
+});
+
+it("draws a note beside a lifeline on the side it is placed, and over it when not placed", async () => {
+  const sequence = seed("drawings").find((m) => m.id === "sequence") as DrawingMaterial;
+  const example = structuredClone(sequence.example) as { participants: { id: string }[]; notes: Record<string, unknown>[] };
+  const who = example.participants[1].id;
+  example.notes = (["left", "right", undefined] as const).map((placement, i) => ({ id: `n${i + 1}`, over: [who], ...(placement ? { placement } : {}), text: "注" }));
+  work.materials = { sequence: libraryDrawing("sequence") };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [{ id: "seq", label: "seq", drawingId: "sequence", data: example, bounds: { x: 0, y: 0, ...sequence.size } }],
+    links: [],
+    checks: [],
+  };
+  await open();
+  const boxes = await page.evaluate(() => {
+    const root = window.drawyView.renderer.host("module", "seq")!.shadowRoot!;
+    return ["n1", "n2", "n3"].map((id) => {
+      const r = root.querySelector(`[data-edp-part^="notes.#${id}|"]`)!.getBoundingClientRect();
+      return { left: r.left, right: r.right };
+    });
+  });
+  const [left, right, over] = boxes;
+  const middle = (over.left + over.right) / 2;
+  expect(left.right).toBeLessThan(middle);
+  expect(right.left).toBeGreaterThan(middle);
+  expect(over.left).toBeLessThan(middle);
+  expect(over.right).toBeGreaterThan(middle);
+});
+
+/** The library drawings whose every word from their data is marked as that data, so a
+ * person changes it where it is drawn. Every structured drawing joins as it is upgraded. */
+const STRUCTURED = [
+  ...["sequence", "steps", "timeline", "mindmap", "hierarchy", "swimlanes", "compare", "checklist"],
+  ...["bars", "donut", "plot", "gantt", "radar"],
+  ...["quadrant", "pyramid", "venn", "layers", "fishbone", "cycle", "concentric"],
+];
+// The map's example needs tiles these tests do not hold; it is checked on a city below.
+/** Drawings without lists in their examples that mark their words all the same. */
+const EDITABLE = [...STRUCTURED, "node", "callout", "gauge", "stat", "leader-label", "region"];
+it("marks every word a structured library drawing draws from its example as the data it comes from", async () => {
+  const drawings = (seed("drawings") as DrawingMaterial[]).filter((m) => EDITABLE.includes(m.id));
+  work.materials = Object.fromEntries([...drawings.map((m) => libraryDrawing(m.id)), ...seed("effects").map((m) => useOf(m)!)].map((m) => [m.id, m]));
+  let y = 0;
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: drawings.flatMap((m) =>
+      [m.example, { ...m.example, numbered: true }].map((data, i) => {
+        const placed = { id: `${m.id}-${i}`, label: m.id, drawingId: m.id, data, bounds: { x: 0, y, ...m.size } };
+        y += m.size.height + 60;
+        return placed;
+      }),
+    ),
+    links: [],
+    checks: [],
+  };
+  await open();
+  const found = await page.evaluate(() => {
+    const view = window.drawyView;
+    return [...document.querySelectorAll<HTMLElement>("[data-module-id]")].map((h) => {
+      const id = h.dataset.moduleId!;
+      const map = view.editMap(id);
+      return { id, unmarked: view.unmarked(id).map((t) => t.path), parts: map?.parts.length ?? 0, texts: map?.texts.length ?? 0, slots: map?.slots.length ?? 0, anchors: map?.anchors.length ?? 0 };
+    });
+  });
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+  for (const f of found) {
+    expect(f.unmarked, f.id).toEqual([]);
+    if (STRUCTURED.includes(f.id.replace(/-\d+$/, ""))) expect(f.parts, f.id).toBeGreaterThan(0);
+    expect(f.texts, f.id).toBeGreaterThan(0);
+  }
+  // The sequence diagram: three participants and five messages and a note are parts, with
+  // slots round both lists and a lifeline for each participant.
+  expect(found.find((f) => f.id === "sequence-0")).toMatchObject({ parts: 9, slots: 4 + 6, anchors: 3 });
+});
+it("marks a map's places and routes as its data, with handles that move them in longitude and latitude", async () => {
+  work.materials = { geomap: libraryDrawing("geomap") };
+  const data = {
+    places: [
+      { id: "road", name: "北京路", lon: 113.2695, lat: 23.1232, note: "起点" },
+      { id: "bridge", name: "海珠桥", lon: 113.2727, lat: 23.1145 },
+      { id: "isle", name: "二沙岛", lon: 113.2985, lat: 23.1122 },
+    ],
+    routes: [{ id: "walk", points: ["road", [113.28, 23.118], "isle"], label: "步行" }],
+  };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [{ id: "map", label: "map", drawingId: "geomap", data, bounds: { x: 0, y: 0, width: 960, height: 600 } }],
+    links: [],
+    checks: [],
+  };
+  delete work.scenes.root.interaction;
+  await open();
+  const found = await page.evaluate(() => {
+    const view = window.drawyView;
+    const map = view.editMap("map")!;
+    const place = map.handles.find((h) => h.path === "places.#bridge")!;
+    const turn = map.handles.find((h) => h.path === "routes.#walk.points.1")!;
+    return {
+      unmarked: view.unmarked("map").map((t) => t.path),
+      parts: map.parts.map((p) => p.path).sort(),
+      texts: map.texts.map((t) => t.path).sort(),
+      handles: map.handles.map((h) => h.path).sort(),
+      // Where the handle stands reads back as the place it stands for.
+      place: place.unproject!(place.at.x, place.at.y),
+      turn: turn.unproject!(turn.at.x, turn.at.y),
+    };
+  });
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+  expect(found.unmarked).toEqual([]);
+  expect(found.parts).toEqual(["places.#bridge", "places.#isle", "places.#road", "routes.#walk"]);
+  expect(found.texts).toEqual(["places.#bridge.name", "places.#isle.name", "places.#road.name", "places.#road.note", "routes.#walk.label"]);
+  expect(found.handles).toEqual(["places.#bridge", "places.#isle", "places.#road", "routes.#walk.points.1"]);
+  expect(found.place).toEqual({ lon: 113.27, lat: 23.11 });
+  expect(found.turn).toEqual([113.28, 23.12]);
+});
+it("reports to the author the words from a drawing's data it draws without marking them", async () => {
+  const card = (marked: boolean) =>
+    `return api.svg('<svg viewBox="0 0 200 80"><text x="10" y="30"${marked ? "' + api.text('title') + '" : ""}>' + api.data.title + '</text><text x="10" y="60">' + api.data.tag + '</text></svg>')`;
+  const params = { title: { type: "text", label: { zh: "标题", en: "Title" } }, tag: { type: "text", label: { zh: "标签", en: "Tag" } } };
+  work.drawings.card = { id: "card", name: "卡片", params, source: card(false) } as never;
+  work.drawings.marked = { id: "marked", name: "标好的卡片", params, source: card(true) } as never;
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      { id: "plain", drawingId: "card", bounds: { x: 0, y: 0, width: 200, height: 80 }, data: { title: "心脏", tag: "器官" } },
+      { id: "kept", drawingId: "marked", bounds: { x: 0, y: 120, width: 200, height: 80 }, data: { title: "肺", tag: "器官" } },
+    ],
+    links: [],
+    checks: [],
+  };
+  delete work.scenes.root.interaction;
+  await open();
+  const { unmarked } = await page.evaluate(readText, 14);
+  expect(unmarked).toEqual([
+    { moduleId: "plain", path: "title", text: "心脏" },
+    { moduleId: "plain", path: "tag", text: "器官" },
+    { moduleId: "kept", path: "tag", text: "器官" },
+  ]);
+});
+it("draws links along a drawn line's own path, riding on other links and to free points, and moves a line hanging from a module with it", async () => {
+  work.drawings["sketch-line"] = sketchLine;
+  work.drawings.tinted = { id: "tinted", name: "块", source: "return api.html(`<div style='width:${api.width}px;height:${api.height}px;background:#cde'></div>`)" };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      { id: "a", drawingId: "tinted", bounds: { x: 0, y: 0, width: 100, height: 60 }, data: {} },
+      // A line drawn corner to corner of its box: links meet it along its path, not the box.
+      { id: "line", drawingId: "sketch-line", bounds: { x: 300, y: 0, width: 200, height: 200 }, data: { points: [[0, 0], [1, 1]] } },
+    ],
+    links: [
+      { id: "life", drawingId: "connector", from: { moduleId: "a", at: "bottom" }, to: { x: 50, y: 400 }, data: {} },
+      { id: "msg", drawingId: "connector", from: { linkId: "life", along: 0.5 }, to: { moduleId: "line", at: { along: 0.5 } }, data: {} },
+    ],
+    checks: [],
+  };
+  delete work.scenes.root.interaction;
+  await open();
+  const read = () =>
+    page.evaluate(() => {
+      const r = window.drawyView.renderer;
+      return { life: r.ends(r.links.get("life")!), msg: r.ends(r.links.get("msg")!), outline: window.drawyView.editMap("line")?.outline.length };
+    });
+  const before = await read();
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+  expect(before.life).toEqual({ from: { x: 50, y: 60, side: "bottom" }, to: { x: 50, y: 400, side: null } });
+  expect(before.msg.from).toEqual({ x: 50, y: 230, side: null });
+  // Halfway along the drawn diagonal, the middle of its box, not a point of the box's edge.
+  expect(before.msg.to.x).toBeCloseTo(400, 0);
+  expect(before.msg.to.y).toBeCloseTo(100, 0);
+  expect(before.outline).toBeGreaterThan(8);
+  // Moving the box moves the line hanging from it whole, and the message riding on it.
+  await page.evaluate(() => window.drawyView.renderer.move([{ id: "a", bounds: { x: 20, y: 40, width: 100, height: 60 } }]));
+  const after = await read();
+  expect(after.life).toEqual({ from: { x: 70, y: 100, side: "bottom" }, to: { x: 70, y: 440, side: null } });
+  expect(after.msg.from).toEqual({ x: 70, y: 270, side: null });
+  // A link listed before the one it rides on is drawn from that one's new place.
+  await page.evaluate(async () => {
+    const next = structuredClone(window.drawyData.work);
+    const scene = next.scenes.root;
+    // The box stays where it was moved: only the lifeline changes.
+    scene.modules.find((m) => m.id === "a")!.bounds = { x: 20, y: 40, width: 100, height: 60 };
+    const life = scene.links.find((l) => l.id === "life")!;
+    life.to = { x: 90, y: 640 };
+    scene.links = [scene.links.find((l) => l.id === "msg")!, life];
+    window.drawyView.update(next, scene, false);
+    await new Promise((r) => setTimeout(r, 100));
+  });
+  const reordered = await page.evaluate(() => {
+    const r = window.drawyView.renderer;
+    const host = document.querySelector<HTMLElement>('[data-link-id="msg"]')!;
+    return { ends: r.ends(r.links.get("msg")!), left: parseFloat(host.style.left), top: parseFloat(host.style.top), bounds: r.bounds };
+  });
+  // The scene reaches down to the lifeline's free end, far below every module, so an export
+  // and fitting the view take it in.
+  expect(reordered.bounds.y + reordered.bounds.height).toBe(640);
+  // Halfway down the lengthened lifeline, from (70, 100) to (90, 640).
+  expect(reordered.ends.from).toEqual({ x: 80, y: 370, side: null });
+  expect(reordered.left).toBeCloseTo(80 - 48, 0);
+  expect(reordered.top).toBeCloseTo(Math.min(350, reordered.ends.to.y) - 48, 0);
+  // The line drawn again along its box's top: the message meeting it halfway along waits for
+  // the new line, and is drawn to its middle there.
+  await page.evaluate(async () => {
+    const next = structuredClone(window.drawyData.work);
+    const scene = next.scenes.root;
+    scene.modules.find((m) => m.id === "a")!.bounds = { x: 20, y: 40, width: 100, height: 60 };
+    scene.links.find((l) => l.id === "life")!.to = { x: 90, y: 640 };
+    scene.modules.find((m) => m.id === "line")!.data = { points: [[0, 0], [1, 0]] };
+    window.drawyView.update(next, scene, false);
+    await new Promise((r) => setTimeout(r, 300));
+  });
+  const redrawn = await page.evaluate(() => {
+    const r = window.drawyView.renderer;
+    const host = document.querySelector<HTMLElement>('[data-link-id="msg"]')!;
+    return { ends: r.ends(r.links.get("msg")!), top: parseFloat(host.style.top) };
+  });
+  expect(redrawn.ends.to.x).toBeCloseTo(400, 0);
+  expect(redrawn.ends.to.y).toBeCloseTo(0, 0);
+  // Drawn from the top of the line's box, not from where the diagonal's middle was.
+  expect(redrawn.top).toBeCloseTo(0 - 48, 0);
 });

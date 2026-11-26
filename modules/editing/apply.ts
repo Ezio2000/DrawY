@@ -12,13 +12,16 @@ import {
   type LinkEdit,
   type LinkEnd,
   type ModuleEdit,
+  type Point,
   type Problem,
   type Scene,
   type SceneEdit,
   type Work,
   type WorkEdit,
 } from "../contracts/index.ts";
-import { isRecord } from "../contracts/edit.ts";
+import { isListPatch, isRecord } from "../contracts/edit.ts";
+import { endLink, endModule } from "../contracts/index.ts";
+import { linkEnds, scenePlacing } from "../contracts/geometry.ts";
 
 /* An edit laid on a work, for both the workspace that commits it and the page that shows a
  * hand edit before the workspace has answered, so both lay it the same way. Everything wrong
@@ -49,9 +52,19 @@ function removal(
   const drop = (part: "modules" | "links", id: string) => {
     const scene = holder(work, part, id, current);
     if (!scene) return false;
+    // What met the part taken out keeps where it met it, as a free end.
+    const placing = scenePlacing(scene);
+    for (const l of scene.links) {
+      if (part === "links" && l.id === id) continue;
+      const on = (e: LinkEnd) => (part === "modules" ? endModule(e) : endLink(e)) === id;
+      if (!on(l.from) && !on(l.to)) continue;
+      const ends = linkEnds(l, placing);
+      const free = (p: Point) => ({ x: Math.round(p.x * 2) / 2, y: Math.round(p.y * 2) / 2 });
+      if (on(l.from)) l.from = free(ends.from);
+      if (on(l.to)) l.to = free(ends.to);
+    }
     if (part === "modules") {
       scene.modules = scene.modules.filter((m) => m.id !== id);
-      scene.links = scene.links.filter((l) => l.from.moduleId !== id && l.to.moduleId !== id);
       scene.checks = scene.checks.filter((c) => c.moduleId !== id);
     } else scene.links = scene.links.filter((l) => l.id !== id);
     return true;
@@ -200,7 +213,15 @@ function drawingChange(work: Work, edit: DrawingEdit, problems: Problem[]) {
     };
   }
   if (name !== undefined) drawing.name = name;
-  if (params) drawing.params = mergeRecord(drawing.params ?? {}, params, `${at}.params`, problems) as typeof drawing.params;
+  // Each field of the schema is given whole, so it takes the place of what was declared for
+  // that key: a property left out is gone, not kept from before.
+  if (params) {
+    const declared = { ...(drawing.params ?? {}) };
+    for (const [key, field] of Object.entries(params))
+      if (field === null) delete declared[key];
+      else declared[key] = structuredClone(field);
+    drawing.params = declared;
+  }
   if (defaults) drawing.defaults = mergeRecord(drawing.defaults ?? {}, defaults, `${at}.defaults`, problems);
   if (source !== undefined) drawing.source = source;
   if (edits?.length) drawing.source = editedText(drawing.source, edits, `${at}.edits`, problems);
@@ -291,7 +312,7 @@ export function readEdit(input: unknown): WorkEdit {
         issue.code === "unrecognized_keys"
           ? `不认识的字段 ${issue.keys.join("、")}`
           : issue.code === "invalid_union"
-            ? "写法不对：应该是模块 ID，或 {moduleId, at}，at 是 left、right、top、bottom 或 [x, y]"
+            ? "写法不对：应该是模块 ID、{moduleId, at}（at 是 left、right、top、bottom、[x, y] 或 {along}）、{linkId, along} 或 {x, y}"
             : issue.message,
     })),
   );
@@ -304,17 +325,22 @@ const textPatchField: Partial<Record<RecordSection, readonly [whole: string, edi
   details: ["html", "edits"],
   scenes: ["interaction", "interactionEdits"],
 };
+/** What two changes to one value come to: a list changed by position or id after it was
+ * given whole is the list with those changes laid on it. */
+function both(a: unknown, b: unknown, key: string): unknown {
+  if (Array.isArray(a) && isListPatch(b)) return mergeValue(a, b, key, []);
+  return isRecord(a) && isRecord(b) && key !== "target" ? bothObjects(a, b) : b;
+}
 function bothObjects(a: Record<string, unknown>, b: Record<string, unknown>) {
   const out = { ...a };
-  for (const [key, value] of Object.entries(b))
-    out[key] =
-      isRecord(a[key]) && isRecord(value) && key !== "target"
-        ? bothObjects(a[key], value)
-        : value;
+  for (const [key, value] of Object.entries(b)) out[key] = both(a[key], value, key);
   return out;
 }
+/** A link's ends: each is one kind of end or another, so a later end replaces the earlier
+ * whole rather than keeping the keys of a kind it no longer is. */
+const wholeEnds = new Set(["from", "to"]);
 /** Two changes to one record as one, written or not. What the later says wins; objects it
- * changes keep what the earlier said about their other keys. Patch lists run in turn by
+ * changes keep what the earlier said about their other keys, except a link's ends. Patch lists run in turn by
  * default, or replace earlier patches when correcting a refused write (`replaceEdits`), and
  * writing whole text drops earlier patches for that text. */
 function bothRecords(
@@ -330,9 +356,9 @@ function bothRecords(
     out[key] =
       !replaceEdits && pair && key === pair[1] && Array.isArray(out[key]) && Array.isArray(value)
         ? [...out[key], ...value]
-        : isRecord(a[key]) && isRecord(value) && key !== "target"
-          ? bothObjects(a[key], value)
-          : value;
+        : section === "links" && wholeEnds.has(key)
+          ? value
+          : both(a[key], value, key);
   return out;
 }
 /** Two edits as one, the later laid on the earlier, whether or not they read as edits yet: a

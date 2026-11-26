@@ -43,8 +43,9 @@ const arc = (f0, f1, c, op = 1) => {
 };
 const color = d.color || accent;
 let out = arc(0, 1, muted, 0.18);
-for (const z of d.zones || [])
-  out += arc(k(Number(z.from)), k(Number(z.to)), z.color || accent2, 0.35);
+(d.zones || []).forEach((z, i) => {
+  out += `<g${api.part(api.path("zones", z, i))}>${arc(k(Number(z.from)), k(Number(z.to)), z.color || accent2, 0.35)}</g>`;
+});
 if (k(value) > 0) out += arc(0, k(value), color);
 // Ticks at the ends and middle.
 for (const f of [0, 0.5, 1]) {
@@ -52,10 +53,25 @@ for (const f of [0, 0.5, 1]) {
   out += `<text x="${p.x}" y="${p.y}" text-anchor="middle" font-size="${size * 0.78}" fill="${muted}">${esc(min + (max - min) * f)}</text>`;
 }
 const tip = pt(k(value), R - th - 4);
+// The needle's tip drags the reading round the dial.
+if (d.value != null)
+  api.handle("value", {
+    kind: "point",
+    at: tip,
+    unproject: (x, y) => {
+      // The dial runs from the left (half a turn) over the top to the right (a whole turn);
+      // below it, a point counts as the nearer end.
+      let a = Math.atan2(y - cy, x - cx);
+      if (a < 0) a += 2 * Math.PI;
+      else if (a < Math.PI / 2) a = 2 * Math.PI;
+      const f = Math.min(1, Math.max(0, (a - Math.PI) / Math.PI));
+      return Math.round((min + f * (max - min)) * 100) / 100;
+    },
+  });
 out += `<path d="M${cx} ${cy}L${tip.x} ${tip.y}" stroke="${ink}" stroke-width="${sw * 1.6}" stroke-linecap="round"/><circle cx="${cx}" cy="${cy}" r="${size * 0.45}" fill="${ink}"/>`;
-out += `<text x="${cx}" y="${cy + size * 1.9}" text-anchor="middle" font-size="${size * 1.9}" font-weight="700" fill="${ink}">${esc(d.display ?? value)}<tspan font-size="${size}" font-weight="400" fill="${muted}">${esc(d.unit ?? "")}</tspan></text>`;
+out += `<text x="${cx}" y="${cy + size * 1.9}" text-anchor="middle" font-size="${size * 1.9}" font-weight="700" fill="${ink}"><tspan${api.text(d.display != null ? "display" : "value")}>${esc(d.display ?? value)}</tspan><tspan font-size="${size}" font-weight="400" fill="${muted}"${d.unit != null ? api.text("unit") : ""}>${esc(d.unit ?? "")}</tspan></text>`;
 if (d.label)
-  out += `<text x="${cx}" y="${cy + size * 3.4}" text-anchor="middle" font-size="${size}" fill="${muted}">${esc(d.label)}</text>`;
+  out += `<text x="${cx}" y="${cy + size * 3.4}" text-anchor="middle" font-size="${size}" fill="${muted}"${api.text("label")}>${esc(d.label)}</text>`;
 const svg = api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}" dominant-baseline="central">${out}</svg>`,
 );

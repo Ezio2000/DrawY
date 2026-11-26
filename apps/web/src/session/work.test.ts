@@ -40,7 +40,8 @@ const answer = async (path: string, method: string, data: any): Promise<unknown>
     await gate;
     if (refuse) throw Error(refuse);
     if (data.baseRevision !== head.revision) throw Error("stale");
-    return commit(applied(head, data.edit), { kind: "edit" });
+    // As the server does: an edit back or forth to a revision kept is going back to it.
+    return commit(applied(head, data.edit), saved.has(data.back) ? { kind: "restore", revision: data.back } : { kind: "edit" });
   }
   if (path === w + "/save") return commit(head, { kind: "save" });
   if (path === w + "/restore")
@@ -397,4 +398,78 @@ it("asks the server nothing about the blank sheet before it is saved", async () 
   await settle();
   expect(asked).toEqual([]);
   store.dispose();
+});
+
+it("undoes and redoes hand edits here, a step at a time, with what was selected before each", async () => {
+  const { store, s } = await open();
+  const picked = { modules: ["heading"], links: [] as string[] };
+  const selected: string[][] = [];
+  store.attach({ center: () => ({ x: 0, y: 0 }), scale: 1, select: (ids) => void selected.push(ids), picked: () => picked, drawn: async () => "drawn" } as View);
+  const to = (x: number) => (w: Work) => moveParts(w, "root", [{ id: "heading", bounds: { x, y: 0, width: 640, height: 70 } }]);
+  const retitle = (text: string) => (w: Work) => ({ modules: [{ id: "level-0", data: { label: text } }] });
+  await store.change(to(10));
+  await store.change(retitle("一"));
+  expect(s().undoable).toBe(true);
+  expect(s().redoable).toBe(false);
+  await store.undo();
+  expect(s().work!.scenes.root.modules.find((m) => m.id === "level-0")!.data.label).toBe("自我实现");
+  expect(heading(s().work)).toBe(10);
+  expect(s().redoable).toBe(true);
+  expect(selected.at(-1)).toEqual(["heading"]);
+  await store.undo();
+  expect(heading(s().work)).toBe(100);
+  // Each step back and forth is a hand edit of its own, not a request to the server's undo,
+  // and it goes back to the revision it lays the work as: the edits not saved are counted
+  // to there, not on and on.
+  expect(posted.filter((p) => p.path.endsWith("/undo"))).toEqual([]);
+  expect(s().unsaved).toBe(0);
+  await store.redo();
+  expect(s().unsaved).toBe(1);
+  await store.redo();
+  expect(heading(s().work)).toBe(10);
+  expect(s().work!.scenes.root.modules.find((m) => m.id === "level-0")!.data.label).toBe("一");
+  expect(s().redoable).toBe(false);
+  expect(s().unsaved).toBe(2);
+  // A new edit after undoing leaves nothing to redo.
+  await store.undo();
+  await store.change(to(30));
+  expect(s().redoable).toBe(false);
+});
+
+it("takes steps on the same values close together as one, as typing or a slider makes them", async () => {
+  const { store, s } = await open();
+  const retitle = (text: string) => () => ({ modules: [{ id: "level-0", data: { label: text } }] });
+  for (const text of ["自", "自我", "自我实"]) await store.change(retitle(text));
+  await store.change((w) => moveParts(w, "root", [{ id: "heading", bounds: { x: 7, y: 0, width: 640, height: 70 } }]));
+  await store.undo();
+  expect(heading(s().work)).toBe(100);
+  await store.undo();
+  // The three keystrokes went back as one.
+  expect(s().work!.scenes.root.modules.find((m) => m.id === "level-0")!.data.label).toBe("自我实现");
+  expect(posted.filter((p) => p.path.endsWith("/undo"))).toEqual([]);
+});
+
+it("undoes on the server where nothing was edited here, and after a change from elsewhere", async () => {
+  const { store, s } = await open();
+  await store.change(moved);
+  // The author drew meanwhile: the edits here no longer lead back over what is shown.
+  events!({ type: "work", work: commit({ ...head, title: "改过" }, { kind: "run", runId: "r", prompt: "p" }) });
+  await settle();
+  expect(s().redoable).toBe(false);
+  await store.undo();
+  expect(posted.at(-1)!.path.endsWith("/undo")).toBe(true);
+});
+
+it("leaves going back to a version and taking that back as they were, beside undoing here", async () => {
+  const { store, s } = await open();
+  await store.change(moved);
+  await store.save();
+  await store.restore(1);
+  expect(s().back?.to).toEqual({ kind: "version", version: 0 });
+  // Undoing takes back going back; the edit made here before it was forgotten when the
+  // version came back, so there is nothing of it to redo.
+  await store.undo();
+  expect(heading(s().work)).toBe(0);
+  expect(s().back).toBeUndefined();
+  expect(s().redoable).toBe(false);
 });

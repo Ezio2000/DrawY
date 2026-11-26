@@ -8,6 +8,8 @@ export * from "./parts.ts";
 export * from "./layout.ts";
 export * from "./links.ts";
 export * from "./words.ts";
+export * from "./items.ts";
+export * from "./history.ts";
 export * from "./clipboard.ts";
 export * from "./work.ts";
 export * from "./changes.ts";

@@ -9,6 +9,7 @@ import type { Runs } from "./runs.ts";
 import type { Scenes } from "./scenes.ts";
 import type { Sending } from "./sending.ts";
 import type { Versions } from "./versions.ts";
+import type { History } from "./history.ts";
 import type { WorkSession } from "./work.ts";
 
 /** Whether the author is at work on a run: drawing or looking at what it drew. */
@@ -22,9 +23,12 @@ export interface View {
   center(): Point;
   /** How many screen pixels a scene unit takes now. */
   readonly scale: number;
-  /** Selects these modules, or none. Whatever shows the work keeps the selection; the
-   * session selects only what it has just made. */
-  select(ids: string[]): void;
+  /** Selects these modules (and links), or none. Whatever shows the work keeps the
+   * selection; the session selects only what it has just made, or what was selected before
+   * a step it undoes. */
+  select(ids: string[], links?: string[]): void;
+  /** What is selected now, kept with each step of hand editing. */
+  picked?(): { modules: string[]; links: string[] };
   /** Settles once these modules, made in `revision`, are drawn, or once it is clear they
    * will not be. It waits as long as drawing takes, however slow. */
   drawn(ids: string[], revision: number): Promise<Drawn>;
@@ -55,7 +59,9 @@ export type Happening =
   | { kind: "saved"; version: number }
   | { kind: "failed"; error: unknown }
   // Parts brought in from another tool that could not come in as they were there.
-  | { kind: "adjusted"; adjusted: Adjusted };
+  | { kind: "adjusted"; adjusted: Adjusted }
+  // An item taken out of a drawing's list took this many that referred to it along.
+  | { kind: "along"; count: number };
 
 /** Going back, which can be taken back for a while: to a version, by its number, or to
  * the latest version by throwing hand edits away. */
@@ -124,4 +130,5 @@ export interface Context {
   sending: Sending;
   versions: Versions;
   scenes: Scenes;
+  history: History;
 }

@@ -869,8 +869,8 @@ it("draws by hand with the pen, the arrow and the eraser; brings Mermaid and Exc
   await page.keyboard.press("Escape");
   // A drawing taken from the library comes in with its example data, though the library
   // is browsed without it.
-  await tray.getByRole("button", { name: "Drawings", exact: true }).click();
-  const shelf = page.getByRole("dialog", { name: "Drawings" });
+  await tray.getByRole("button", { name: "Diagram library", exact: true }).click();
+  const shelf = page.getByRole("dialog", { name: "Diagram library" });
   await shelf.getByRole("textbox").fill("concentric");
   await shelf.locator('button[data-tip="Concentric rings"]').click();
   await expect
@@ -891,6 +891,18 @@ it("draws by hand with the pen, the arrow and the eraser; brings Mermaid and Exc
   const ship = root.modules.find((m: { data: { title?: string } }) => m.data.title === "Ship");
   expect(ship.bounds.x).toBeGreaterThan(740);
   expect(root.links.filter((l: { data: { label?: string } }) => l.data.label === "yes")).toHaveLength(1);
+  // A sequence diagram comes in as the library's own, through Mermaid's parser: calls,
+  // replies and asynchronous messages as their kinds, an alt's else as a section of it.
+  await paste("sequenceDiagram\n  participant W as Web\n  participant A as API\n  alt ok\n  W->>A: login\n  A-->>W: token\n  else locked\n  A-)W: notify\n  end");
+  await expect.poll(async () => (await sequenceOf(id))?.messages.length, { timeout: 15_000 }).toBe(3);
+  const brought = (await sequenceOf(id))! as unknown as { messages: { kind?: string }[]; fragments: { kind: string; label: string; sections?: { label: string }[] }[] };
+  expect(brought.messages.map((m) => m.kind ?? "sync")).toEqual(["sync", "reply", "async"]);
+  expect(brought.fragments).toMatchObject([{ kind: "alt", label: "ok", sections: [{ label: "locked" }] }]);
+  // One with an arrow the drawing has no kind for is kept as Mermaid draws it.
+  await paste("sequenceDiagram\n  W-xA: cancel");
+  await expect
+    .poll(async () => (await rootOf(id)).modules.some((m: { data: { source?: string } }) => m.data.source?.includes("W-xA")), { timeout: 15_000 })
+    .toBe(true);
   // An Excalidraw shape keeps its hand-drawn look and its words; turned there, it comes in
   // upright, and the page says so.
   await paste(
@@ -910,7 +922,7 @@ it("draws by hand with the pen, the arrow and the eraser; brings Mermaid and Exc
     .filter((d) => d.source.startsWith("// drawy:"))
     .map((d) => d.name)
     .sort();
-  expect(names).toEqual(["Hand-drawn line", "Hand-drawn shape"]);
+  expect(names).toEqual(["Hand-drawn line", "Hand-drawn shape", "Mermaid diagram"]);
   await expect.poll(() => count("Sketch")).toBe(1);
   // Out again: an Excalidraw file with the drawn parts as pictures and the link bound to
   // them, and the blocks and links as a Mermaid flowchart.
@@ -931,3 +943,441 @@ it("draws by hand with the pen, the arrow and the eraser; brings Mermaid and Exc
   const mermaid = await page.evaluate(() => navigator.clipboard.readText());
   for (const line of ['a["Alpha"]', '(["Start"])', '-->|"yes"|']) expect(mermaid).toContain(line);
 }, 90_000);
+
+it("draws a sequence freehand: lines pulled down from boxes hang from them, messages between them stay where drawn and follow the boxes", async () => {
+  const id = await make();
+  await open(id);
+  await editing();
+  await settled();
+  const alpha = await rectOf("Alpha"),
+    beta = await rectOf("Beta");
+  // A scene unit on screen, and a point of the scene from one on screen.
+  const k = alpha.height / 120;
+  const sceneY = (y: number) => 100 + (y - alpha.y) / k;
+  const line = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    await page.keyboard.press("a");
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 4 });
+    await page.mouse.move(to.x, to.y, { steps: 4 });
+    await page.mouse.up();
+    await settled();
+  };
+  // Pulled down from each box's bottom edge into the paper: a link bound to the box, its
+  // other end free, drawn as a line.
+  await line({ x: alpha.cx, y: alpha.y + alpha.height }, { x: alpha.cx, y: alpha.y + alpha.height + 340 });
+  await line({ x: beta.cx, y: beta.y + beta.height }, { x: beta.cx, y: beta.y + beta.height + 340 });
+  let root = await rootOf(id);
+  expect(root.links).toMatchObject([
+    { from: { moduleId: "a", at: "bottom" }, data: { head: "none" } },
+    { from: { moduleId: "b", at: "bottom" }, data: { head: "none" } },
+  ]);
+  expect(root.links.every((l: { to: object }) => "x" in l.to && "y" in l.to)).toBe(true);
+  const [la, lb] = root.links.map((l: { id: string }) => l.id);
+  // Two messages from one line to the other, each where it was drawn.
+  const heights = [alpha.y + alpha.height + 100, alpha.y + alpha.height + 240];
+  for (const y of heights) await line({ x: alpha.cx, y }, { x: beta.cx, y });
+  root = await rootOf(id);
+  const messages = root.links.slice(2);
+  expect(messages).toMatchObject([
+    { from: { linkId: la }, to: { linkId: lb } },
+    { from: { linkId: la }, to: { linkId: lb } },
+  ]);
+  const lifeline = root.links[0];
+  const yOn = (along: number) => 220 + along * (lifeline.to.y - 220);
+  messages.forEach((m: { from: { along: number } }, i: number) => expect(Math.abs(yOn(m.from.along) - sceneY(heights[i]))).toBeLessThan(2));
+  // Dragging the first box takes its line along whole, and the messages' ends ride with it.
+  await page.keyboard.press("v");
+  const before = lifeline.to;
+  await drag("Alpha");
+  await settled();
+  root = await rootOf(id);
+  const moved = root.modules.find((m: { id: string }) => m.id === "a").bounds;
+  expect(root.links[0].to).toEqual({ x: before.x + (moved.x - 100), y: before.y + (moved.y - 100) });
+  expect(root.links.slice(2).map((m: { from: object }) => m.from)).toEqual(messages.map((m: { from: object }) => m.from));
+  // The message is drawn where its ends are now: its left end under the moved line.
+  const host = (await page.locator(`[data-link-id="${messages[0].id}"]`).boundingBox())!;
+  const shifted = await rectOf("Alpha");
+  expect(Math.abs(host.x + 48 * k - shifted.cx)).toBeLessThan(4);
+});
+
+it("lays the editing panel out by schema: one screen for a structured drawing, a part of it, a block and a link, with no data keys, JSON or code", async () => {
+  // A drawing from the library, drawn from its example, with two blocks linked beside it.
+  const w = await api("/works", "POST", { title: "面板" });
+  const sequence = (await api("/materials/sequence")).example;
+  await api(`/works/${w.id}/edits`, "POST", {
+    baseRevision: w.revision,
+    edit: {
+      modules: [
+        { id: "seq", drawingId: "sequence", bounds: [100, 100, 640, 360], data: sequence },
+        { id: "n1", drawingId: "node", bounds: [100, 560, 200, 84], data: { title: "订单服务" } },
+        { id: "n2", drawingId: "node", bounds: [500, 560, 200, 84], data: { title: "库存服务" } },
+      ],
+      links: [{ id: "l1", from: "n1", to: "n2", data: { label: "扣减" } }],
+    },
+  });
+  await page.goto(base + "/");
+  await page.evaluate(() => localStorage.setItem("drawy.locale", "zh"));
+  try {
+    await page.goto(base + "/a/" + w.id);
+    await page.waitForFunction(() => [...document.querySelectorAll("*")].some((e) => e.shadowRoot?.textContent?.includes("登录请求")));
+    await settled();
+    await page.getByRole("button", { name: "手动编辑" }).click();
+    await settled();
+    const keys = ["participants", "messages", "notes", "fragments", "numbered", "label", "kind", "accent", "from", "to", "title", "tone", "shape", "head", "route"];
+    /** What the panel shows: whether it fits without scrolling, and any data key, JSON or code in it. */
+    const scan = () =>
+      page.evaluate((keys) => {
+        const panel = document.querySelector<HTMLElement>("[data-side-body]")!;
+        const text = panel.innerText;
+        const words = new Set(text.split(/[^A-Za-z_]+/).filter(Boolean));
+        const spelled = (k: string) => k[0].toUpperCase() + k.slice(1);
+        return {
+          fits: panel.scrollHeight <= panel.clientHeight + 1,
+          height: panel.scrollHeight,
+          keys: keys.filter((k) => words.has(k) || words.has(spelled(k))),
+          json: /[{[]\s*"|":\s*[\[{"]/.test(text) || [...panel.querySelectorAll("textarea")].some((t) => /^\s*[{[]/.test(t.value)),
+          code: /\bapi\.|return\s|=>|<\/?svg|function\s*\(/.test(text + [...panel.querySelectorAll("textarea")].map((t) => t.value).join("\n")),
+        };
+      }, keys);
+    const tab = (name: string) => page.getByRole("tab", { name, exact: true }).click();
+    const check = async (what: string) => {
+      for (const name of ["设计", "内容"]) {
+        await tab(name);
+        await page.waitForTimeout(250);
+        const found = await scan();
+        expect(found, `${what} · ${name}`).toMatchObject({ fits: true, keys: [], json: false, code: false });
+      }
+    };
+    // The sequence diagram, then one of its messages selected inside it.
+    const seq = await wordsAt("登录请求");
+    await page.mouse.click(seq.cx, seq.cy);
+    await settled();
+    await check("时序图");
+    // A note opened shows whom it is over as participants to choose, not an empty form.
+    const over = await page.evaluate(async () => {
+      const panel = document.querySelector("[data-side-body]")!;
+      const row = [...panel.querySelectorAll("li")].find((li) => [...li.querySelectorAll("input")].some((i) => i.value === "密码加盐哈希"))!;
+      row.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click();
+      await new Promise((r) => setTimeout(r, 250));
+      return [...row.querySelectorAll("select")].map((s) => s.value);
+    });
+    expect(over).toContain("server");
+    // A cell changed and then Escape pressed keeps what it had.
+    await page.evaluate(() => {
+      const panel = document.querySelector("[data-side-body]")!;
+      [...panel.querySelectorAll("input")].find((i) => i.value === "浏览器")!.setAttribute("data-probe", "");
+    });
+    const cellBox = page.locator("[data-probe]");
+    await cellBox.click();
+    await page.keyboard.press("Meta+A");
+    await page.keyboard.type("改了");
+    await page.keyboard.press("Escape");
+    await expect.poll(() => cellBox.inputValue()).toBe("浏览器");
+    await settled();
+    expect((await sequenceOf(w.id))!.participants.map((p: { label: string }) => p.label)).toContain("浏览器");
+    await page.mouse.click(seq.cx, seq.cy);
+    await settled();
+    expect(await page.locator("[data-part-crumbs]").innerText()).toMatch(/消息\s*1/);
+    await check("消息");
+    // A block of a flowchart, and the link between two.
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    const block = await rectOf("订单服务");
+    await page.mouse.click(block.cx, block.cy);
+    await settled();
+    await check("方框");
+    const a = await rectOf("订单服务"),
+      b = await rectOf("库存服务");
+    await page.keyboard.press("Escape");
+    await page.mouse.click((a.x + a.width + b.x) / 2, a.cy);
+    await settled();
+    await check("连线");
+  } finally {
+    await page.evaluate(() => localStorage.setItem("drawy.locale", "en"));
+  }
+});
+
+/** Where words a drawing draws are on screen, by what they say. */
+const wordsAt = (text: string) =>
+  page.evaluate((text) => {
+    for (const host of document.querySelectorAll("[data-module-id]")) {
+      const el = [...host.shadowRoot!.querySelectorAll("text,[data-edp-text]")].find((e) => e.textContent?.trim() === text);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        return { cx: r.x + r.width / 2, cy: r.y + r.height / 2 };
+      }
+    }
+    throw Error("no words " + text);
+  }, text);
+
+/** The sequence diagram of a scene, as saved. */
+const sequenceOf = async (id: string) =>
+  (await rootOf(id)).modules.find((m: { drawingId: string }) => m.drawingId === "sequence")?.data as
+    | { participants: { id: string; label: string }[]; messages: { id: string; from: string; to: string; label: string; kind?: string }[]; notes?: { over: string[] }[] }
+    | undefined;
+
+it("builds a sequence diagram from a blank canvas with the canvas and the keyboard alone: three participants, six messages", async () => {
+  const w = await api("/works", "POST", { title: "Login" });
+  await page.goto(base + "/a/" + w.id);
+  await page.waitForSelector("[data-canvas]");
+  let steps = 0;
+  const click = async (x: number, y: number, n = 1) => {
+    steps++;
+    await page.mouse.click(x, y, { clickCount: n });
+    if (n === 2) await page.mouse.dblclick(x, y);
+  };
+  const type = async (text: string) => {
+    steps++;
+    await page.keyboard.type(text);
+    await page.keyboard.press("Enter");
+  };
+  // Start drawing, and take the sequence diagram from the library.
+  steps++;
+  await page.getByRole("button", { name: "Start drawing" }).click();
+  await settled();
+  const tray = page.getByRole("navigation", { name: "Editing tools" });
+  steps++;
+  await tray.getByRole("button", { name: "Diagram library", exact: true }).click();
+  const shelf = page.getByRole("dialog", { name: "Diagram library" });
+  steps++;
+  await shelf.getByRole("textbox").fill("sequence");
+  steps++;
+  await shelf.locator('button[data-tip="Sequence diagram"]').click();
+  await expect.poll(async () => (await sequenceOf(w.id))?.messages.length, { timeout: 15_000 }).toBe(5);
+  await page.keyboard.press("Escape");
+  await settled();
+  // Each participant renamed where its name is drawn.
+  for (const [was, now] of [["浏览器", "App"], ["服务器", "Gateway"], ["数据库", "Users"]]) {
+    const at = await wordsAt(was);
+    steps++;
+    await page.mouse.dblclick(at.cx, at.cy);
+    await page.keyboard.press("Meta+A");
+    await type(now);
+    await settled();
+  }
+  // The first message selected inside the diagram; Enter makes the next one between the same
+  // two, ready to type into.
+  const first = await wordsAt("登录请求");
+  await click(first.cx, first.cy);
+  await click(first.cx, first.cy);
+  await settled();
+  steps++;
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await sequenceOf(w.id))?.messages.length, { timeout: 10_000 }).toBe(6);
+  await type("Check token");
+  await settled();
+  const data = (await sequenceOf(w.id))!;
+  expect(data.participants.map((p) => p.label)).toEqual(["App", "Gateway", "Users"]);
+  expect(data.messages).toHaveLength(6);
+  expect(data.messages[1]).toMatchObject({ from: data.messages[0].from, to: data.messages[0].to, label: "Check token" });
+  // Every message runs between participants that are there.
+  const ids = new Set(data.participants.map((p) => p.id));
+  expect(data.messages.every((m) => ids.has(m.from) && ids.has(m.to))).toBe(true);
+  expect(steps).toBeLessThanOrEqual(16);
+  console.log(`sequence from a blank canvas: ${steps} steps`);
+});
+
+it("keeps a sequence diagram whole as it is changed on the canvas: renamed, reordered, reconnected, a participant taken out and brought back", async () => {
+  const w = await api("/works", "POST", { title: "Flows" });
+  await api(`/works/${w.id}/edits`, "POST", {
+    baseRevision: w.revision,
+    edit: { modules: [{ id: "seq", drawingId: "sequence", bounds: [100, 100, 640, 360], data: (await api("/materials/sequence")).example }] },
+  });
+  await page.goto(base + "/a/" + w.id);
+  await page.waitForFunction(() => [...document.querySelectorAll("*")].some((e) => e.shadowRoot?.textContent?.includes("登录请求")));
+  await editing();
+  await settled();
+  const valid = async () => {
+    const d = (await sequenceOf(w.id))!;
+    const ids = new Set(d.participants.map((p) => p.id));
+    expect(d.messages.every((m) => ids.has(m.from) && ids.has(m.to))).toBe(true);
+    return d;
+  };
+  // Renamed where it is drawn: the messages keep to it (problem 3A).
+  const server = await wordsAt("服务器");
+  await page.mouse.dblclick(server.cx, server.cy);
+  await page.keyboard.press("Meta+A");
+  await page.keyboard.type("API 网关");
+  await page.keyboard.press("Enter");
+  await settled();
+  let d = await valid();
+  expect(d.participants[1].label).toBe("API 网关");
+  expect(d.messages.filter((m) => m.from === "server" || m.to === "server")).toHaveLength(5);
+  // A message dragged below the next one changes places with it.
+  const m1 = await wordsAt("登录请求");
+  await page.mouse.click(m1.cx, m1.cy);
+  await page.mouse.click(m1.cx, m1.cy);
+  await settled();
+  const m2 = await wordsAt("查询用户");
+  await page.mouse.move(m1.cx, m1.cy);
+  await page.mouse.down();
+  await page.mouse.move(m1.cx, (m1.cy + m2.cy) / 2, { steps: 4 });
+  await page.mouse.move(m1.cx, m2.cy + 30, { steps: 6 });
+  await page.mouse.up();
+  await settled();
+  d = await valid();
+  expect(d.messages.slice(0, 2).map((m) => m.id)).toEqual(["m2", "m1"]);
+  // Its end dragged to another lifeline points it at that participant.
+  const moved = await wordsAt("登录请求");
+  await page.mouse.click(moved.cx, moved.cy);
+  await settled();
+  const handles = await page.locator("[data-edit-handle]").evaluateAll((els) =>
+    els.filter((e) => (e as HTMLElement).style.display !== "none").map((e) => {
+      const r = e.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }),
+  );
+  expect(handles).toHaveLength(2);
+  const db = await wordsAt("数据库");
+  await page.mouse.move(handles[1].x, handles[1].y);
+  await page.mouse.down();
+  await page.mouse.move((handles[1].x + db.cx) / 2, handles[1].y, { steps: 4 });
+  await page.mouse.move(db.cx, handles[1].y, { steps: 6 });
+  await page.mouse.up();
+  await settled();
+  d = await valid();
+  expect(d.messages.find((m) => m.id === "m1")).toMatchObject({ from: "browser", to: "db" });
+  // The database taken out takes the messages to and from it along; undone, all come back.
+  await page.keyboard.press("Escape");
+  await page.mouse.click(db.cx, db.cy);
+  await page.mouse.click(db.cx, db.cy);
+  await settled();
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await sequenceOf(w.id))?.participants.length, { timeout: 10_000 }).toBe(2);
+  d = await valid();
+  expect(d.messages.map((m) => m.id)).toEqual(["m4", "m5"]);
+  expect(await page.getByRole("status").allInnerTexts()).toEqual(expect.arrayContaining([expect.stringMatching(/Also deleted 3/)]));
+  await page.keyboard.press("Meta+Z");
+  await expect.poll(async () => (await sequenceOf(w.id))?.participants.length, { timeout: 10_000 }).toBe(3);
+  d = await valid();
+  expect(d.messages).toHaveLength(5);
+});
+
+it("undoes and redoes hand edits at once, a gesture a step: arrow keys pressed in a row, a drag", async () => {
+  const id = await make();
+  await open(id);
+  await editing();
+  await settled();
+  const x = async () => (await rootOf(id)).modules.find((m: { id: string }) => m.id === "a").bounds.x;
+  const alpha = await rectOf("Alpha");
+  await page.mouse.click(alpha.cx, alpha.cy);
+  // A press moves a pixel on screen, whatever the view's scale.
+  for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight");
+  await expect.poll(x, { timeout: 5_000 }).toBeGreaterThan(100);
+  await settled();
+  const nudged = await x();
+  await drag("Alpha");
+  await settled();
+  const dragged = await x();
+  expect(dragged).toBeGreaterThan(150);
+  // Back over the drag, then over all five presses at once; and forward again.
+  await page.keyboard.press("Meta+Z");
+  await expect.poll(x, { timeout: 5_000 }).toBe(nudged);
+  await page.keyboard.press("Meta+Z");
+  await expect.poll(x, { timeout: 5_000 }).toBe(100);
+  await page.keyboard.press("Meta+Shift+Z");
+  await expect.poll(x, { timeout: 5_000 }).toBe(nudged);
+  await page.keyboard.press("Meta+Y");
+  await expect.poll(x, { timeout: 5_000 }).toBe(dragged);
+});
+
+it("changes a chart's values on the canvas: a bar's top dragged, its number retyped, a gauge's needle dragged with only the gauge selected", async () => {
+  const w = await api("/works", "POST", { title: "Charts" });
+  await api(`/works/${w.id}/edits`, "POST", {
+    baseRevision: w.revision,
+    edit: {
+      modules: [
+        { id: "bars", drawingId: "bars", bounds: [100, 100, 520, 300], data: (await api("/materials/bars")).example },
+        { id: "gauge", drawingId: "gauge", bounds: [700, 100, 300, 220], data: (await api("/materials/gauge")).example },
+      ],
+    },
+  });
+  await page.goto(base + "/a/" + w.id);
+  await page.waitForFunction(() => [...document.querySelectorAll("*")].some((e) => e.shadowRoot?.textContent?.includes("蛋白质")));
+  await editing();
+  await settled();
+  const dataOf = async (id: string) => (await rootOf(w.id)).modules.find((m: { id: string }) => m.id === id)!.data;
+  const shown = () =>
+    page.locator("[data-edit-handle]").evaluateAll((els) =>
+      els.filter((e) => (e as HTMLElement).style.display !== "none").map((e) => {
+        const r = e.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }),
+    );
+  // The bar selected, its top drags its value up.
+  const water = await wordsAt("水");
+  await page.mouse.click(water.cx, water.cy);
+  await page.mouse.click(water.cx, water.cy);
+  await settled();
+  const [top] = await shown();
+  expect(top).toBeTruthy();
+  await page.mouse.move(top.x, top.y);
+  await page.mouse.down();
+  await page.mouse.move(top.x, top.y - 20, { steps: 4 });
+  await page.mouse.move(top.x, top.y - 40, { steps: 4 });
+  await page.mouse.up();
+  await settled();
+  const raised = (await dataOf("bars")).items[0].value;
+  expect(raised).toBeGreaterThan(71);
+  // Its number retyped where it is drawn is a number.
+  const number = await wordsAt(String(raised));
+  await page.mouse.dblclick(number.cx, number.cy);
+  await page.keyboard.press("Meta+A");
+  await page.keyboard.type("80");
+  await page.keyboard.press("Enter");
+  await settled();
+  expect((await dataOf("bars")).items[0].value).toBe(80);
+  // A drag the system takes away leaves the bar drawn as it was, nothing kept.
+  const [again] = await shown();
+  await page.mouse.move(again.x, again.y);
+  await page.mouse.down();
+  await page.mouse.move(again.x, again.y - 40, { steps: 6 });
+  await expect.poll(() => wordsAt("80").then(() => true, () => false)).toBe(false);
+  await page.evaluate(({ x, y }) => {
+    document.elementFromPoint(x, y)!.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: 1, pointerType: "mouse" }));
+  }, { x: again.x, y: again.y - 40 });
+  await page.mouse.up();
+  await expect.poll(() => wordsAt("80").then(() => true, () => false)).toBe(true);
+  await settled();
+  expect((await dataOf("bars")).items[0].value).toBe(80);
+  // The gauge selected alone shows its needle's handle; dragged past the right end, below
+  // the dial, the reading goes to the top of the scale.
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  const label = await wordsAt("空气质量指数");
+  await page.mouse.click(label.cx, label.cy);
+  await settled();
+  const handles = await shown();
+  expect(handles).toHaveLength(1);
+  const right = (await page.locator('[data-module-id="gauge"]').boundingBox())!;
+  await page.mouse.move(handles[0].x, handles[0].y);
+  await page.mouse.down();
+  await page.mouse.move(right.x + right.width * 0.8, right.y + right.height * 0.3, { steps: 4 });
+  await page.mouse.move(right.x + right.width + 40, right.y + right.height + 20, { steps: 4 });
+  await page.mouse.up();
+  await settled();
+  expect((await dataOf("gauge")).value).toBe(100);
+});
+
+it("edits long words its drawing does not declare in the content panel", async () => {
+  const w = await api("/works", "POST", { title: "Memo" });
+  const body = "A long note. ".repeat(32).trim();
+  expect(body.length).toBeGreaterThan(400);
+  await api(`/works/${w.id}/edits`, "POST", {
+    baseRevision: w.revision,
+    edit: {
+      drawings: [{ id: "memo", name: "Memo", params: {}, source: box }],
+      modules: [{ id: "m", drawingId: "memo", bounds: [100, 100, 200, 100], data: { label: "Memo", body } }],
+    },
+  });
+  await page.goto(base + "/a/" + w.id);
+  await page.waitForFunction(() => [...document.querySelectorAll("*")].some((e) => e.shadowRoot?.textContent?.includes("Memo")));
+  await editing();
+  await settled();
+  const memo = await rectOf("Memo");
+  await page.mouse.click(memo.cx, memo.cy);
+  await settled();
+  await page.getByRole("tab", { name: "Content", exact: true }).click();
+  await expect.poll(() => page.locator("[data-side-body] textarea").evaluateAll((els) => els.some((t) => (t as HTMLTextAreaElement).value.startsWith("A long note.")))).toBe(true);
+});

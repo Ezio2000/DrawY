@@ -57,8 +57,8 @@ export const coast: ShowcaseSource = {
           id: "lights",
           name: say("灯塔一盏盏亮起", "Lights coming on"),
           params: {
-            play: { label: say("从头播一遍（秒）", "Seconds to play through"), type: "number", min: 4, max: 60, step: 1 },
-            hold: { label: say("播完停多久（秒）", "Seconds to rest at the end"), type: "number", min: 0, max: 20, step: 1 },
+            play: { label: { zh: "从头播一遍（秒）", en: "Seconds to play through" }, type: "number", min: 4, max: 60, step: 1 },
+            hold: { label: { zh: "播完停多久（秒）", en: "Seconds to rest at the end" }, type: "number", min: 0, max: 20, step: 1 },
           },
           defaults: { play: 16, hold: 4, years: [1780, 1905], timeline: [600, 700, 620], panel: [600, 210], cardY: 170, cardW: 600 },
           source: code("coast-lights"),

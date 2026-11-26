@@ -4,24 +4,25 @@ import {
   AlignLeft,
   AlignRight,
   Bold,
+  Code2,
   Ellipsis,
   MessageSquareQuote,
   Minus,
   Plus,
   Type,
 } from "lucide-react";
-import type { Canvas } from "../../../modules/canvas/index.ts";
+import type { Canvas, PartPick } from "../../../modules/canvas/index.ts";
 import type { Work } from "../../../modules/contracts/index.ts";
-import { quickFields, sharedFields, type SharedField } from "../../../modules/editing/index.ts";
+import { itemFields, quickFields, sharedFields, type SharedField } from "../../../modules/editing/index.ts";
 import { shapes, type EditOps, type Shape } from "./desktop/editing.ts";
-import { Colors, hex, nameOf, optionOf } from "./EditControls.tsx";
+import { Colors, colourOf, hex, nameOf, optionOf, valuesOf } from "./EditControls.tsx";
 import { ShapeGlyph } from "./EditTray.tsx";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 import { useDismiss } from "./popover.ts";
 
 /** The options and switches of a line or a fill that have a picture. */
-const lines = new Set(["curve", "elbow", "corner", "filled", "open", "none", "dashed", "both", "soft", "solid", "paper"]);
+const lines = new Set(["curve", "elbow", "corner", "filled", "open", "none", "dashed", "both", "soft", "solid", "paper", "line-sync", "line-async", "line-reply"]);
 /** A line as an option draws it: how a link runs, how it ends, whether it is broken; and a
  * fill as it fills. */
 function LineGlyph({ kind }: { kind: string }) {
@@ -42,6 +43,15 @@ function LineGlyph({ kind }: { kind: string }) {
     soft: <rect x="5" y="6" width="14" height="12" rx="2" fill="currentColor" fillOpacity=".22" />,
     solid: <rect x="5" y="6" width="14" height="12" rx="2" fill="currentColor" />,
     paper: <rect x="5" y="6" width="14" height="12" rx="2" />,
+    // A message as a sequence diagram draws it: a call, an asynchronous message, a reply.
+    "line-sync": (
+      <>
+        <path d="M4 12h10" />
+        <path d="M13 7.5 20 12l-7 4.5Z" fill="currentColor" />
+      </>
+    ),
+    "line-async": <path d="M4 12h15M14 7l5 5-5 5" />,
+    "line-reply": <path d="M20 12H5M10 7l-5 5 5 5" strokeDasharray="3 2.5" />,
   };
   if (!d[kind]) return null;
   return (
@@ -60,8 +70,11 @@ function LineGlyph({ kind }: { kind: string }) {
     </svg>
   );
 }
-/** What an option of a choice is shown as, where a picture says it better than its name. */
-function glyphOf(key: string, option: string): ReactNode {
+/** What an option of a choice is shown as, where a picture says it better than its name:
+ * the glyph its schema names, or one the app knows for a common value. */
+function glyphOf(key: string, option: string, icon?: string): ReactNode {
+  if (icon && lines.has(icon)) return <LineGlyph kind={icon} />;
+  if (icon && (shapes as readonly string[]).includes(icon)) return <ShapeGlyph shape={icon as Shape} />;
   if (key === "shape" && (shapes as readonly string[]).includes(option))
     return <ShapeGlyph shape={option as Shape} />;
   if (key === "align")
@@ -108,9 +121,11 @@ export function SelectionBar({
   ops,
   selected,
   links,
+  part,
   hidden,
   more,
   ask,
+  code,
 }: {
   canvas?: Canvas;
   stage: HTMLElement | null;
@@ -120,18 +135,22 @@ export function SelectionBar({
   ops: EditOps;
   selected: string[];
   links: string[];
+  /** The part selected inside the one module selected: the bar offers its look instead. */
+  part?: PartPick | null;
   hidden: boolean;
   /** Opens the menu of everything else that can be done, at a point on screen. */
   more: (at: { x: number; y: number }) => void;
   /** Brings up the composer, about the selection. */
   ask: () => void;
+  /** Opens the text the one module selected has of its own, when it has one. */
+  code?: () => void;
 }) {
   const t = useT(),
     e = t.edit;
   const ref = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState("");
   useDismiss(!!open, () => setOpen(""), ref, "[data-popover]");
-  const showing = selected.join() + ":" + links.join();
+  const showing = selected.join() + ":" + links.join() + ":" + (part?.path ?? "");
   useLayoutEffect(() => setOpen(""), [showing]);
   useLayoutEffect(() => {
     if (!canvas || !stage) return;
@@ -181,7 +200,13 @@ export function SelectionBar({
     ...(scene?.modules.filter((m) => selected.includes(m.id)) ?? []),
     ...(scene?.links.filter((l) => links.includes(l.id)) ?? []),
   ];
-  const quick = quickFields(sharedFields(work, parts));
+  // A part selected inside a module is given its own look; otherwise all that is selected.
+  const inside = part && parts.length === 1 && parts[0].id === part.moduleId ? part : undefined;
+  const quick = inside
+    ? quickFields(itemFields(work, parts[0], inside.path).map((f) => ({ ...f, mixed: false })))
+    : quickFields(sharedFields(work, parts));
+  const restyle = (values: Record<string, unknown>) =>
+    inside ? ops.setItem(inside.moduleId, inside.path, values) : ops.restyle(values);
   const item = (
     label: string,
     icon: ReactNode,
@@ -207,7 +232,7 @@ export function SelectionBar({
     const name = nameOf(t, f);
     const set = (value: unknown) => {
       setOpen("");
-      ops.restyle({ [f.key]: value });
+      restyle({ [f.key]: value });
     };
     if (f.type === "boolean") {
       const pictured = lines.has(f.key);
@@ -225,7 +250,7 @@ export function SelectionBar({
     if (f.type === "number") {
       const step = f.key === "size" ? (Number(f.value) >= 28 ? 4 : 2) : (f.step ?? 1);
       const value = typeof f.value === "number" ? f.value : (f.min ?? 0);
-      const to = (n: number) => ops.restyle({ [f.key]: Math.min(f.max!, Math.max(f.min!, n)) });
+      const to = (n: number) => restyle({ [f.key]: Math.min(f.max!, Math.max(f.min!, n)) });
       return (
         <span key={f.key} className={cx("bar-stepper")} role="group" aria-label={name}>
           {item(t.edit.bar.less(name), f.key === "size" ? <Type size={12} /> : <Minus size={14} />, () => to(value - step), {
@@ -241,7 +266,7 @@ export function SelectionBar({
     const isOpen = open === f.key;
     const toggle = () => setOpen(isOpen ? "" : f.key);
     if (f.type === "color") {
-      const colour = typeof f.value === "string" && !f.mixed ? hex(f.value) : undefined;
+      const colour = typeof f.value === "string" && !f.mixed ? hex(colourOf(work, f.value)) : undefined;
       return (
         <span key={f.key} className={cx("bar-pop")}>
           {item(
@@ -266,7 +291,7 @@ export function SelectionBar({
     }
     // A choice: its options as pictures where they have one, as a swatch for a tone of the
     // work's style, and by name otherwise.
-    const options = f.options ?? [];
+    const options = valuesOf(f);
     const now = f.mixed ? undefined : String(f.value ?? "");
     const face = (o: string, large = false) =>
       f.key === "tone" ? (
@@ -277,7 +302,7 @@ export function SelectionBar({
           style={{ "--swatch": toneOf(work, o) } as CSSProperties}
         />
       ) : (
-        glyphOf(f.key, o)
+        glyphOf(f.key, o, f.options?.find((x) => x.value === o)?.icon)
       );
     const pictured = options.every((o) => face(o));
     // A choice left to its drawing shows as its first option, faintly.
@@ -294,7 +319,7 @@ export function SelectionBar({
           toggle,
           {
             pressed: isOpen,
-            words: pictured ? undefined : shown ? optionOf(t, shown) : name,
+            words: pictured ? undefined : shown ? optionOf(t, shown, f) : name,
           },
         )}
         {isOpen && (
@@ -304,12 +329,12 @@ export function SelectionBar({
                 key={o}
                 role="menuitemradio"
                 aria-checked={now === o}
-                aria-label={optionOf(t, o)}
-                data-tip={pictured ? optionOf(t, o) : undefined}
+                aria-label={optionOf(t, o, f)}
+                data-tip={pictured ? optionOf(t, o, f) : undefined}
                 onClick={() => set(o)}
               >
                 {face(o, true)}
-                {!pictured && <span>{optionOf(t, o)}</span>}
+                {!pictured && <span>{optionOf(t, o, f)}</span>}
               </button>
             ))}
           </div>
@@ -321,6 +346,7 @@ export function SelectionBar({
     <div ref={ref} className={cx("selection-bar")} role="toolbar" aria-label={e.bar.label} data-away="">
       {quick.map(control)}
       {!!quick.length && <i />}
+      {code && item(e.codeView.open, <Code2 size={16} />, code)}
       {item(
         e.menu.more,
         <Ellipsis size={16} />,

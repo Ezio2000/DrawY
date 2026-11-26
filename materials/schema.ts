@@ -101,43 +101,16 @@ export interface PictureMaterial extends Envelope {
   /** `blob` is the content digest a pack's file is kept under. */
   file: { url: string; mediaType: string; bytes: number; blob?: string };
 }
-/** A parameter of drawing code. The first six types are values a person can change by hand
- * in the app (a choice among its options, a picture by its material id); arrays, objects
- * and effect ids are structure the author sets. */
-export interface Param {
-  type:
-    | "text"
-    | "number"
-    | "boolean"
-    | "color"
-    | "picture"
-    | "choice"
-    | "array"
-    | "object"
-    | "effect";
-  /** The values a choice offers. */
-  options?: string[];
-  /** The useful range of a number, for a slider. */
-  min?: number;
-  max?: number;
-  step?: number;
-  default?: unknown;
-  description: string;
-}
-export const paramSchema = z.object({
-  type: z.enum(["text", "number", "boolean", "color", "picture", "choice", "array", "object", "effect"]),
-  options: z.array(z.string()).optional(),
-  min: z.number().optional(),
-  max: z.number().optional(),
-  step: z.number().optional(),
-  default: z.unknown().optional(),
-  description: z.string(),
-});
+export { fieldSchema, fieldsSchema, type Field, type Fields } from "./fields.ts";
+import type { FieldType, Fields } from "./fields.ts";
 export interface DrawingMaterial extends Envelope {
   kind: "drawing";
   /** Function-body source receiving the drawing api and returning an Element. */
   source: string;
-  params: Record<string, Param>;
+  /** The data it reads, as a schema: what the editor offers and writes are checked by. */
+  params: Fields;
+  /** What it draws with where a part's data says nothing. */
+  defaults: Record<string, unknown>;
   /** module draws inside its own bounds; link draws between api.from and api.to. */
   use: "module" | "link";
   /** A size it looks right at, in scene units. */
@@ -276,7 +249,7 @@ export const capabilities = ["text", "picture", "link"] as const;
 export type Capability = (typeof capabilities)[number];
 export type Bindings = Record<Capability, string>;
 /** What each capability's drawing must accept: the data the app writes into it. */
-export const capabilityContract: Record<Capability, { use: "module" | "link"; params: Record<string, Param["type"]> }> = {
+export const capabilityContract: Record<Capability, { use: "module" | "link"; params: Record<string, FieldType> }> = {
   text: { use: "module", params: { text: "text", size: "number" } },
   picture: { use: "module", params: { material: "picture" } },
   link: { use: "link", params: {} },

@@ -32,6 +32,7 @@ import { hex, Picker } from "./EditControls.tsx";
 import type { Change } from "./session/work.ts";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
+import { linkName } from "./workPage.ts";
 
 /* The work around the parts: its shared look, the scene and the scenes below it, the
  * details a click opens and the list of layers. */
@@ -517,7 +518,7 @@ export function Layers({
                 <Spline size={13} />
               </i>
               <span className={cx("layer-name")}>
-                {nameOf(l.from.moduleId)} → {nameOf(l.to.moduleId)}
+                {linkName(work, sceneId, l, t)}
               </span>
               <small>{drawingName(l.drawingId)}</small>
             </li>

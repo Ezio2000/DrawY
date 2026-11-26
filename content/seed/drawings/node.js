@@ -63,6 +63,17 @@ if (shape === "pill" || shape === "circle") {
   const rx = Math.min(Number(d.radius ?? 10), ih / 2);
   path = `<rect x="${s}" y="${s}" width="${iw}" height="${ih}" rx="${rx}"/>`;
 }
+// Links meet a round or slanted block on its outline; a square one keeps to its box.
+const ox = s,
+  oy = s + rise;
+if (shape === "diamond")
+  api.outline(`M${W / 2} ${oy}L${W - s} ${oy + ih / 2}L${W / 2} ${oy + ih}L${ox} ${oy + ih / 2}Z`);
+else if (shape === "circle")
+  api.outline(`M${ox} ${oy + ih / 2}A${iw / 2} ${ih / 2} 0 1 0 ${ox + iw} ${oy + ih / 2}A${iw / 2} ${ih / 2} 0 1 0 ${ox} ${oy + ih / 2}Z`);
+else if (shape === "pill") {
+  const k = Math.min(iw, ih) / 2;
+  api.outline(`M${ox + k} ${oy}H${ox + iw - k}A${k} ${k} 0 0 1 ${ox + iw - k} ${oy + ih}H${ox + k}A${k} ${k} 0 0 1 ${ox + k} ${oy}Z`);
+}
 const fills = {
   solid: `fill="${color}" stroke="${color}"`,
   soft: `fill="${color}" fill-opacity=".14" stroke="${color}"`,
@@ -88,7 +99,7 @@ svg{position:absolute;inset:0;overflow:visible}
 .title{font-size:${size}px;font-weight:${d.weight ?? 600};line-height:1.25;overflow-wrap:anywhere;text-wrap:balance}
 .note{font-size:${size * 0.8}px;line-height:1.3;color:${solid ? paper : muted};opacity:${solid ? 0.85 : 1};overflow-wrap:anywhere;text-wrap:balance}
 .icon{flex:none;display:flex}
-</style><div class="node"><svg viewBox="0 0 ${W + rise} ${H + rise}" width="${W + rise}" height="${H + rise}">${shade}${copies}<g transform="translate(0 ${rise})" ${fills[fill] || fills.none} stroke-width="${sw}"${d.lift ? ' filter="url(#lift)"' : ""}${effect}>${path}${extra}</g></svg><div class="words"><div class="text">${d.title ? `<div class="title">${esc(d.title)}</div>` : ""}${d.note ? `<div class="note">${esc(d.note)}</div>` : ""}</div></div></div>`);
+</style><div class="node"><svg viewBox="0 0 ${W + rise} ${H + rise}" width="${W + rise}" height="${H + rise}">${shade}${copies}<g transform="translate(0 ${rise})" ${fills[fill] || fills.none} stroke-width="${sw}"${d.lift ? ' filter="url(#lift)"' : ""}${effect}>${path}${extra}</g></svg><div class="words"><div class="text">${d.title ? `<div class="title"${api.text("title")}>${esc(d.title)}</div>` : ""}${d.note ? `<div class="note"${api.text("note")}>${esc(d.note)}</div>` : ""}</div></div></div>`);
 if (d.dashed)
   root
     .querySelector("g")

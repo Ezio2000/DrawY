@@ -85,7 +85,34 @@ const exact: Record<string, string> = {
   "局部查看和交互操作需要指定 sceneId": "Close-ups and clicks need a sceneId",
   "宽和高必须大于 0": "Width and height must be greater than 0",
   图片之间的引用不能循环: "Pictures in one request can't refer to each other in a circle",
+  "每一项要有 id（字母、数字、- 或 _）": "Each item needs an id (letters, digits, - or _)",
+  连线要连到另一个元素: "A link has to go to another element",
+  连线不能沿着自己: "A link can't run along itself",
+  连线至少要有一端连着东西: "At least one end of a link has to meet something",
+  连线不存在: "Link not found",
+  元素不存在: "Element not found",
+  条目不存在: "Item not found",
+  要选同一列表里的条目: "Choose items of one list",
+  "写法不对：应该是模块 ID、{moduleId, at}（at 是 left、right、top、bottom、[x, y] 或 {along}）、{linkId, along} 或 {x, y}":
+    "Not a way to write an end: write a module ID, {moduleId, at} (at is left, right, top, bottom, [x, y] or {along}), {linkId, along} or {x, y}",
 };
+
+/** The kinds of value a data check names, as `kindOf` in materials/fields.ts says them. */
+const kinds: Record<string, string> = {
+  文字: "text",
+  数字: "a number",
+  "true 或 false": "true or false",
+  "文字、数字或 true/false": "text, a number or true/false",
+  列表: "a list",
+  记录: "a record",
+  null: "null",
+  string: "text",
+  number: "a number",
+  boolean: "true or false",
+  undefined: "nothing",
+};
+const kind = (k: string) => kinds[k] ?? k;
+const list = (items: string) => items.replaceAll("、", ", ");
 
 const patterns: [RegExp, (...m: string[]) => string][] = [
   [/^模型服务中止了这一轮的输出：(.+)$/, (reason) => `The model service stopped this turn's output: ${reason}`],
@@ -103,6 +130,34 @@ const patterns: [RegExp, (...m: string[]) => string][] = [
     (d, whole) => `The tool input wasn't valid JSON (${d}), so nothing was saved${whole ? ". Send the whole input again, corrected" : ""}`,
   ],
   [/^(.+)（还有 (\d+) 处问题）$/, (first, n) => `${localize(first, "en")} (and ${n} more)`],
+  // What data checks say of a value against its drawing's schema.
+  [/^应该是 ?(文字|数字|true 或 false|文字、数字或 true\/false|列表|记录)，现在是(.+)$/, (want, was) => `Should be ${kind(want)}, not ${kind(was)}`],
+  [/^应该是 (\S+) 里一项的 id，现在是(.+)$/, (to, was) => `Should be the id of an item in ${to}, not ${kind(was)}`],
+  [/^(\S+) 超出范围 (\S+)\.\.(\S+)$/, (v, lo, hi) => `${v} is outside ${lo}..${hi}`],
+  [/^(.+) 不是可选值：(.*)$/, (v, all) => `${v} is not one of the choices: ${list(all)}`],
+  [/^(\S+) 里没有 id 为 (\S+) 的一项$/, (to, id) => `${to} has no item with id ${id}`],
+  [/^应该是 \[经度, 纬度\](?: 或 (\S+) 里一项的 id)?$/, (to) => `Should be [longitude, latitude]${to ? ` or the id of an item in ${to}` : ""}`],
+  [/^最多 (\d+) 项，现在有 (\d+) 项$/, (max, n) => `At most ${max} items; there are ${n}`],
+  [/^最多 (\d+) 项$/, (max) => `At most ${max} items`],
+  [/^id (\S+) 重复$/, (id) => `The id ${id} is used twice`],
+  [/^不认识的字段 (\S+)：可以写 (.*)$/, (k, all) => `Unknown field ${k}; it can have ${all === "（无）" ? "none" : list(all)}`],
+  [
+    /^(.+) 在 (\S+) 里有 (\d+) 项同名，用 id 指明是哪一项（(.*)）$/,
+    (name, to, n, ids) => `${n} items in ${to} are named ${name}; write the id of the one you mean (${list(ids)})`,
+  ],
+  [
+    /^(\S+) 里没有 (".*")：写它的 id 或名字（(.*)）$/,
+    (to, name, all) => `${to} has nothing named ${name}; write its id or name (${all === "列表是空的" ? "the list is empty" : list(all)})`,
+  ],
+  [/^画法 (\S+) 不读 (\S+)：它读 (.*)$/, (d, k, all) => `Drawing ${d} doesn't read ${k}; it reads ${list(all)}`],
+  [/^连线 (\S+) 的一端沿着的连线 (\S+) 不在场景 (\S+) 里$/, (id, line, scene) => `Link ${id} has an end along link ${line}, which is not in scene ${scene}`],
+  [/^连线 (\S+) 沿着的连线又沿着它，绕成了一圈$/, (id) => `Link ${id} runs along a link that runs along it, in a circle`],
+  // What a hand edit of a part's data says when it can't be made.
+  [/^数据里没有 (.+)$/, (path) => `The data has no ${path}`],
+  [/^(\S+) 不是引用$/, (path) => `${path} is not a reference`],
+  [/^(\S+) 不是列表$/, (path) => `${path} is not a list`],
+  [/^(\S+) 不能包住 (\S+)$/, (span, of) => `${span} can't wrap ${of}`],
+  [/^(\S+) 里没有 (\S+)$/, (to, id) => `${to} has no ${id}`],
   [/^场景 (\S+) 是新的，要给 title$/, (id) => `Scene ${id} is new and needs a title`],
   [/^连线 (\S+) 的一端 (\S+) 不在场景 (\S+) 里；这个场景有 (.*)$/, (id, m, scene, all) => `Link ${id} has an end at ${m}, which is not in scene ${scene}; it has ${all.replaceAll("、", ", ")}`],
   [/^(模块|连线) (\S+) 的画法 (\S+) 不存在：/, (kind, id, d) => `${kind === "模块" ? "Module" : "Link"} ${id} uses drawing ${d}, which doesn't exist`],

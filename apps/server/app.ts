@@ -426,16 +426,19 @@ export function createApp(storage: Storage) {
     if (c.req.method !== "GET") await bindings().catch(() => {});
     await next();
   });
-  // A hand edit on the canvas: any change to the work, committed like the author's.
+  // A hand edit on the canvas: any change to the work, committed like the author's. One
+  // that lays the work back or forth to how it was at a revision (undoing or redoing a step
+  // in the page) says so as `back`, and is kept as going back to it while that revision is
+  // still kept, so the edits not saved yet are counted to there rather than growing.
   app.post("/api/works/:id/edits", async (c) => {
     const store = c.get("store"),
       workId = c.req.param("id");
-    const { baseRevision, edit } = z
-      .object({ baseRevision: z.number().int(), edit: z.unknown() })
+    const { baseRevision, edit, back } = z
+      .object({ baseRevision: z.number().int(), edit: z.unknown(), back: z.number().int().optional() })
       .parse(await c.req.json());
     const { work } = await writeWork(store, workId, edit, {
       base: baseRevision,
-      cause: { kind: "edit" },
+      cause: back !== undefined && store.hasRevision(workId, back) ? { kind: "restore", revision: back } : { kind: "edit" },
     });
     publish(store.userId, { type: "work", work });
     return c.json(work);

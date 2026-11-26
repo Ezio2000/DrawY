@@ -1,6 +1,6 @@
-import type { Bounds, Instance, Point, Work } from "../contracts/index.ts";
-import { drawingOf, shownName } from "../contracts/index.ts";
-import { linkEnds } from "../contracts/geometry.ts";
+import type { Bounds, Instance, LinkEnd, Point, Work } from "../contracts/index.ts";
+import { drawingOf, endModule, shownName } from "../contracts/index.ts";
+import { linkEnds, scenePlacing } from "../contracts/geometry.ts";
 import { bound, type Clip } from "../editing/index.ts";
 import { ClipMaker, lineBox } from "./clip.ts";
 import { importedPicture, kindOfSource, simplify, sketchLine, sketchShape } from "./drawings.ts";
@@ -8,7 +8,8 @@ import { NODE, CALLOUT, toneColor } from "./library.ts";
 
 /* Excalidraw's scenes, in and out. A scene read in becomes parts of the work: its shapes
  * keep their hand-drawn look (the work's own sketch-shape drawing), its words are words,
- * an arrow bound at both ends becomes a link that follows the shapes, any other line or
+ * an arrow bound at one end or both becomes a link that follows the shapes (an unbound end
+ * free where it is), any other line or
  * stroke a line drawn by hand, a picture a picture of the library. A scene written out
  * gives each part the element that holds it best, and whatever has no such element
  * (a chart, a map, anything the author drew in code) as a picture of itself. */
@@ -170,24 +171,19 @@ export function fromExcalidraw(
   const held = new Map<string, ExcalidrawElement>();
   for (const e of live)
     if (e.type === "text" && e.containerId && byId.has(e.containerId)) held.set(e.containerId, e);
-  // Arrows bound at both ends to parts that come in become links; their words go with them.
+  // Arrows bound at one end or both to parts that come in become links, an unbound end free
+  // where it is; their words go with them.
   const moduleOf = new Map<string, string>();
   const isPart = (e?: ExcalidrawElement) =>
     !!e &&
     (SHAPES.has(e.type) ||
       (e.type === "text" && !held.has(e.containerId ?? "")) ||
       (e.type === "image" && !!pictures[e.fileId ?? ""]));
+  const boundTo = (id?: string | null) => (id && isPart(byId.get(id)) ? id : undefined);
   const linked = (e: ExcalidrawElement) => {
-    const from = e.startBinding?.elementId,
-      to = e.endBinding?.elementId;
-    return (
-      LINES.has(e.type) &&
-      from &&
-      to &&
-      from !== to &&
-      isPart(byId.get(from)) &&
-      isPart(byId.get(to))
-    );
+    const from = boundTo(e.startBinding?.elementId),
+      to = boundTo(e.endBinding?.elementId);
+    return LINES.has(e.type) && (!!from || !!to) && from !== to;
   };
   const taken = new Set<ExcalidrawElement>();
   for (const [container, words] of held)
@@ -279,8 +275,8 @@ export function fromExcalidraw(
           "text",
         );
     } else if ((LINES.has(e.type) || e.type === "freedraw") && !linked(e)) {
-      // A line on its own keeps its place in the stack; an arrow bound at both ends waits
-      // until both ends have come in, to become a link, which draws beneath them anyway.
+      // A line on its own keeps its place in the stack; an arrow bound to a part waits
+      // until the parts have come in, to become a link, which draws beneath them anyway.
       const freehand = e.type === "freedraw";
       let pts = linePoints(e);
       if (freehand) pts = simplify(pts, 0.6);
@@ -312,12 +308,15 @@ export function fromExcalidraw(
   // Words and pictures are drawn by the library, which has neither opacity nor mirroring.
   let opaque = came.filter((e) => !SHAPES.has(e.type) && faded(e)).length;
   const flipped = came.filter((e) => e.type === "image" && (e.scale ?? [1, 1]).some((k) => k < 0)).length;
-  // Arrows bound at both ends, now both ends have come in.
+  // Arrows bound to parts, now the parts have come in.
   for (const e of live) {
     if (!linked(e)) continue;
     const words = held.get(e.id);
-    let from = moduleOf.get(e.startBinding!.elementId)!,
-      to = moduleOf.get(e.endBinding!.elementId)!;
+    const pts = linePoints(e);
+    const endOf = (bound: string | undefined, p: Point): LinkEnd =>
+      bound ? { moduleId: moduleOf.get(bound)! } : { x: Math.round(p.x * 2) / 2, y: Math.round(p.y * 2) / 2 };
+    let from = endOf(boundTo(e.startBinding?.elementId), pts[0]),
+      to = endOf(boundTo(e.endBinding?.elementId), pts.at(-1)!);
     let start = e.startArrowhead,
       end = e.endArrowhead;
     // A head only at the start reads as a link the other way round, its points too.
@@ -363,7 +362,7 @@ export function fromExcalidraw(
     // So are links.
     if (faded(e)) opaque++;
     made.link(
-      { drawingId: made.material(b.link), from: { moduleId: from }, to: { moduleId: to }, data },
+      { drawingId: made.material(b.link), from, to, data },
       "link",
     );
   }
@@ -623,13 +622,15 @@ export function toExcalidraw(
       }
     }
   }
-  // Links as arrows bound to what they join, drawn over the parts as Excalidraw draws them.
-  const at = (id: string) => scene.modules.find((m) => m.id === id)!.bounds;
+  // Links as arrows bound to the parts they meet, drawn over the parts as Excalidraw draws
+  // them; an end along another link or at a free point is an unbound end where it is.
+  const placing = scenePlacing(scene);
   for (const l of scene.links) {
-    if (!ids.has(l.from.moduleId) || !ids.has(l.to.moduleId)) continue;
+    const out = [l.from, l.to].some((e) => endModule(e) && !ids.has(endModule(e)!));
+    if (out) continue;
     const drawing = drawingOf(work, l.drawingId);
     const d = { ...(drawing?.defaults ?? {}), ...l.data } as Record<string, any>;
-    const ends = linkEnds(l, at);
+    const ends = linkEnds(l, placing);
     const head = d.head === "none" ? null : d.head === "open" ? "arrow" : "triangle";
     const dx = ends.to.x - ends.from.x,
       dy = ends.to.y - ends.from.y;
@@ -643,8 +644,8 @@ export function toExcalidraw(
         : curved
           ? [[0, 0], [dx / 2 + (-dy / len) * bend * len * 0.5, dy / 2 + (dx / len) * bend * len * 0.5], [dx, dy]]
           : [[0, 0], [dx, dy]];
-    const from = holder.get(l.from.moduleId),
-      to = holder.get(l.to.moduleId);
+    const from = holder.get(endModule(l.from) ?? ""),
+      to = holder.get(endModule(l.to) ?? "");
     const arrow = base(l.id, "arrow", { x: ends.from.x, y: ends.from.y, width: Math.abs(dx), height: Math.abs(dy) }, {
       strokeColor: d.color || ink,
       strokeWidth: Number(d.width ?? 2),

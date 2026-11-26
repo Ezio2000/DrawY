@@ -1,18 +1,35 @@
 import { useEffect, useState } from "react";
 import type { Material } from "@drawy/materials/schema";
 import type { Pointed } from "../../../modules/canvas/index.ts";
-import { shownName, versionOf, type Target } from "../../../modules/contracts/index.ts";
-import { fieldsOf, removeParts, replace, setData } from "../../../modules/editing/index.ts";
+import { shownName, versionOf, type Link, type LinkEnd, type Target, type Work } from "../../../modules/contracts/index.ts";
+import { fieldsOf, removeParts, replace, setAt, setData } from "../../../modules/editing/index.ts";
 import { EXPLAIN_FOR } from "./feedback.ts";
-import { useT } from "./i18n.tsx";
+import { useT, type Words as Dictionary } from "./i18n.tsx";
 import { useSelect } from "./session/store.ts";
 import type { Ask, Snapshot } from "./session/work.ts";
 import type { ShellProps } from "./shell.ts";
 
-/** What a part is called on the page: a module by its name, a link by the modules it joins. */
-export function nameIn(s: Snapshot, id: string): string {
+/** What an end of a link is on, as the page calls it: a module by its name, a link it rides
+ * on by what that link joins, or a free point. */
+export function endName(work: Work, sceneId: string, e: LinkEnd, t: Dictionary, depth = 0): string {
+  const scene = work.scenes[sceneId];
+  if ("moduleId" in e) {
+    const m = scene?.modules.find((x) => x.id === e.moduleId);
+    return m ? shownName(work, m) : e.moduleId;
+  }
+  if ("linkId" in e) {
+    const l = scene?.links.find((x) => x.id === e.linkId);
+    return t.edit.linkEnds.along(l && depth < 1 ? linkName(work, sceneId, l, t, depth + 1) : e.linkId);
+  }
+  return t.edit.linkEnds.free;
+}
+/** A link as the page calls it: what its two ends are on. */
+export const linkName = (work: Work, sceneId: string, l: Link, t: Dictionary, depth = 0) =>
+  `${endName(work, sceneId, l.from, t, depth)} → ${endName(work, sceneId, l.to, t, depth)}`;
+/** What a part is called on the page: a module by its name, a link by what it joins. */
+export function nameIn(s: Snapshot, id: string, t: Dictionary): string {
   const l = s.scene?.links.find((x) => x.id === id);
-  if (l) return `${nameIn(s, l.from.moduleId)} → ${nameIn(s, l.to.moduleId)}`;
+  if (l && s.work) return linkName(s.work, s.sceneId, l, t);
   const m = s.scene?.modules.find((x) => x.id === id);
   return m && s.work ? shownName(s.work, m) : id;
 }
@@ -79,7 +96,9 @@ export function useWorkPage({
           ? feedback.say(t.unsaved.saved(h.version))
           : h.kind === "adjusted"
             ? feedback.say(t.edit.bring.adjusted(h.adjusted), EXPLAIN_FOR)
-            : feedback.fail(h.error),
+            : h.kind === "along"
+              ? feedback.say(t.edit.contentEditor.removedAlong(h.count))
+              : feedback.fail(h.error),
       ),
     [session, t],
   );
@@ -100,11 +119,12 @@ export function useWorkPage({
       await session.undo();
       dismiss();
     });
+  const redo = () => void attempt(() => session.redo());
   const enter = (id: string) => void attempt(() => session.enter(id, t.work.expand));
   /** Follows a module's target: into a scene, or a detail page over this one. */
   const open = (target: Target) =>
     target.kind === "scene" ? enter(target.id) : setDetail(target.id);
-  const nameOf = (id: string) => nameIn(session.get(), id);
+  const nameOf = (id: string) => nameIn(session.get(), id, t);
   /** Hands a change to the author, written into the composer for the person to send. */
   const ask = (text?: string, why = "") => draft.hand(text, why);
   /** Swaps a picture for one from the library; what the work cannot change by itself is
@@ -124,6 +144,11 @@ export function useWorkPage({
     const p = retyping!;
     setRetyping(undefined);
     if (text === null || text === p.text) return;
+    // Words the drawing marked as a value of its data are that value: they change there.
+    if (p.path) {
+      const path = p.path;
+      return void attempt(() => session.change((w) => setAt(w, sceneId, p.moduleId, path, text.trim())));
+    }
     // A link that said nothing is given its first words, where its drawing takes words.
     if (p.link && !p.text)
       return void attempt(async () => {
@@ -164,6 +189,7 @@ export function useWorkPage({
     retyped,
     restore,
     undo,
+    redo,
     enter,
     open,
     ask,

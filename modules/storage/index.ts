@@ -27,6 +27,20 @@ import {
   type Cause,
   type RevisionSummary,
 } from "../contracts/index.ts";
+/** A parameter as drawings declared it before format 3, as a field: a label in words of one
+ * language names it in both, a choice's options become values, and bounds stay only on a
+ * number. A field already in the current shape stays as it is. */
+function fieldOf(p: Record<string, unknown>): Record<string, unknown> {
+  const { label, options, min, max, step, ...rest } = p;
+  const field: Record<string, unknown> = { ...rest };
+  if (typeof label === "string") field.label = { zh: label, en: label };
+  else if (label !== undefined) field.label = label;
+  if (p.type === "choice" && Array.isArray(options))
+    field.options = options.map((o) => (typeof o === "string" ? { value: o } : o));
+  if (p.type === "number")
+    Object.assign(field, Object.fromEntries(Object.entries({ min, max, step }).filter(([, v]) => v !== undefined)));
+  return field;
+}
 export class Storage {
   db: DatabaseSync;
   dir: string;
@@ -52,13 +66,21 @@ export class Storage {
       this.saveModels(defaultCatalog());
   }
   /** Brings saved works and revisions to the current shape, in one transaction, once:
-   * format 2 names a picture's type as `type` (it was `role`). */
+   * format 2 names a picture's type as `type` (it was `role`). Format 3 declares a drawing's
+   * data as a schema: the parameters drawings held before it become fields, a label in both
+   * languages and choices as options with values. A library drawing held before it kept only
+   * its hand-edited parameters, so it is marked partial, and data it does not declare is
+   * still accepted. Instance data saved before it is read as it is, and checked against the
+   * schema only when next changed. */
   private upgradeWorks() {
-    const FORMAT = 2;
+    const FORMAT = 3;
     const row = this.db.prepare("SELECT data FROM system WHERE key='work-format'").get() as { data: string } | undefined;
     if (row && Number(row.data) >= FORMAT) return;
     const upgrade = (data: string) => {
-      const work = JSON.parse(data) as { materials?: Record<string, Record<string, unknown>> };
+      const work = JSON.parse(data) as {
+        materials?: Record<string, Record<string, unknown>>;
+        drawings?: Record<string, Record<string, unknown>>;
+      };
       let changed = false;
       for (const m of Object.values(work.materials ?? {}))
         if (m.kind === "picture" && "role" in m) {
@@ -66,6 +88,23 @@ export class Storage {
           delete m.role;
           changed = true;
         }
+      const held = Object.values(work.materials ?? {}).filter((m) => m.kind === "drawing");
+      // Their parameters were only the ones edited by hand; the lists and records they read
+      // were never declared.
+      for (const m of held) {
+        m.partial = true;
+        changed = true;
+      }
+      for (const d of [...Object.values(work.drawings ?? {}), ...held]) {
+        const params = d.params as Record<string, Record<string, unknown>> | undefined;
+        for (const [key, p] of Object.entries(params ?? {})) {
+          const next = fieldOf(p);
+          if (JSON.stringify(next) !== JSON.stringify(p)) {
+            params![key] = next;
+            changed = true;
+          }
+        }
+      }
       return changed ? JSON.stringify(work) : undefined;
     };
     this.db.exec("BEGIN IMMEDIATE");
@@ -402,6 +441,17 @@ export class UserStore {
         updatedAt: JSON.parse(r.data as string).updatedAt,
         cause: JSON.parse(r.cause as string),
       }));
+  }
+  /** Forgets revisions nothing leads back to any more, as saving hand edits as a version
+   * does with the edits it holds. */
+  forget(workId: string, revisions: number[]) {
+    const drop = this.storage.db.prepare("DELETE FROM revisions WHERE user_id=? AND work_id=? AND revision=?");
+    for (const r of revisions) drop.run(this.userId, workId, r);
+  }
+  hasRevision(workId: string, revision: number) {
+    return !!this.storage.db
+      .prepare("SELECT 1 FROM revisions WHERE user_id=? AND work_id=? AND revision=?")
+      .get(this.userId, workId, revision);
   }
   revision(workId: string, revision: number) {
     return this.one<Work>(

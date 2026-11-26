@@ -28,8 +28,10 @@ const across = d.direction === "right";
 const color = d.color || accent;
 // Nodes with their measured boxes and depth.
 const nodes = [];
-const walk = (n, depth, parent) => {
+// Each node knows the path of its data: the root, then children by id (or place).
+const walk = (n, depth, parent, path = "root") => {
   const node = {
+    path,
     label: String(n?.label ?? n ?? ""),
     note: n?.note ? String(n.note) : "",
     accent: !!n?.accent,
@@ -47,8 +49,8 @@ const walk = (n, depth, parent) => {
     s * 1.6;
   node.h = s * (node.note ? 3.1 : 2.2);
   nodes.push(node);
-  node.children = (Array.isArray(n?.children) ? n.children : []).map((c) =>
-    walk(c, depth + 1, node),
+  node.children = (Array.isArray(n?.children) ? n.children : []).map((c, i) =>
+    walk(c, depth + 1, node, api.path(path + ".children", c, i)),
   );
   return node;
 };
@@ -148,11 +150,19 @@ for (const n of nodes) {
     : tint
       ? `fill="${c}" fill-opacity=".14" stroke="${c}"`
       : `fill="${paper}" stroke="${muted}"`;
-  shapes += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="${Math.min(r, b.h / 2)}" ${fill} stroke-width="${sw}"/>`;
+  let node = `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="${Math.min(r, b.h / 2)}" ${fill} stroke-width="${sw}"/>`;
   const ty = n.note ? b.cy - n.size * 0.5 : b.cy;
-  shapes += `<text x="${b.cx}" y="${ty}" font-size="${n.size}" font-weight="600" fill="${solid ? paper : ink}">${esc(n.label)}</text>`;
+  node += `<text x="${b.cx}" y="${ty}" font-size="${n.size}" font-weight="600" fill="${solid ? paper : ink}"${api.text(n.path + ".label")}>${esc(n.label)}</text>`;
   if (n.note)
-    shapes += `<text x="${b.cx}" y="${b.cy + n.size * 0.75}" font-size="${n.size * 0.8}" fill="${solid ? paper : muted}"${solid ? ' fill-opacity=".85"' : ""}>${esc(n.note)}</text>`;
+    node += `<text x="${b.cx}" y="${b.cy + n.size * 0.75}" font-size="${n.size * 0.8}" fill="${solid ? paper : muted}"${solid ? ' fill-opacity=".85"' : ""}${api.text(n.path + ".note")}>${esc(n.note)}</text>`;
+  // Every node but the root is an item of its parent's children, in order across.
+  shapes += n.depth ? `<g${api.part(n.path, { reorder: across ? "y" : "x" })}>${node}</g>` : node;
+  // A new child goes after a node's last child, or is its first.
+  const last = n.children.at(-1);
+  const lb = last && box(last);
+  api.slot(n.path + ".children", n.children.length, lb
+    ? across ? { x: lb.cx, y: lb.y + lb.h + 6 } : { x: lb.x + lb.w + 6, y: lb.cy }
+    : across ? { x: b.x + b.w + 10, y: b.cy } : { x: b.cx, y: b.y + b.h + 10 });
 }
 const svg = api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}"><g fill="none" stroke="${d.lineColor || muted}" stroke-width="${sw}" stroke-linecap="round">${lines}</g><g text-anchor="middle" dominant-baseline="central">${shapes}</g></svg>`,

@@ -48,6 +48,9 @@ export class Revisions {
     const was = this.work;
     if (was && was.revision > work.revision) return;
     this.work = work;
+    // A revision not the person's own (the author drawing, another page) is not a step that
+    // the hand edits made here lead back over.
+    if (was && was.revision !== work.revision && !this.own.has(work.revision) && !this.inflight) this.ctx.history.clear();
     if (was?.revision !== work.revision) {
       // A preview ends when the work changes under it, and the revisions follow it.
       this.preview = undefined;
