@@ -78,6 +78,16 @@ export function sequenceFrom(read: MermaidSequence, was?: Partial<SequenceData>)
   const notes: Item[] = [];
   const fragments: Item[] = [];
   const open: { kind: string; label: string; first: number }[] = [];
+  // A message's id is settled as it is read, before a note or a fragment refers to it: the id
+  // the message in its place had, or else the next mN no message has or had.
+  const used = new Set<string>();
+  const had = new Set((was?.messages ?? []).flatMap((m) => (m && typeof m === "object" && typeof m.id === "string" ? [m.id] : [])));
+  const messageId = (prior?: string) => {
+    let id = prior;
+    for (let n = messages.length + 1; !id || used.has(id); n++) id = had.has(`m${n}`) ? undefined : `m${n}`;
+    used.add(id);
+    return id;
+  };
   for (const m of read.messages) {
     if (m.type === LINE.NOTE) {
       const over = [m.from, m.placement === PLACE.OVER ? m.to : undefined].flatMap((k) => (k && idOf.get(k) ? [idOf.get(k)!] : []));
@@ -98,16 +108,8 @@ export function sequenceFrom(read: MermaidSequence, was?: Partial<SequenceData>)
       const prior = keep(was?.messages, i);
       const kind = DOTTED.has(m.type) ? "reply" : m.type === LINE.SOLID_OPEN ? "async" : "sync";
       const { kind: _k, from: _f, to: _t, label: _l, ...rest } = prior ?? ({} as Item);
-      messages.push({ ...rest, id: prior?.id ?? `m${i + 1}`, from: idOf.get(m.from)!, to: idOf.get(m.to)!, label: m.text, ...(kind === "sync" ? {} : { kind }) });
+      messages.push({ ...rest, id: messageId(typeof prior?.id === "string" ? prior.id : undefined), from: idOf.get(m.from)!, to: idOf.get(m.to)!, label: m.text, ...(kind === "sync" ? {} : { kind }) });
     }
-  }
-  // Ids a message took from its place that another already has are made unique.
-  const seen = new Set<string>();
-  for (const m of messages) {
-    let id = m.id;
-    for (let n = 2; seen.has(id); n++) id = `${m.id}-${n}`;
-    seen.add(id);
-    m.id = id;
   }
   // Numbering the text no longer asks for is turned off, not left out, so it goes.
   const numbered = read.numbered ? { numbered: true } : was?.numbered ? { numbered: false } : {};

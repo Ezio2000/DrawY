@@ -7,6 +7,7 @@ import { writeSchema } from "../agent/tools.ts";
 import { validateWork } from "../workspace/index.ts";
 import { applied, composed, layOn, readEdit } from "./apply.ts";
 import { reattach } from "./links.ts";
+import { revert } from "./history.ts";
 
 /** A work with two modules apart from each other and no links, to connect. */
 function work(): Work {
@@ -279,6 +280,11 @@ describe("drawings and text", () => {
     expect(next.drawings.cup).toEqual({ ...w.drawings.cup, defaults: { size: 20 } });
     const unset = written(next, { drawings: [{ id: "cup", params: { size: null } }] });
     expect(unset.drawings.cup.params).toEqual({});
+    // A field is given whole: what it leaves out goes, so going back to an earlier one works.
+    const bounded = written(w, { drawings: [{ id: "cup", params: { size: { type: "number", min: 10, max: 20 } } }] });
+    expect(bounded.drawings.cup.params!.size).toEqual({ type: "number", min: 10, max: 20 });
+    const back = written(bounded, revert(bounded, w));
+    expect(back.drawings.cup.params).toEqual(w.drawings.cup.params);
     expect(problems(() => written(work(), { drawings: [{ id: "new" }] }))[0].problem).toMatch(/画法 new 是新增的/);
   });
   it("edits its code in place, finding exactly what it names", () => {

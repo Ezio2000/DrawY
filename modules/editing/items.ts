@@ -35,9 +35,41 @@ function partIn(work: Work, sceneId: string, id: string): { part: Part; kind: "m
   if (link) return { part: link, kind: "links" };
   throw Error("元素不存在");
 }
-const fieldsOf = (work: Work, part: Part): Fields => drawingOf(work, part.drawingId)?.params ?? {};
 /** The data a part draws from: its own over its drawing's defaults. */
 const drawnData = (work: Work, part: Part) => ({ ...(drawingOf(work, part.drawingId)?.defaults ?? {}), ...part.data });
+/** A schema for data its drawing does not declare, from what it holds, so it is edited the
+ * same way: a list of words, a table, a record. */
+export function guessedField(value: unknown): Field | undefined {
+  if (Array.isArray(value)) {
+    const first = value.find((v) => v !== null && v !== undefined);
+    const item = first === undefined ? ({ type: "text" } as Field) : guessedField(first);
+    return item ? { type: "list", item } : undefined;
+  }
+  if (isRecord(value)) {
+    const fields: Fields = {};
+    for (const [k, v] of Object.entries(value)) {
+      const f = k === "id" ? ({ type: "id" } as Field) : guessedField(v);
+      if (f) fields[k] = f;
+    }
+    return { type: "record", fields };
+  }
+  if (typeof value === "string") return { type: "text" };
+  if (typeof value === "number") return { type: "number" };
+  if (typeof value === "boolean") return { type: "boolean" };
+  return undefined;
+}
+/** The schema of a part's data: what its drawing declares, and for lists and records it
+ * holds that are not declared, a schema read from them, as the content panel shows them. */
+function fieldsOf(work: Work, part: Part): Fields {
+  const declared = drawingOf(work, part.drawingId)?.params ?? {};
+  const fields: Fields = { ...declared };
+  for (const [k, v] of Object.entries(drawnData(work, part))) {
+    if (k in declared || !(Array.isArray(v) || isRecord(v))) continue;
+    const f = guessedField(v);
+    if (f) fields[k] = f;
+  }
+  return fields;
+}
 
 /** The patch that turns one list of records into another: items changed or gone by id
  * when the rest stand in the same order, else the list whole. */
@@ -152,11 +184,18 @@ function placeOf(list: unknown[], item: string | number) {
   return i;
 }
 /** A new item as the schema makes one, or as a rule makes it after another. */
-function made(f: Extract<Field, { type: "list" }>, list: unknown[], path: string, values?: Record<string, unknown>) {
-  // A reference, a place or a pair added after others starts as a copy of the last, to be
-  // changed from there: nothing empty is one.
-  const copied = ["ref", "geo", "list"].includes(f.item.type) && list.length ? list.at(-1) : undefined;
+function made(f: Extract<Field, { type: "list" }>, list: unknown[], path: string, data: Record<string, unknown>, values?: Record<string, unknown>) {
   const item = f.item;
+  // A reference refers to the first item it does not yet, or else the first; a place or a
+  // pair added after others starts as a copy of the last, to be changed from there: nothing
+  // empty is one.
+  if (item.type === "ref" && f.new === undefined && values?.value === undefined) {
+    const targets = getAt(data, item.to);
+    const ids = (Array.isArray(targets) ? targets : []).flatMap((x) => (isRecord(x) && typeof x.id === "string" ? [x.id] : []));
+    const id = ids.find((x) => !list.includes(x)) ?? ids[0];
+    if (id !== undefined) return id;
+  }
+  const copied = ["geo", "list"].includes(item.type) && list.length ? list.at(-1) : undefined;
   const blank = isRecordList(f)
     ? {}
     : item.type === "number"
@@ -196,7 +235,7 @@ export function insertItem(
   const { part } = partIn(work, sceneId, id);
   const { f, list } = listAt(work, part, path);
   const place = Math.max(0, Math.min(at ?? list.length, list.length));
-  return insertItemAs(work, sceneId, id, part, path, f, list, place, made(f, list, path, values));
+  return insertItemAs(work, sceneId, id, part, path, f, list, place, made(f, list, path, drawnData(work, part), values));
 }
 /** Moves an item of a list to another place, counted in the list as it stands. */
 export function moveItem(work: Work, sceneId: string, id: string, path: string, item: string | number, to: number) {

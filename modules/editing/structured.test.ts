@@ -146,10 +146,16 @@ describe("items of a drawing's data", () => {
     const both = composed(whole, { modules: [{ id: "seq", data: { messages: { "#m1": { label: "一" } } } }] });
     expect((both as { modules: { data: { messages: { label: string }[] } }[] }).modules[0].data.messages.map((m) => m.label)).toEqual(["一", "查询用户"]);
   });
-  it("adds to a list of references or of places as a copy of its last, never an empty value", () => {
+  it("adds to a list of references the first item it does not yet refer to, and to places a copy of its last, never an empty value", () => {
     const work = sequenceWork();
+    const ids = data(work).participants.map((p) => p.id);
     const w1 = applied(work, insertItem(work, "root", "seq", "notes.#n1.over").edit);
-    expect(data(w1).notes[0].over).toEqual(["server", "server"]);
+    expect(data(w1).notes[0].over).toEqual(["server", ids.find((id) => id !== "server")]);
+    // A note just added has no one it is over yet: the first participant comes first.
+    const note = insertItem(w1, "root", "seq", "notes", undefined, { over: [], text: "新注释" });
+    const w3 = applied(w1, note.edit);
+    const added = applied(w3, insertItem(w3, "root", "seq", `${note.path}.over`).edit);
+    expect(data(added).notes.at(-1)!.over).toEqual([ids[0]]);
     const map = blank();
     const { material, example } = curated("geomap");
     map.materials.geomap = material;
@@ -158,6 +164,20 @@ describe("items of a drawing's data", () => {
     const w2 = applied(map, insertItem(map, "root", "map", `routes.#${route.id}.points`).edit);
     const points = (w2.scenes.root.modules[0].data as typeof example & { routes: { points: unknown[] }[] }).routes[0].points;
     expect(points).toEqual([...route.points, route.points.at(-1)]);
+  });
+  it("adds, moves, copies and takes out items of a list its drawing does not declare, as the panel shows it", () => {
+    const work = blank();
+    work.drawings.own = { id: "own", name: "自画", source: "return api.svg('<svg/>')", params: {} };
+    work.scenes.root.modules = [{ ...box("own", { x: 0, y: 0, width: 200, height: 100 }, "own"), data: { items: [{ label: "一" }, { label: "二" }] } }];
+    const items = (w: Work) => w.scenes.root.modules[0].data.items as { id?: string; label?: string }[];
+    const added = applied(work, insertItem(work, "root", "own", "items", 1, { label: "新" }).edit);
+    expect(items(added).map((x) => x.label)).toEqual(["一", "新", "二"]);
+    const moved = applied(added, moveItem(added, "root", "own", "items", 0, 2)!);
+    expect(items(moved).map((x) => x.label)).toEqual(["新", "二", "一"]);
+    const copied = applied(moved, duplicateItem(moved, "root", "own", "items", 0).edit);
+    expect(items(copied).map((x) => x.label)).toEqual(["新", "新", "二", "一"]);
+    const gone = applied(copied, removeItem(copied, "root", "own", "items", 3).edit);
+    expect(items(gone).map((x) => x.label)).toEqual(["新", "新", "二"]);
   });
   it("inserts, moves, copies and takes out items with what referred to them, as the smallest patch", () => {
     const work = sequenceWork();
@@ -278,6 +298,24 @@ describe("structure edited on the canvas", () => {
     expect(dataPatch({ numbered: data.numbered }, { numbered: unnumbered.numbered })).toEqual({ numbered: false });
     expect(sequenceSource(unnumbered)).not.toContain("autonumber");
     expect("numbered" in sequenceFrom({ ...read, numbered: false })).toBe(false);
+    // With the first message gone the rest keep m2 and m3; one added in a new loop after them
+    // takes an id none had, and the loop refers to it by that id.
+    const after = { ...data, messages: data.messages.slice(1, 3), notes: [], fragments: [] };
+    const looped = sequenceFrom(
+      {
+        ...read,
+        messages: [
+          { from: "api", to: "db", text: "查询", type: 0 },
+          { from: "db", to: "api", text: "结果", type: 1 },
+          { text: "重试", type: 10 },
+          { from: "api", to: "web", text: "推送", type: 5 },
+          { text: "", type: 11 },
+        ],
+      },
+      after,
+    );
+    expect(looped.messages.map((m) => m.id)).toEqual(["m2", "m3", "m4"]);
+    expect(looped.fragments).toEqual([{ id: "f1", kind: "loop", label: "重试", from: "m4", to: "m4" }]);
   });
 });
 

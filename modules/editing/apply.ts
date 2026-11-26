@@ -213,7 +213,15 @@ function drawingChange(work: Work, edit: DrawingEdit, problems: Problem[]) {
     };
   }
   if (name !== undefined) drawing.name = name;
-  if (params) drawing.params = mergeRecord(drawing.params ?? {}, params, `${at}.params`, problems) as typeof drawing.params;
+  // Each field of the schema is given whole, so it takes the place of what was declared for
+  // that key: a property left out is gone, not kept from before.
+  if (params) {
+    const declared = { ...(drawing.params ?? {}) };
+    for (const [key, field] of Object.entries(params))
+      if (field === null) delete declared[key];
+      else declared[key] = structuredClone(field);
+    drawing.params = declared;
+  }
   if (defaults) drawing.defaults = mergeRecord(drawing.defaults ?? {}, defaults, `${at}.defaults`, problems);
   if (source !== undefined) drawing.source = source;
   if (edits?.length) drawing.source = editedText(drawing.source, edits, `${at}.edits`, problems);

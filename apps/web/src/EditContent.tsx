@@ -15,6 +15,7 @@ import {
 } from "../../../modules/contracts/index.ts";
 import {
   duplicateItem,
+  guessedField,
   fieldsOf,
   insertItem,
   itemOf,
@@ -47,27 +48,6 @@ const drawn = (work: Work, part: Part) => ({ ...(drawingOf(work, part.drawingId)
 /** The kinds of value a part's content holds; choices, colours, numbers and switches at the
  * top of its data are how it looks, and are on the design page. */
 const isContent = (f: Field) => !["choice", "color", "number", "boolean", "effect", "id"].includes(f.type);
-/** A schema for data its drawing does not declare, from what it holds, so it is edited the
- * same way: a list of words, a table, a record. */
-function guessed(value: unknown): Field | undefined {
-  if (Array.isArray(value)) {
-    const first = value.find((v) => v !== null && v !== undefined);
-    const item = first === undefined ? ({ type: "text" } as Field) : guessed(first);
-    return item ? { type: "list", item } : undefined;
-  }
-  if (isRecord(value)) {
-    const fields: Fields = {};
-    for (const [k, v] of Object.entries(value)) {
-      const f = k === "id" ? ({ type: "id" } as Field) : guessed(v);
-      if (f) fields[k] = f;
-    }
-    return { type: "record", fields };
-  }
-  if (typeof value === "string") return { type: "text" };
-  if (typeof value === "number") return { type: "number" };
-  if (typeof value === "boolean") return { type: "boolean" };
-  return undefined;
-}
 /** The fields of an item record, but its id. */
 const shownFields = (f: Field): [string, Field][] =>
   f.type === "record" || f.type === "tree" ? Object.entries(f.fields).filter(([, x]) => x.type !== "id") : [];
@@ -92,7 +72,7 @@ export function Content(ctx: Ctx) {
     ...Object.keys(part.data)
       .filter((k) => !(k in declared) && !plain.some((f) => f.key === k) && !fieldsOf(work, part).some((f) => f.key === k))
       .flatMap((k): [string, Field][] => {
-        const f = guessed(part.data[k]);
+        const f = guessedField(part.data[k]);
         return f && f.type !== "text" ? [[k, f]] : [];
       }),
   ];
@@ -293,6 +273,9 @@ function Typed({ value, label, numeric, onDone, onKeyDown, focus }: {
 }) {
   const [text, setText] = useState(value);
   const ref = useRef<HTMLInputElement>(null);
+  // Escape leaves the box without keeping what was typed: the blur it causes comes before the
+  // text shown is set back.
+  const cancelled = useRef(false);
   useEffect(() => {
     if (document.activeElement !== ref.current) setText(value);
   }, [value]);
@@ -315,11 +298,15 @@ function Typed({ value, label, numeric, onDone, onKeyDown, focus }: {
         if (e.defaultPrevented) return;
         if (e.key === "Enter") e.currentTarget.blur();
         if (e.key === "Escape") {
+          cancelled.current = true;
           setText(value);
           e.currentTarget.blur();
         }
       }}
-      onBlur={() => text !== value && onDone(text)}
+      onBlur={() => {
+        if (cancelled.current) cancelled.current = false;
+        else if (text !== value) onDone(text);
+      }}
     />
   );
 }

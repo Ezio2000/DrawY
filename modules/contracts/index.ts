@@ -373,7 +373,8 @@ export function stepBefore(history: RevisionSummary[], revision: number): number
 /* A change to a work, the one form the author's write_work and every hand edit share. Each
  * record names what it changes by id and says nothing about the rest:
  * - a record with a known id changes only the fields it gives, a new id adds the record;
- * - objects (data, defaults, params, style) merge key by key, null deleting a key;
+ * - objects (data, defaults, style) merge key by key, null deleting a key; params too, but
+ *   each field given takes the place of what was declared for its key;
  * - a list given whole replaces the list; given as an object keyed by position or `#id` it changes
  *   those items (see mergeValue);
  * - long text (a drawing's source, a script, a detail's page) changes whole or by edits;

@@ -1051,6 +1051,19 @@ it("lays the editing panel out by schema: one screen for a structured drawing, a
       return [...row.querySelectorAll("select")].map((s) => s.value);
     });
     expect(over).toContain("server");
+    // A cell changed and then Escape pressed keeps what it had.
+    await page.evaluate(() => {
+      const panel = document.querySelector("[data-side-body]")!;
+      [...panel.querySelectorAll("input")].find((i) => i.value === "浏览器")!.setAttribute("data-probe", "");
+    });
+    const cellBox = page.locator("[data-probe]");
+    await cellBox.click();
+    await page.keyboard.press("Meta+A");
+    await page.keyboard.type("改了");
+    await page.keyboard.press("Escape");
+    await expect.poll(() => cellBox.inputValue()).toBe("浏览器");
+    await settled();
+    expect((await sequenceOf(w.id))!.participants.map((p: { label: string }) => p.label)).toContain("浏览器");
     await page.mouse.click(seq.cx, seq.cy);
     await settled();
     expect(await page.locator("[data-part-crumbs]").innerText()).toMatch(/消息\s*1/);
