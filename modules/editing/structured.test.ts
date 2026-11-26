@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Material } from "@drawy/materials/schema";
 import { linkEnds, scenePlacing } from "../contracts/geometry.ts";
-import { validateData, type Bounds, type DataProblem, type Fields, type Instance, type Work } from "../contracts/index.ts";
+import { normalizeData, validateData, type Bounds, type DataProblem, type Fields, type Instance, type Work } from "../contracts/index.ts";
+import { localize } from "../contracts/messages.ts";
 import { useOf } from "../materials/index.ts";
 import { sequenceFrom, sequenceSource, unexpressed } from "../interchange/index.ts";
 import { fixture } from "../runtime/fixture.ts";
@@ -231,6 +232,38 @@ describe("items of a drawing's data", () => {
   });
 });
 
+it("says in English what a data check refuses", () => {
+  const fields: Fields = {
+    people: { type: "list", item: { type: "record", fields: { id: { type: "id" }, name: { type: "text" } } }, title: "name", max: 1 },
+    size: { type: "number", min: 1, max: 9 },
+    tone: { type: "choice", options: [{ value: "warm" }, { value: "cool" }] },
+    on: { type: "boolean" },
+    cell: { type: "cell" },
+    who: { type: "ref", to: "people" },
+    place: { type: "geo" },
+    box: { type: "record", fields: { a: { type: "text" } } },
+  };
+  const problems: DataProblem[] = [];
+  const data = normalizeData(fields, { people: [{ id: "a", name: "Ann" }, { id: "a", name: "Ann" }], who: "Bo" }, "data", problems);
+  normalizeData(fields, { people: [{ id: "a", name: "Ann" }, { id: "b", name: "Ann" }], who: "Ann" }, "data", problems);
+  validateData(fields, { ...data, size: 12, tone: "hot", on: 1, cell: [], who: 3, place: "x", box: { b: 1 } }, "data", problems);
+  validateData(fields, { people: [{ name: "none" }], who: "z", size: "1" }, "data", problems);
+  const said = problems.map((p) => localize(p.problem, "en"));
+  expect(said.length).toBeGreaterThan(10);
+  for (const line of [
+    ...said,
+    "画法 bars 不读 items：它读 tone、size",
+    "连线 l 沿着的连线又沿着它，绕成了一圈",
+    "连线 l 的一端沿着的连线 m 不在场景 root 里",
+    "最多 3 项",
+    "数据里没有 items.#x",
+    "fragments 里没有 f9",
+    "连线至少要有一端连着东西",
+    "应该是 [经度, 纬度] 或 cities 里一项的 id（还有 2 处问题）",
+  ])
+    expect(localize(line, "en")).not.toMatch(/[\u4e00-\u9fff]/);
+});
+
 describe("structure edited on the canvas", () => {
   it("wraps messages in a fragment found from the schema, and moves tree items in and out", () => {
     const work = sequenceWork();
@@ -333,6 +366,19 @@ describe("structure edited on the canvas", () => {
       after,
     );
     expect(looped.messages.map((m) => m.id)).toEqual(["m2", "m3", "m4"]);
+    // A note beside a lifeline stays beside it, written back so.
+    const beside = sequenceFrom({
+      ...read,
+      messages: [
+        { from: "web", to: "web", text: "左", type: 2, placement: 0 },
+        { from: "db", to: "db", text: "右", type: 2, placement: 1 },
+      ],
+    });
+    expect(beside.notes).toEqual([
+      { id: "n1", over: ["web"], placement: "left", text: "左" },
+      { id: "n2", over: ["db"], placement: "right", text: "右" },
+    ]);
+    expect(sequenceSource(beside)).toContain("  Note left of web: 左\n  Note right of db: 右");
     expect(looped.fragments).toEqual([{ id: "f1", kind: "loop", label: "重试", from: "m4", to: "m4" }]);
   });
 });

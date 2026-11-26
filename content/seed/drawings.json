@@ -5522,7 +5522,7 @@
       "sequenceDiagram"
     ],
     "category": "drawing/structure",
-    "about": "A sequence diagram: participants across the top (a box, a person, a database or a queue) with dashed lifelines, messages as arrows between them in time order (calls, asynchronous messages and dashed replies), a message to oneself as a loop, notes over the lifelines and fragments (alt, opt, loop, par) boxed round a run of messages; optionally numbered. Drawn in the style, unlike a generic renderer; every participant and message can be changed, reordered and reconnected where it is drawn.",
+    "about": "A sequence diagram: participants across the top (a box, a person, a database or a queue) with dashed lifelines, messages as arrows between them in time order (calls, asynchronous messages and dashed replies), a message to oneself as a loop, notes over a lifeline or beside it and fragments (alt, opt, loop, par) boxed round a run of messages; optionally numbered. Drawn in the style, unlike a generic renderer; every participant and message can be changed, reordered and reconnected where it is drawn.",
     "tags": [
       "structure",
       "sequence",
@@ -5820,6 +5820,36 @@
               "min": 1,
               "max": 2
             },
+            "placement": {
+              "type": "choice",
+              "label": {
+                "zh": "位置",
+                "en": "Placement"
+              },
+              "options": [
+                {
+                  "value": "over",
+                  "label": {
+                    "zh": "盖在生命线上",
+                    "en": "Over"
+                  }
+                },
+                {
+                  "value": "left",
+                  "label": {
+                    "zh": "在左侧",
+                    "en": "Left of"
+                  }
+                },
+                {
+                  "value": "right",
+                  "label": {
+                    "zh": "在右侧",
+                    "en": "Right of"
+                  }
+                }
+              ]
+            },
             "after": {
               "type": "ref",
               "label": {
@@ -5841,7 +5871,7 @@
         "new": {
           "text": ""
         },
-        "description": "[{id, over: one or two participants, after?: the message it follows, text}]; drawn across the lifelines it is over"
+        "description": "[{id, over: one or two participants, placement?: over (unset), left or right of the first of them, after?: the message it follows, text}]; drawn across the lifelines it is over, or beside one"
       },
       "fragments": {
         "type": "list",

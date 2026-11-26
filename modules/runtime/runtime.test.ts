@@ -1826,6 +1826,34 @@ it("divides an alt into its branches with dashed lines, each a part with its con
   expect(found.unmarked).toEqual([]);
 });
 
+it("draws a note beside a lifeline on the side it is placed, and over it when not placed", async () => {
+  const sequence = seed("drawings").find((m) => m.id === "sequence") as DrawingMaterial;
+  const example = structuredClone(sequence.example) as { participants: { id: string }[]; notes: Record<string, unknown>[] };
+  const who = example.participants[1].id;
+  example.notes = (["left", "right", undefined] as const).map((placement, i) => ({ id: `n${i + 1}`, over: [who], ...(placement ? { placement } : {}), text: "注" }));
+  work.materials = { sequence: libraryDrawing("sequence") };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [{ id: "seq", label: "seq", drawingId: "sequence", data: example, bounds: { x: 0, y: 0, ...sequence.size } }],
+    links: [],
+    checks: [],
+  };
+  await open();
+  const boxes = await page.evaluate(() => {
+    const root = window.drawyView.renderer.host("module", "seq")!.shadowRoot!;
+    return ["n1", "n2", "n3"].map((id) => {
+      const r = root.querySelector(`[data-edp-part^="notes.#${id}|"]`)!.getBoundingClientRect();
+      return { left: r.left, right: r.right };
+    });
+  });
+  const [left, right, over] = boxes;
+  const middle = (over.left + over.right) / 2;
+  expect(left.right).toBeLessThan(middle);
+  expect(right.left).toBeGreaterThan(middle);
+  expect(over.left).toBeLessThan(middle);
+  expect(over.right).toBeGreaterThan(middle);
+});
+
 /** The library drawings whose every word from their data is marked as that data, so a
  * person changes it where it is drawn. Every structured drawing joins as it is upgraded. */
 const STRUCTURED = [

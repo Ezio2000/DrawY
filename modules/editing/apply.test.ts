@@ -357,6 +357,9 @@ describe("two edits as one", () => {
     });
     const next = written(work(), composed(held, fix));
     expect(next.scenes.root.links[0].to).toEqual({ moduleId: "b" });
+    // An end corrected to another kind of end is that end alone.
+    const free = composed({ links: [{ id: "l", from: { moduleId: "ghost", at: "bottom" }, to: "b" }] }, { links: [{ id: "l", from: { x: 50, y: 100 } }] });
+    expect(free.links).toEqual([{ id: "l", from: { x: 50, y: 100 }, to: "b" }]);
   });
   it("drops what the correction removes from what it holds, and leaves unrelated writes alone", () => {
     const held = { links: [{ id: "bad", from: "a", to: "ghost" }, { id: "good", from: "a", to: "b" }] };

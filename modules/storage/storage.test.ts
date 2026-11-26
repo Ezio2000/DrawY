@@ -179,6 +179,8 @@ describe("user owned works", () => {
       const m = w.materials.steps;
       if (m.kind !== "drawing") throw Error("steps is a drawing");
       expect(m.params.tone).toEqual({ type: "choice", options: [{ value: "a" }, { value: "b" }] });
+      // It held only the parameters edited by hand, so the rest it reads stays writable.
+      expect(m.partial).toBe(true);
     }
   });
   it("keeps the version of library code a work took, through every later write", async () => {

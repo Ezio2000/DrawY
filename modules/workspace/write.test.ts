@@ -111,6 +111,27 @@ describe("a write as a whole", () => {
     expect(saved.drawings["my-node"].defaults).toMatchObject({ size: 30 });
     expect(saved.scenes.root.modules.at(-1)!.drawingId).toBe("my-node");
   });
+  it("refuses data a library drawing does not declare, unless it was taken before drawings declared all of it", async () => {
+    const held = (partial: boolean): Work => {
+      const work = fixture();
+      work.materials.bars = {
+        id: "bars", kind: "drawing", version: 1, name: "bars", source: "return api.svg('<svg/>')", defaults: {},
+        params: { tone: { type: "choice", options: [{ value: "warm" }, { value: "cool" }] } },
+        ...(partial ? { partial: true as const } : {}),
+      };
+      work.scenes.root.modules.push({ id: "chart", label: "chart", bounds: { x: 0, y: 0, width: 200, height: 100 }, drawingId: "bars", data: { tone: "warm" } });
+      return work;
+    };
+    const write = { modules: [{ id: "chart", data: { items: [{ label: "a", value: 1 }] } }] };
+    const now = held(false);
+    const found = await refusal(() => writeWork(storeWith(now), now.id, write, { cause }));
+    expect(found.map((p) => p.at)).toEqual(["modules.chart.data.items"]);
+    const old = held(true);
+    const store = db.scoped(register(db, "earlier", "abcdef").id);
+    store.commit({ ...old, revision: 0 }, 0, { kind: "edit" });
+    const { work: saved } = await writeWork(store, old.id, write, { cause });
+    expect(saved.scenes.root.modules.find((m) => m.id === "chart")!.data).toMatchObject({ items: [{ label: "a", value: 1 }] });
+  });
 });
 
 describe("a blank canvas", () => {

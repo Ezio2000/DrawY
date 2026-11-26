@@ -68,8 +68,10 @@ export class Storage {
   /** Brings saved works and revisions to the current shape, in one transaction, once:
    * format 2 names a picture's type as `type` (it was `role`). Format 3 declares a drawing's
    * data as a schema: the parameters drawings held before it become fields, a label in both
-   * languages and choices as options with values. Instance data saved before it is read as
-   * it is, and checked against the schema only when next changed. */
+   * languages and choices as options with values. A library drawing held before it kept only
+   * its hand-edited parameters, so it is marked partial, and data it does not declare is
+   * still accepted. Instance data saved before it is read as it is, and checked against the
+   * schema only when next changed. */
   private upgradeWorks() {
     const FORMAT = 3;
     const row = this.db.prepare("SELECT data FROM system WHERE key='work-format'").get() as { data: string } | undefined;
@@ -87,6 +89,12 @@ export class Storage {
           changed = true;
         }
       const held = Object.values(work.materials ?? {}).filter((m) => m.kind === "drawing");
+      // Their parameters were only the ones edited by hand; the lists and records they read
+      // were never declared.
+      for (const m of held) {
+        m.partial = true;
+        changed = true;
+      }
       for (const d of [...Object.values(work.drawings ?? {}), ...held]) {
         const params = d.params as Record<string, Record<string, unknown>> | undefined;
         for (const [key, p] of Object.entries(params ?? {})) {

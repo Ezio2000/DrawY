@@ -131,8 +131,11 @@ rows.forEach((r, ri) => {
     const path = api.path("notes", nt, j);
     const lo = over.length ? Math.min(...over) : 0,
       hi = over.length ? Math.max(...over) : 0;
-    const w = Math.max(measure(nt.text, size * 0.85) + size * 1.4, hi > lo ? X(hi) - X(lo) + size * 2 : 0);
-    const cx = (X(lo) + X(hi)) / 2,
+    // Beside a lifeline a note stands off the first it names; over them it spans them all.
+    const side = nt.placement === "left" ? -1 : nt.placement === "right" ? 1 : 0;
+    const first = over.length ? over[0] : 0;
+    const w = Math.max(measure(nt.text, size * 0.85) + size * 1.4, !side && hi > lo ? X(hi) - X(lo) + size * 2 : 0);
+    const cx = side ? X(first) + side * (w / 2 + size * 0.6) : (X(lo) + X(hi)) / 2,
       h = Math.min(row * 0.8, size * 2);
     out += `<g${api.part(path, { reorder: "y" })}><path d="M${cx - w / 2} ${y - h / 2}H${cx + w / 2 - size * 0.5}l${size * 0.5} ${size * 0.5}V${y + h / 2}H${cx - w / 2}Z" fill="${accent}" fill-opacity=".12" stroke="${accent}" stroke-width="${sw * 0.8}"/><text x="${cx}" y="${y}" text-anchor="middle" font-size="${size * 0.85}" fill="${ink}"${api.text(path + ".text")}>${esc(nt.text)}</text></g>`;
     return;

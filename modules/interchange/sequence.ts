@@ -153,7 +153,14 @@ export function sequenceFrom(read: MermaidSequence, was?: Partial<SequenceData>)
   for (const m of read.messages) {
     if (m.type === LINE.NOTE) {
       const over = [m.from, m.placement === PLACE.OVER ? m.to : undefined].flatMap((k) => (k && idOf.get(k) ? [idOf.get(k)!] : []));
-      notes.push({ id: `n${notes.length + 1}`, over: [...new Set(over)], ...(messages.length ? { after: messages.at(-1)!.id } : {}), text: m.text });
+      const placement = m.placement === PLACE.LEFTOF ? "left" : m.placement === PLACE.RIGHTOF ? "right" : undefined;
+      notes.push({
+        id: `n${notes.length + 1}`,
+        over: [...new Set(over)],
+        ...(placement ? { placement } : {}),
+        ...(messages.length ? { after: messages.at(-1)!.id } : {}),
+        text: m.text,
+      });
     } else if (STARTS[m.type]) open.push({ kind: STARTS[m.type], label: m.text, first: messages.length, sections: [], order: opened++ });
     else if (SECTIONS[m.type]) {
       const block = open.at(-1);
@@ -209,8 +216,10 @@ export function sequenceSource(data: Partial<SequenceData>): string {
   const arrow = (kind: unknown) => (kind === "reply" ? "-->>" : kind === "async" ? "-)" : "->>");
   const place = (id: unknown) => messages.findIndex((m) => m.id === id);
   const noteLine = (n: Item) => {
-    const over = (Array.isArray(n.over) ? n.over : []).join(",");
-    return over ? `  Note over ${over}: ${said(n.text)}` : null;
+    const over = Array.isArray(n.over) ? n.over : [];
+    if (!over.length) return null;
+    const beside = n.placement === "left" || n.placement === "right" ? `${n.placement} of ${over[0]}` : "";
+    return `  Note ${beside || `over ${over.join(",")}`}: ${said(n.text)}`;
   };
   for (const n of notes) if (n.after === undefined || place(n.after) < 0) lines.push(noteLine(n) ?? "");
   messages.forEach((m, i) => {

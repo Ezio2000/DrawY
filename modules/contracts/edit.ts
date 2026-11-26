@@ -195,6 +195,7 @@ export function drawingOf(work: Work, id: string) {
       source: use.source,
       defaults: use.defaults,
       params: use.params,
+      partial: use.partial,
     };
   return undefined;
 }

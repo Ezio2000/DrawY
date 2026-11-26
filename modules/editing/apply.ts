@@ -336,8 +336,11 @@ function bothObjects(a: Record<string, unknown>, b: Record<string, unknown>) {
   for (const [key, value] of Object.entries(b)) out[key] = both(a[key], value, key);
   return out;
 }
+/** A link's ends: each is one kind of end or another, so a later end replaces the earlier
+ * whole rather than keeping the keys of a kind it no longer is. */
+const wholeEnds = new Set(["from", "to"]);
 /** Two changes to one record as one, written or not. What the later says wins; objects it
- * changes keep what the earlier said about their other keys. Patch lists run in turn by
+ * changes keep what the earlier said about their other keys, except a link's ends. Patch lists run in turn by
  * default, or replace earlier patches when correcting a refused write (`replaceEdits`), and
  * writing whole text drops earlier patches for that text. */
 function bothRecords(
@@ -353,7 +356,9 @@ function bothRecords(
     out[key] =
       !replaceEdits && pair && key === pair[1] && Array.isArray(out[key]) && Array.isArray(value)
         ? [...out[key], ...value]
-        : both(a[key], value, key);
+        : section === "links" && wholeEnds.has(key)
+          ? value
+          : both(a[key], value, key);
   return out;
 }
 /** Two edits as one, the later laid on the earlier, whether or not they read as edits yet: a

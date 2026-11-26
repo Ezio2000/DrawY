@@ -14,6 +14,7 @@ import type { Material } from "@drawy/materials/schema";
 import type { Change } from "./session/work.ts";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
+import { localize } from "../../../modules/contracts/messages.ts";
 
 /* What the author writes as code, open to a person too: the code of the work's own
  * drawings and the values they let people change, a module written out in full, a
@@ -57,7 +58,7 @@ export function Code({
       setError("");
       await apply(code);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(localize(e instanceof Error ? e.message : String(e), t.locale));
     }
   };
   return (

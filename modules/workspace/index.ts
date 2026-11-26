@@ -112,7 +112,8 @@ async function takeSources(work: Work, drawings: { from?: string }[], store: Use
  * given ids, names written for references made the ids they name, items that referred to
  * items now gone taken out where the schema cascades, and what the write gave checked. Only
  * the keys the write gave are checked, so data a part held before is never a reason to
- * refuse a later change to it. A library drawing reads nothing it does not declare. */
+ * refuse a later change to it. A library drawing reads nothing it does not declare, unless
+ * it was taken before drawings declared all their data. */
 export function settleData(before: Work, work: Work, edit: WorkEdit): Problem[] {
   const given = new Map<string, { keys: string[]; whole: boolean }>();
   for (const p of [...(edit.modules ?? []), ...(edit.links ?? [])])
@@ -131,7 +132,7 @@ export function settleData(before: Work, work: Work, edit: WorkEdit): Problem[] 
       const at = `${"from" in part ? "links" : "modules"}.${part.id}.data`;
       const earlier = was.get(part.id);
       const keys = withReferrers(fields, write.whole || !earlier ? Object.keys(part.data) : write.keys);
-      if (!drawing.own)
+      if (!drawing.own && !drawing.partial)
         for (const key of keys)
           if (!(key in fields))
             problems.push({ at: `${at}.${key}`, problem: `画法 ${part.drawingId} 不读 ${key}：它读 ${Object.keys(fields).join("、")}` });

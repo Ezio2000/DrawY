@@ -171,6 +171,9 @@ export type MaterialUse =
       defaults: Record<string, unknown>;
       /** The data it reads, as a schema. */
       params: Fields;
+      /** Taken before drawings declared all the data they read: the schema leaves out its
+       * lists and records, so data it does not declare is not refused. */
+      partial?: true;
     }
   | { id: string; kind: "effect"; version?: number; name: string; defs: string };
 export type Point = z.infer<typeof pointSchema>;
