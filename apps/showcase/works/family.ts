@@ -45,7 +45,7 @@ export const family: ShowcaseSource = {
         {
           id: "tree",
           name: say("剪影家谱", "Family tree in silhouettes"),
-          params: { every: { label: say("自动讲下一位（秒）", "Seconds before the next"), type: "number", min: 1, max: 20, step: 0.5 } },
+          params: { every: { label: { zh: "自动讲下一位（秒）", en: "Seconds before the next" }, type: "number", min: 1, max: 20, step: 0.5 } },
           defaults: { every: 5, value: 0, card: [40, 490, 420, 240] },
           source: code("family-tree"),
         },

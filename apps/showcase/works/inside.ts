@@ -98,8 +98,8 @@ export const inside: ShowcaseSource = {
             id: "cutaway",
             name: say("灯塔剖面", "Lighthouse in section"),
             params: {
-              every: { label: say("自动看下一层（秒）", "Seconds before the next floor"), type: "number", min: 1, max: 20, step: 0.5 },
-              period: { label: say("透镜转一圈（秒）", "Seconds per turn of the lens"), type: "number", min: 2, max: 60, step: 1 },
+              every: { label: { zh: "自动看下一层（秒）", en: "Seconds before the next floor" }, type: "number", min: 1, max: 20, step: 0.5 },
+              period: { label: { zh: "透镜转一圈（秒）", en: "Seconds per turn of the lens" }, type: "number", min: 2, max: 60, step: 1 },
             },
             defaults: { axis: 540, labelRight: 330, every: 4.5, period: 10, value: 0 },
             source: code("cutaway"),

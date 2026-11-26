@@ -6,7 +6,7 @@ import { WorkDetail } from "../SceneView.tsx";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { Dialog } from "../ui/dialogs.tsx";
 import type { Material } from "@drawy/materials/schema";
-import type { Canvas, Pointed } from "../../../../modules/canvas/index.ts";
+import type { Canvas, PartPick, Pointed } from "../../../../modules/canvas/index.ts";
 import type { Selection } from "../../../../modules/contracts/index.ts";
 import { cx } from "../cx.ts";
 import { useT } from "../i18n.tsx";
@@ -65,6 +65,8 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
     chosen: (m: Material) => void;
   }>();
   const [canvas, setCanvas] = useState<Canvas>();
+  // The part selected inside the one module selected, named in the crumbs over the canvas.
+  const [part, setPart] = useState<PartPick | null>(null);
   // The sheet of shortcuts, and how the drawing board is set up.
   const [help, setHelp] = useState(false);
   const [board, setBoard] = useBoard();
@@ -252,6 +254,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           rename={(title) => void attempt(() => session.rename(title))}
           drafting={panel === "drafts"}
           versions={() => toggle("drafts")}
+          part={part}
         />
         <CanvasArea
           session={session}
@@ -266,6 +269,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             setLinks(links);
           }}
           point={point}
+          part={setPart}
           hand={hand}
           board={board}
           setBoard={setBoard}

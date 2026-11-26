@@ -149,6 +149,10 @@ export function PhoneCanvas({
       commit={session.ops.move}
       point={point}
       hold={() => navigator.vibrate?.(8)}
+      // A second tap on what is selected picks the part of it under the finger, so the
+      // words changed are that part's.
+      part={() => {}}
+      parts="always"
     />
   );
 }

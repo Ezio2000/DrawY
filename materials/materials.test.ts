@@ -15,6 +15,7 @@ import { curatedPack, serveLibrary, testLibrary } from "./testing.ts";
 import { MaterialsClient } from "./client.ts";
 import { importPack, releases, rollback, PACK_FORMAT } from "./pack.ts";
 import type { DrawingMaterial, StyleMaterial } from "./schema.ts";
+import { unlabelled, type Fields } from "./fields.ts";
 
 let dir: string, library: Library;
 beforeAll(() => {
@@ -327,27 +328,15 @@ it("boils a city's OpenStreetMap tile down to its water, ways and names, fetched
   }
 });
 
-it("declares every value a library drawing reads, so its card and the hand controls can offer it", () => {
+it("declares every value a library drawing reads, named in both languages, so its card and the editor can offer it", () => {
   const seed = new URL("../content/seed/", import.meta.url);
-  const drawings = JSON.parse(readFileSync(new URL("drawings.json", seed), "utf8")) as {
-    id: string;
-    params: Record<string, { type: string }>;
-  }[];
-  // The app names each value a person can change, in both languages.
-  const words = readFileSync(new URL("../apps/web/src/i18n.tsx", import.meta.url), "utf8");
-  const dictionaries = [...words.matchAll(/\n    params: \{\n      text:[\s\S]*?\n    \},/g)].map(
-    ([block]) => new Set([...block.matchAll(/^\s+(\w+):/gm)].map((m) => m[1])),
-  );
-  expect(dictionaries).toHaveLength(2);
+  const drawings = JSON.parse(readFileSync(new URL("drawings.json", seed), "utf8")) as { id: string; params: Fields }[];
   for (const { id, params } of drawings) {
     const source = readFileSync(new URL(`drawings/${id}.js`, seed), "utf8");
     expect(source, id).toMatch(/const d = api\.data/);
     const reads = new Set([...source.matchAll(/\bd\.(\w+)/g)].map((m) => m[1]));
     expect([...reads].filter((key) => !params[key]), id).toEqual([]);
-    for (const [key, p] of Object.entries(params))
-      if (["text", "number", "boolean", "color", "picture", "choice"].includes(p.type))
-        for (const named of dictionaries)
-          expect(named.has(key), `${id}.${key}`).toBe(true);
+    expect(unlabelled(params), id).toEqual([]);
   }
 });
 
@@ -663,6 +652,23 @@ it("weighs the style asked for, however many of other styles match", () => {
     });
     const [found] = library.search({ subjects: [apple.name.zh], style: "crayon", limit: 4 });
     expect(found.hits[0].material.style).toBe("crayon");
+  } finally {
+    library.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+it("refuses a drawing whose schema names nothing or whose example does not hold to it", () => {
+  const { dir, library } = testLibrary();
+  try {
+    const bad = packCopy((_, manifest, lines) => {
+      manifest.release = "bad-schema";
+      const steps = lines.find((l) => l.id === "steps");
+      delete steps.params.steps.label;
+      steps.example.steps[0].label = 3;
+      steps.example.steps.push("没有 id");
+    });
+    expect(() => importPack(library, bad)).toThrow(/steps: 字段 steps 缺少中英文名称[\s\S]*steps: example 列表的每一项要写全 id[\s\S]*example\.steps\.0\.label 应该是文字/);
   } finally {
     library.close();
     rmSync(dir, { recursive: true });

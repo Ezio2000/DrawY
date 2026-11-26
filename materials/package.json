@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     "./schema": "./schema.ts",
+    "./fields": "./fields.ts",
     "./client": "./client.ts",
     "./testing": "./testing.ts",
     "./pack": "./pack.ts"

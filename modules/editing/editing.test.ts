@@ -76,7 +76,7 @@ const label: MaterialUse = {
   params: {
     text: { type: "text" },
     size: { type: "number", min: 8, max: 72, step: 1 },
-    align: { type: "choice", options: ["start", "center", "end"] },
+    align: { type: "choice", options: [{ value: "start" }, { value: "center" }, { value: "end" }] },
     color: { type: "color" },
   },
 };
@@ -85,13 +85,13 @@ describe("hand edits", () => {
   it("offers the values a drawing declares, then the plain values in the data, words first", () => {
     const work = fixture();
     work.drawings.tier.params = {
-      tip: { label: "说明", type: "text" },
-      color: { label: "底色", type: "color" },
+      tip: { label: { zh: "说明", en: "Tip" }, type: "text" },
+      color: { label: { zh: "底色", en: "Fill" }, type: "color" },
     };
     expect(fieldsOf(work, module(work, "level-0"))).toEqual([
       {
         key: "tip",
-        label: "说明",
+        label: { zh: "说明", en: "Tip" },
         type: "text",
         value: "发挥潜能",
         set: true,
@@ -106,7 +106,7 @@ describe("hand edits", () => {
       },
       {
         key: "color",
-        label: "底色",
+        label: { zh: "底色", en: "Fill" },
         type: "color",
         value: "#d68c6c",
         set: true,

@@ -18,7 +18,7 @@ import {
   type Work,
   type WorkEdit,
 } from "../contracts/index.ts";
-import { isRecord } from "../contracts/edit.ts";
+import { isListPatch, isRecord } from "../contracts/edit.ts";
 
 /* An edit laid on a work, for both the workspace that commits it and the page that shows a
  * hand edit before the workspace has answered, so both lay it the same way. Everything wrong
@@ -304,13 +304,15 @@ const textPatchField: Partial<Record<RecordSection, readonly [whole: string, edi
   details: ["html", "edits"],
   scenes: ["interaction", "interactionEdits"],
 };
+/** What two changes to one value come to: a list changed by position or id after it was
+ * given whole is the list with those changes laid on it. */
+function both(a: unknown, b: unknown, key: string): unknown {
+  if (Array.isArray(a) && isListPatch(b)) return mergeValue(a, b, key, []);
+  return isRecord(a) && isRecord(b) && key !== "target" ? bothObjects(a, b) : b;
+}
 function bothObjects(a: Record<string, unknown>, b: Record<string, unknown>) {
   const out = { ...a };
-  for (const [key, value] of Object.entries(b))
-    out[key] =
-      isRecord(a[key]) && isRecord(value) && key !== "target"
-        ? bothObjects(a[key], value)
-        : value;
+  for (const [key, value] of Object.entries(b)) out[key] = both(a[key], value, key);
   return out;
 }
 /** Two changes to one record as one, written or not. What the later says wins; objects it
@@ -330,9 +332,7 @@ function bothRecords(
     out[key] =
       !replaceEdits && pair && key === pair[1] && Array.isArray(out[key]) && Array.isArray(value)
         ? [...out[key], ...value]
-        : isRecord(a[key]) && isRecord(value) && key !== "target"
-          ? bothObjects(a[key], value)
-          : value;
+        : both(a[key], value, key);
   return out;
 }
 /** Two edits as one, the later laid on the earlier, whether or not they read as edits yet: a

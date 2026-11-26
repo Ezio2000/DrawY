@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, X, Check, FileInput, PenLine } from "lucide-react";
 import * as Hand from "../ui/brand/icons.tsx";
-import type { Canvas, CanvasOptions, Pointed } from "../../../../modules/canvas/index.ts";
-import type { Target } from "../../../../modules/contracts/index.ts";
-import { carried } from "../../../../modules/editing/index.ts";
+import type { Canvas, CanvasOptions, PartPick, Pointed } from "../../../../modules/canvas/index.ts";
+import { shownName, type Target } from "../../../../modules/contracts/index.ts";
+import { carried, trailOf } from "../../../../modules/editing/index.ts";
 import { cx } from "../cx.ts";
 import { SelectionBar } from "../EditBar.tsx";
 import { EditMenu } from "../EditMenu.tsx";
@@ -43,8 +43,11 @@ export function Topbar({
   rename,
   drafting,
   versions,
+  part,
 }: {
   session: WorkSession;
+  /** The part selected inside a module, named after the scene's path. */
+  part?: PartPick | null;
   titling: boolean;
   setTitling: (on: boolean) => void;
   menu: boolean;
@@ -71,6 +74,21 @@ export function Topbar({
   // The seal is pressed down when a version is made while the page is open, not on arrival.
   const arrived = useRef(version);
   if (!arrived.current) arrived.current = version;
+  // The way into the part selected: the module, then each list it is in with its place.
+  const inside = useSelect(
+    session,
+    (s) => {
+      const m = part && s.scene?.modules.find((x) => x.id === part.moduleId);
+      if (!m || !s.work) return null;
+      return {
+        module: shownName(s.work, m),
+        trail: trailOf(s.work, m, part.path)
+          .filter((step) => step.place !== undefined)
+          .map((step) => `${step.label?.[t.locale] ?? step.key} ${step.place}`),
+      };
+    },
+    same,
+  );
   const crumbs: typeof scenes = [];
   for (let at = scenes.find((p) => p.id === sceneId); at; )
     crumbs.unshift(at), (at = at.parentId ? scenes.find((p) => p.id === at!.parentId) : undefined);
@@ -99,6 +117,16 @@ export function Topbar({
             )}
           </span>
         ))}
+        {inside && (
+          <span className={cx("part-crumbs")} data-part-crumbs>
+            {[inside.module, ...inside.trail].map((name, i) => (
+              <span key={i}>
+                <i>›</i>
+                {name}
+              </span>
+            ))}
+          </span>
+        )}
         {scenes.length > 1 && (
           <span className={cx("scene-menu")} data-scene-menu>
             <button aria-label={t.work.scenes} aria-expanded={menu} onClick={() => setMenu(!menu)}>
@@ -151,9 +179,12 @@ export function CanvasArea({
   setBoard,
   help,
   start,
+  part,
 }: {
   session: WorkSession;
   editing: boolean;
+  /** A part of the module selected was selected inside it, or none is. */
+  part: CanvasOptions["part"];
   view: (canvas: Canvas | undefined) => void;
   open: (target: Target) => void;
   select: CanvasOptions["select"];
@@ -196,6 +227,7 @@ export function CanvasArea({
       board={board}
       setBoard={setBoard}
       help={help}
+      part={part}
       start={
         !locked && (
           editing ? (

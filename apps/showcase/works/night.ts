@@ -15,10 +15,10 @@ const drawings = (say: Say): DrawingEdit[] => [
     id: "sky",
     name: say("夜空", "Night sky"),
     params: {
-      stars: { label: say("星星", "Stars"), type: "number", min: 0, max: 400, step: 10 },
-      moonSize: { label: say("月亮大小", "Moon size"), type: "number", min: 10, max: 80, step: 1 },
-      top: { label: say("天顶", "Zenith"), type: "color" },
-      dusk: { label: say("海平线的光", "Horizon glow"), type: "color" },
+      stars: { label: { zh: "星星", en: "Stars" }, type: "number", min: 0, max: 400, step: 10 },
+      moonSize: { label: { zh: "月亮大小", en: "Moon size" }, type: "number", min: 10, max: 80, step: 1 },
+      top: { label: { zh: "天顶", en: "Zenith" }, type: "color" },
+      dusk: { label: { zh: "海平线的光", en: "Horizon glow" }, type: "color" },
     },
     defaults: {
       stars: 190,
@@ -37,8 +37,8 @@ const drawings = (say: Say): DrawingEdit[] => [
     id: "sea",
     name: say("夜海", "Night sea"),
     params: {
-      rows: { label: say("浪的排数", "Rows of waves"), type: "number", min: 4, max: 40, step: 1 },
-      period: { label: say("光转一圈（秒）", "Seconds per turn of the light"), type: "number", min: 2, max: 60, step: 1 },
+      rows: { label: { zh: "浪的排数", en: "Rows of waves" }, type: "number", min: 4, max: 40, step: 1 },
+      period: { label: { zh: "光转一圈（秒）", en: "Seconds per turn of the light" }, type: "number", min: 2, max: 60, step: 1 },
     },
     defaults: { rows: 22, period: PERIOD, moonX: 256, lampX: 970, near: "#3a4b80", top: "#1b2856", bottom: "#050a1c" },
     source: code("night-sea"),
@@ -47,8 +47,8 @@ const drawings = (say: Say): DrawingEdit[] => [
     id: "lighthouse",
     name: say("夜里的灯塔", "Lighthouse at night"),
     params: {
-      period: { label: say("光转一圈（秒）", "Seconds per turn of the light"), type: "number", min: 2, max: 60, step: 1 },
-      reach: { label: say("光束长度", "Beam length"), type: "number", min: 100, max: 1400, step: 10 },
+      period: { label: { zh: "光转一圈（秒）", en: "Seconds per turn of the light" }, type: "number", min: 2, max: 60, step: 1 },
+      reach: { label: { zh: "光束长度", en: "Beam length" }, type: "number", min: 100, max: 1400, step: 10 },
     },
     defaults: { period: PERIOD, reach: 860, lamp: 0.16, waterline: 46, frame: [-820, -150, 1280, 750] },
     source: code("night-lighthouse"),

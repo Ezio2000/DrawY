@@ -1,11 +1,14 @@
 import {
   drawingOf,
+  isPlain,
+  type ChoiceOption,
+  type FieldNames,
   type Instance,
   type Link,
-  type Param,
-  type ParamType,
+  type PlainType,
   type Work,
 } from "../contracts/index.ts";
+type ParamType = PlainType;
 
 /* The values of a part a person can change in plain controls: those its drawing declares,
  * then the plain values in its data. What is left (lists, tables, nested records) is
@@ -14,10 +17,12 @@ import {
 /** A value of a module or link that a person can change, and the control it takes. */
 export interface Field {
   key: string;
-  /** The author's name for it; without one the app names it by its key. */
-  label?: string;
+  /** Its name from the drawing's schema; without one the app names it by its key. */
+  label?: FieldNames;
   type: ParamType;
-  options?: string[];
+  options?: ChoiceOption[];
+  /** Offered beside the selection, as the schema asks. */
+  quick?: boolean;
   min?: number;
   max?: number;
   step?: number;
@@ -60,6 +65,7 @@ const rank: Record<ParamType, number> = {
   color: 3,
   number: 4,
   boolean: 5,
+  effect: 6,
 };
 /** What kind of value an undeclared data entry holds, if it is one a person can change:
  * words, a picture, a colour, a number or a switch. Lowercase tokens are left alone, as
@@ -89,17 +95,24 @@ function fits(type: ParamType, value: unknown) {
  * default for, then the other plain values in its data, words first and switches last. */
 export function fieldsOf(work: Work, part: Instance | Link): Field[] {
   const drawing = drawingOf(work, part.drawingId);
-  const declared: Record<string, Param> = drawing?.params ?? {};
+  const declared = drawing?.params ?? {};
   const defaults = drawing?.defaults ?? {};
   const fields: Field[] = [];
   const optional = (key: string, type: ParamType) =>
     key in defaults || (!!drawing && !drawing.own && type === "color");
   for (const [key, p] of Object.entries(declared)) {
+    if (!isPlain(p)) continue;
     const value = part.data[key] ?? defaults[key];
     if (fits(p.type, value))
       fields.push({
         key,
-        ...p,
+        type: p.type,
+        ...(p.label ? { label: p.label } : {}),
+        ...(p.type === "choice" ? { options: p.options } : {}),
+        ...(p.type === "number"
+          ? Object.fromEntries((["min", "max", "step"] as const).flatMap((k) => (p[k] !== undefined ? [[k, p[k]]] : [])))
+          : {}),
+        ...(p.quick ? { quick: true } : {}),
         value,
         set: part.data[key] !== undefined,
         optional: optional(key, p.type),
@@ -162,7 +175,7 @@ export function lookFor(work: Work, part: Instance | Link, look: Look): Record<s
       f.type === "number" || f.type === "boolean"
         ? kind(value) === f.type
         : f.type === "choice"
-          ? typeof value === "string" && !!f.options?.includes(value)
+          ? typeof value === "string" && !!f.options?.some((o) => o.value === value)
           : typeof value === "string";
     if (fits) patch[f.key] = structuredClone(value);
   }
@@ -186,7 +199,7 @@ export function sharedFields(work: Work, parts: (Instance | Link)[]): SharedFiel
           (x) =>
             x.key === f.key &&
             x.type === f.type &&
-            (x.options ?? []).join() === (f.options ?? []).join(),
+            (x.options ?? []).map((o) => o.value).join() === (f.options ?? []).map((o) => o.value).join(),
         ),
       );
       if (same.some((x) => !x)) return [];
@@ -221,9 +234,10 @@ export function quickFields(fields: SharedField[], most = 5): SharedField[] {
   return fields
     .filter(
       (f) =>
-        QUICK.includes(f.key) &&
+        (f.quick || QUICK.includes(f.key)) &&
         (f.type !== "number" || (f.min !== undefined && f.max !== undefined)),
     )
-    .sort((a, b) => QUICK.indexOf(a.key) - QUICK.indexOf(b.key))
+    // What the drawing asks to offer first, then the names the library's drawings share.
+    .sort((a, b) => (a.quick ? -1 : QUICK.indexOf(a.key)) - (b.quick ? -1 : QUICK.indexOf(b.key)))
     .slice(0, most);
 }

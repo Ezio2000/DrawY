@@ -9,6 +9,8 @@ import { store, stored } from "./storage.ts";
  * name are functions. */
 
 const zh = {
+  /** Which language these words are, to pick a name from a schema's {zh, en}. */
+  locale: "zh" as Locale,
   language: "语言",
   languages: { zh: "中文", en: "English" } as Record<Locale, string>,
   close: "关闭",
@@ -1504,6 +1506,7 @@ const zh = {
 export type Words = typeof zh;
 
 const en: Words = {
+  locale: "en",
   language: "Language",
   languages: { zh: "中文", en: "English" },
   close: "Close",

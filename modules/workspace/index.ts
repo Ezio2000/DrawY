@@ -12,6 +12,12 @@ import {
   type Cause,
   historyOf,
   stepBefore,
+  cascadeData,
+  normalizeData,
+  validateData,
+  walkFields,
+  type DataProblem,
+  type Fields,
 } from "../contracts/index.ts";
 import type { UserStore } from "../storage/index.ts";
 import { take, used, resolveStyle } from "../materials/index.ts";
@@ -77,6 +83,7 @@ export async function writeWork(
   const pending = new Set(laying.map((p) => p.at.split(".")[1]));
   const problems = [
     ...laying,
+    ...settleData(current, work, edit),
     ...missing.map((m): Problem => ({
       at: "materials",
       problem: `素材 ${m} 不存在${usedIn(work, m)}：素材 ID 要来自 find_materials、set_brief 或 generate_images 的结果`,
@@ -97,6 +104,53 @@ async function takeSources(work: Work, drawings: { from?: string }[], store: Use
   const held = { ...work, materials: { ...work.materials } };
   await take(held, wanted, store.viewer, true);
   return held;
+}
+/** The data of every part a write changed, as its drawing's schema reads it: items of lists
+ * given ids, names written for references made the ids they name, items that referred to
+ * items now gone taken out where the schema cascades, and what the write gave checked. Only
+ * the keys the write gave are checked, so data a part held before is never a reason to
+ * refuse a later change to it. A library drawing reads nothing it does not declare. */
+function settleData(before: Work, work: Work, edit: WorkEdit): Problem[] {
+  const given = new Map<string, { keys: string[]; whole: boolean }>();
+  for (const p of [...(edit.modules ?? []), ...(edit.links ?? [])])
+    if (p.data || p.drawingId)
+      given.set(p.id, { keys: Object.keys(p.data ?? {}), whole: !!p.drawingId });
+  const problems: DataProblem[] = [];
+  const was = new Map(
+    Object.values(before.scenes).flatMap((s) => [...s.modules, ...s.links].map((p) => [p.id, p] as const)),
+  );
+  for (const scene of Object.values(work.scenes))
+    for (const part of [...scene.modules, ...scene.links]) {
+      const write = given.get(part.id);
+      const drawing = write && drawingOf(work, part.drawingId);
+      const fields = drawing?.params ?? {};
+      if (!write || !drawing || !Object.keys(fields).length) continue;
+      const at = `${"from" in part ? "links" : "modules"}.${part.id}.data`;
+      const earlier = was.get(part.id);
+      const keys = withReferrers(fields, write.whole || !earlier ? Object.keys(part.data) : write.keys);
+      if (!drawing.own)
+        for (const key of keys)
+          if (!(key in fields))
+            problems.push({ at: `${at}.${key}`, problem: `画法 ${part.drawingId} 不读 ${key}：它读 ${Object.keys(fields).join("、")}` });
+      // What referred to items taken out goes first, so it is not read as a name.
+      const settled = cascadeData(fields, earlier?.drawingId === part.drawingId ? earlier.data : {}, part.data);
+      const found: DataProblem[] = [];
+      part.data = normalizeData(fields, settled, at, found);
+      validateData(fields, part.data, at, found, keys);
+      // A name that names nothing is said once, not again as a reference that leads nowhere.
+      problems.push(...found.filter((p, i) => found.findIndex((q) => q.at === p.at) === i));
+    }
+  return problems;
+}
+/** The keys given and those whose references point into them: a list changed may leave a
+ * reference to an item it no longer holds. */
+function withReferrers(fields: Fields, keys: string[]) {
+  const out = new Set(keys);
+  walkFields(fields, (f, at) => {
+    const to = f.type === "ref" || f.type === "geo" ? f.to : undefined;
+    if (to && out.has(to)) out.add(at[0]);
+  });
+  return [...out];
 }
 /** Where a material that does not exist is called from. */
 function usedIn(work: Work, id: string) {

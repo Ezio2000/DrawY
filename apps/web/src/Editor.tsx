@@ -79,6 +79,7 @@ import {
   Fields,
   nameOf,
   optionOf,
+  valuesOf,
   Section,
   type PickPicture,
 } from "./EditControls.tsx";
@@ -951,7 +952,7 @@ function Shared({
           const v = f.mixed ? undefined : f.value;
           switch (f.type) {
             case "choice":
-              return f.options!.length > 5 ? (
+              return valuesOf(f).length > 5 ? (
                 <label key={f.key} className={cx("field")} data-inline>
                   {head}
                   <select
@@ -960,10 +961,10 @@ function Shared({
                     value={String(v ?? "")}
                     onChange={(e) => keep(f, e.target.value)}
                   >
-                    {!f.options!.includes(String(v)) && <option value="">{t.edit.target.mixed}</option>}
-                    {f.options!.map((o) => (
+                    {!valuesOf(f).includes(String(v)) && <option value="">{t.edit.target.mixed}</option>}
+                    {valuesOf(f).map((o) => (
                       <option key={o} value={o}>
-                        {optionOf(t, o)}
+                        {optionOf(t, o, f)}
                       </option>
                     ))}
                   </select>
@@ -972,9 +973,9 @@ function Shared({
                 <div key={f.key} className={cx("field")}>
                   {head}
                   <span className={cx("field-choice")} role="group">
-                    {f.options!.map((o) => (
+                    {valuesOf(f).map((o) => (
                       <button key={o} aria-pressed={v === o} onClick={() => v !== o && keep(f, o)}>
-                        {optionOf(t, o)}
+                        {optionOf(t, o, f)}
                       </button>
                     ))}
                   </span>

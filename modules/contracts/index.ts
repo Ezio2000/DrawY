@@ -9,38 +9,15 @@ export const targetSchema = z.object({
   kind: z.enum(["scene", "detail"]),
   id: key,
 });
-/** The kinds of value a person can change by hand, each with its own plain control. */
-export const paramTypes = [
-  "text",
-  "number",
-  "boolean",
-  "color",
-  "picture",
-  "choice",
-] as const;
-/** How a person changes one value of a drawing's instance data without touching code. A
- * value in `defaults` gets a control without one; this names it and bounds it. */
-export const paramSchema = z.object({
-  label: z
-    .string()
-    .min(1)
-    .optional()
-    .describe("What a person editing the work calls it, in the user's language"),
-  type: z.enum(paramTypes),
-  options: z
-    .array(z.string().min(1))
-    .min(2)
-    .optional()
-    .describe("The values a choice offers"),
-  min: z.number().optional(),
-  max: z.number().optional(),
-  step: z.number().positive().optional(),
-});
+import { fieldSchema, fieldsSchema, type Field, type Fields } from "@drawy/materials/fields";
+export * from "@drawy/materials/fields";
 const dataSchema = z.record(z.string(), z.unknown());
 export const drawingSchema = z.object({
   id: key,
   name: key,
-  params: z.record(z.string(), paramSchema).optional(),
+  params: fieldsSchema
+    .optional()
+    .describe("The data it reads, as a schema: every list, record and value its code reads from api.data"),
   defaults: dataSchema.optional(),
   source: z.string().min(1),
 });
@@ -167,15 +144,13 @@ export type MaterialUse =
       name: string;
       source: string;
       defaults: Record<string, unknown>;
-      /** The parameters a person can change by hand; the app names them itself. */
-      params: Record<string, Omit<Param, "label">>;
+      /** The data it reads, as a schema. */
+      params: Fields;
     }
   | { id: string; kind: "effect"; version?: number; name: string; defs: string };
 export type Point = z.infer<typeof pointSchema>;
 export type Bounds = z.infer<typeof boundsSchema>;
 export type Target = z.infer<typeof targetSchema>;
-export type Param = z.infer<typeof paramSchema>;
-export type ParamType = Param["type"];
 export type Drawing = z.infer<typeof drawingSchema>;
 export type Instance = z.infer<typeof instanceSchema>;
 export type Link = z.infer<typeof linkSchema>;
@@ -374,7 +349,7 @@ export function stepBefore(history: RevisionSummary[], revision: number): number
  * record names what it changes by id and says nothing about the rest:
  * - a record with a known id changes only the fields it gives, a new id adds the record;
  * - objects (data, defaults, params, style) merge key by key, null deleting a key;
- * - a list given whole replaces the list; given as an object keyed by position it changes
+ * - a list given whole replaces the list; given as an object keyed by position or `#id` it changes
  *   those items (see mergeValue);
  * - long text (a drawing's source, a script, a detail's page) changes whole or by edits;
  * - remove goes first and takes along what can no longer stand without what it removed.
@@ -384,7 +359,7 @@ const dataPatch = (what: string) =>
     .record(z.string(), z.unknown())
     .optional()
     .describe(
-      `${what}; keys you give change, others stay, null deletes one. A list you give replaces the list; {"2":{"value":5}} changes its item 2 alone, and position = its length appends`,
+      `${what}; keys you give change, others stay, null deletes one. A list you give replaces the list; {"#m3":{"label":"…"}} changes the item with id m3 alone, {"#m3":null} deletes it and a new id appends; {"2":{"value":5}} changes item 2 by position`,
     );
 /** A boxed position and size as every edit and the author's reading of a work write it. */
 export const boxSchema = z
@@ -475,9 +450,9 @@ const drawingEditSchema = z
       .describe("A new drawing starts as a copy of this one, in the work or the library: name, params, defaults and source"),
     name: key.optional(),
     params: z
-      .record(z.string(), paramSchema.nullable())
+      .record(z.string(), fieldSchema.nullable())
       .optional()
-      .describe("Names and bounds for the controls a person gets for data keys; null takes one out"),
+      .describe("The schema of the data keys it reads, each given whole; null takes one out"),
     defaults: dataPatch("Values every module drawn with it has unless its own data says otherwise: the place for sizes, colours and words it reads"),
     source: z.string().min(1).optional().describe("Its code, whole; a new drawing needs it unless it has from"),
     edits: z.array(textEditSchema).optional().describe("Small changes to its code, applied in order"),

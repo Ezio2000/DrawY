@@ -11,12 +11,14 @@ import type {
 } from "../contracts/index.ts";
 import { drawingOf, labelOf } from "../contracts/index.ts";
 import { linkEnds, union } from "../contracts/geometry.ts";
+import { editable, measure, strayPaths, unmarkedTexts, type Declared, type EditableAPI, type EditMap } from "./edp.ts";
+export type { EditMap } from "./edp.ts";
 
 export interface SceneOptions {
   open: (target: Target) => void;
   error: (message: string) => void;
 }
-export interface DrawingAPI {
+export interface DrawingAPI extends EditableAPI {
   data: Record<string, unknown>;
   width: number;
   height: number;
@@ -68,6 +70,12 @@ type View = {
   revision: number;
   materials: Set<string>;
   usesPictures: boolean;
+  /** Where it was last drawn, and what its drawing declared there. */
+  bounds?: Bounds;
+  data?: Record<string, unknown>;
+  declared?: Declared;
+  /** Its declarations measured, for the revision and box they were measured at. */
+  measured?: { key: string; map: EditMap | undefined };
 };
 export interface PatchResult {
   /** Modules newly added or whose drawing, data, or size changed. */
@@ -421,10 +429,15 @@ export class SceneRenderer {
               return Reflect.ownKeys(target);
             },
           });
+        // What the module's own drawing declares; a drawing it draws inside itself declares
+        // nothing, as its paths would name that drawing's data.
+        const own = editable(true);
         const apiFor = (
           data: Record<string, unknown>,
           size: { width: number; height: number },
+          edp: EditableAPI = editable(false).api,
         ): DrawingAPI => ({
+          ...edp,
           data,
           ...size,
           theme: this.work.style,
@@ -460,12 +473,10 @@ export class SceneRenderer {
           // The work's own definition, or a library drawing used as it is.
           const drawing = drawingOf(this.work, drawingId);
           if (!drawing) throw Error(`画法 ${drawingId} 不在作品中：在 drawings 里定义它，或用库里画法素材的 id`);
+          const full = { ...drawing.defaults, ...data };
           const result = await execute(
             drawing.source,
-            apiFor({ ...drawing.defaults, ...data }, {
-              width: bounds.width,
-              height: bounds.height,
-            }),
+            apiFor(full, { width: bounds.width, height: bounds.height }, own.api),
           );
           if (stale()) {
             for (const fn of cleanup.splice(0)) fn();
@@ -501,6 +512,13 @@ export class SceneRenderer {
             result,
           );
           host.removeAttribute("data-error");
+          view.bounds = { ...bounds };
+          view.data = full;
+          view.declared = own.declared;
+          view.measured = undefined;
+          // A path that leads nowhere in the data is the drawing's mistake, told like any other.
+          const stray = strayPaths(host.shadowRoot!, own.declared, full);
+          if (stray.length) this.options.error(`${id}: 画法标注的数据路径不在数据里：${stray.join("、")}`);
           if (kind === "module") {
             const m = this.instances.get(id)!;
             host.title = labelOf(m);
@@ -516,6 +534,24 @@ export class SceneRenderer {
         }
       })(),
     );
+  }
+  /** What a drawn module or link offers to edit, measured on the scene where it is drawn
+   * now; kept until it is drawn again or moves. */
+  editMap(id: string, kind: "module" | "link" = "module"): EditMap | undefined {
+    const view = this.views.get(kind + ":" + id);
+    if (!view?.declared || !view.bounds || !view.host.isConnected) return undefined;
+    const bounds = kind === "module" ? (this.instances.get(id)?.bounds ?? view.bounds) : view.bounds;
+    const key = JSON.stringify([view.revision, bounds]);
+    if (view.measured?.key !== key) view.measured = { key, map: measure(view.host, bounds, view.declared) };
+    return view.measured.map;
+  }
+  /** Words from a module's data its drawing shows without marking them as that data, by path. */
+  unmarked(id: string) {
+    const view = this.views.get("module:" + id);
+    const m = this.instances.get(id);
+    const fields = m && drawingOf(this.work, m.drawingId)?.params;
+    if (!view?.data || !fields || !view.host.shadowRoot) return [];
+    return unmarkedTexts(view.host.shadowRoot, fields, view.data);
   }
   private drawModule(m: Instance) {
     return this.draw(m.id, m.drawingId, m.bounds, m.data, "module");

@@ -770,7 +770,7 @@ it("draws every library drawing with no data at all, and with each of its lists 
       .flatMap((m) => [
         at(`${m.id}.none`, m, {}),
         ...Object.entries(m.params)
-          .filter(([, p]) => p.type === "array")
+          .filter(([, p]) => p.type === "list")
           .flatMap(([key]) => [
             at(`${m.id}.${key}.empty`, m, { ...m.example, [key]: [] }),
             // What the editor adds to a list emptied first: a blank entry.
@@ -1781,7 +1781,7 @@ it("lays out plans, comparisons, part labels, group frames and replicas from the
   // Two copies, the paper under the block, and the block itself.
   expect(look.copies).toBe(4);
 });
-it.fails("problem 3B: a numbered message's words are marked as its data, the number drawn apart", async () => {
+it("problem 3B: a numbered message's words are marked as its data, the number drawn apart", async () => {
   const sequence = seed("drawings").find((m) => m.id === "sequence") as DrawingMaterial;
   work.materials = { sequence: libraryDrawing("sequence") };
   work.scenes.root = {
@@ -1796,4 +1796,43 @@ it.fails("problem 3B: a numbered message's words are marked as its data, the num
   );
   // The words a person retypes are the label alone; "1." is drawn in an element of its own.
   expect(marked).toContain("登录请求");
+});
+
+/** The library drawings whose every word from their data is marked as that data, so a
+ * person changes it where it is drawn. Every structured drawing joins as it is upgraded. */
+const EDITABLE = ["sequence"];
+it("marks every word a structured library drawing draws from its example as the data it comes from", async () => {
+  const drawings = (seed("drawings") as DrawingMaterial[]).filter((m) => EDITABLE.includes(m.id));
+  work.materials = Object.fromEntries([...drawings.map((m) => libraryDrawing(m.id)), ...seed("effects").map((m) => useOf(m)!)].map((m) => [m.id, m]));
+  let y = 0;
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: drawings.flatMap((m) =>
+      [m.example, { ...m.example, numbered: true }].map((data, i) => {
+        const placed = { id: `${m.id}-${i}`, label: m.id, drawingId: m.id, data, bounds: { x: 0, y, ...m.size } };
+        y += m.size.height + 60;
+        return placed;
+      }),
+    ),
+    links: [],
+    checks: [],
+  };
+  await open();
+  const found = await page.evaluate(() => {
+    const view = window.drawyView;
+    return [...document.querySelectorAll<HTMLElement>("[data-module-id]")].map((h) => {
+      const id = h.dataset.moduleId!;
+      const map = view.editMap(id);
+      return { id, unmarked: view.unmarked(id).map((t) => t.path), parts: map?.parts.length ?? 0, texts: map?.texts.length ?? 0, slots: map?.slots.length ?? 0, anchors: map?.anchors.length ?? 0 };
+    });
+  });
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+  for (const f of found) {
+    expect(f.unmarked, f.id).toEqual([]);
+    expect(f.parts, f.id).toBeGreaterThan(0);
+    expect(f.texts, f.id).toBeGreaterThan(0);
+  }
+  // The sequence diagram: three participants and five messages and a note are parts, with
+  // slots round both lists and a lifeline for each participant.
+  expect(found[0]).toMatchObject({ parts: 9, slots: 4 + 6, anchors: 3 });
 });

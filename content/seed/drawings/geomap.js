@@ -109,7 +109,11 @@ const decode = (line, scale = 100) => {
 const places = (d.places || []).filter(
   (p) => p && Number.isFinite(+p.lon) && Number.isFinite(+p.lat),
 );
-const named = new Map(places.map((p) => [String(p.name), p]));
+// A route or an area names a place by its id; while a write streams, by its name.
+const named = new Map([
+  ...places.map((p) => [String(p.name), p]),
+  ...places.filter((p) => p.id).map((p) => [String(p.id), p]),
+]);
 const lonlat = (p) => {
   if (Array.isArray(p)) return [+p[0], +p[1]];
   if (p && typeof p === "object") return [+p.lon, +p.lat];

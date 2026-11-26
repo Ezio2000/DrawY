@@ -329,6 +329,8 @@ export function useEditing({
       if (e.key === "Escape") {
         if (menu) setMenu(undefined);
         else if (tool !== "select") setTool("select");
+        // Out of a part first, back to the whole module; then nothing selected.
+        else if (canvas?.selectedPart) canvas.selectPart(null);
         else if (ids.length || links.length) canvas?.select([]);
         else return;
       }

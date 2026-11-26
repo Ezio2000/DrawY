@@ -1950,6 +1950,26 @@ span.model-bar {
   margin: 0 2px;
 }
 
+/* The way into a part of a module, in the blue pencil of what is selected. */
+.part-crumbs {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  color: var(--ai-deep);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.part-crumbs > span {
+  display: inline-flex;
+  align-items: center;
+  padding-right: 6px;
+}
+
+.part-crumbs i {
+  margin: 0 5px 0 2px;
+}
+
 .scene-menu {
   position: relative;
 }

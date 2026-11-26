@@ -42,9 +42,9 @@ export const rhythm: ShowcaseSource = {
           id: "rhythm",
           name: say("转台与闪光", "Turning lenses and the flashes"),
           params: {
-            period: { label: say("转一圈（秒）", "Seconds per turn"), type: "number", min: 1, max: 120, step: 1 },
-            light: { label: say("光的颜色", "Colour of the light"), type: "color" },
-            night: { label: say("夜色", "Night"), type: "color" },
+            period: { label: { zh: "转一圈（秒）", en: "Seconds per turn" }, type: "number", min: 1, max: 120, step: 1 },
+            light: { label: { zh: "光的颜色", en: "Colour of the light" }, type: "color" },
+            night: { label: { zh: "夜色", en: "Night" }, type: "color" },
           },
           defaults: { center: [330, 420], radius: 290, ship: 0, period: 20, panels: presets[START].panels, light: "#f0b545", night: "#121c3d", chart: [700, 190, 540, 190] },
           source: code("flash-rhythm"),

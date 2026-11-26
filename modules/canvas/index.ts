@@ -37,11 +37,18 @@ export type Pointed =
       moduleId: string;
       link?: boolean;
       text: string;
+      /** The data path the drawing marked these words as, when it marked them. */
+      path?: string;
       /** Where the words are on screen now, and their size there; the view may have
        * moved since they were pointed at. */
       place: () => { rect: DOMRect; size: number };
     }
   | { kind: "picture"; moduleId: string; material: string };
+/** An item of a module's data selected inside it, by the path its drawing marked it with. */
+export interface PartPick {
+  moduleId: string;
+  path: string;
+}
 export interface CanvasOptions {
   camera?: Camera;
   /** Whether modules can be moved and resized: a selected module follows a drag. */
@@ -71,6 +78,11 @@ export interface CanvasOptions {
   select: (selection: Selection[], links: string[]) => void;
   /** A double click on words or a picture in a module. */
   point?: (pointed: Pointed) => void;
+  /** A part of the one module selected was selected inside it, or none is any more. Given,
+   * a second press on a module selected alone selects the part of its drawing under it;
+   * while editing, or always with `parts: "always"` (a page that does not edit). */
+  part?: (part: PartPick | null) => void;
+  parts?: "editing" | "always";
   cameraChanged?: (camera: Camera) => void;
   commit?: (moves: { id: string; bounds: Bounds }[]) => void;
   /** Modules dragged off with Alt held while editing: copies of them go that far from
@@ -209,6 +221,11 @@ export class Canvas {
    * can be dragged at once, and Shift adds to the selection. */
   private editing = false;
   private selection: string[] = [];
+  /** The part selected inside the one module selected, and the one the pointer is over. */
+  private chosenPart: PartPick | null = null;
+  private hoveredPart: PartPick | null = null;
+  private partBox = document.createElement("div");
+  private partHover = document.createElement("div");
   private outlines: HTMLDivElement[] = [];
   private hovered: string | null = null;
   private hover = document.createElement("div");
@@ -280,6 +297,9 @@ export class Canvas {
     pointer: number;
     /** Whether a finger made it. */
     touch: boolean;
+    /** A press on the one module selected: let go without a drag, it selects the part of
+     * the drawing it landed on (none where it landed on no part). */
+    pickPart?: PartPick | null;
   } & (
     | { kind: "pan"; camera: Camera }
     | {
@@ -369,6 +389,12 @@ export class Canvas {
     this.hover.style.cssText =
       "position:absolute;border:1px solid rgba(51,102,214,.5);border-radius:2px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
     this.element.append(this.hover);
+    // A part inside a module is drawn round in a finer line than the module itself.
+    this.partBox.style.cssText =
+      `position:absolute;border:1px solid ${ACCENT};border-radius:2px;pointer-events:none;display:none;z-index:4;box-sizing:border-box;outline:2px solid rgba(255,255,255,.7);outline-offset:0`;
+    this.partHover.style.cssText =
+      "position:absolute;border:1px dashed rgba(51,102,214,.7);border-radius:2px;pointer-events:none;display:none;z-index:4;box-sizing:border-box";
+    this.element.append(this.partBox, this.partHover);
     const english = /^en/i.test(document.documentElement.lang);
     // Controls are pressed by their invisible place, which grows to a fingertip on touch.
     const finger = fingers(),
@@ -1238,6 +1264,18 @@ export class Canvas {
         : undefined;
     if (over) box(this.hover, over.bounds);
     else this.hover.style.display = "none";
+    const partBox = (p: PartPick | null) => {
+      const m = p && this.renderer.instances.get(p.moduleId);
+      const found = m && !this.ghost.has(m.id) && this.renderer.editMap(m.id)?.parts.find((x) => x.path === p.path);
+      return found ? found.box : undefined;
+    };
+    const chosenBox = partBox(this.chosenPart);
+    if (chosenBox) box(this.partBox, chosenBox);
+    else this.partBox.style.display = "none";
+    const hoverBox =
+      this.hoveredPart && this.hoveredPart.path !== this.chosenPart?.path && !this.gesture ? partBox(this.hoveredPart) : undefined;
+    if (hoverBox) box(this.partHover, hoverBox);
+    else this.partHover.style.display = "none";
     this.paintLinks();
     this.paintTargets();
     for (const fn of this.watchers) fn();
@@ -1806,6 +1844,8 @@ export class Canvas {
   select(ids: string[], links: string[] = []) {
     this.selection = [...new Set(ids)].filter((id) => this.renderer.instances.has(id));
     this.linkSelection = [...new Set(links)].filter((id) => this.renderer.links.has(id));
+    if (this.chosenPart && (this.selection.length !== 1 || this.selection[0] !== this.chosenPart.moduleId || this.linkSelection.length))
+      this.setPart(null);
     this.options.select(
       this.selection.map((id) => {
         const m = this.renderer.instances.get(id)!;
@@ -1814,6 +1854,44 @@ export class Canvas {
       [...this.linkSelection],
     );
     this.paint();
+  }
+  /** The part selected inside the one module selected. */
+  get selectedPart() {
+    return this.chosenPart ? { ...this.chosenPart } : null;
+  }
+  /** Selects a part of a module (and the module alone with it), or no part. */
+  selectPart(part: PartPick | null) {
+    if (part && (this.selection.length !== 1 || this.selection[0] !== part.moduleId)) this.select([part.moduleId]);
+    this.setPart(part);
+    this.paint();
+  }
+  private setPart(part: PartPick | null) {
+    if (this.chosenPart?.moduleId === part?.moduleId && this.chosenPart?.path === part?.path) return;
+    this.chosenPart = part;
+    this.options.part?.(part ? { ...part } : null);
+  }
+  /** What a module offers to edit, measured where it is drawn now. */
+  editMap(moduleId: string) {
+    return this.renderer.editMap(moduleId);
+  }
+  /** Words of a module's data its drawing shows without marking them as that data. */
+  unmarked(moduleId: string) {
+    return this.renderer.unmarked(moduleId);
+  }
+  /** Whether parts of modules can be selected now. */
+  private get partsOn() {
+    return !!this.options.part && (this.editing || this.options.parts === "always");
+  }
+  /** The smallest part of a module's drawing under a point on screen. */
+  private partAt(m: Instance, clientX: number, clientY: number): PartPick | null {
+    const map = this.renderer.editMap(m.id);
+    if (!map) return null;
+    const p = this.toScene(clientX, clientY),
+      slop = (this.touching ? FINGER_SLOP / 2 : 2) / this.camera.scale;
+    const under = map.parts
+      .filter(({ box: b }) => p.x >= b.x - slop && p.x <= b.x + b.width + slop && p.y >= b.y - slop && p.y <= b.y + b.height + slop)
+      .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height)[0];
+    return under ? { moduleId: m.id, path: under.path } : null;
   }
   /** The one link selected, alone: its ends can be dragged elsewhere. */
   private get onlyLink() {
@@ -1970,6 +2048,11 @@ export class Canvas {
     this.near = near;
     this.paint();
   }
+  private hoverPart(part: PartPick | null) {
+    if (this.hoveredPart?.path === part?.path && this.hoveredPart?.moduleId === part?.moduleId) return;
+    this.hoveredPart = part;
+    this.paint();
+  }
   private hoverOver(id: string | null, link: string | null = null) {
     if (this.hovered === id && this.hoveredLink === link) return;
     this.hovered = id;
@@ -2019,6 +2102,16 @@ export class Canvas {
         .map((n) => n.textContent)
         .join("")
         .trim();
+    // Words the drawing marked as a value of its data change that value, wherever they are.
+    const marked = inner.closest("[data-edp-text]");
+    if (marked) {
+      e.preventDefault();
+      getSelection()?.removeAllRanges();
+      const path = marked.getAttribute("data-edp-text")!;
+      const part = this.partsOn && this.partAt(picked.module!, e.clientX, e.clientY);
+      if (part) this.selectPart(part);
+      return this.options.point({ kind: "text", moduleId, path, text: marked.textContent?.trim() ?? "", place: () => placeOf(marked) });
+    }
     let el: Element | null = inner.closest("tspan,text");
     if (!el) {
       el = inner;
@@ -2053,7 +2146,7 @@ export class Canvas {
   ): Extract<Pointed, { kind: "text" }> | undefined {
     const root = this.renderer.host("module", moduleId)?.shadowRoot;
     if (!root) return undefined;
-    const found: { words: Element; text: string; rect: DOMRect; size: number }[] = [];
+    const found: { words: Element; text: string; rect: DOMRect; size: number; path?: string }[] = [];
     const seen = new Set<Element>();
     const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     while (walk.nextNode()) {
@@ -2061,12 +2154,26 @@ export class Canvas {
         parent = node.parentElement;
       const own = node.textContent?.trim();
       if (!own || !parent || parent.closest("style,script,defs")) continue;
-      const words = parent.closest("text") ?? parent;
+      const marked = parent.closest("[data-edp-text]");
+      const words = marked ?? parent.closest("text") ?? parent;
       if (seen.has(words)) continue;
       seen.add(words);
       const { rect, size } = placeOf(words);
       if (!rect.width || !rect.height) continue;
-      found.push({ words, text: words instanceof SVGElement ? words.textContent!.trim() : own, rect, size });
+      found.push({
+        words,
+        text: marked || words instanceof SVGElement ? words.textContent!.trim() : own,
+        rect,
+        size,
+        ...(marked ? { path: marked.getAttribute("data-edp-text")! } : {}),
+      });
+    }
+    // With a part of the module selected, its words are the ones meant.
+    const part = this.chosenPart?.moduleId === moduleId ? this.chosenPart.path : undefined;
+    const inPart = part ? found.filter((f) => f.path === part || f.path?.startsWith(part + ".")) : [];
+    if (inPart.length) {
+      const { words, text, path } = inPart[0];
+      return { kind: "text", moduleId, text, path, place: () => placeOf(words) };
     }
     if (!found.length) return undefined;
     const away = (r: DOMRect) =>
@@ -2080,11 +2187,12 @@ export class Canvas {
       found.reduce((best, f) =>
         f.size * Math.min(f.text.length, 12) > best.size * Math.min(best.text.length, 12) ? f : best,
       );
-    const { words, text } = chosen;
+    const { words, text, path } = chosen;
     return {
       kind: "text",
       moduleId,
       text,
+      ...(path ? { path } : {}),
       place: () => placeOf(words),
     };
   }
@@ -2302,6 +2410,12 @@ export class Canvas {
     // the selection or takes it out.
     const deep = this.editing && (e.metaKey || e.ctrlKey);
     const was = !!m && selection.includes(m.id);
+    // A second press on a module selected alone goes into it, as a second press goes into
+    // a group: to the part of its drawing under the press.
+    const pickPart =
+      m && was && this.partsOn && selection.length === 1 && !links.length && !e.shiftKey && !deep
+        ? this.partAt(m, e.clientX, e.clientY)
+        : undefined;
     let narrow: string | undefined;
     if (m && this.editing && e.shiftKey) {
       const unit = this.unitOf(m, deep);
@@ -2330,6 +2444,7 @@ export class Canvas {
       const copy = this.editing && e.altKey && !!this.options.duplicate;
       this.gesture = {
         ...start,
+        pickPart,
         kind: "move",
         moves: moving.map((v) => ({ id: v.id, bounds: { ...v.bounds } })),
         others: others(copy ? new Set() : new Set(moving.map((v) => v.id))),
@@ -2337,7 +2452,7 @@ export class Canvas {
         narrow,
       };
       if (copy) this.element.style.cursor = "copy";
-    } else this.gesture = { ...start, kind: "pan", camera: { ...this.camera } };
+    } else this.gesture = { ...start, pickPart, kind: "pan", camera: { ...this.camera } };
     capture();
   }
   /** Shows the guides a dragged box snapped to, in scene units. */
@@ -2464,6 +2579,9 @@ export class Canvas {
       if (this.editing && this.tool === "select" && !this.spacing) {
         const { module: m, link } = this.pick(e.clientX, e.clientY);
         this.nearSide(e);
+        this.hoverPart(
+          m && this.partsOn && this.selection.length === 1 && this.selection[0] === m.id ? this.partAt(m, e.clientX, e.clientY) : null,
+        );
         this.hoverOver(m?.id ?? null, m ? null : (link ?? null));
         this.element.style.cursor = !m && link ? "pointer" : "";
       } else if (this.editing && this.tool === "link" && !this.spacing)
@@ -2887,6 +3005,10 @@ export class Canvas {
       else if (!g.straight || g.moved) this.options.ink?.(g.points, { kind: g.straight ? "arrow" : "pen" });
     }
     if (g.kind === "erase" && g.hit.size) this.options.erase?.([...g.hit]);
+    if (!g.moved && g.pickPart !== undefined) {
+      this.setPart(g.pickPart);
+      this.paint();
+    }
     // A zone pressed without a drag is selected, or with Shift joins the selection or
     // leaves it.
     if (g.kind === "marquee" && !g.moved && g.on) {

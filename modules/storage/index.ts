@@ -52,9 +52,11 @@ export class Storage {
       this.saveModels(defaultCatalog());
   }
   /** Brings saved works and revisions to the current shape, in one transaction, once:
-   * format 2 names a picture's type as `type` (it was `role`). */
+   * format 2 names a picture's type as `type` (it was `role`). Format 3 declares a drawing's
+   * data as a schema and gives list items ids; works saved before it are read as they are,
+   * and their parts are checked against the new schema only when they are next changed. */
   private upgradeWorks() {
-    const FORMAT = 2;
+    const FORMAT = 3;
     const row = this.db.prepare("SELECT data FROM system WHERE key='work-format'").get() as { data: string } | undefined;
     if (row && Number(row.data) >= FORMAT) return;
     const upgrade = (data: string) => {

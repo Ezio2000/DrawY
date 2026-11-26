@@ -66,14 +66,19 @@ export function palette(work: Work) {
   return [...new Set([...tokens, ...used].map(hex))].slice(0, 10);
 }
 /** A field's name: the author's, the app's for a common key, or the key spelled out. */
-export const nameOf = (t: Dictionary, f: Field) =>
-  f.label ??
+export const nameOf = (t: Dictionary, f: Pick<Field, "key" | "label">) =>
+  f.label?.[t.locale] ??
   (t.edit.params as Record<string, string>)[f.key] ??
   f.key
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/^./, (c) => c.toUpperCase());
-export const optionOf = (t: Dictionary, value: string) =>
-  (t.edit.options as Record<string, string>)[value] ?? value;
+/** An option's name: the schema's, else the app's for a common value, else the value. */
+export const optionOf = (t: Dictionary, value: string, f?: Pick<Field, "options">) =>
+  f?.options?.find((o) => o.value === value)?.label?.[t.locale] ??
+  (t.edit.options as Record<string, string>)[value] ??
+  value;
+/** The values a choice offers. */
+export const valuesOf = (f: Pick<Field, "options">) => (f.options ?? []).map((o) => o.value);
 
 /** What the controls of one module or link work on: the part in the work as shown, the
  * canvas it is previewed on, and how its changes are kept. */
@@ -185,7 +190,7 @@ export function Fields({
           }
           case "choice":
             // A few choices side by side; many in a list.
-            return f.options!.length > 5 ? (
+            return valuesOf(f).length > 5 ? (
               <label key={f.key} className={cx("field")} data-inline>
                 {head}
                 <select
@@ -194,10 +199,10 @@ export function Fields({
                   value={String(v ?? "")}
                   onChange={(e) => keep({ [f.key]: e.target.value })}
                 >
-                  {!f.options!.includes(String(v)) && <option value={String(v ?? "")}>{String(v ?? "—")}</option>}
-                  {f.options!.map((o) => (
+                  {!valuesOf(f).includes(String(v)) && <option value={String(v ?? "")}>{String(v ?? "—")}</option>}
+                  {valuesOf(f).map((o) => (
                     <option key={o} value={o}>
-                      {optionOf(t, o)}
+                      {optionOf(t, o, f)}
                     </option>
                   ))}
                 </select>
@@ -206,13 +211,13 @@ export function Fields({
               <div key={f.key} className={cx("field")}>
                 {head}
                 <span className={cx("field-choice")} role="group">
-                  {f.options!.map((o) => (
+                  {valuesOf(f).map((o) => (
                     <button
                       key={o}
                       aria-pressed={v === o}
                       onClick={() => v !== o && keep({ [f.key]: o })}
                     >
-                      {optionOf(t, o)}
+                      {optionOf(t, o, f)}
                     </button>
                   ))}
                 </span>
@@ -513,7 +518,7 @@ export function DataEditor({
       {keys.map((key) => (
         <DataEntry
           key={part.id + ":" + key}
-          name={nameOf(t, { key } as Field)}
+          name={nameOf(t, { key })}
           value={part.data[key]}
           work={work}
           preview={(v) => canvas?.preview(part.id, { ...part.data, [key]: v })}

@@ -249,7 +249,7 @@ describe("drawings and text", () => {
   const source = `const s = api.data.size; return api.svg('<svg font-size="16" data-a="16"></svg>');`;
   const withDrawing = (extra = {}) => written(work(), { drawings: [{ id: "cup", source, ...extra }] });
   it("takes a name by default and keeps what a change leaves out", () => {
-    const w = withDrawing({ defaults: { size: 18 }, params: { size: { label: "字号", type: "number" } } });
+    const w = withDrawing({ defaults: { size: 18 }, params: { size: { label: { zh: "字号", en: "Font size" }, type: "number" } } });
     expect(w.drawings.cup).toMatchObject({ name: "cup", defaults: { size: 18 } });
     const next = written(w, { drawings: [{ id: "cup", defaults: { size: 20 } }] });
     expect(next.drawings.cup).toEqual({ ...w.drawings.cup, defaults: { size: 20 } });

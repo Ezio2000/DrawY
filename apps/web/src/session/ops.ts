@@ -5,7 +5,6 @@ import type {
   PictureMaterial,
 } from "@drawy/materials/schema";
 import {
-  paramTypes,
   type Bounds,
   type Drawing,
   type Point,
@@ -56,31 +55,12 @@ import { SessionError, type Context } from "./types.ts";
  * goes and how big it is follow the view it is drawn on. Each reports its own failure to
  * the host, so it can be called and forgotten. */
 
-/** A library drawing as a drawing of the work's own. */
+/** A library drawing as a drawing of the work's own: its schema, defaults and code. */
 function ownCopy(m: DrawingMaterial, locale: "zh" | "en"): Omit<Drawing, "id"> {
-  const editable = Object.entries(m.params).filter(([, p]) =>
-    (paramTypes as readonly string[]).includes(p.type),
-  );
-  const defaults = Object.entries(m.params).filter(([, p]) => p.default !== undefined);
   return {
     name: m.name[locale],
-    ...(editable.length
-      ? {
-          params: Object.fromEntries(
-            editable.map(([k, { type, options, min, max, step }]) => [
-              k,
-              {
-                type: type as (typeof paramTypes)[number],
-                ...(options ? { options } : {}),
-                ...(min !== undefined ? { min, max, step } : {}),
-              },
-            ]),
-          ),
-        }
-      : {}),
-    ...(defaults.length
-      ? { defaults: Object.fromEntries(defaults.map(([k, p]) => [k, p.default])) }
-      : {}),
+    ...(Object.keys(m.params).length ? { params: structuredClone(m.params) } : {}),
+    ...(Object.keys(m.defaults ?? {}).length ? { defaults: structuredClone(m.defaults) } : {}),
     source: m.source,
   };
 }

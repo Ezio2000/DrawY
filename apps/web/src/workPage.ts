@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Material } from "@drawy/materials/schema";
 import type { Pointed } from "../../../modules/canvas/index.ts";
 import { shownName, versionOf, type Target } from "../../../modules/contracts/index.ts";
-import { fieldsOf, removeParts, replace, setData } from "../../../modules/editing/index.ts";
+import { fieldsOf, removeParts, replace, setAt, setData } from "../../../modules/editing/index.ts";
 import { EXPLAIN_FOR } from "./feedback.ts";
 import { useT } from "./i18n.tsx";
 import { useSelect } from "./session/store.ts";
@@ -124,6 +124,11 @@ export function useWorkPage({
     const p = retyping!;
     setRetyping(undefined);
     if (text === null || text === p.text) return;
+    // Words the drawing marked as a value of its data are that value: they change there.
+    if (p.path) {
+      const path = p.path;
+      return void attempt(() => session.change((w) => setAt(w, sceneId, p.moduleId, path, text.trim())));
+    }
     // A link that said nothing is given its first words, where its drawing takes words.
     if (p.link && !p.text)
       return void attempt(async () => {

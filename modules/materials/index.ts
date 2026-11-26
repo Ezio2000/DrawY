@@ -3,7 +3,6 @@ import type {
   Bindings,
   Material,
   MaterialHead,
-  Param,
   SearchRequest,
   SearchResult,
   StyleMaterial,
@@ -14,10 +13,9 @@ import {
   blankStyle,
   calledIn,
   materialsOfPart,
-  paramTypes,
   type Candidate,
+  type Field,
   type MaterialUse,
-  type ParamType,
   type Work,
 } from "../contracts/index.ts";
 import type { Item } from "../models/index.ts";
@@ -28,12 +26,37 @@ export const library = new MaterialsClient(
   process.env.DRAWY_MATERIALS_URL || "http://localhost:8090",
 );
 const round = (n: number) => Math.round(n * 1000) / 1000;
-/** A library drawing's parameter as the author reads it: its type (a choice as its
- * options), default and description. */
-export const paramLine = (p: Param) =>
-  `${p.type === "choice" ? p.options!.join("|") : p.type}${p.default !== undefined ? " = " + JSON.stringify(p.default) : ""} (${p.description})`;
-/** Parameter types a person can change by hand; the rest are structure. */
-const editable = new Set<Param["type"]>(paramTypes);
+/** A field of a drawing's schema in short, as the author reads it on a card: its type (a
+ * choice as its options, a list as its item in brackets, a record as its fields in braces). */
+export function compactField(f: Field): string {
+  switch (f.type) {
+    case "number":
+      return "number" + (f.min !== undefined || f.max !== undefined ? ` ${f.min ?? ""}..${f.max ?? ""}` : "") + (f.unit ? ` ${f.unit}` : "");
+    case "choice":
+      return f.options.map((o) => o.value).join("|");
+    case "picture":
+    case "effect":
+      return f.type + " id";
+    case "ref":
+      return `id of ${f.to}`;
+    case "geo":
+      return "[lon, lat]" + (f.to ? ` or id of ${f.to}` : "");
+    case "cell":
+      return "text|number|true|false";
+    case "list":
+      return `[${compactField(f.item)}]` + (f.min || f.max ? `{${f.min ?? 0},${f.max ?? ""}}` : "");
+    case "record":
+      return `{${[...Object.entries(f.fields).map(([k, x]) => `${k}: ${compactField(x)}`), ...(f.rest ? [`*: ${compactField(f.rest)}`] : [])].join(", ")}}`;
+    case "tree":
+      return `{${Object.entries(f.fields).map(([k, x]) => `${k}: ${compactField(x)}`).join(", ")}, ${f.children ?? "children"}: [same]}`;
+    default:
+      return f.type;
+  }
+}
+/** A library drawing's field as its card gives it: the short schema, its default and what
+ * it means. */
+export const paramLine = (f: Field, value?: unknown) =>
+  `${compactField(f)}${value !== undefined ? " = " + JSON.stringify(value) : ""}${f.description ? ` (${f.description})` : ""}`;
 
 /** How a work holds a library material; styles are applied, not held. */
 export function useOf(m: Material): MaterialUse | null {
@@ -75,29 +98,8 @@ export function useOf(m: Material): MaterialUse | null {
         version: m.version,
         name: m.name.zh,
         source: m.source,
-        defaults: Object.fromEntries(
-          Object.entries(m.params)
-            .filter(([, p]) => p.default !== undefined)
-            .map(([k, p]) => [k, p.default]),
-        ),
-        params: Object.fromEntries(
-          Object.entries(m.params).flatMap(([k, p]) =>
-            editable.has(p.type)
-              ? [
-                  [
-                    k,
-                    {
-                      type: p.type as ParamType,
-                      ...(p.options ? { options: p.options } : {}),
-                      ...(p.min !== undefined ? { min: p.min } : {}),
-                      ...(p.max !== undefined ? { max: p.max } : {}),
-                      ...(p.step !== undefined ? { step: p.step } : {}),
-                    },
-                  ],
-                ]
-              : [],
-          ),
-        ),
+        defaults: m.defaults ?? {},
+        params: m.params,
       };
     case "effect":
       return { id: m.id, kind: "effect", version: m.version, name: m.name.zh, defs: m.defs };
@@ -301,7 +303,7 @@ export function card(m: Material): Record<string, unknown> {
       return {
         ...base,
         use: m.use,
-        params: Object.fromEntries(Object.entries(m.params).map(([k, p]) => [k, paramLine(p)])),
+        params: Object.fromEntries(Object.entries(m.params).map(([k, p]) => [k, paramLine(p, m.defaults?.[k])])),
         size: `${m.size.width}×${m.size.height}`,
         example: m.example,
       };

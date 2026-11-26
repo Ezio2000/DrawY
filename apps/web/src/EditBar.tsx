@@ -14,7 +14,7 @@ import type { Canvas } from "../../../modules/canvas/index.ts";
 import type { Work } from "../../../modules/contracts/index.ts";
 import { quickFields, sharedFields, type SharedField } from "../../../modules/editing/index.ts";
 import { shapes, type EditOps, type Shape } from "./desktop/editing.ts";
-import { Colors, hex, nameOf, optionOf } from "./EditControls.tsx";
+import { Colors, hex, nameOf, optionOf, valuesOf } from "./EditControls.tsx";
 import { ShapeGlyph } from "./EditTray.tsx";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
@@ -266,7 +266,7 @@ export function SelectionBar({
     }
     // A choice: its options as pictures where they have one, as a swatch for a tone of the
     // work's style, and by name otherwise.
-    const options = f.options ?? [];
+    const options = valuesOf(f);
     const now = f.mixed ? undefined : String(f.value ?? "");
     const face = (o: string, large = false) =>
       f.key === "tone" ? (
@@ -294,7 +294,7 @@ export function SelectionBar({
           toggle,
           {
             pressed: isOpen,
-            words: pictured ? undefined : shown ? optionOf(t, shown) : name,
+            words: pictured ? undefined : shown ? optionOf(t, shown, f) : name,
           },
         )}
         {isOpen && (
@@ -304,12 +304,12 @@ export function SelectionBar({
                 key={o}
                 role="menuitemradio"
                 aria-checked={now === o}
-                aria-label={optionOf(t, o)}
-                data-tip={pictured ? optionOf(t, o) : undefined}
+                aria-label={optionOf(t, o, f)}
+                data-tip={pictured ? optionOf(t, o, f) : undefined}
                 onClick={() => set(o)}
               >
                 {face(o, true)}
-                {!pictured && <span>{optionOf(t, o)}</span>}
+                {!pictured && <span>{optionOf(t, o, f)}</span>}
               </button>
             ))}
           </div>

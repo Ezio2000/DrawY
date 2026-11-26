@@ -19,7 +19,13 @@
     ],
     "category": "drawing/connector",
     "about": "An arrow whose head is sized to its line: straight or curved (bend), or routed at right angles for flowcharts and architecture (route elbow or corner, with rounded turns); dashed, open or filled head, double-ended, an optional label beside the middle, and flow (animated dashes moving along it) for movement of blood, water, data or energy. As a link it runs between the anchors; in a module between data.from and data.to.",
-    "tags": ["arrow", "link", "flow", "connector", "direction"],
+    "tags": [
+      "arrow",
+      "link",
+      "flow",
+      "connector",
+      "direction"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -46,89 +52,219 @@
     "params": {
       "bend": {
         "type": "number",
+        "label": {
+          "zh": "弯曲",
+          "en": "Bend"
+        },
         "min": -1,
         "max": 1,
         "step": 0.05,
-        "default": 0,
         "description": "curvature as a fraction of length, positive bending left of the direction of travel; for elbow, where between the ends the cross segment stands (-0.5 at the start, 0.5 at the end); it is kept outside both modules, so a link leaving and arriving on the same side goes round them by itself"
       },
       "head": {
         "type": "choice",
-        "options": ["filled", "open", "none"],
-        "default": "filled",
+        "label": {
+          "zh": "箭头",
+          "en": "Arrowhead"
+        },
+        "options": [
+          {
+            "value": "filled",
+            "label": {
+              "zh": "实心",
+              "en": "Filled"
+            }
+          },
+          {
+            "value": "open",
+            "label": {
+              "zh": "空心",
+              "en": "Open"
+            }
+          },
+          {
+            "value": "none",
+            "label": {
+              "zh": "无",
+              "en": "None"
+            }
+          }
+        ],
         "description": "the arrowhead"
       },
       "both": {
         "type": "boolean",
-        "default": false,
+        "label": {
+          "zh": "两端都有箭头",
+          "en": "Heads at both ends"
+        },
         "description": "a head at both ends"
       },
       "dashed": {
         "type": "boolean",
-        "default": false,
+        "label": {
+          "zh": "虚线",
+          "en": "Dashed"
+        },
         "description": "dashed line"
       },
       "route": {
         "type": "choice",
-        "options": ["curve", "elbow", "corner"],
-        "default": "curve",
+        "label": {
+          "zh": "走线",
+          "en": "Route"
+        },
+        "options": [
+          {
+            "value": "curve",
+            "label": {
+              "zh": "曲线",
+              "en": "Curve"
+            }
+          },
+          {
+            "value": "elbow",
+            "label": {
+              "zh": "直角",
+              "en": "Right angles"
+            }
+          },
+          {
+            "value": "corner",
+            "label": {
+              "zh": "单折",
+              "en": "One turn"
+            }
+          }
+        ],
         "description": "curve follows bend; elbow runs at right angles, leaving and arriving along the sides of the modules its ends meet, always first moving out of a module before turning; corner turns once, or goes round when one turn would run back into a module"
       },
       "first": {
         "type": "choice",
-        "options": ["auto", "horizontal", "vertical"],
-        "default": "auto",
+        "label": {
+          "zh": "先走方向",
+          "en": "Leaves along"
+        },
+        "options": [
+          {
+            "value": "auto",
+            "label": {
+              "zh": "自动",
+              "en": "Auto"
+            }
+          },
+          {
+            "value": "horizontal",
+            "label": {
+              "zh": "横向",
+              "en": "Across"
+            }
+          },
+          {
+            "value": "vertical",
+            "label": {
+              "zh": "纵向",
+              "en": "Down"
+            }
+          }
+        ],
         "description": "for elbow and corner, the axis it leaves along; auto follows the side its end meets, else the longer axis"
       },
       "radius": {
         "type": "number",
+        "label": {
+          "zh": "拐角圆度",
+          "en": "Corner rounding"
+        },
         "min": 0,
         "max": 40,
         "step": 1,
-        "default": 10,
         "description": "rounding of elbow and corner turns"
       },
       "flow": {
         "type": "boolean",
-        "default": false,
+        "label": {
+          "zh": "流动效果",
+          "en": "Flowing"
+        },
         "description": "dashes move along the arrow"
       },
       "speed": {
         "type": "number",
+        "label": {
+          "zh": "流动速度",
+          "en": "Flow speed"
+        },
         "min": 0.2,
         "max": 6,
         "step": 0.1,
-        "default": 1.2,
         "description": "seconds per flow cycle"
       },
       "label": {
         "type": "text",
+        "label": {
+          "zh": "文字",
+          "en": "Text"
+        },
         "description": "a few words beside the middle"
       },
       "labelSide": {
         "type": "choice",
-        "options": ["above", "below"],
-        "default": "above",
+        "label": {
+          "zh": "文字位置",
+          "en": "Text position"
+        },
+        "options": [
+          {
+            "value": "above",
+            "label": {
+              "zh": "上方",
+              "en": "Above"
+            }
+          },
+          {
+            "value": "below",
+            "label": {
+              "zh": "下方",
+              "en": "Below"
+            }
+          }
+        ],
         "description": "which side of the line the label sits"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 16,
         "description": "font size of the label"
       },
       "labelColor": {
         "type": "color",
+        "label": {
+          "zh": "文字颜色",
+          "en": "Label colour"
+        },
         "description": "the label's colour; defaults to the arrow's"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "defaults to the ink token"
       },
       "width": {
         "type": "number",
+        "label": {
+          "zh": "线宽",
+          "en": "Line width"
+        },
         "min": 0.5,
         "max": 12,
         "step": 0.5,
@@ -136,20 +272,89 @@
       },
       "gap": {
         "type": "number",
+        "label": {
+          "zh": "端点留白",
+          "en": "Gap at the ends"
+        },
         "min": 0,
         "max": 40,
         "step": 1,
-        "default": 6,
         "description": "space left before its ends"
       },
       "from": {
-        "type": "object",
+        "type": "record",
+        "label": {
+          "zh": "起点",
+          "en": "Start"
+        },
+        "fields": {
+          "x": {
+            "type": "number",
+            "label": {
+              "zh": "横向位置",
+              "en": "Across"
+            },
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          },
+          "y": {
+            "type": "number",
+            "label": {
+              "zh": "纵向位置",
+              "en": "Down"
+            },
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
         "description": "in a module: start point {x,y} 0..1"
       },
       "to": {
-        "type": "object",
+        "type": "record",
+        "label": {
+          "zh": "终点",
+          "en": "End"
+        },
+        "fields": {
+          "x": {
+            "type": "number",
+            "label": {
+              "zh": "横向位置",
+              "en": "Across"
+            },
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          },
+          "y": {
+            "type": "number",
+            "label": {
+              "zh": "纵向位置",
+              "en": "Down"
+            },
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
         "description": "in a module: end point {x,y} 0..1"
       }
+    },
+    "defaults": {
+      "bend": 0,
+      "head": "filled",
+      "both": false,
+      "dashed": false,
+      "route": "curve",
+      "first": "auto",
+      "radius": 10,
+      "flow": false,
+      "speed": 1.2,
+      "labelSide": "above",
+      "size": 16,
+      "gap": 6
     }
   },
   {
@@ -159,10 +364,23 @@
       "zh": "标签",
       "en": "Label"
     },
-    "aliases": ["文字", "标注", "名称", "label", "text", "caption", "name tag"],
+    "aliases": [
+      "文字",
+      "标注",
+      "名称",
+      "label",
+      "text",
+      "caption",
+      "name tag"
+    ],
     "category": "drawing/text",
     "about": "A short label in the work's font with a paper-coloured halo that keeps it legible over pictures and lines; multi-line with \\n and an optional smaller note underneath. For naming things on the canvas without boxes.",
-    "tags": ["label", "text", "typography", "halo"],
+    "tags": [
+      "label",
+      "text",
+      "typography",
+      "halo"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -180,47 +398,103 @@
     "params": {
       "text": {
         "type": "text",
+        "label": {
+          "zh": "文字",
+          "en": "Text"
+        },
         "description": "the label"
       },
       "note": {
         "type": "text",
+        "label": {
+          "zh": "补充说明",
+          "en": "Note"
+        },
         "description": "a smaller second line"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 16,
         "description": "font size"
       },
       "weight": {
         "type": "number",
+        "label": {
+          "zh": "字重",
+          "en": "Weight"
+        },
         "min": 100,
         "max": 900,
         "step": 100,
-        "default": 500,
         "description": "font weight"
       },
       "align": {
         "type": "choice",
-        "options": ["start", "center", "end"],
-        "default": "center",
+        "label": {
+          "zh": "对齐",
+          "en": "Alignment"
+        },
+        "options": [
+          {
+            "value": "start",
+            "label": {
+              "zh": "靠左",
+              "en": "Left"
+            }
+          },
+          {
+            "value": "center",
+            "label": {
+              "zh": "居中",
+              "en": "Centre"
+            }
+          },
+          {
+            "value": "end",
+            "label": {
+              "zh": "靠右",
+              "en": "Right"
+            }
+          }
+        ],
         "description": "how lines of text align"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "defaults to ink"
       },
       "noteColor": {
         "type": "color",
+        "label": {
+          "zh": "说明颜色",
+          "en": "Note colour"
+        },
         "description": "colour of the note; defaults to muted"
       },
       "halo": {
         "type": "boolean",
-        "default": true,
+        "label": {
+          "zh": "文字衬底",
+          "en": "Halo behind text"
+        },
         "description": "paper-coloured outline behind the letters"
       }
+    },
+    "defaults": {
+      "size": 16,
+      "weight": 500,
+      "align": "center",
+      "halo": true
     }
   },
   {
@@ -282,61 +556,169 @@
     "params": {
       "text": {
         "type": "text",
+        "label": {
+          "zh": "文字",
+          "en": "Text"
+        },
         "description": "the part's name"
       },
       "side": {
         "type": "choice",
-        "options": ["right", "left", "above", "below"],
-        "default": "right",
+        "label": {
+          "zh": "文字位置",
+          "en": "Text position"
+        },
+        "options": [
+          {
+            "value": "right",
+            "label": {
+              "zh": "右",
+              "en": "Right"
+            }
+          },
+          {
+            "value": "left",
+            "label": {
+              "zh": "左",
+              "en": "Left"
+            }
+          },
+          {
+            "value": "above",
+            "label": {
+              "zh": "上方",
+              "en": "Above"
+            }
+          },
+          {
+            "value": "below",
+            "label": {
+              "zh": "下方",
+              "en": "Below"
+            }
+          }
+        ],
         "description": "where the text sits"
       },
       "target": {
-        "type": "object",
+        "type": "record",
+        "label": {
+          "zh": "指向的点",
+          "en": "Point"
+        },
+        "fields": {
+          "x": {
+            "type": "number",
+            "label": {
+              "zh": "横向位置",
+              "en": "Across"
+            },
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          },
+          "y": {
+            "type": "number",
+            "label": {
+              "zh": "纵向位置",
+              "en": "Down"
+            },
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
         "description": "the named point {x,y} 0..1; defaults to the edge opposite the text"
       },
       "textAt": {
         "type": "number",
+        "label": {
+          "zh": "文字所在",
+          "en": "Text along side"
+        },
         "min": 0,
         "max": 1,
         "step": 0.01,
-        "default": 0.5,
         "description": "where the text sits along its side, 0..1 (top to bottom on the left or right, left to right above or below)"
       },
       "bend": {
         "type": "choice",
-        "options": ["elbow", "straight"],
-        "default": "elbow",
+        "label": {
+          "zh": "弯曲",
+          "en": "Bend"
+        },
+        "options": [
+          {
+            "value": "elbow",
+            "label": {
+              "zh": "直角",
+              "en": "Right angles"
+            }
+          },
+          {
+            "value": "straight",
+            "label": {
+              "zh": "直线",
+              "en": "Straight"
+            }
+          }
+        ],
         "description": "one bend into a level run, or a straight line"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 15,
         "description": "font size"
       },
       "dot": {
         "type": "boolean",
-        "default": true,
+        "label": {
+          "zh": "端点圆点",
+          "en": "Dot at the end"
+        },
         "description": "dot at the target"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "line colour; defaults to muted"
       },
       "width": {
         "type": "number",
+        "label": {
+          "zh": "线宽",
+          "en": "Line width"
+        },
         "min": 0.5,
         "max": 6,
         "step": 0.5,
-        "default": 1,
         "description": "line width of the leader"
       },
       "textColor": {
         "type": "color",
+        "label": {
+          "zh": "文字颜色",
+          "en": "Text colour"
+        },
         "description": "defaults to ink"
       }
+    },
+    "defaults": {
+      "side": "right",
+      "textAt": 0.5,
+      "bend": "elbow",
+      "size": 15,
+      "dot": true,
+      "width": 1
     }
   },
   {
@@ -356,7 +738,12 @@
     ],
     "category": "drawing/light",
     "about": "A soft elliptical contact shadow that sets a picture on the ground instead of letting it float. A flat module just under the object's base, about as wide as the object.",
-    "tags": ["shadow", "ground", "depth", "composition"],
+    "tags": [
+      "shadow",
+      "ground",
+      "depth",
+      "composition"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -371,16 +758,26 @@
     "params": {
       "opacity": {
         "type": "number",
+        "label": {
+          "zh": "浓淡",
+          "en": "Strength"
+        },
         "min": 0,
         "max": 1,
         "step": 0.01,
-        "default": 0.22,
         "description": "darkness at the centre"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "defaults to ink"
       }
+    },
+    "defaults": {
+      "opacity": 0.22
     }
   },
   {
@@ -402,7 +799,12 @@
     ],
     "category": "drawing/picture",
     "about": "Places a picture material fitted by its visible content, optionally grounded with a soft shadow and captioned underneath. The quickest way to put a found or generated picture on the canvas.",
-    "tags": ["picture", "image", "caption", "material"],
+    "tags": [
+      "picture",
+      "image",
+      "caption",
+      "material"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -421,35 +823,76 @@
     "params": {
       "material": {
         "type": "picture",
+        "label": {
+          "zh": "图片",
+          "en": "Picture"
+        },
         "description": "the picture material's id"
       },
       "caption": {
         "type": "text",
+        "label": {
+          "zh": "图片说明",
+          "en": "Caption"
+        },
         "description": "a name under the picture"
       },
       "captionSize": {
         "type": "number",
+        "label": {
+          "zh": "说明字号",
+          "en": "Caption size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 15,
         "description": "font size"
       },
       "shadow": {
         "type": "boolean",
-        "default": false,
+        "label": {
+          "zh": "地面阴影",
+          "en": "Ground shadow"
+        },
         "description": "a soft ground shadow"
       },
       "fit": {
         "type": "choice",
-        "options": ["contain", "cover"],
-        "default": "contain",
+        "label": {
+          "zh": "图片铺放",
+          "en": "Picture fit"
+        },
+        "options": [
+          {
+            "value": "contain",
+            "label": {
+              "zh": "完整显示",
+              "en": "Whole picture"
+            }
+          },
+          {
+            "value": "cover",
+            "label": {
+              "zh": "铺满",
+              "en": "Fill the box"
+            }
+          }
+        ],
         "description": "contain shows the whole picture; cover fills the box"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "ink colour for recolourable icons, and caption colour"
       }
+    },
+    "defaults": {
+      "captionSize": 15,
+      "shadow": false,
+      "fit": "contain"
     }
   },
   {
@@ -470,7 +913,12 @@
     ],
     "category": "drawing/mark",
     "about": "A small numbered circle that gives reading order or marks the steps along a path.",
-    "tags": ["number", "step", "order", "sequence"],
+    "tags": [
+      "number",
+      "step",
+      "order",
+      "sequence"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -487,18 +935,32 @@
     "params": {
       "number": {
         "type": "text",
-        "default": "1",
+        "label": {
+          "zh": "编号",
+          "en": "Number"
+        },
         "description": "what the badge shows"
       },
       "filled": {
         "type": "boolean",
-        "default": true,
+        "label": {
+          "zh": "实心",
+          "en": "Filled"
+        },
         "description": "solid or outlined"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "defaults to accent"
       }
+    },
+    "defaults": {
+      "number": "1",
+      "filled": true
     }
   },
   {
@@ -520,7 +982,13 @@
     ],
     "category": "drawing/connector",
     "about": "Curved arrows running round a circle: the shape of any cycle (water, life, seasons, feedback). Step i sits at angle start + i·360/n on the circle, so stage pictures can be placed there as their own modules; labels optional.",
-    "tags": ["cycle", "loop", "arrows", "process", "circle"],
+    "tags": [
+      "cycle",
+      "loop",
+      "arrows",
+      "process",
+      "circle"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -532,46 +1000,98 @@
       "height": 420
     },
     "example": {
-      "steps": ["蒸发", "凝结", "降水", "径流"]
+      "steps": [
+        "蒸发",
+        "凝结",
+        "降水",
+        "径流"
+      ]
     },
     "params": {
       "steps": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "阶段",
+          "en": "Stages"
+        },
+        "item": {
+          "type": "text",
+          "label": {
+            "zh": "阶段",
+            "en": "Stage"
+          }
+        },
+        "new": "",
         "description": "labels of the stages, or a count"
       },
       "start": {
         "type": "number",
+        "label": {
+          "zh": "起始角度",
+          "en": "Starting angle"
+        },
         "min": -180,
         "max": 180,
         "step": 5,
-        "default": -90,
         "description": "angle of the first stage in degrees (-90 is the top)"
       },
       "clockwise": {
         "type": "boolean",
-        "default": true,
+        "label": {
+          "zh": "顺时针",
+          "en": "Clockwise"
+        },
         "description": "direction of travel"
       },
       "labels": {
         "type": "choice",
-        "options": ["outside", "inside"],
-        "default": "outside",
+        "label": {
+          "zh": "标签位置",
+          "en": "Label position"
+        },
+        "options": [
+          {
+            "value": "outside",
+            "label": {
+              "zh": "外侧",
+              "en": "Outside"
+            }
+          },
+          {
+            "value": "inside",
+            "label": {
+              "zh": "内侧",
+              "en": "Inside"
+            }
+          }
+        ],
         "description": "where the stage labels sit"
       },
       "gap": {
         "type": "number",
+        "label": {
+          "zh": "端点留白",
+          "en": "Gap at the ends"
+        },
         "min": 0,
         "max": 40,
         "step": 1,
-        "default": 16,
         "description": "degrees left free around each stage"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "defaults to accent"
       },
       "width": {
         "type": "number",
+        "label": {
+          "zh": "线宽",
+          "en": "Line width"
+        },
         "min": 0.5,
         "max": 12,
         "step": 0.5,
@@ -579,12 +1099,22 @@
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 15,
         "description": "label font size"
       }
+    },
+    "defaults": {
+      "start": -90,
+      "clockwise": true,
+      "labels": "outside",
+      "gap": 16,
+      "size": 15
     }
   },
   {
@@ -607,7 +1137,13 @@
     ],
     "category": "drawing/chart",
     "about": "Axes with nicely rounded ticks and one or more curves: functions of x given as JavaScript expressions (\"Math.sin(x)\", \"2*Math.PI*Math.sqrt(x/9.8)\") or measured points. An optional marker shows the current value; set it from a slider to make the plot interactive. For laws, quantities and comparisons over a range.",
-    "tags": ["plot", "axes", "function", "chart", "quantitative"],
+    "tags": [
+      "plot",
+      "axes",
+      "function",
+      "chart",
+      "quantitative"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -630,6 +1166,7 @@
       },
       "series": [
         {
+          "id": "sin-x",
           "fn": "Math.sin(x)",
           "label": "sin x"
         }
@@ -640,38 +1177,295 @@
     },
     "params": {
       "x": {
-        "type": "object",
+        "type": "record",
+        "label": {
+          "zh": "横轴",
+          "en": "Horizontal axis"
+        },
+        "fields": {
+          "min": {
+            "type": "number",
+            "label": {
+              "zh": "最小值",
+              "en": "Minimum"
+            }
+          },
+          "max": {
+            "type": "number",
+            "label": {
+              "zh": "最大值",
+              "en": "Maximum"
+            }
+          },
+          "label": {
+            "type": "text",
+            "label": {
+              "zh": "轴名",
+              "en": "Axis name"
+            }
+          },
+          "ticks": {
+            "type": "number",
+            "label": {
+              "zh": "刻度数",
+              "en": "Ticks"
+            },
+            "min": 0,
+            "max": 20,
+            "step": 1
+          },
+          "format": {
+            "type": "text",
+            "label": {
+              "zh": "数字格式",
+              "en": "Number format"
+            }
+          }
+        },
         "description": "{min, max, label, ticks (count or list), format ('{} m')}"
       },
       "y": {
-        "type": "object",
+        "type": "record",
+        "label": {
+          "zh": "纵轴",
+          "en": "Vertical axis"
+        },
+        "fields": {
+          "min": {
+            "type": "number",
+            "label": {
+              "zh": "最小值",
+              "en": "Minimum"
+            }
+          },
+          "max": {
+            "type": "number",
+            "label": {
+              "zh": "最大值",
+              "en": "Maximum"
+            }
+          },
+          "label": {
+            "type": "text",
+            "label": {
+              "zh": "轴名",
+              "en": "Axis name"
+            }
+          },
+          "ticks": {
+            "type": "number",
+            "label": {
+              "zh": "刻度数",
+              "en": "Ticks"
+            },
+            "min": 0,
+            "max": 20,
+            "step": 1
+          },
+          "format": {
+            "type": "text",
+            "label": {
+              "zh": "数字格式",
+              "en": "Number format"
+            }
+          }
+        },
         "description": "{min, max, label, ticks, format}"
       },
       "series": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "曲线",
+          "en": "Curves"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "fn": {
+              "type": "text",
+              "label": {
+                "zh": "函数（x 的表达式）",
+                "en": "Function of x"
+              }
+            },
+            "points": {
+              "type": "list",
+              "label": {
+                "zh": "数据点",
+                "en": "Points"
+              },
+              "item": {
+                "type": "list",
+                "item": {
+                  "type": "number",
+                  "label": {
+                    "zh": "值",
+                    "en": "Value"
+                  }
+                },
+                "min": 2,
+                "max": 2
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            },
+            "width": {
+              "type": "number",
+              "label": {
+                "zh": "线宽",
+                "en": "Line width"
+              },
+              "min": 0.5,
+              "max": 12,
+              "step": 0.5
+            },
+            "dashed": {
+              "type": "boolean",
+              "label": {
+                "zh": "虚线",
+                "en": "Dashed"
+              }
+            },
+            "dots": {
+              "type": "boolean",
+              "label": {
+                "zh": "画出数据点",
+                "en": "Dots"
+              }
+            },
+            "area": {
+              "type": "boolean",
+              "label": {
+                "zh": "填充到横轴",
+                "en": "Fill to the axis"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": "",
+          "fn": "x"
+        },
         "description": "[{fn: 'expression in x'} or {points: [[x,y]]}, label, color, width, dashed, dots, area]"
       },
       "fillBetween": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "两线之间着色",
+          "en": "Shade between"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "from": {
+              "type": "number",
+              "label": {
+                "zh": "从第几条",
+                "en": "From curve"
+              },
+              "min": 0,
+              "step": 1
+            },
+            "to": {
+              "type": "number",
+              "label": {
+                "zh": "到第几条",
+                "en": "To curve"
+              },
+              "min": 0,
+              "step": 1
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            },
+            "opacity": {
+              "type": "number",
+              "label": {
+                "zh": "浓淡",
+                "en": "Opacity"
+              },
+              "min": 0,
+              "max": 1,
+              "step": 0.05
+            }
+          }
+        },
         "description": "[i, j] or {from, to, color?, opacity?} to shade the area between two series"
       },
       "grid": {
         "type": "boolean",
-        "default": false,
+        "label": {
+          "zh": "网格线",
+          "en": "Grid lines"
+        },
         "description": "faint grid lines"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 13,
         "description": "font size"
       },
       "marker": {
-        "type": "object",
+        "type": "record",
+        "label": {
+          "zh": "标记点",
+          "en": "Marker"
+        },
+        "fields": {
+          "x": {
+            "type": "number",
+            "label": {
+              "zh": "位置",
+              "en": "At"
+            }
+          },
+          "label": {
+            "type": "text",
+            "label": {
+              "zh": "文字",
+              "en": "Words"
+            }
+          },
+          "color": {
+            "type": "color",
+            "label": {
+              "zh": "颜色",
+              "en": "Colour"
+            }
+          }
+        },
         "description": "the current value on the first curve {x, label?, color?}: a dot with guides to both axes; update it with api.set"
       }
+    },
+    "defaults": {
+      "grid": false,
+      "size": 13
     }
   },
   {
@@ -693,7 +1487,13 @@
     ],
     "category": "drawing/chart",
     "about": "A time axis with events: dots on the line, dates beside it, names alternating above and below so neighbours never collide; an event can carry a note and be accented.",
-    "tags": ["timeline", "history", "dates", "events", "sequence"],
+    "tags": [
+      "timeline",
+      "history",
+      "dates",
+      "events",
+      "sequence"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -707,23 +1507,28 @@
     "example": {
       "events": [
         {
+          "id": "l9ewoj",
           "at": 1903,
           "label": "首次动力飞行"
         },
         {
+          "id": "lplh11",
           "at": 1957,
           "label": "第一颗人造卫星"
         },
         {
+          "id": "lf9wqw",
           "at": 1969,
           "label": "登上月球",
           "accent": true
         },
         {
+          "id": "l1m8vs",
           "at": 1990,
           "label": "哈勃望远镜"
         },
         {
+          "id": "l11yvh",
           "at": 2021,
           "label": "韦布望远镜"
         }
@@ -731,31 +1536,115 @@
     },
     "params": {
       "events": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "事件",
+          "en": "Events"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "at": {
+              "type": "number",
+              "label": {
+                "zh": "时间点",
+                "en": "When"
+              }
+            },
+            "date": {
+              "type": "text",
+              "label": {
+                "zh": "显示的时间",
+                "en": "Date shown"
+              }
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "补充说明",
+                "en": "Note"
+              }
+            },
+            "accent": {
+              "type": "boolean",
+              "label": {
+                "zh": "强调",
+                "en": "Accent"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": ""
+        },
         "description": "[{at: number, date?: shown text, label, note?, accent?}]"
       },
       "from": {
         "type": "number",
+        "label": {
+          "zh": "起点",
+          "en": "Start"
+        },
         "description": "start of the axis; defaults to the first event"
       },
       "to": {
         "type": "number",
+        "label": {
+          "zh": "终点",
+          "en": "End"
+        },
         "description": "end of the axis; defaults to the last event"
       },
       "spacing": {
         "type": "choice",
-        "options": ["linear", "even"],
-        "default": "linear",
+        "label": {
+          "zh": "间距",
+          "en": "Spacing"
+        },
+        "options": [
+          {
+            "value": "linear",
+            "label": {
+              "zh": "按比例",
+              "en": "Proportional"
+            }
+          },
+          {
+            "value": "even",
+            "label": {
+              "zh": "等距",
+              "en": "Even"
+            }
+          }
+        ],
         "description": "linear spaces by date value; even spaces events evenly in order when dates cluster or span widely"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       }
+    },
+    "defaults": {
+      "spacing": "linear",
+      "size": 14
     }
   },
   {
@@ -776,7 +1665,11 @@
     ],
     "category": "drawing/mark",
     "about": "A curly brace that gathers the things beside it, its point toward facing (right, left, up, down), with a label at the point. For grouping without a box.",
-    "tags": ["brace", "group", "annotation"],
+    "tags": [
+      "brace",
+      "group",
+      "annotation"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -793,42 +1686,97 @@
     "params": {
       "facing": {
         "type": "choice",
-        "options": ["right", "left", "up", "down"],
-        "default": "right",
+        "label": {
+          "zh": "朝向",
+          "en": "Facing"
+        },
+        "options": [
+          {
+            "value": "right",
+            "label": {
+              "zh": "右",
+              "en": "Right"
+            }
+          },
+          {
+            "value": "left",
+            "label": {
+              "zh": "左",
+              "en": "Left"
+            }
+          },
+          {
+            "value": "up",
+            "label": {
+              "zh": "上",
+              "en": "Up"
+            }
+          },
+          {
+            "value": "down",
+            "label": {
+              "zh": "下",
+              "en": "Down"
+            }
+          }
+        ],
         "description": "which way the brace points"
       },
       "label": {
         "type": "text",
+        "label": {
+          "zh": "文字",
+          "en": "Text"
+        },
         "description": "the group's name"
       },
       "depth": {
         "type": "number",
+        "label": {
+          "zh": "深度",
+          "en": "Depth"
+        },
         "min": 4,
         "max": 60,
         "step": 1,
-        "default": 14,
         "description": "how far the brace reaches"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "defaults to muted"
       },
       "width": {
         "type": "number",
+        "label": {
+          "zh": "线宽",
+          "en": "Line width"
+        },
         "min": 0.5,
         "max": 8,
         "step": 0.1,
-        "default": 1.4,
         "description": "line width"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 15,
         "description": "font size"
       }
+    },
+    "defaults": {
+      "facing": "right",
+      "depth": 14,
+      "width": 1.4,
+      "size": 15
     }
   },
   {
@@ -893,37 +1841,100 @@
     "params": {
       "shape": {
         "type": "choice",
-        "options": ["blob", "box"],
-        "default": "blob",
+        "label": {
+          "zh": "形状",
+          "en": "Shape"
+        },
+        "options": [
+          {
+            "value": "blob",
+            "label": {
+              "zh": "不规则块",
+              "en": "Blob"
+            }
+          },
+          {
+            "value": "box",
+            "label": {
+              "zh": "方框",
+              "en": "Box"
+            }
+          }
+        ],
         "description": "soft organic area or tidy rounded frame"
       },
       "label": {
         "type": "text",
+        "label": {
+          "zh": "文字",
+          "en": "Text"
+        },
         "description": "the zone's name"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 15,
         "description": "font size of the label"
       },
       "labelColor": {
         "type": "color",
+        "label": {
+          "zh": "文字颜色",
+          "en": "Label colour"
+        },
         "description": "colour of the label; defaults to ink (blob) or the frame's colour (box)"
       },
       "labelAt": {
         "type": "choice",
-        "options": ["center", "top", "corner"],
+        "label": {
+          "zh": "文字位置",
+          "en": "Text position"
+        },
+        "options": [
+          {
+            "value": "center",
+            "label": {
+              "zh": "居中",
+              "en": "Centre"
+            }
+          },
+          {
+            "value": "top",
+            "label": {
+              "zh": "顶部",
+              "en": "Top"
+            }
+          },
+          {
+            "value": "corner",
+            "label": {
+              "zh": "单折",
+              "en": "One turn"
+            }
+          }
+        ],
         "description": "where the label sits; defaults to center (blob) or corner (box)"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "defaults to accent2"
       },
       "opacity": {
         "type": "number",
+        "label": {
+          "zh": "浓淡",
+          "en": "Strength"
+        },
         "min": 0,
         "max": 1,
         "step": 0.01,
@@ -931,37 +1942,65 @@
       },
       "outline": {
         "type": "boolean",
+        "label": {
+          "zh": "轮廓",
+          "en": "Outline"
+        },
         "description": "draw the edge; defaults to off (blob) or on (box)"
       },
       "dashed": {
         "type": "boolean",
-        "default": true,
+        "label": {
+          "zh": "虚线",
+          "en": "Dashed"
+        },
         "description": "box only: dashed or solid edge"
       },
       "radius": {
         "type": "number",
+        "label": {
+          "zh": "拐角圆度",
+          "en": "Corner rounding"
+        },
         "min": 0,
         "max": 60,
         "step": 1,
-        "default": 12,
         "description": "box only: corner radius"
       },
       "wobble": {
         "type": "number",
+        "label": {
+          "zh": "边缘起伏",
+          "en": "Wobble"
+        },
         "min": 0,
         "max": 0.2,
         "step": 0.01,
-        "default": 0.08,
         "description": "blob only: irregularity 0..0.2"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for texture, e.g. watercolor-edge"
       },
       "seed": {
         "type": "number",
+        "label": {
+          "zh": "形状变化",
+          "en": "Shape variation"
+        },
         "description": "blob only: changes the shape"
       }
+    },
+    "defaults": {
+      "shape": "blob",
+      "size": 15,
+      "dashed": true,
+      "radius": 12,
+      "wobble": 0.08
     }
   },
   {
@@ -984,7 +2023,12 @@
     ],
     "category": "drawing/nature",
     "about": "Rows of gentle waves for water, a river, or a sound or light wave; they roll slowly unless still is set.",
-    "tags": ["water", "waves", "sea", "animation"],
+    "tags": [
+      "water",
+      "waves",
+      "sea",
+      "animation"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -999,14 +2043,21 @@
     "params": {
       "rows": {
         "type": "number",
+        "label": {
+          "zh": "波纹行数",
+          "en": "Rows of waves"
+        },
         "min": 1,
         "max": 12,
         "step": 1,
-        "default": 3,
         "description": "number of wave lines"
       },
       "amplitude": {
         "type": "number",
+        "label": {
+          "zh": "波高",
+          "en": "Wave height"
+        },
         "min": 1,
         "max": 60,
         "step": 1,
@@ -1014,36 +2065,59 @@
       },
       "wavelength": {
         "type": "number",
+        "label": {
+          "zh": "波长",
+          "en": "Wavelength"
+        },
         "min": 16,
         "max": 240,
         "step": 1,
-        "default": 64,
         "description": "wave length"
       },
       "still": {
         "type": "boolean",
-        "default": false,
+        "label": {
+          "zh": "静止",
+          "en": "Still"
+        },
         "description": "no motion"
       },
       "period": {
         "type": "number",
+        "label": {
+          "zh": "周期（秒）",
+          "en": "Period (seconds)"
+        },
         "min": 0,
         "max": 60,
         "step": 1,
-        "default": 6,
         "description": "seconds per roll"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "defaults to accent2"
       },
       "width": {
         "type": "number",
+        "label": {
+          "zh": "线宽",
+          "en": "Line width"
+        },
         "min": 0.5,
         "max": 8,
         "step": 0.1,
         "description": "line width; defaults to the stroke token"
       }
+    },
+    "defaults": {
+      "rows": 3,
+      "wavelength": 64,
+      "still": false,
+      "period": 6
     }
   },
   {
@@ -1065,7 +2139,13 @@
     ],
     "category": "drawing/science",
     "about": "An orbit: a fine ellipse filling the module, with an optional body (a picture material id) travelling along it, counter-clockwise like planets seen from above the north pole unless clockwise is set.",
-    "tags": ["orbit", "planet", "astronomy", "motion", "animation"],
+    "tags": [
+      "orbit",
+      "planet",
+      "astronomy",
+      "motion",
+      "animation"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -1083,54 +2163,88 @@
     "params": {
       "body": {
         "type": "picture",
+        "label": {
+          "zh": "运动的图片",
+          "en": "Moving picture"
+        },
         "description": "picture material id travelling on the orbit"
       },
       "bodySize": {
         "type": "number",
+        "label": {
+          "zh": "图片大小",
+          "en": "Picture size"
+        },
         "min": 8,
         "max": 200,
         "step": 1,
-        "default": 28,
         "description": "body width"
       },
       "period": {
         "type": "number",
+        "label": {
+          "zh": "周期（秒）",
+          "en": "Period (seconds)"
+        },
         "min": 0,
         "max": 60,
         "step": 1,
-        "default": 12,
         "description": "seconds per revolution; 0 keeps it still"
       },
       "phase": {
         "type": "number",
+        "label": {
+          "zh": "起始位置",
+          "en": "Starting position"
+        },
         "min": 0,
         "max": 1,
         "step": 0.01,
-        "default": 0,
         "description": "starting position 0..1 (0 is the right end)"
       },
       "clockwise": {
         "type": "boolean",
-        "default": false,
+        "label": {
+          "zh": "顺时针",
+          "en": "Clockwise"
+        },
         "description": "direction"
       },
       "dashed": {
         "type": "boolean",
-        "default": true,
+        "label": {
+          "zh": "虚线",
+          "en": "Dashed"
+        },
         "description": "dashed path"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "path colour; defaults to muted"
       },
       "width": {
         "type": "number",
+        "label": {
+          "zh": "线宽",
+          "en": "Line width"
+        },
         "min": 0.5,
         "max": 6,
         "step": 0.1,
-        "default": 1.1,
         "description": "line width of the path"
       }
+    },
+    "defaults": {
+      "bodySize": 28,
+      "period": 12,
+      "phase": 0,
+      "clockwise": false,
+      "dashed": true,
+      "width": 1.1
     }
   },
   {
@@ -1152,7 +2266,12 @@
     ],
     "category": "drawing/control",
     "about": "A labelled slider for one quantity, showing its value and unit. It keeps its own position while dragged and sends \"change\" with the number: listen with api.on(moduleId, \"change\", v => …) in the scene interaction and update other modules with api.set.",
-    "tags": ["slider", "control", "interactive", "parameter"],
+    "tags": [
+      "slider",
+      "control",
+      "interactive",
+      "parameter"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -1174,32 +2293,58 @@
     "params": {
       "label": {
         "type": "text",
+        "label": {
+          "zh": "文字",
+          "en": "Text"
+        },
         "description": "what it sets"
       },
       "min": {
         "type": "number",
-        "default": 0,
+        "label": {
+          "zh": "最小值",
+          "en": "Minimum"
+        },
         "description": "smallest value"
       },
       "max": {
         "type": "number",
-        "default": 100,
+        "label": {
+          "zh": "最大值",
+          "en": "Maximum"
+        },
         "description": "largest value"
       },
       "step": {
         "type": "number",
+        "label": {
+          "zh": "步长",
+          "en": "Step"
+        },
         "description": "increment"
       },
       "value": {
         "type": "number",
+        "label": {
+          "zh": "初始值",
+          "en": "Starting value"
+        },
         "description": "starting value"
       },
       "unit": {
         "type": "text",
+        "label": {
+          "zh": "单位",
+          "en": "Unit"
+        },
         "description": "unit shown after the value"
       },
       "digits": {
         "type": "number",
+        "label": {
+          "zh": "小数位数",
+          "en": "Decimals"
+        },
         "min": 0,
         "max": 6,
         "step": 1,
@@ -1207,16 +2352,28 @@
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "defaults to accent"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 15,
         "description": "font size"
       }
+    },
+    "defaults": {
+      "min": 0,
+      "max": 100,
+      "size": 15
     }
   },
   {
@@ -1240,7 +2397,13 @@
     ],
     "category": "drawing/control",
     "about": "A row of options of which one is chosen: seasons, stages, modes or steps of a story. It marks its own choice and sends \"change\" with {option, index}: listen with api.on(moduleId, \"change\", c => …) and show the chosen state with api.set or api.move.",
-    "tags": ["choice", "control", "interactive", "steps", "toggle"],
+    "tags": [
+      "choice",
+      "control",
+      "interactive",
+      "steps",
+      "toggle"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -1252,30 +2415,61 @@
       "height": 48
     },
     "example": {
-      "options": ["春", "夏", "秋", "冬"],
+      "options": [
+        "春",
+        "夏",
+        "秋",
+        "冬"
+      ],
       "value": "春"
     },
     "params": {
       "options": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "选项",
+          "en": "Options"
+        },
+        "item": {
+          "type": "text",
+          "label": {
+            "zh": "选项",
+            "en": "Option"
+          }
+        },
+        "new": "",
         "description": "the option labels"
       },
       "value": {
         "type": "text",
+        "label": {
+          "zh": "初始值",
+          "en": "Starting value"
+        },
         "description": "the option chosen at first"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "defaults to accent"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 15,
         "description": "font size"
       }
+    },
+    "defaults": {
+      "size": 15
     }
   },
   {
@@ -1303,7 +2497,13 @@
     ],
     "category": "drawing/structure",
     "about": "A block of a flowchart, architecture or concept map: a box, pill, circle, decision diamond, database cylinder or document holding a title, an optional note and an optional icon, coloured by the style. One per module, joined by arrow links (route elbow for flowcharts) so blocks move on their own and connections follow; the words wrap inside the shape. With stack, copies of it stand behind, for a service run as several replicas.",
-    "tags": ["structure", "flowchart", "architecture", "box", "node"],
+    "tags": [
+      "structure",
+      "flowchart",
+      "architecture",
+      "box",
+      "node"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -1323,89 +2523,267 @@
     "params": {
       "title": {
         "type": "text",
+        "label": {
+          "zh": "标题",
+          "en": "Title"
+        },
         "description": "the block's name"
       },
       "note": {
         "type": "text",
+        "label": {
+          "zh": "补充说明",
+          "en": "Note"
+        },
         "description": "a short second line, muted"
       },
       "shape": {
         "type": "choice",
-        "options": ["box", "pill", "circle", "diamond", "cylinder", "document"],
-        "default": "box",
+        "label": {
+          "zh": "形状",
+          "en": "Shape"
+        },
+        "options": [
+          {
+            "value": "box",
+            "label": {
+              "zh": "方框",
+              "en": "Box"
+            }
+          },
+          {
+            "value": "pill",
+            "label": {
+              "zh": "圆角条",
+              "en": "Pill"
+            }
+          },
+          {
+            "value": "circle",
+            "label": {
+              "zh": "圆形",
+              "en": "Circle"
+            }
+          },
+          {
+            "value": "diamond",
+            "label": {
+              "zh": "菱形",
+              "en": "Diamond"
+            }
+          },
+          {
+            "value": "cylinder",
+            "label": {
+              "zh": "圆柱",
+              "en": "Cylinder"
+            }
+          },
+          {
+            "value": "document",
+            "label": {
+              "zh": "文档",
+              "en": "Document"
+            }
+          }
+        ],
         "description": "box for a step or component, pill for start/end, diamond for a decision, cylinder for a store"
       },
       "tone": {
         "type": "choice",
-        "options": ["plain", "accent", "accent2", "muted", "ink"],
-        "default": "plain",
+        "label": {
+          "zh": "配色",
+          "en": "Tone"
+        },
+        "options": [
+          {
+            "value": "plain",
+            "label": {
+              "zh": "素色",
+              "en": "Plain"
+            }
+          },
+          {
+            "value": "accent",
+            "label": {
+              "zh": "强调色",
+              "en": "Accent"
+            }
+          },
+          {
+            "value": "accent2",
+            "label": {
+              "zh": "辅助色",
+              "en": "Second accent"
+            }
+          },
+          {
+            "value": "muted",
+            "label": {
+              "zh": "灰色",
+              "en": "Grey"
+            }
+          },
+          {
+            "value": "ink",
+            "label": {
+              "zh": "墨色",
+              "en": "Ink"
+            }
+          }
+        ],
         "description": "which style colour it takes"
       },
       "fillStyle": {
         "type": "choice",
-        "options": ["soft", "solid", "none"],
+        "label": {
+          "zh": "填充方式",
+          "en": "Fill"
+        },
+        "options": [
+          {
+            "value": "soft",
+            "label": {
+              "zh": "淡色",
+              "en": "Soft"
+            }
+          },
+          {
+            "value": "solid",
+            "label": {
+              "zh": "实色",
+              "en": "Solid"
+            }
+          },
+          {
+            "value": "none",
+            "label": {
+              "zh": "无",
+              "en": "None"
+            }
+          }
+        ],
         "description": "soft tint, solid colour or paper; plain defaults to none, other tones to soft"
       },
       "icon": {
         "type": "picture",
+        "label": {
+          "zh": "图标",
+          "en": "Icon"
+        },
         "description": "an icon or small picture beside or above the words"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "overrides the tone's colour"
       },
       "dashed": {
         "type": "boolean",
-        "default": false,
+        "label": {
+          "zh": "虚线",
+          "en": "Dashed"
+        },
         "description": "a dashed outline, for something optional or external"
       },
       "lift": {
         "type": "boolean",
-        "default": false,
+        "label": {
+          "zh": "浮起阴影",
+          "en": "Lift shadow"
+        },
         "description": "a soft shadow that lifts the block off the paper"
       },
       "align": {
         "type": "choice",
-        "options": ["center", "left"],
-        "default": "center",
+        "label": {
+          "zh": "对齐",
+          "en": "Alignment"
+        },
+        "options": [
+          {
+            "value": "center",
+            "label": {
+              "zh": "居中",
+              "en": "Centre"
+            }
+          },
+          {
+            "value": "left",
+            "label": {
+              "zh": "左",
+              "en": "Left"
+            }
+          }
+        ],
         "description": "how the words line up"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 15,
         "description": "font size"
       },
       "weight": {
         "type": "number",
+        "label": {
+          "zh": "字重",
+          "en": "Weight"
+        },
         "min": 100,
         "max": 900,
         "step": 100,
-        "default": 600,
         "description": "font weight of the title"
       },
       "radius": {
         "type": "number",
+        "label": {
+          "zh": "拐角圆度",
+          "en": "Corner rounding"
+        },
         "min": 0,
         "max": 40,
         "step": 1,
-        "default": 10,
         "description": "rounding of the corners of a rounded shape"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id applied to the shape, such as rough-edge"
       },
       "stack": {
         "type": "number",
+        "label": {
+          "zh": "副本层数",
+          "en": "Stacked copies"
+        },
         "min": 0,
         "max": 4,
         "step": 1,
-        "default": 0,
         "description": "copies stacked behind the block, for a service run as several replicas"
       }
+    },
+    "defaults": {
+      "shape": "box",
+      "tone": "plain",
+      "dashed": false,
+      "lift": false,
+      "align": "center",
+      "size": 15,
+      "weight": 600,
+      "radius": 10,
+      "stack": 0
     }
   },
   {
@@ -1453,35 +2831,44 @@
         "label": "生物",
         "children": [
           {
+            "id": "leoqp",
             "label": "动物",
             "children": [
               {
+                "id": "lgppnn",
                 "label": "脊椎动物"
               },
               {
+                "id": "l1nvzo",
                 "label": "无脊椎动物"
               }
             ]
           },
           {
+            "id": "lihvg",
             "label": "植物",
             "children": [
               {
+                "id": "lfqxtg",
                 "label": "种子植物"
               },
               {
+                "id": "lbwtml",
                 "label": "孢子植物"
               }
             ]
           },
           {
+            "id": "lel2e0",
             "label": "微生物",
             "note": "肉眼不可见",
             "children": [
               {
+                "id": "lmabq",
                 "label": "细菌"
               },
               {
+                "id": "lkzgt",
                 "label": "真菌",
                 "accent": true
               }
@@ -1492,35 +2879,104 @@
     },
     "params": {
       "root": {
-        "type": "object",
+        "type": "tree",
+        "label": {
+          "zh": "层级",
+          "en": "Hierarchy"
+        },
+        "fields": {
+          "id": {
+            "type": "id"
+          },
+          "label": {
+            "type": "text",
+            "label": {
+              "zh": "文字",
+              "en": "Words"
+            }
+          },
+          "note": {
+            "type": "text",
+            "label": {
+              "zh": "补充说明",
+              "en": "Note"
+            }
+          },
+          "accent": {
+            "type": "boolean",
+            "label": {
+              "zh": "强调",
+              "en": "Accent"
+            }
+          }
+        },
+        "children": "children",
+        "title": "label",
         "description": "{label, note?, accent?, children?: [nodes like this]}"
       },
       "direction": {
         "type": "choice",
-        "options": ["down", "right"],
-        "default": "down",
+        "label": {
+          "zh": "生长方向",
+          "en": "Grows"
+        },
+        "options": [
+          {
+            "value": "down",
+            "label": {
+              "zh": "下",
+              "en": "Down"
+            }
+          },
+          {
+            "value": "right",
+            "label": {
+              "zh": "右",
+              "en": "Right"
+            }
+          }
+        ],
         "description": "which way the tree grows"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "the root's colour; defaults to accent"
       },
       "lineColor": {
         "type": "color",
+        "label": {
+          "zh": "连线颜色",
+          "en": "Line colour"
+        },
         "description": "the connecting lines; defaults to muted"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "direction": "down",
+      "size": 14
     }
   },
   {
@@ -1547,7 +3003,13 @@
     ],
     "category": "drawing/structure",
     "about": "Stacked layers from top to bottom: a software architecture, protocol stack or the tiers of an organisation. Each band names its layer on the left with an optional note and lays its parts out as chips across the rest; a band without parts centres its name; a layer can be accented.",
-    "tags": ["structure", "architecture", "layers", "stack", "system"],
+    "tags": [
+      "structure",
+      "architecture",
+      "layers",
+      "stack",
+      "system"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -1561,20 +3023,37 @@
     "example": {
       "layers": [
         {
+          "id": "lef54e",
           "label": "应用层",
           "note": "面向用户",
-          "items": ["网页", "小程序", "App"]
+          "items": [
+            "网页",
+            "小程序",
+            "App"
+          ]
         },
         {
+          "id": "lfhy1a",
           "label": "服务层",
-          "items": ["订单", "支付", "库存", "通知"],
+          "items": [
+            "订单",
+            "支付",
+            "库存",
+            "通知"
+          ],
           "accent": true
         },
         {
+          "id": "lfcao4",
           "label": "数据层",
-          "items": ["MySQL", "Redis", "对象存储"]
+          "items": [
+            "MySQL",
+            "Redis",
+            "对象存储"
+          ]
         },
         {
+          "id": "lblr93",
           "label": "基础设施",
           "note": "云主机与网络"
         }
@@ -1582,15 +3061,75 @@
     },
     "params": {
       "layers": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "层",
+          "en": "Layers"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "补充说明",
+                "en": "Note"
+              }
+            },
+            "items": {
+              "type": "list",
+              "label": {
+                "zh": "组成部分",
+                "en": "Parts"
+              },
+              "item": {
+                "type": "text",
+                "label": {
+                  "zh": "部分",
+                  "en": "Part"
+                }
+              },
+              "new": ""
+            },
+            "accent": {
+              "type": "boolean",
+              "label": {
+                "zh": "强调",
+                "en": "Accent"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": ""
+        },
         "description": "top first: [{label, note?, items?: [names of its parts], accent?}]"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "the bands' tint; defaults to accent2"
       },
       "labelWidth": {
         "type": "number",
+        "label": {
+          "zh": "名称栏宽度",
+          "en": "Name column width"
+        },
         "min": 0,
         "max": 400,
         "step": 10,
@@ -1598,16 +3137,26 @@
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "size": 14
     }
   },
   {
@@ -1632,7 +3181,13 @@
     ],
     "category": "drawing/structure",
     "about": "A two-by-two matrix: two axes from low to high split the plane into four named quadrants (urgent and important, cost and value, risk and impact), items as labelled dots at their positions, one quadrant optionally highlighted.",
-    "tags": ["structure", "matrix", "quadrant", "comparison", "priority"],
+    "tags": [
+      "structure",
+      "matrix",
+      "quadrant",
+      "comparison",
+      "priority"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -1654,21 +3209,29 @@
         "low": "不重要",
         "high": "重要"
       },
-      "quadrants": ["计划去做", "立即去做", "尽量不做", "委托他人"],
+      "quadrants": [
+        "计划去做",
+        "立即去做",
+        "尽量不做",
+        "委托他人"
+      ],
       "highlight": "top-right",
       "items": [
         {
+          "id": "lgbfr6",
           "x": 0.82,
           "y": 0.86,
           "label": "线上故障",
           "accent": true
         },
         {
+          "id": "lciuu5",
           "x": 0.25,
           "y": 0.7,
           "label": "学习新技能"
         },
         {
+          "id": "laaf4b",
           "x": 0.7,
           "y": 0.25,
           "label": "临时会议"
@@ -1677,45 +3240,208 @@
     },
     "params": {
       "x": {
-        "type": "object",
+        "type": "record",
+        "label": {
+          "zh": "横轴",
+          "en": "Horizontal axis"
+        },
+        "fields": {
+          "label": {
+            "type": "text",
+            "label": {
+              "zh": "轴名",
+              "en": "Axis name"
+            }
+          },
+          "low": {
+            "type": "text",
+            "label": {
+              "zh": "低端",
+              "en": "Low end"
+            }
+          },
+          "high": {
+            "type": "text",
+            "label": {
+              "zh": "高端",
+              "en": "High end"
+            }
+          }
+        },
         "description": "the horizontal axis: {label?, low?, high?}"
       },
       "y": {
-        "type": "object",
+        "type": "record",
+        "label": {
+          "zh": "纵轴",
+          "en": "Vertical axis"
+        },
+        "fields": {
+          "label": {
+            "type": "text",
+            "label": {
+              "zh": "轴名",
+              "en": "Axis name"
+            }
+          },
+          "low": {
+            "type": "text",
+            "label": {
+              "zh": "低端",
+              "en": "Low end"
+            }
+          },
+          "high": {
+            "type": "text",
+            "label": {
+              "zh": "高端",
+              "en": "High end"
+            }
+          }
+        },
         "description": "the vertical axis: {label?, low?, high?}"
       },
       "quadrants": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "象限名称",
+          "en": "Quadrant names"
+        },
+        "item": {
+          "type": "text",
+          "label": {
+            "zh": "名称",
+            "en": "Name"
+          }
+        },
+        "new": "",
+        "max": 4,
         "description": "names in reading order: top-left, top-right, bottom-left, bottom-right"
       },
       "highlight": {
         "type": "choice",
+        "label": {
+          "zh": "突出列",
+          "en": "Highlighted column"
+        },
         "options": [
-          "none",
-          "top-left",
-          "top-right",
-          "bottom-left",
-          "bottom-right"
+          {
+            "value": "none",
+            "label": {
+              "zh": "无",
+              "en": "None"
+            }
+          },
+          {
+            "value": "top-left",
+            "label": {
+              "zh": "左上",
+              "en": "Top left"
+            }
+          },
+          {
+            "value": "top-right",
+            "label": {
+              "zh": "右上",
+              "en": "Top right"
+            }
+          },
+          {
+            "value": "bottom-left",
+            "label": {
+              "zh": "左下",
+              "en": "Bottom left"
+            }
+          },
+          {
+            "value": "bottom-right",
+            "label": {
+              "zh": "右下",
+              "en": "Bottom right"
+            }
+          }
         ],
-        "default": "none",
         "description": "the quadrant that matters most"
       },
       "items": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "条目",
+          "en": "Items"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "x": {
+              "type": "number",
+              "label": {
+                "zh": "横向",
+                "en": "Across"
+              },
+              "min": 0,
+              "max": 1,
+              "step": 0.01
+            },
+            "y": {
+              "type": "number",
+              "label": {
+                "zh": "纵向",
+                "en": "Up"
+              },
+              "min": 0,
+              "max": 1,
+              "step": 0.01
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "accent": {
+              "type": "boolean",
+              "label": {
+                "zh": "强调",
+                "en": "Accent"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": "",
+          "x": 0.5,
+          "y": 0.5
+        },
         "description": "[{x: 0..1, y: 0..1, label, accent?}] placed from low to high"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "highlight": "none",
+      "size": 14
     }
   },
   {
@@ -1740,7 +3466,13 @@
     ],
     "category": "drawing/structure",
     "about": "A comparison grid: options as columns, criteria as rows. A value shows in its cell as words, a tick (true) or a dash (false); a cell left empty (null) stays clear so a picture, node or small diagram can sit there as its own module. Each column can take its own colour (heading and a light band down it), rows can be numbered and carry a note, one column can be highlighted as the recommended or subject option. Rules between rows only, so it reads as a figure. With labelWidth and headerHeight set, the cell of row i and column j is x = labelWidth + (width − labelWidth)·j/columns, y = headerHeight + (height − headerHeight)·i/rows.",
-    "tags": ["structure", "table", "comparison", "options", "criteria"],
+    "tags": [
+      "structure",
+      "table",
+      "comparison",
+      "options",
+      "criteria"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -1754,10 +3486,12 @@
     "example": {
       "columns": [
         {
+          "id": "kafka",
           "label": "Kafka",
           "color": "#7137C4"
         },
         {
+          "id": "rocketmq",
           "label": "RocketMQ",
           "color": "#13835B"
         }
@@ -1765,52 +3499,164 @@
       "numbered": true,
       "rows": [
         {
+          "id": "le82z6",
           "label": "消息组织",
-          "values": ["Topic → Partition", "Topic → Queue"]
+          "values": [
+            "Topic → Partition",
+            "Topic → Queue"
+          ]
         },
         {
+          "id": "ljml4e",
           "label": "顺序保证",
-          "values": ["分区内有序", "队列内有序"]
+          "values": [
+            "分区内有序",
+            "队列内有序"
+          ]
         },
         {
+          "id": "lcksbi",
           "label": "延迟消息",
-          "values": [false, true]
+          "values": [
+            false,
+            true
+          ]
         },
         {
+          "id": "leejf9",
           "label": "消费模型",
           "note": "留空放小图",
-          "values": [null, null]
+          "values": [
+            null,
+            null
+          ]
         }
       ]
     },
     "params": {
       "columns": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "比较对象",
+          "en": "Columns"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "补充说明",
+                "en": "Note"
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": ""
+        },
         "description": "the options compared: [{label, note?, color?}] or names, as column headings"
       },
       "rows": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "比较项",
+          "en": "Rows"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "补充说明",
+                "en": "Note"
+              }
+            },
+            "values": {
+              "type": "list",
+              "label": {
+                "zh": "各列的值",
+                "en": "Cells"
+              },
+              "item": {
+                "type": "cell",
+                "label": {
+                  "zh": "单元格",
+                  "en": "Cell"
+                }
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": "",
+          "values": []
+        },
         "description": "[{label, note?, values: [one per column: text, number, true, false, or null to leave the cell clear]}]"
       },
       "highlight": {
         "type": "number",
+        "label": {
+          "zh": "突出列",
+          "en": "Highlighted column"
+        },
         "min": -1,
         "max": 8,
         "step": 1,
-        "default": -1,
         "description": "index of the highlighted column, -1 for none"
       },
       "numbered": {
         "type": "boolean",
-        "default": false,
+        "label": {
+          "zh": "消息编号",
+          "en": "Numbered messages"
+        },
         "description": "number the rows in small badges"
       },
       "corner": {
         "type": "text",
+        "label": {
+          "zh": "表头",
+          "en": "Corner heading"
+        },
         "description": "an optional heading above the criteria"
       },
       "labelWidth": {
         "type": "number",
+        "label": {
+          "zh": "名称栏宽度",
+          "en": "Name column width"
+        },
         "min": 0,
         "max": 400,
         "step": 5,
@@ -1818,6 +3664,10 @@
       },
       "headerHeight": {
         "type": "number",
+        "label": {
+          "zh": "表头高度",
+          "en": "Header height"
+        },
         "min": 0,
         "max": 200,
         "step": 2,
@@ -1825,12 +3675,20 @@
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       }
+    },
+    "defaults": {
+      "highlight": -1,
+      "numbered": false,
+      "size": 14
     }
   },
   {
@@ -1855,7 +3713,13 @@
     ],
     "category": "drawing/structure",
     "about": "Levels stacked as a pyramid (a hierarchy of needs, a food chain, a share that narrows upwards) or a funnel (stages that narrow downwards, such as conversion). Bands shade from accent to accent2, solid or soft; notes stand to the right on dotted leaders.",
-    "tags": ["structure", "pyramid", "funnel", "levels", "hierarchy"],
+    "tags": [
+      "structure",
+      "pyramid",
+      "funnel",
+      "levels",
+      "hierarchy"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -1869,21 +3733,26 @@
     "example": {
       "levels": [
         {
+          "id": "lgspda",
           "label": "自我实现"
         },
         {
+          "id": "lggeb",
           "label": "尊重",
           "note": "成就、认可"
         },
         {
+          "id": "lceq88",
           "label": "归属与爱",
           "note": "友谊、家庭"
         },
         {
+          "id": "lg0lb",
           "label": "安全",
           "note": "健康、稳定"
         },
         {
+          "id": "lkk3r",
           "label": "生理",
           "note": "食物、睡眠"
         }
@@ -1891,41 +3760,127 @@
     },
     "params": {
       "levels": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "层级",
+          "en": "Levels"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "补充说明",
+                "en": "Note"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": ""
+        },
         "description": "top first: [{label, note?}] or names"
       },
       "shape": {
         "type": "choice",
-        "options": ["pyramid", "funnel"],
-        "default": "pyramid",
+        "label": {
+          "zh": "形状",
+          "en": "Shape"
+        },
+        "options": [
+          {
+            "value": "pyramid",
+            "label": {
+              "zh": "金字塔",
+              "en": "Pyramid"
+            }
+          },
+          {
+            "value": "funnel",
+            "label": {
+              "zh": "漏斗",
+              "en": "Funnel"
+            }
+          }
+        ],
         "description": "narrow at the top, or narrowing downwards"
       },
       "fillStyle": {
         "type": "choice",
-        "options": ["solid", "soft"],
-        "default": "solid",
+        "label": {
+          "zh": "填充方式",
+          "en": "Fill"
+        },
+        "options": [
+          {
+            "value": "solid",
+            "label": {
+              "zh": "实色",
+              "en": "Solid"
+            }
+          },
+          {
+            "value": "soft",
+            "label": {
+              "zh": "淡色",
+              "en": "Soft"
+            }
+          }
+        ],
         "description": "solid bands with paper words, or tinted ones"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "the top band; defaults to accent"
       },
       "color2": {
         "type": "color",
+        "label": {
+          "zh": "底部颜色",
+          "en": "Bottom colour"
+        },
         "description": "the bottom band; defaults to accent2"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 15,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "shape": "pyramid",
+      "fillStyle": "solid",
+      "size": 15
     }
   },
   {
@@ -1949,7 +3904,13 @@
     ],
     "category": "drawing/structure",
     "about": "Two or three overlapping sets: each circle tinted in its own colour so the overlaps deepen, each name in the part that belongs to that set alone, with an optional note, and an optional name for the shared middle.",
-    "tags": ["structure", "sets", "overlap", "comparison", "venn"],
+    "tags": [
+      "structure",
+      "sets",
+      "overlap",
+      "comparison",
+      "venn"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -1963,10 +3924,12 @@
     "example": {
       "sets": [
         {
+          "id": "lojab",
           "label": "设计",
           "note": "好看"
         },
         {
+          "id": "lgn2e",
           "label": "工程",
           "note": "可行"
         }
@@ -1975,25 +3938,77 @@
     },
     "params": {
       "sets": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "集合",
+          "en": "Sets"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "补充说明",
+                "en": "Note"
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "max": 3,
+        "new": {
+          "label": ""
+        },
         "description": "two or three: [{label, note?, color?}] or names"
       },
       "overlap": {
         "type": "text",
+        "label": {
+          "zh": "交集名称",
+          "en": "Shared part"
+        },
         "description": "the name of the shared middle"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 15,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "size": 15
     }
   },
   {
@@ -2017,7 +4032,13 @@
     ],
     "category": "drawing/structure",
     "about": "A mind map: a central idea with branches to either side, each branch in its own colour, its points written on the ends of curved lines. For brainstorms, the facets of a topic and outlines.",
-    "tags": ["structure", "mind map", "brainstorm", "branches", "outline"],
+    "tags": [
+      "structure",
+      "mind map",
+      "brainstorm",
+      "branches",
+      "outline"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -2032,48 +4053,129 @@
       "center": "学好物理",
       "branches": [
         {
+          "id": "lih0z",
           "label": "概念",
-          "children": ["力与运动", "能量守恒"]
+          "children": [
+            "力与运动",
+            "能量守恒"
+          ]
         },
         {
+          "id": "lhwe4",
           "label": "方法",
-          "children": ["画受力图", "控制变量", "估算"]
+          "children": [
+            "画受力图",
+            "控制变量",
+            "估算"
+          ]
         },
         {
+          "id": "lgfji",
           "label": "实验",
-          "children": ["测量误差", "记录数据"]
+          "children": [
+            "测量误差",
+            "记录数据"
+          ]
         },
         {
+          "id": "lgqac",
           "label": "应用",
-          "children": ["生活现象", "工程问题"]
+          "children": [
+            "生活现象",
+            "工程问题"
+          ]
         }
       ]
     },
     "params": {
       "center": {
         "type": "text",
+        "label": {
+          "zh": "中心主题",
+          "en": "Central idea"
+        },
         "description": "the central idea"
       },
       "branches": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "分支",
+          "en": "Branches"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            },
+            "children": {
+              "type": "list",
+              "label": {
+                "zh": "要点",
+                "en": "Points"
+              },
+              "item": {
+                "type": "text",
+                "label": {
+                  "zh": "要点",
+                  "en": "Point"
+                }
+              },
+              "new": ""
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": "",
+          "children": []
+        },
         "description": "[{label, children?: [points], color?}]; the first half go right, the rest left"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "the centre's fill; defaults to ink"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "size": 14
     }
   },
   {
@@ -2098,7 +4200,13 @@
     ],
     "category": "drawing/structure",
     "about": "A process as numbered steps on a track: circles joined by a line, each name beside its number with an optional note. Given current, earlier steps show done, the current one ringed and later ones in outline. Runs across or down.",
-    "tags": ["structure", "process", "steps", "sequence", "progress"],
+    "tags": [
+      "structure",
+      "process",
+      "steps",
+      "sequence",
+      "progress"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -2112,17 +4220,21 @@
     "example": {
       "steps": [
         {
+          "id": "liyzo",
           "label": "注册",
           "note": "填写手机号"
         },
         {
+          "id": "lr1yt",
           "label": "验证",
           "note": "短信验证码"
         },
         {
+          "id": "lbwvyv",
           "label": "完善资料"
         },
         {
+          "id": "lccwk2",
           "label": "开始使用"
         }
       ],
@@ -2130,42 +4242,121 @@
     },
     "params": {
       "steps": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "步骤",
+          "en": "Steps"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "补充说明",
+                "en": "Note"
+              }
+            },
+            "number": {
+              "type": "text",
+              "label": {
+                "zh": "编号",
+                "en": "Number"
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": ""
+        },
         "description": "[{label, note?, number?, color?}] or names"
       },
       "current": {
         "type": "number",
+        "label": {
+          "zh": "当前步骤",
+          "en": "Current step"
+        },
         "min": -1,
         "max": 20,
         "step": 1,
-        "default": -1,
         "description": "index of the step in progress; -1 shows all alike"
       },
       "direction": {
         "type": "choice",
-        "options": ["row", "column"],
-        "default": "row",
+        "label": {
+          "zh": "生长方向",
+          "en": "Grows"
+        },
+        "options": [
+          {
+            "value": "row",
+            "label": {
+              "zh": "横排",
+              "en": "Across"
+            }
+          },
+          {
+            "value": "column",
+            "label": {
+              "zh": "竖排",
+              "en": "Down"
+            }
+          }
+        ],
         "description": "across or down"
       },
       "arrow": {
         "type": "boolean",
-        "default": false,
+        "label": {
+          "zh": "箭头",
+          "en": "Arrow"
+        },
         "description": "draw directional arrowheads on the connectors between steps"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "defaults to accent"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "radius": {
         "type": "number",
+        "label": {
+          "zh": "拐角圆度",
+          "en": "Corner rounding"
+        },
         "min": 6,
         "max": 60,
         "step": 1,
@@ -2173,8 +4364,18 @@
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "current": -1,
+      "direction": "row",
+      "arrow": false,
+      "size": 14
     }
   },
   {
@@ -2224,44 +4425,160 @@
     "example": {
       "lanes": [
         {
+          "id": "lgixp",
           "label": "平台"
         },
         {
+          "id": "li9xmq",
           "label": "移动端"
         },
         {
+          "id": "ai",
           "label": "AI",
           "accent": true
         }
       ],
       "stages": [
-        "Q1",
-        "Q2",
         {
+          "id": "q1",
+          "label": "Q1"
+        },
+        {
+          "id": "q2",
+          "label": "Q2"
+        },
+        {
+          "id": "q3",
           "label": "Q3",
           "accent": true
         },
-        "Q4"
+        {
+          "id": "q4",
+          "label": "Q4"
+        }
       ],
       "header": 110
     },
     "params": {
       "lanes": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "泳道",
+          "en": "Lanes"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "补充说明",
+                "en": "Note"
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            },
+            "accent": {
+              "type": "boolean",
+              "label": {
+                "zh": "强调",
+                "en": "Accent"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": ""
+        },
         "description": "[{label, note?, color?, accent?}] or names, first at the top or left; color gives the lane its own colour"
       },
       "stages": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "阶段",
+          "en": "Stages"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "补充说明",
+                "en": "Note"
+              }
+            },
+            "accent": {
+              "type": "boolean",
+              "label": {
+                "zh": "强调",
+                "en": "Accent"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": ""
+        },
         "description": "[{label, note?, accent?}] or names: quarters, months or phases crossing the lanes, in order; accent marks one as current"
       },
       "direction": {
         "type": "choice",
-        "options": ["horizontal", "vertical"],
-        "default": "horizontal",
+        "label": {
+          "zh": "生长方向",
+          "en": "Grows"
+        },
+        "options": [
+          {
+            "value": "horizontal",
+            "label": {
+              "zh": "横向",
+              "en": "Across"
+            }
+          },
+          {
+            "value": "vertical",
+            "label": {
+              "zh": "纵向",
+              "en": "Down"
+            }
+          }
+        ],
         "description": "lanes as rows or as columns"
       },
       "header": {
         "type": "number",
+        "label": {
+          "zh": "表头宽度",
+          "en": "Header size"
+        },
         "min": 0,
         "max": 300,
         "step": 5,
@@ -2269,6 +4586,10 @@
       },
       "stageHeader": {
         "type": "number",
+        "label": {
+          "zh": "阶段表头",
+          "en": "Stage header size"
+        },
         "min": 0,
         "max": 300,
         "step": 5,
@@ -2276,16 +4597,27 @@
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "direction": "horizontal",
+      "size": 14
     }
   },
   {
@@ -2308,7 +4640,13 @@
     ],
     "category": "drawing/chart",
     "about": "A bar chart for comparing a few quantities: rounded bars on a baseline, the value at each bar's end and the name at its foot, no grid; an accented bar stands out while the rest share one colour. Upright or lying (for long names and rankings).",
-    "tags": ["chart", "bars", "comparison", "quantity", "data"],
+    "tags": [
+      "chart",
+      "bars",
+      "comparison",
+      "quantity",
+      "data"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -2322,19 +4660,23 @@
     "example": {
       "items": [
         {
+          "id": "lldg",
           "label": "水",
           "value": 71
         },
         {
+          "id": "lkbot2",
           "label": "蛋白质",
           "value": 16,
           "accent": true
         },
         {
+          "id": "lmne0",
           "label": "脂肪",
           "value": 9
         },
         {
+          "id": "leae8",
           "label": "其他",
           "value": 4
         }
@@ -2343,39 +4685,125 @@
     },
     "params": {
       "items": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "数据",
+          "en": "Values"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "value": {
+              "type": "number",
+              "label": {
+                "zh": "数值",
+                "en": "Value"
+              }
+            },
+            "accent": {
+              "type": "boolean",
+              "label": {
+                "zh": "强调",
+                "en": "Accent"
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": "",
+          "value": 0
+        },
         "description": "[{label, value, accent?, color?}]"
       },
       "max": {
         "type": "number",
+        "label": {
+          "zh": "最大值",
+          "en": "Maximum"
+        },
         "description": "the value of a full bar; defaults to the largest"
       },
       "unit": {
         "type": "text",
+        "label": {
+          "zh": "单位",
+          "en": "Unit"
+        },
         "description": "written after each value"
       },
       "orientation": {
         "type": "choice",
-        "options": ["vertical", "horizontal"],
-        "default": "vertical",
+        "label": {
+          "zh": "方向",
+          "en": "Orientation"
+        },
+        "options": [
+          {
+            "value": "vertical",
+            "label": {
+              "zh": "纵向",
+              "en": "Down"
+            }
+          },
+          {
+            "value": "horizontal",
+            "label": {
+              "zh": "横向",
+              "en": "Across"
+            }
+          }
+        ],
         "description": "upright bars or lying ones"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "the bars; defaults to accent2"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "orientation": "vertical",
+      "size": 14
     }
   },
   {
@@ -2399,7 +4827,13 @@
     ],
     "category": "drawing/chart",
     "about": "Parts of a whole as a donut, or a pie with hole 0: each slice in its own style colour, named outside on a short leader with its share (or a note), and a headline or total in the middle. For budgets, compositions and survey answers.",
-    "tags": ["chart", "pie", "share", "composition", "data"],
+    "tags": [
+      "chart",
+      "pie",
+      "share",
+      "composition",
+      "data"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -2413,14 +4847,17 @@
     "example": {
       "items": [
         {
+          "id": "lizs6",
           "label": "氮气",
           "value": 78
         },
         {
+          "id": "lizm5",
           "label": "氧气",
           "value": 21
         },
         {
+          "id": "leae8",
           "label": "其他",
           "value": 1
         }
@@ -2430,42 +4867,114 @@
     },
     "params": {
       "items": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "数据",
+          "en": "Values"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "value": {
+              "type": "number",
+              "label": {
+                "zh": "数值",
+                "en": "Value"
+              },
+              "min": 0
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "代替百分比显示",
+                "en": "Shown instead of the share"
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": "",
+          "value": 1
+        },
         "description": "[{label, value, note?: shown instead of the percentage, color?}]"
       },
       "hole": {
         "type": "number",
+        "label": {
+          "zh": "中空大小",
+          "en": "Hole size"
+        },
         "min": 0,
         "max": 0.9,
         "step": 0.05,
-        "default": 0.58,
         "description": "size of the hole; 0 for a pie"
       },
       "center": {
         "type": "text",
+        "label": {
+          "zh": "中心主题",
+          "en": "Central idea"
+        },
         "description": "headline in the middle"
       },
       "centerNote": {
         "type": "text",
+        "label": {
+          "zh": "中心说明",
+          "en": "Centre note"
+        },
         "description": "small line under it"
       },
       "labels": {
         "type": "boolean",
-        "default": true,
+        "label": {
+          "zh": "标签位置",
+          "en": "Label position"
+        },
         "description": "names around the ring"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "hole": 0.58,
+      "labels": true,
+      "size": 14
     }
   },
   {
@@ -2490,7 +4999,13 @@
     ],
     "category": "drawing/chart",
     "about": "A gauge: a half-ring scale from min to max with the value filled in and a needle, the number and unit in the middle, optional coloured zones and a label. For a reading on a scale: speed, temperature, a score or a percentage.",
-    "tags": ["chart", "gauge", "meter", "value", "scale"],
+    "tags": [
+      "chart",
+      "gauge",
+      "meter",
+      "value",
+      "scale"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -2511,50 +5026,118 @@
     "params": {
       "value": {
         "type": "number",
+        "label": {
+          "zh": "初始值",
+          "en": "Starting value"
+        },
         "description": "the reading; set it from a slider to animate"
       },
       "min": {
         "type": "number",
-        "default": 0,
+        "label": {
+          "zh": "最小值",
+          "en": "Minimum"
+        },
         "description": "start of the scale"
       },
       "max": {
         "type": "number",
-        "default": 100,
+        "label": {
+          "zh": "最大值",
+          "en": "Maximum"
+        },
         "description": "end of the scale"
       },
       "unit": {
         "type": "text",
+        "label": {
+          "zh": "单位",
+          "en": "Unit"
+        },
         "description": "after the number"
       },
       "label": {
         "type": "text",
+        "label": {
+          "zh": "文字",
+          "en": "Text"
+        },
         "description": "what is measured"
       },
       "display": {
         "type": "text",
+        "label": {
+          "zh": "显示文字",
+          "en": "Shown text"
+        },
         "description": "shown instead of the number"
       },
       "zones": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "色带",
+          "en": "Bands"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "from": {
+              "type": "number",
+              "label": {
+                "zh": "从",
+                "en": "From"
+              }
+            },
+            "to": {
+              "type": "number",
+              "label": {
+                "zh": "到",
+                "en": "To"
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            }
+          }
+        },
         "description": "[{from, to, color?}] bands on the scale"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "the filled part; defaults to accent"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "min": 0,
+      "max": 100,
+      "size": 14
     }
   },
   {
@@ -2579,7 +5162,13 @@
     ],
     "category": "drawing/chart",
     "about": "A key figure: one large number with its unit and what it counts, an optional change marked with an up or down triangle (coloured by whether that is good), and a note. For headline numbers beside a figure or a row of them as a summary.",
-    "tags": ["chart", "number", "metric", "kpi", "summary"],
+    "tags": [
+      "chart",
+      "number",
+      "metric",
+      "kpi",
+      "summary"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -2600,55 +5189,141 @@
     "params": {
       "value": {
         "type": "text",
+        "label": {
+          "zh": "初始值",
+          "en": "Starting value"
+        },
         "description": "the number as written"
       },
       "unit": {
         "type": "text",
+        "label": {
+          "zh": "单位",
+          "en": "Unit"
+        },
         "description": "small after the number"
       },
       "label": {
         "type": "text",
+        "label": {
+          "zh": "文字",
+          "en": "Text"
+        },
         "description": "what it counts"
       },
       "delta": {
         "type": "text",
+        "label": {
+          "zh": "变化",
+          "en": "Change"
+        },
         "description": "a change, such as +12%"
       },
       "trend": {
         "type": "choice",
-        "options": ["up", "down"],
+        "label": {
+          "zh": "涨跌",
+          "en": "Trend"
+        },
+        "options": [
+          {
+            "value": "up",
+            "label": {
+              "zh": "上",
+              "en": "Up"
+            }
+          },
+          {
+            "value": "down",
+            "label": {
+              "zh": "下",
+              "en": "Down"
+            }
+          }
+        ],
         "description": "direction of the change; defaults to its sign"
       },
       "good": {
         "type": "choice",
-        "options": ["up", "down"],
-        "default": "up",
+        "label": {
+          "zh": "好的方向",
+          "en": "Good direction"
+        },
+        "options": [
+          {
+            "value": "up",
+            "label": {
+              "zh": "上",
+              "en": "Up"
+            }
+          },
+          {
+            "value": "down",
+            "label": {
+              "zh": "下",
+              "en": "Down"
+            }
+          }
+        ],
         "description": "which direction is good, coloured accent2; the other is accent"
       },
       "note": {
         "type": "text",
+        "label": {
+          "zh": "补充说明",
+          "en": "Note"
+        },
         "description": "a small line under it"
       },
       "align": {
         "type": "choice",
-        "options": ["center", "left"],
-        "default": "center",
+        "label": {
+          "zh": "对齐",
+          "en": "Alignment"
+        },
+        "options": [
+          {
+            "value": "center",
+            "label": {
+              "zh": "居中",
+              "en": "Centre"
+            }
+          },
+          {
+            "value": "left",
+            "label": {
+              "zh": "左",
+              "en": "Left"
+            }
+          }
+        ],
         "description": "how it lines up"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "the number; defaults to ink"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "valueSize": {
         "type": "number",
+        "label": {
+          "zh": "数值字号",
+          "en": "Value size"
+        },
         "min": 12,
         "max": 160,
         "step": 1,
@@ -2656,8 +5331,17 @@
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id applied to the drawing, such as rough-edge"
       }
+    },
+    "defaults": {
+      "good": "up",
+      "align": "center",
+      "size": 14
     }
   },
   {
@@ -2680,7 +5364,13 @@
     ],
     "category": "drawing/structure",
     "about": "A fishbone (cause and effect) diagram: the effect in a head at the right, a spine running to it, and slanted bones above and below for the categories of cause, each with its causes written on short ribs. For root-cause analysis.",
-    "tags": ["structure", "cause", "analysis", "fishbone", "problem"],
+    "tags": [
+      "structure",
+      "cause",
+      "analysis",
+      "fishbone",
+      "problem"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -2695,48 +5385,120 @@
       "problem": "交付延期",
       "causes": [
         {
+          "id": "lduqm",
           "label": "人员",
-          "items": ["新人多", "分工不清"]
+          "items": [
+            "新人多",
+            "分工不清"
+          ]
         },
         {
+          "id": "lj94a",
           "label": "流程",
-          "items": ["评审慢", "需求变更"]
+          "items": [
+            "评审慢",
+            "需求变更"
+          ]
         },
         {
+          "id": "lgf1u",
           "label": "工具",
-          "items": ["测试环境不稳"]
+          "items": [
+            "测试环境不稳"
+          ]
         },
         {
+          "id": "lj9ln",
           "label": "沟通",
-          "items": ["信息不同步", "会议过多"]
+          "items": [
+            "信息不同步",
+            "会议过多"
+          ]
         }
       ]
     },
     "params": {
       "problem": {
         "type": "text",
+        "label": {
+          "zh": "问题",
+          "en": "Problem"
+        },
         "description": "the problem or result, in the head"
       },
       "causes": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "原因类别",
+          "en": "Causes"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "items": {
+              "type": "list",
+              "label": {
+                "zh": "具体原因",
+                "en": "Causes"
+              },
+              "item": {
+                "type": "text",
+                "label": {
+                  "zh": "原因",
+                  "en": "Cause"
+                }
+              },
+              "new": ""
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": "",
+          "items": []
+        },
         "description": "[{label, items?: [causes]}], alternating above and below"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "the head; defaults to accent"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "size": 14
     }
   },
   {
@@ -2755,11 +5517,20 @@
       "sequence diagram",
       "sequence",
       "message flow",
-      "interaction"
+      "interaction",
+      "UML 时序图",
+      "泳道消息",
+      "sequenceDiagram"
     ],
     "category": "drawing/structure",
-    "about": "A sequence diagram: participants across the top with dashed lifelines, messages as arrows between them in time order, replies dashed with open heads, a message to oneself as a loop; optionally numbered. Drawn in the style, unlike a generic renderer.",
-    "tags": ["structure", "sequence", "messages", "protocol", "interaction"],
+    "about": "A sequence diagram: participants across the top (a box, a person, a database or a queue) with dashed lifelines, messages as arrows between them in time order (calls, asynchronous messages and dashed replies), a message to oneself as a loop, notes over the lifelines and fragments (alt, opt, loop, par) boxed round a run of messages; optionally numbered. Drawn in the style, unlike a generic renderer; every participant and message can be changed, reordered and reconnected where it is drawn.",
+    "tags": [
+      "structure",
+      "sequence",
+      "messages",
+      "protocol",
+      "interaction"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -2768,67 +5539,422 @@
     "use": "module",
     "size": {
       "width": 640,
-      "height": 320
+      "height": 360
     },
     "example": {
-      "actors": ["浏览器", "服务器", "数据库"],
+      "participants": [
+        {
+          "id": "browser",
+          "label": "浏览器",
+          "kind": "actor"
+        },
+        {
+          "id": "server",
+          "label": "服务器"
+        },
+        {
+          "id": "db",
+          "label": "数据库",
+          "kind": "database"
+        }
+      ],
       "messages": [
         {
-          "from": "浏览器",
-          "to": "服务器",
+          "id": "m1",
+          "from": "browser",
+          "to": "server",
           "label": "登录请求"
         },
         {
-          "from": "服务器",
-          "to": "数据库",
+          "id": "m2",
+          "from": "server",
+          "to": "db",
           "label": "查询用户"
         },
         {
-          "from": "数据库",
-          "to": "服务器",
+          "id": "m3",
+          "from": "db",
+          "to": "server",
           "label": "用户记录",
-          "reply": true
+          "kind": "reply"
         },
         {
-          "from": "服务器",
-          "to": "服务器",
+          "id": "m4",
+          "from": "server",
+          "to": "server",
           "label": "校验密码"
         },
         {
-          "from": "服务器",
-          "to": "浏览器",
+          "id": "m5",
+          "from": "server",
+          "to": "browser",
           "label": "返回令牌",
-          "reply": true,
+          "kind": "reply",
           "accent": true
         }
-      ]
+      ],
+      "notes": [
+        {
+          "id": "n1",
+          "over": [
+            "server"
+          ],
+          "after": "m4",
+          "text": "密码加盐哈希"
+        }
+      ],
+      "fragments": []
     },
     "params": {
-      "actors": {
-        "type": "array",
-        "description": "participant names, left to right, or [{label, accent?}]"
+      "participants": {
+        "type": "list",
+        "label": {
+          "zh": "参与者",
+          "en": "Participants"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "名称",
+                "en": "Name"
+              }
+            },
+            "kind": {
+              "type": "choice",
+              "label": {
+                "zh": "样子",
+                "en": "Shape"
+              },
+              "options": [
+                {
+                  "value": "box",
+                  "label": {
+                    "zh": "方框",
+                    "en": "Box"
+                  },
+                  "icon": "box"
+                },
+                {
+                  "value": "actor",
+                  "label": {
+                    "zh": "人物",
+                    "en": "Actor"
+                  },
+                  "icon": "actor"
+                },
+                {
+                  "value": "database",
+                  "label": {
+                    "zh": "数据库",
+                    "en": "Database"
+                  },
+                  "icon": "cylinder"
+                },
+                {
+                  "value": "queue",
+                  "label": {
+                    "zh": "队列",
+                    "en": "Queue"
+                  },
+                  "icon": "queue"
+                }
+              ],
+              "quick": true
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": "",
+          "kind": "box"
+        },
+        "cascade": [
+          "messages.from",
+          "messages.to",
+          "notes.over"
+        ],
+        "description": "left to right: [{id, label, kind?: box|actor|database|queue}]; a name alone is a box"
       },
       "messages": {
-        "type": "array",
-        "description": "[{from, to: participant names, label, reply?, accent?}] in time order"
+        "type": "list",
+        "label": {
+          "zh": "消息",
+          "en": "Messages"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "from": {
+              "type": "ref",
+              "label": {
+                "zh": "发出方",
+                "en": "From"
+              },
+              "to": "participants"
+            },
+            "to": {
+              "type": "ref",
+              "label": {
+                "zh": "接收方",
+                "en": "To"
+              },
+              "to": "participants"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "kind": {
+              "type": "choice",
+              "label": {
+                "zh": "类型",
+                "en": "Kind"
+              },
+              "options": [
+                {
+                  "value": "sync",
+                  "label": {
+                    "zh": "调用",
+                    "en": "Call"
+                  },
+                  "icon": "line-sync"
+                },
+                {
+                  "value": "async",
+                  "label": {
+                    "zh": "异步",
+                    "en": "Async"
+                  },
+                  "icon": "line-async"
+                },
+                {
+                  "value": "reply",
+                  "label": {
+                    "zh": "返回",
+                    "en": "Reply"
+                  },
+                  "icon": "line-reply"
+                }
+              ],
+              "quick": true
+            },
+            "accent": {
+              "type": "boolean",
+              "label": {
+                "zh": "强调",
+                "en": "Accent"
+              },
+              "quick": true
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": "",
+          "kind": "sync"
+        },
+        "cascade": [
+          "fragments.from",
+          "fragments.to"
+        ],
+        "next": {
+          "enter": {
+            "keep": [
+              "from",
+              "to"
+            ],
+            "set": {
+              "kind": "sync"
+            }
+          },
+          "tab": {
+            "swap": [
+              "from",
+              "to"
+            ],
+            "set": {
+              "kind": "reply"
+            }
+          }
+        },
+        "description": "in time order: [{id, from, to: participant ids or names, label, kind?: sync|async|reply, accent?}]; from = to is a message to itself"
+      },
+      "notes": {
+        "type": "list",
+        "label": {
+          "zh": "注释",
+          "en": "Notes"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "over": {
+              "type": "list",
+              "label": {
+                "zh": "位于",
+                "en": "Over"
+              },
+              "item": {
+                "type": "ref",
+                "label": {
+                  "zh": "参与者",
+                  "en": "Participant"
+                },
+                "to": "participants"
+              },
+              "min": 1,
+              "max": 2
+            },
+            "after": {
+              "type": "ref",
+              "label": {
+                "zh": "在哪条消息之后",
+                "en": "After message"
+              },
+              "to": "messages"
+            },
+            "text": {
+              "type": "text",
+              "label": {
+                "zh": "内容",
+                "en": "Text"
+              }
+            }
+          }
+        },
+        "title": "text",
+        "new": {
+          "text": ""
+        },
+        "description": "[{id, over: one or two participants, after?: the message it follows, text}]; drawn across the lifelines it is over"
+      },
+      "fragments": {
+        "type": "list",
+        "label": {
+          "zh": "片段",
+          "en": "Fragments"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "kind": {
+              "type": "choice",
+              "label": {
+                "zh": "种类",
+                "en": "Kind"
+              },
+              "options": [
+                {
+                  "value": "alt",
+                  "label": {
+                    "zh": "分支",
+                    "en": "Alt"
+                  }
+                },
+                {
+                  "value": "opt",
+                  "label": {
+                    "zh": "可选",
+                    "en": "Opt"
+                  }
+                },
+                {
+                  "value": "loop",
+                  "label": {
+                    "zh": "循环",
+                    "en": "Loop"
+                  }
+                },
+                {
+                  "value": "par",
+                  "label": {
+                    "zh": "并行",
+                    "en": "Par"
+                  }
+                }
+              ]
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "条件",
+                "en": "Condition"
+              }
+            },
+            "from": {
+              "type": "ref",
+              "label": {
+                "zh": "从",
+                "en": "From"
+              },
+              "to": "messages"
+            },
+            "to": {
+              "type": "ref",
+              "label": {
+                "zh": "到",
+                "en": "To"
+              },
+              "to": "messages"
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "kind": "alt",
+          "label": ""
+        },
+        "description": "boxes round a run of messages: [{id, kind: alt|opt|loop|par, label?: the condition, from, to: message ids}]"
       },
       "numbered": {
         "type": "boolean",
-        "default": false,
-        "description": "number the messages"
+        "label": {
+          "zh": "给消息编号",
+          "en": "Number the messages"
+        },
+        "description": "number the messages; the number is drawn apart from the words"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Font size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "numbered": false,
+      "size": 14
     }
   },
   {
@@ -2851,7 +5977,13 @@
     ],
     "category": "drawing/chart",
     "about": "A schedule as a Gantt chart: tasks in rows with names on the left and rounded bars from start to end on a shared time axis; a task can be accented, done ones fade, a milestone (no end) is a diamond, and a dashed line can mark now.",
-    "tags": ["chart", "schedule", "plan", "time", "project"],
+    "tags": [
+      "chart",
+      "schedule",
+      "plan",
+      "time",
+      "project"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -2868,50 +6000,60 @@
       "unit": "第",
       "ticks": [
         {
+          "id": "li1z7n",
           "at": 1,
           "label": "第1周"
         },
         {
+          "id": "li1z9d",
           "at": 3,
           "label": "第3周"
         },
         {
+          "id": "li1zb3",
           "at": 5,
           "label": "第5周"
         },
         {
+          "id": "li1zct",
           "at": 7,
           "label": "第7周"
         },
         {
+          "id": "li1zej",
           "at": 9,
           "label": "第9周"
         }
       ],
       "tasks": [
         {
+          "id": "lji64a",
           "label": "需求调研",
           "start": 1,
           "end": 2.5,
           "done": true
         },
         {
+          "id": "lojab",
           "label": "设计",
           "start": 2,
           "end": 4
         },
         {
+          "id": "lgma9",
           "label": "开发",
           "start": 3.5,
           "end": 7.5,
           "accent": true
         },
         {
+          "id": "ljcve",
           "label": "测试",
           "start": 6,
           "end": 8.5
         },
         {
+          "id": "ldywl",
           "label": "上线",
           "start": 9
         }
@@ -2921,49 +6063,160 @@
     },
     "params": {
       "tasks": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "任务",
+          "en": "Tasks"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "start": {
+              "type": "number",
+              "label": {
+                "zh": "开始",
+                "en": "Start"
+              }
+            },
+            "end": {
+              "type": "number",
+              "label": {
+                "zh": "结束",
+                "en": "End"
+              }
+            },
+            "accent": {
+              "type": "boolean",
+              "label": {
+                "zh": "强调",
+                "en": "Accent"
+              }
+            },
+            "done": {
+              "type": "boolean",
+              "label": {
+                "zh": "已完成",
+                "en": "Done"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": "",
+          "start": 0,
+          "end": 1
+        },
         "description": "[{label, start, end?: none for a milestone, accent?, done?}]"
       },
       "from": {
         "type": "number",
+        "label": {
+          "zh": "起点",
+          "en": "Start"
+        },
         "description": "start of the axis; defaults to the earliest start"
       },
       "to": {
         "type": "number",
+        "label": {
+          "zh": "终点",
+          "en": "End"
+        },
         "description": "end of the axis; defaults to the latest end"
       },
       "ticks": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "刻度",
+          "en": "Ticks"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "at": {
+              "type": "number",
+              "label": {
+                "zh": "位置",
+                "en": "At"
+              }
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            }
+          }
+        },
+        "title": "label",
         "description": "[{at, label}] marks on the axis; defaults to whole numbers"
       },
       "unit": {
         "type": "text",
+        "label": {
+          "zh": "单位",
+          "en": "Unit"
+        },
         "description": "before default tick numbers"
       },
       "now": {
         "type": "number",
+        "label": {
+          "zh": "当前位置",
+          "en": "Now"
+        },
         "description": "where to draw the now line"
       },
       "nowLabel": {
         "type": "text",
+        "label": {
+          "zh": "当前标注",
+          "en": "Now label"
+        },
         "description": "beside the now line"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "the bars; defaults to accent2"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "size": 14
     }
   },
   {
@@ -2988,7 +6241,13 @@
     ],
     "category": "drawing/text",
     "about": "A speech or annotation bubble: words wrapping inside a rounded bubble whose tail points at what they are about, from any side at any point along it, with an optional speaker. For a person's line, a thought or a remark beside a picture.",
-    "tags": ["text", "bubble", "speech", "annotation", "dialogue"],
+    "tags": [
+      "text",
+      "bubble",
+      "speech",
+      "annotation",
+      "dialogue"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -3007,63 +6266,195 @@
     "params": {
       "text": {
         "type": "text",
+        "label": {
+          "zh": "文字",
+          "en": "Text"
+        },
         "description": "the words"
       },
       "speaker": {
         "type": "text",
+        "label": {
+          "zh": "说话人",
+          "en": "Speaker"
+        },
         "description": "who says it, small above"
       },
       "tail": {
         "type": "choice",
-        "options": ["bottom", "top", "left", "right", "none"],
-        "default": "bottom",
+        "label": {
+          "zh": "尾巴方向",
+          "en": "Tail side"
+        },
+        "options": [
+          {
+            "value": "bottom",
+            "label": {
+              "zh": "底部",
+              "en": "Bottom"
+            }
+          },
+          {
+            "value": "top",
+            "label": {
+              "zh": "顶部",
+              "en": "Top"
+            }
+          },
+          {
+            "value": "left",
+            "label": {
+              "zh": "左",
+              "en": "Left"
+            }
+          },
+          {
+            "value": "right",
+            "label": {
+              "zh": "右",
+              "en": "Right"
+            }
+          },
+          {
+            "value": "none",
+            "label": {
+              "zh": "无",
+              "en": "None"
+            }
+          }
+        ],
         "description": "the side the tail leaves from"
       },
       "tailAt": {
         "type": "number",
+        "label": {
+          "zh": "尾巴位置",
+          "en": "Tail position"
+        },
         "min": 0.1,
         "max": 0.9,
         "step": 0.05,
-        "default": 0.25,
         "description": "where along that side"
       },
       "tone": {
         "type": "choice",
-        "options": ["plain", "accent", "accent2", "ink"],
-        "default": "plain",
+        "label": {
+          "zh": "配色",
+          "en": "Tone"
+        },
+        "options": [
+          {
+            "value": "plain",
+            "label": {
+              "zh": "素色",
+              "en": "Plain"
+            }
+          },
+          {
+            "value": "accent",
+            "label": {
+              "zh": "强调色",
+              "en": "Accent"
+            }
+          },
+          {
+            "value": "accent2",
+            "label": {
+              "zh": "辅助色",
+              "en": "Second accent"
+            }
+          },
+          {
+            "value": "ink",
+            "label": {
+              "zh": "墨色",
+              "en": "Ink"
+            }
+          }
+        ],
         "description": "which style colour outlines it"
       },
       "fillStyle": {
         "type": "choice",
-        "options": ["paper", "solid"],
-        "default": "paper",
+        "label": {
+          "zh": "填充方式",
+          "en": "Fill"
+        },
+        "options": [
+          {
+            "value": "paper",
+            "label": {
+              "zh": "纸色",
+              "en": "Paper"
+            }
+          },
+          {
+            "value": "solid",
+            "label": {
+              "zh": "实色",
+              "en": "Solid"
+            }
+          }
+        ],
         "description": "paper inside, or filled with the colour"
       },
       "align": {
         "type": "choice",
-        "options": ["left", "center"],
-        "default": "left",
+        "label": {
+          "zh": "对齐",
+          "en": "Alignment"
+        },
+        "options": [
+          {
+            "value": "left",
+            "label": {
+              "zh": "左",
+              "en": "Left"
+            }
+          },
+          {
+            "value": "center",
+            "label": {
+              "zh": "居中",
+              "en": "Centre"
+            }
+          }
+        ],
         "description": "how the words line up"
       },
       "dashed": {
         "type": "boolean",
-        "default": false,
+        "label": {
+          "zh": "虚线",
+          "en": "Dashed"
+        },
         "description": "a dashed outline, for a thought"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "overrides the tone"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 15,
         "description": "font size"
       },
       "radius": {
         "type": "number",
+        "label": {
+          "zh": "拐角圆度",
+          "en": "Corner rounding"
+        },
         "min": 0,
         "max": 60,
         "step": 1,
@@ -3071,8 +6462,21 @@
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "tail": "bottom",
+      "tailAt": 0.25,
+      "tone": "plain",
+      "fillStyle": "paper",
+      "align": "left",
+      "dashed": false,
+      "size": 15
     }
   },
   {
@@ -3097,7 +6501,13 @@
     ],
     "category": "drawing/text",
     "about": "A checklist: items in rows with ticked or open boxes, or numbers or bullets; done items softened and struck through, each with an optional note. For requirements, to-dos, criteria and key points.",
-    "tags": ["text", "list", "checklist", "points", "tasks"],
+    "tags": [
+      "text",
+      "list",
+      "checklist",
+      "points",
+      "tasks"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -3111,54 +6521,146 @@
     "example": {
       "items": [
         {
+          "id": "lawilm",
           "label": "关闭门窗",
           "done": true
         },
         {
+          "id": "larx1x",
           "label": "切断电源",
           "done": true
         },
         {
+          "id": "lc99sj",
           "label": "带好证件",
           "note": "身份证、护照"
         },
         {
+          "id": "ldna9k",
           "label": "检查天气"
         }
       ]
     },
     "params": {
       "items": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "事项",
+          "en": "Items"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "done": {
+              "type": "boolean",
+              "label": {
+                "zh": "已完成",
+                "en": "Done"
+              }
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "补充说明",
+                "en": "Note"
+              }
+            },
+            "accent": {
+              "type": "boolean",
+              "label": {
+                "zh": "强调",
+                "en": "Accent"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": ""
+        },
         "description": "[{label, done?, note?, accent?}] or texts"
       },
       "marker": {
         "type": "choice",
-        "options": ["check", "number", "bullet"],
-        "default": "check",
+        "label": {
+          "zh": "标记",
+          "en": "Marker"
+        },
+        "options": [
+          {
+            "value": "check",
+            "label": {
+              "zh": "勾选框",
+              "en": "Checkbox"
+            }
+          },
+          {
+            "value": "number",
+            "label": {
+              "zh": "编号",
+              "en": "Number"
+            }
+          },
+          {
+            "value": "bullet",
+            "label": {
+              "zh": "圆点",
+              "en": "Bullet"
+            }
+          }
+        ],
         "description": "what leads each row"
       },
       "strike": {
         "type": "boolean",
-        "default": true,
+        "label": {
+          "zh": "完成项划线",
+          "en": "Strike done items"
+        },
         "description": "strike through done items"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "the markers; defaults to accent"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 15,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "marker": "check",
+      "strike": true,
+      "size": 15
     }
   },
   {
@@ -3181,7 +6683,13 @@
     ],
     "category": "drawing/chart",
     "about": "A radar chart: several qualities on spokes from a centre, a web of rings for the scale, and each subject as a translucent shape joining its scores, with a legend when there are several, so profiles compare at a glance.",
-    "tags": ["chart", "radar", "comparison", "profile", "attributes"],
+    "tags": [
+      "chart",
+      "radar",
+      "comparison",
+      "profile",
+      "attributes"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -3193,53 +6701,148 @@
       "height": 380
     },
     "example": {
-      "axes": ["速度", "力量", "耐力", "技巧", "灵活"],
+      "axes": [
+        "速度",
+        "力量",
+        "耐力",
+        "技巧",
+        "灵活"
+      ],
       "max": 10,
       "series": [
         {
+          "id": "ln5e",
           "label": "甲",
-          "values": [8, 6, 7, 9, 5]
+          "values": [
+            8,
+            6,
+            7,
+            9,
+            5
+          ]
         },
         {
+          "id": "lfh5",
           "label": "乙",
-          "values": [5, 9, 6, 5, 8]
+          "values": [
+            5,
+            9,
+            6,
+            5,
+            8
+          ]
         }
       ]
     },
     "params": {
       "axes": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "维度",
+          "en": "Qualities"
+        },
+        "item": {
+          "type": "text",
+          "label": {
+            "zh": "维度",
+            "en": "Quality"
+          }
+        },
+        "new": "",
         "description": "names of the qualities, clockwise from the top"
       },
       "series": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "数据组",
+          "en": "Series"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "values": {
+              "type": "list",
+              "label": {
+                "zh": "各维度的值",
+                "en": "Values"
+              },
+              "item": {
+                "type": "number",
+                "label": {
+                  "zh": "值",
+                  "en": "Value"
+                }
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": "",
+          "values": []
+        },
         "description": "[{label, values: [one per axis], color?}]"
       },
       "max": {
         "type": "number",
-        "default": 1,
+        "label": {
+          "zh": "最大值",
+          "en": "Maximum"
+        },
         "description": "the score at the outer ring"
       },
       "levels": {
         "type": "number",
+        "label": {
+          "zh": "刻度圈数",
+          "en": "Rings"
+        },
         "min": 1,
         "max": 10,
         "step": 1,
-        "default": 4,
         "description": "rings in the web"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "max": 1,
+      "levels": 4,
+      "size": 14
     }
   },
   {
@@ -3264,7 +6867,13 @@
     ],
     "category": "drawing/structure",
     "about": "Concentric rings, innermost first: a core and the layers around it (golden circle, an onion model, self to society). The core is accent and the rings accent2 growing paler outwards, each name in its own band, the core's in its middle; bottom-aligned they nest like bubbles.",
-    "tags": ["structure", "nested", "rings", "layers", "core"],
+    "tags": [
+      "structure",
+      "nested",
+      "rings",
+      "layers",
+      "core"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -3278,48 +6887,125 @@
     "example": {
       "rings": [
         {
+          "id": "lbub7m",
           "label": "为什么",
           "note": "信念"
         },
         {
+          "id": "leg90g",
           "label": "怎么做"
         },
         {
+          "id": "lc5ile",
           "label": "做什么"
         }
       ]
     },
     "params": {
       "rings": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "圈层",
+          "en": "Rings"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "补充说明",
+                "en": "Note"
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "label": ""
+        },
         "description": "[{label, note?, color?}] or names, innermost first"
       },
       "align": {
         "type": "choice",
-        "options": ["center", "bottom"],
-        "default": "center",
+        "label": {
+          "zh": "对齐",
+          "en": "Alignment"
+        },
+        "options": [
+          {
+            "value": "center",
+            "label": {
+              "zh": "居中",
+              "en": "Centre"
+            }
+          },
+          {
+            "value": "bottom",
+            "label": {
+              "zh": "底部",
+              "en": "Bottom"
+            }
+          }
+        ],
         "description": "share a centre, or stand on one bottom"
       },
       "color": {
         "type": "color",
+        "label": {
+          "zh": "颜色",
+          "en": "Colour"
+        },
         "description": "the core; defaults to accent"
       },
       "color2": {
         "type": "color",
+        "label": {
+          "zh": "底部颜色",
+          "en": "Bottom colour"
+        },
         "description": "the outer ring; defaults to accent2"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 72,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the shapes' texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "align": "center",
+      "size": 14
     }
   },
   {
@@ -3352,7 +7038,14 @@
     ],
     "category": "drawing/map",
     "about": "A true map from real geographic data, from the whole world down to a few streets: coastlines, lakes and named rivers over shaded relief (a view most of the way round the world is in the rounded Natural Earth projection), and in a regional view (a couple of hundred kilometres or less) OpenStreetMap's water and main roads, closer in its streets, parks and railways with the names of main roads, so a trip through a region or a walk through one town lands on its real roads; optionally today's country borders (disputed lines drawn as such) and first-level divisions such as provinces and states. Places, routes and areas are given in longitude and latitude, so everything lands where it really is, across the 180th meridian too; labels keep clear of each other and of the routes. Routes take place names or [lon, lat] points, with width, colour, dashes and direction arrows; areas shade a territory; highlights pick out named rivers, whole or between two places. Change it through these parameters rather than reaching into what it draws, whose structure is not fixed. The view fits bounds [west, south, east, north] or everything placed, and the colours follow the style.",
-    "tags": ["map", "geography", "route", "history", "place", "journey"],
+    "tags": [
+      "map",
+      "geography",
+      "route",
+      "history",
+      "place",
+      "journey"
+    ],
     "style": null,
     "origin": {
       "kind": "curated",
@@ -3364,9 +7057,15 @@
       "height": 600
     },
     "example": {
-      "bounds": [-6, 35, 16, 47],
+      "bounds": [
+        -6,
+        35,
+        16,
+        47
+      ],
       "places": [
         {
+          "id": "ndf8hq",
           "name": "新迦太基",
           "lon": -0.99,
           "lat": 37.6,
@@ -3374,24 +7073,28 @@
           "kind": "capital"
         },
         {
+          "id": "nk1egv",
           "name": "萨贡托",
           "lon": -0.27,
           "lat": 39.68,
           "kind": "battle"
         },
         {
+          "id": "n69fb6",
           "name": "比利牛斯山",
           "lon": 1,
           "lat": 42.6,
           "kind": "mountain"
         },
         {
+          "id": "nv6em7",
           "name": "阿尔卑斯山",
           "lon": 7,
           "lat": 45.3,
           "kind": "mountain"
         },
         {
+          "id": "nf2erm",
           "name": "特雷比亚",
           "lon": 9.6,
           "lat": 45.05,
@@ -3399,12 +7102,14 @@
           "kind": "battle"
         },
         {
+          "id": "nmi9h",
           "name": "罗马",
           "lon": 12.5,
           "lat": 41.9,
           "kind": "capital"
         },
         {
+          "id": "nd5mvu",
           "name": "地中海",
           "lon": 5.5,
           "lat": 39.5,
@@ -3413,14 +7118,30 @@
       ],
       "routes": [
         {
+          "id": "l99f8c",
           "points": [
-            "新迦太基",
-            [0.5, 40.8],
-            [2.6, 42.3],
-            [4.6, 43.9],
-            [6, 45],
-            [7.7, 45.1],
-            "特雷比亚"
+            "ndf8hq",
+            [
+              0.5,
+              40.8
+            ],
+            [
+              2.6,
+              42.3
+            ],
+            [
+              4.6,
+              43.9
+            ],
+            [
+              6,
+              45
+            ],
+            [
+              7.7,
+              45.1
+            ],
+            "nf2erm"
           ],
           "label": "汉尼拔进军",
           "arrow": "along"
@@ -3428,13 +7149,32 @@
       ],
       "areas": [
         {
+          "id": "l188se",
           "points": [
-            [-6, 37],
-            [-1, 36.5],
-            [0.5, 38.5],
-            [0, 39.6],
-            [-3, 39.2],
-            [-6, 38.4]
+            [
+              -6,
+              37
+            ],
+            [
+              -1,
+              36.5
+            ],
+            [
+              0.5,
+              38.5
+            ],
+            [
+              0,
+              39.6
+            ],
+            [
+              -3,
+              39.2
+            ],
+            [
+              -6,
+              38.4
+            ]
           ],
           "label": "迦太基控制区",
           "color": "#c8553d"
@@ -3443,97 +7183,708 @@
     },
     "params": {
       "places": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "地点",
+          "en": "Places"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "name": {
+              "type": "text",
+              "label": {
+                "zh": "名称",
+                "en": "Name"
+              }
+            },
+            "lon": {
+              "type": "number",
+              "label": {
+                "zh": "经度",
+                "en": "Longitude"
+              },
+              "min": -180,
+              "max": 180,
+              "step": 0.01
+            },
+            "lat": {
+              "type": "number",
+              "label": {
+                "zh": "纬度",
+                "en": "Latitude"
+              },
+              "min": -90,
+              "max": 90,
+              "step": 0.01
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "补充说明",
+                "en": "Note"
+              }
+            },
+            "kind": {
+              "type": "choice",
+              "label": {
+                "zh": "种类",
+                "en": "Kind"
+              },
+              "options": [
+                {
+                  "value": "town",
+                  "label": {
+                    "zh": "城镇",
+                    "en": "Town"
+                  }
+                },
+                {
+                  "value": "capital",
+                  "label": {
+                    "zh": "都城",
+                    "en": "Capital"
+                  }
+                },
+                {
+                  "value": "battle",
+                  "label": {
+                    "zh": "战场",
+                    "en": "Battle"
+                  }
+                },
+                {
+                  "value": "mountain",
+                  "label": {
+                    "zh": "山",
+                    "en": "Mountain"
+                  }
+                },
+                {
+                  "value": "pass",
+                  "label": {
+                    "zh": "关口",
+                    "en": "Pass"
+                  }
+                },
+                {
+                  "value": "water",
+                  "label": {
+                    "zh": "水域",
+                    "en": "Water"
+                  }
+                },
+                {
+                  "value": "region",
+                  "label": {
+                    "zh": "地区",
+                    "en": "Region"
+                  }
+                }
+              ]
+            },
+            "major": {
+              "type": "boolean",
+              "label": {
+                "zh": "重要",
+                "en": "Major"
+              }
+            },
+            "label": {
+              "type": "choice",
+              "label": {
+                "zh": "名字位置",
+                "en": "Name side"
+              },
+              "options": [
+                {
+                  "value": "right",
+                  "label": {
+                    "zh": "右",
+                    "en": "Right"
+                  }
+                },
+                {
+                  "value": "left",
+                  "label": {
+                    "zh": "左",
+                    "en": "Left"
+                  }
+                },
+                {
+                  "value": "above",
+                  "label": {
+                    "zh": "上",
+                    "en": "Above"
+                  }
+                },
+                {
+                  "value": "below",
+                  "label": {
+                    "zh": "下",
+                    "en": "Below"
+                  }
+                },
+                {
+                  "value": "top-right",
+                  "label": {
+                    "zh": "右上",
+                    "en": "Top right"
+                  }
+                },
+                {
+                  "value": "top-left",
+                  "label": {
+                    "zh": "左上",
+                    "en": "Top left"
+                  }
+                },
+                {
+                  "value": "bottom-right",
+                  "label": {
+                    "zh": "右下",
+                    "en": "Bottom right"
+                  }
+                },
+                {
+                  "value": "bottom-left",
+                  "label": {
+                    "zh": "左下",
+                    "en": "Bottom left"
+                  }
+                }
+              ]
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            },
+            "picture": {
+              "type": "picture",
+              "label": {
+                "zh": "图片",
+                "en": "Picture"
+              }
+            },
+            "pictureSize": {
+              "type": "number",
+              "label": {
+                "zh": "图片大小",
+                "en": "Picture size"
+              },
+              "min": 8,
+              "max": 400,
+              "step": 1
+            }
+          }
+        },
+        "title": "name",
+        "new": {
+          "name": "",
+          "lon": 0,
+          "lat": 0
+        },
         "description": "[{name, lon, lat, note?, kind?: town|capital|battle|mountain|pass|water|region, major?, label?: right|left|above|below|top-right|…, color?, picture?, pictureSize?}]; water and region are names without a marker"
       },
       "routes": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "路线",
+          "en": "Routes"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "points": {
+              "type": "list",
+              "label": {
+                "zh": "经过的点",
+                "en": "Points"
+              },
+              "item": {
+                "type": "geo",
+                "label": {
+                  "zh": "点",
+                  "en": "Point"
+                },
+                "to": "places"
+              },
+              "min": 2
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "note": {
+              "type": "text",
+              "label": {
+                "zh": "补充说明",
+                "en": "Note"
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            },
+            "width": {
+              "type": "number",
+              "label": {
+                "zh": "线宽",
+                "en": "Width"
+              },
+              "min": 0.5,
+              "max": 20,
+              "step": 0.5
+            },
+            "style": {
+              "type": "choice",
+              "label": {
+                "zh": "线型",
+                "en": "Line"
+              },
+              "options": [
+                {
+                  "value": "solid",
+                  "label": {
+                    "zh": "实线",
+                    "en": "Solid"
+                  }
+                },
+                {
+                  "value": "dashed",
+                  "label": {
+                    "zh": "虚线",
+                    "en": "Dashed"
+                  }
+                },
+                {
+                  "value": "dotted",
+                  "label": {
+                    "zh": "点线",
+                    "en": "Dotted"
+                  }
+                }
+              ]
+            },
+            "arrow": {
+              "type": "choice",
+              "label": {
+                "zh": "箭头",
+                "en": "Arrow"
+              },
+              "options": [
+                {
+                  "value": "end",
+                  "label": {
+                    "zh": "终点",
+                    "en": "At the end"
+                  }
+                },
+                {
+                  "value": "along",
+                  "label": {
+                    "zh": "沿途",
+                    "en": "Along"
+                  }
+                },
+                {
+                  "value": "none",
+                  "label": {
+                    "zh": "无",
+                    "en": "None"
+                  }
+                }
+              ]
+            },
+            "labelSide": {
+              "type": "choice",
+              "label": {
+                "zh": "文字位置",
+                "en": "Label side"
+              },
+              "options": [
+                {
+                  "value": "left",
+                  "label": {
+                    "zh": "左侧",
+                    "en": "Left"
+                  }
+                },
+                {
+                  "value": "right",
+                  "label": {
+                    "zh": "右侧",
+                    "en": "Right"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "title": "label",
+        "new": {
+          "points": []
+        },
         "description": "[{points: place names or [lon, lat], label?, note?, color?, width?, style?: solid|dashed|dotted, arrow?: end|along|none, labelSide?}]; draw one route per stage or force to vary colour and width"
       },
       "areas": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "区域",
+          "en": "Areas"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "points": {
+              "type": "list",
+              "label": {
+                "zh": "边界点",
+                "en": "Outline"
+              },
+              "item": {
+                "type": "geo",
+                "label": {
+                  "zh": "点",
+                  "en": "Point"
+                },
+                "to": "places"
+              },
+              "min": 3
+            },
+            "label": {
+              "type": "text",
+              "label": {
+                "zh": "文字",
+                "en": "Words"
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            },
+            "opacity": {
+              "type": "number",
+              "label": {
+                "zh": "浓淡",
+                "en": "Opacity"
+              },
+              "min": 0,
+              "max": 1,
+              "step": 0.05
+            }
+          }
+        },
+        "title": "label",
         "description": "[{points: [lon, lat] or place names, color?, opacity?}], a shaded territory; name it with a region place"
       },
       "highlights": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "突出的河流",
+          "en": "Rivers picked out"
+        },
+        "item": {
+          "type": "record",
+          "fields": {
+            "id": {
+              "type": "id"
+            },
+            "river": {
+              "type": "text",
+              "label": {
+                "zh": "河名",
+                "en": "River"
+              }
+            },
+            "color": {
+              "type": "color",
+              "label": {
+                "zh": "颜色",
+                "en": "Colour"
+              }
+            },
+            "width": {
+              "type": "number",
+              "label": {
+                "zh": "线宽",
+                "en": "Width"
+              },
+              "min": 0.5,
+              "max": 20,
+              "step": 0.5
+            },
+            "from": {
+              "type": "geo",
+              "label": {
+                "zh": "从",
+                "en": "From"
+              },
+              "to": "places"
+            },
+            "to": {
+              "type": "geo",
+              "label": {
+                "zh": "到",
+                "en": "To"
+              },
+              "to": "places"
+            }
+          }
+        },
+        "title": "river",
         "description": "[{river: a name or names as the map labels them (a main stream's reaches can have their own names), color?, width?, from?, to?: place names or [lon, lat]}]; picks out real rivers, whole or the stretch between from and to, as far as the data names them (a wide estuary may be unnamed)"
       },
       "bounds": {
-        "type": "array",
+        "type": "list",
+        "label": {
+          "zh": "地图范围",
+          "en": "Map bounds"
+        },
+        "item": {
+          "type": "number",
+          "label": {
+            "zh": "度",
+            "en": "Degrees"
+          }
+        },
+        "min": 4,
+        "max": 4,
         "description": "[west, south, east, north] in degrees; defaults to everything placed with room around it"
       },
       "borders": {
         "type": "choice",
-        "options": ["none", "countries", "subdivisions"],
-        "default": "none",
+        "label": {
+          "zh": "边界",
+          "en": "Borders"
+        },
+        "options": [
+          {
+            "value": "none",
+            "label": {
+              "zh": "无",
+              "en": "None"
+            }
+          },
+          {
+            "value": "countries",
+            "label": {
+              "zh": "国界",
+              "en": "Countries"
+            }
+          },
+          {
+            "value": "subdivisions",
+            "label": {
+              "zh": "国界与省级界",
+              "en": "Countries and provinces"
+            }
+          }
+        ],
         "description": "today's borders: countries, or countries with their first-level divisions (provinces, states). Leave none for a historical map unless modern borders help locate it, and say so"
       },
       "borderColor": {
         "type": "color",
+        "label": {
+          "zh": "边界颜色",
+          "en": "Border colour"
+        },
         "description": "colour of the border lines; defaults to a grey from the style"
       },
       "rivers": {
         "type": "choice",
-        "options": ["named", "plain", "none"],
-        "default": "named",
+        "label": {
+          "zh": "河流",
+          "en": "Rivers"
+        },
+        "options": [
+          {
+            "value": "named",
+            "label": {
+              "zh": "标出名称",
+              "en": "Named"
+            }
+          },
+          {
+            "value": "plain",
+            "label": {
+              "zh": "素色",
+              "en": "Plain"
+            }
+          },
+          {
+            "value": "none",
+            "label": {
+              "zh": "无",
+              "en": "None"
+            }
+          }
+        ],
         "description": "rivers with or without their names"
       },
       "relief": {
         "type": "boolean",
-        "default": true,
+        "label": {
+          "zh": "地势",
+          "en": "Relief"
+        },
         "description": "shaded relief over the land, so mountains and plateaus read at a glance; fades in close views"
       },
       "roads": {
         "type": "boolean",
-        "default": true,
+        "label": {
+          "zh": "道路",
+          "en": "Roads"
+        },
         "description": "in a regional or city view, today's roads and railways over OpenStreetMap's coast, water and woods; false leaves them off (a historical map) and keeps the fine coast"
       },
       "roadNames": {
         "type": "boolean",
-        "default": true,
+        "label": {
+          "zh": "道路名称",
+          "en": "Road names"
+        },
         "description": "in a regional or city view with roads, the names of main roads where they fit"
       },
       "names": {
-        "type": "object",
+        "type": "record",
+        "label": {
+          "zh": "地名替换",
+          "en": "Renamed names"
+        },
+        "fields": {},
+        "rest": {
+          "type": "text",
+          "label": {
+            "zh": "显示为",
+            "en": "Shown as"
+          }
+        },
         "description": "{name as the map draws it: name to show}; renames any name the map takes from its data (countries, divisions, rivers, and in a city the roads and waterways, which come as the place writes them), such as to put local names into the reader's language"
       },
       "language": {
         "type": "choice",
-        "options": ["zh", "en"],
-        "default": "zh",
+        "label": {
+          "zh": "地名语言",
+          "en": "Name language"
+        },
+        "options": [
+          {
+            "value": "zh",
+            "label": {
+              "zh": "中文",
+              "en": "Chinese"
+            }
+          },
+          {
+            "value": "en",
+            "label": {
+              "zh": "英文",
+              "en": "English"
+            }
+          }
+        ],
         "description": "language of the river, country and division names"
       },
       "edge": {
         "type": "choice",
-        "options": ["frame", "fade"],
-        "default": "frame",
+        "label": {
+          "zh": "边缘",
+          "en": "Edge"
+        },
+        "options": [
+          {
+            "value": "frame",
+            "label": {
+              "zh": "细框",
+              "en": "Frame"
+            }
+          },
+          {
+            "value": "fade",
+            "label": {
+              "zh": "渐隐",
+              "en": "Fade"
+            }
+          }
+        ],
         "description": "a thin frame where the map is the figure's ground; or edges that fade into the paper, hiding the map's outer part, for a small map set among other pictures"
       },
       "scale": {
         "type": "boolean",
-        "default": true,
+        "label": {
+          "zh": "比例尺",
+          "en": "Scale bar"
+        },
         "description": "a scale bar in kilometres"
       },
       "water": {
         "type": "color",
+        "label": {
+          "zh": "水色",
+          "en": "Water colour"
+        },
         "description": "sea and lake colour; defaults to a pale tint of the style's cool colour"
       },
       "land": {
         "type": "color",
+        "label": {
+          "zh": "陆地色",
+          "en": "Land colour"
+        },
         "description": "land colour; defaults to a faint tint of paper"
       },
       "size": {
         "type": "number",
+        "label": {
+          "zh": "字号",
+          "en": "Text size"
+        },
         "min": 8,
         "max": 40,
         "step": 1,
-        "default": 14,
         "description": "font size"
       },
       "effect": {
         "type": "effect",
+        "label": {
+          "zh": "质感",
+          "en": "Texture"
+        },
         "description": "an effect id for the land's texture, such as the style's rough-edge or pencil-grain"
       }
+    },
+    "defaults": {
+      "borders": "none",
+      "rivers": "named",
+      "relief": true,
+      "roads": true,
+      "roadNames": true,
+      "language": "zh",
+      "edge": "frame",
+      "scale": true,
+      "size": 14
     }
   }
 ]

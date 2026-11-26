@@ -71,7 +71,7 @@ export const navigate: ShowcaseSource = {
           {
             id: "chart",
             name: say("海图上的两线定位", "A two-bearing fix on a chart"),
-            params: { loop: { label: say("演示一轮（秒）", "Seconds per round"), type: "number", min: 8, max: 60, step: 1 } },
+            params: { loop: { label: { zh: "演示一轮（秒）", en: "Seconds per round" }, type: "number", min: 8, max: 60, step: 1 } },
             defaults: { a: [92, 214], b: [384, 128], ship: [252, 430], loop: 16, steps: STEPS, tagW: 300 },
             source: code("chart-fix"),
           },

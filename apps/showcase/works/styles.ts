@@ -117,8 +117,8 @@ export const styled: ShowcaseSource = {
           id: "gallery",
           name: say("画风画廊", "Gallery of styles"),
           params: {
-            every: { label: say("自动换下一种（秒）", "Seconds before the next"), type: "number", min: 0, max: 20, step: 0.5 },
-            value: { label: say("先看第几种", "Which first"), type: "number", min: 0, max: 6, step: 1 },
+            every: { label: { zh: "自动换下一种（秒）", en: "Seconds before the next" }, type: "number", min: 0, max: 20, step: 0.5 },
+            value: { label: { zh: "先看第几种", en: "Which first" }, type: "number", min: 0, max: 6, step: 1 },
           },
           defaults: { every: 3.6, value: 0, top: 72, picture: [810, 540] },
           source: code("styles-gallery"),

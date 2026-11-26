@@ -41,9 +41,9 @@ export const range: ShowcaseSource = {
           id: "range",
           name: say("海平线与视距", "The horizon and how far one sees"),
           params: {
-            H: { label: say("灯离海面的高度（米）", "Height of the light (m)"), type: "number", min: 1, max: 150, step: 1 },
-            h: { label: say("看的人眼睛的高度（米）", "Height of the eye (m)"), type: "number", min: 0.5, max: 30, step: 0.5 },
-            light: { label: say("光的颜色", "Colour of the light"), type: "color" },
+            H: { label: { zh: "灯离海面的高度（米）", en: "Height of the light (m)" }, type: "number", min: 1, max: 150, step: 1 },
+            h: { label: { zh: "看的人眼睛的高度（米）", en: "Height of the eye (m)" }, type: "number", min: 0.5, max: 30, step: 0.5 },
+            light: { label: { zh: "光的颜色", en: "Colour of the light" }, type: "color" },
           },
           defaults: {
             H: 48,
