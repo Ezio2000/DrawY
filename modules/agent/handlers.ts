@@ -3,7 +3,6 @@ import {
   DomainError,
   EditRejected,
   type Cause,
-  type Observation,
   type Picture,
   type Problem,
   type Question,
@@ -35,7 +34,7 @@ import {
   proposeSchema,
   searchSchema,
 } from "./tools.ts";
-import { checkClaims, judgeIdeas, type Checked } from "./judge.ts";
+import { judgeIdeas } from "./judge.ts";
 
 /** How the author picks among its ideas when the app does not. */
 const YOUR_PICK =
@@ -529,66 +528,19 @@ async function performView(x: Execution, args: any, step: ToolStep): Promise<Out
       }
     }
     if (!result) throw new Unavailable("画布查看服务不可用");
-    // Unchanged scenes omitted from this overview are checked against how they last looked.
-    const unchanged = lastLooks(x.store, run.observations, result.omitted);
     run.observations.push(result.observation);
-    // Run fixed visual baseline checks only on overview looks; region close-ups intentionally crop the canvas.
-    const checked = result.observation.overview
-      ? await checkLook(x, [...pictures(result.content), ...unchanged], signal)
-      : undefined;
     Object.assign(step, {
       waiting: undefined,
       screenshots: result.observation.screenshots.map(({ name, url }) => ({ name, url })),
       errors: result.observation.errors,
-      ...(checked ? { checked } : {}),
     });
     return {
       output: { ...result.observation, ...research(run) },
-      images: [...images, ...result.content, ...(checked ? [{ type: "input_text", text: told(checked) }] : [])],
+      images: [...images, ...result.content],
     };
   } finally {
     run.status = "running";
   }
-}
-/** Has the judge, when there is one, run the fixed visual baseline checks on an overview
- * look's pictures, and bills it. Without a judge or pictures, or when the judge cannot
- * answer, the author's own reading of the look is all there is. */
-async function checkLook(x: Execution, shown: string[], signal: AbortSignal) {
-  const judge = x.ctx.settings.judge;
-  if (!judge || !shown.length) return undefined;
-  try {
-    const { checked, input } = await checkClaims(judge, shown, signal);
-    spendJudge(x.run, input);
-    return checked;
-  } catch {
-    signal.throwIfAborted();
-    return undefined;
-  }
-}
-/** The pictures a look shows, as data URLs. */
-const pictures = (content: Item[]) => content.flatMap((c) => (c.type === "input_image" ? [String(c.image_url)] : []));
-/** The latest whole picture of each scene from this run's earlier looks: what a look that
- * left those scenes out as unchanged would have shown of them. */
-function lastLooks(store: UserStore, observations: Observation[], sceneIds: string[]) {
-  return sceneIds.flatMap((sceneId) => {
-    const seen = observations.findLast((o) => o.overview && o.sceneIds.includes(sceneId));
-    if (!seen) return [];
-    const prefix = `canvas-${seen.revision}-${sceneId}-`;
-    const shot = seen.screenshots.find((c) => c.name.startsWith(prefix) && /^\d+$/.test(c.name.slice(prefix.length)));
-    if (!shot) return [];
-    try {
-      return ["data:image/png;base64," + store.captureBytes(shot.id).toString("base64")];
-    } catch {
-      return [];
-    }
-  });
-}
-/** What the judge found of the visual baseline checks, as the author is told it beside the look. */
-function told(checked: Checked[]) {
-  const missed = checked.filter((c) => !c.holds).map((c) => c.claim);
-  return missed.length
-    ? `An independent visual baseline check flagged: ${missed.join(" | ")}. Inspect the screenshot and fix real issues in the next write.`
-    : "An independent visual baseline check passed all visual baseline checks.";
 }
 /** What the search budget had left before this call, which is already among the steps. */
 function takeSearch(x: Execution, call: Call) {

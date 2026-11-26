@@ -11,7 +11,6 @@ import { CONTEXT_FORMAT, userStarted, withLessThought } from "./conversation.ts"
 import { guidesRead, guides } from "./guides.ts";
 
 import { proposeSchema } from "./tools.ts";
-import { BASELINE_CHECKS } from "./judge.ts";
 import { restore, writeWork } from "../workspace/index.ts";
 import { partialJson } from "./partial.ts";
 import { CutOff, generate, type Item } from "../models/index.ts";
@@ -248,21 +247,15 @@ it("lets the judge pick the idea from what the user sent alone, bills it, and le
   catalog.judge = { ...catalog.judge, enabled: true, endpoint: "https://judge.invalid/v1beta/decisions", credential: "gk", price: 0.1 };
   db.saveModels(modelCatalogSchema.parse(catalog));
   const asked: { key: string | null; body: any }[] = [];
-  let answer: (body: any) => Response = (body) =>
-    body.questions?.idea
-      ? Response.json({
-          answers: { idea: { type: "choice", choice: "i1", probabilities: { i0: 0.2, i1: 0.7, i2: 0.1 } } },
-          usage: { total_input_tokens: 120 },
-        })
-      : Response.json({
-          answers: Object.fromEntries(BASELINE_CHECKS.map((_, i) => ["c" + i, { type: "noul", noul: 0.9 }])),
-          usage: { total_input_tokens: 80 },
-        });
+  let answer: () => Response = () =>
+    Response.json({
+      answers: { idea: { type: "choice", choice: "i1", probabilities: { i0: 0.2, i1: 0.7, i2: 0.1 } } },
+      usage: { total_input_tokens: 120 },
+    });
   library.route(async (url, init) => {
     if (!String(url).startsWith("https://judge.invalid")) throw Error("unexpected " + url);
-    const body = JSON.parse(String(init?.body));
-    asked.push({ key: new Headers(init?.headers).get("x-goog-api-key"), body });
-    return answer(body);
+    asked.push({ key: new Headers(init?.headers).get("x-goog-api-key"), body: JSON.parse(String(init?.body)) });
+    return answer();
   });
   const seen = script([
     // A brief written beside the ideas could not develop the pick.
@@ -277,9 +270,9 @@ it("lets the judge pick the idea from what the user sent alone, bills it, and le
   try {
     run = await agent.start(store, work.id, "root", "苹果");
     await waitFor(run.id, "completed");
-    // The run's record meters the judge on its own, covering idea pick + overview baseline check.
+    // The run's record meters the judge on its own; view_canvas does not call the judge.
     const { trace, spans } = tracer.get(store.userId, run.id)!;
-    expect(trace.meters.find((m) => m.key === "judge")).toMatchObject({ kind: "tool", calls: 2, input: 200 });
+    expect(trace.meters.find((m) => m.key === "judge")).toMatchObject({ kind: "tool", calls: 1, input: 120 });
     expect(spans.find((s) => s.name === "judge")!.attrs.asked).toMatch(/^用户请求：苹果 · 哪个视觉想法最有创意？ · 一只纵切开的苹果/);
   } finally {
     tracer.close();
@@ -288,8 +281,8 @@ it("lets the judge pick the idea from what the user sent alone, bills it, and le
   expect(told[0]).toMatchObject({ develop: ideas[1] });
   expect(told[1].error).toContain("after propose_ideas");
   // The judge sees the request and what each idea draws, never its kind or the brief.
-  const ideaCalls = () => asked.filter((a) => a.body.questions?.idea);
-  expect(ideaCalls()[0]).toMatchObject({
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toMatchObject({
     key: "gk",
     body: {
       model: "gemini-decision-1",
@@ -305,9 +298,10 @@ it("lets the judge pick the idea from what the user sent alone, bills it, and le
   });
   const done = store.run(run.id);
   expect(done.steps.find((s) => s.kind === "tool" && s.name === "propose_ideas")).toMatchObject({ by: "judge", chosen: 1, scores: [0.2, 0.7, 0.1] });
-  expect(done.usage?.judge).toEqual({ calls: 2, input: 200 });
+  expect(done.steps.find((s) => s.kind === "tool" && s.name === "view_canvas")).not.toHaveProperty("checked");
+  expect(done.usage?.judge).toEqual({ calls: 1, input: 120 });
   expect(done.services?.judge).toBe("gemini-decision-1");
-  expect(costOf(done.usage, done.prices)?.judge).toBeCloseTo((200 * 0.1) / 1e6, 12);
+  expect(costOf(done.usage, done.prices)?.judge).toBeCloseTo((120 * 0.1) / 1e6, 12);
 
   // A judge that fails leaves the pick to the author, and costs nothing.
   answer = () => new Response("quota", { status: 429 });
@@ -325,92 +319,13 @@ it("lets the judge pick the idea from what the user sent alone, bills it, and le
   expect(outputs(again[1]).at(-1)).toMatchObject({ develop: null });
   // Everything the user sent on the work is shown, oldest first: a picture as a small image
   // after its words, and no style, which is about the look rather than the idea.
-  expect(ideaCalls()[1].body.input).toEqual([
+  expect(asked).toHaveLength(2);
+  expect(asked[1].body.input).toEqual([
     { type: "text", text: "用户请求：苹果\n用户请求：换个想法\n用户附图「参考」：" },
     { type: "image", data: expect.stringMatching(/^[A-Za-z0-9+/]+=*$/), mime_type: "image/webp", resolution: "low" },
   ]);
   expect(store.run(second.id).steps.find((s) => s.kind === "tool" && s.name === "propose_ideas")).toMatchObject({ by: "author" });
   expect(store.run(second.id).usage?.judge).toBeUndefined();
-});
-
-it("has the judge look in a look's pictures for each claim, tells the author what they do not show, and bills it", async () => {
-  const catalog = db.models();
-  catalog.judge = { ...catalog.judge, enabled: true, endpoint: "https://judge.invalid/v1beta/decisions", credential: "gk", price: 0.1 };
-  db.saveModels(modelCatalogSchema.parse(catalog));
-  const asked: any[] = [];
-  library.route(async (url, init) => {
-    if (!String(url).startsWith("https://judge.invalid")) throw Error("unexpected " + url);
-    asked.push(JSON.parse(String(init?.body)));
-    return Response.json({
-      answers: {
-        c0: { type: "noul", noul: 0.9 },
-        c1: { type: "noul", noul: 0.2 },
-        c2: { type: "noul", noul: 0.85 },
-      },
-      usage: { total_input_tokens: 700 },
-    });
-  });
-  const seen = script([["view_canvas", {}], ["finish", { message: "done" }]]);
-  const run = await new Agent(() => {}).start(store, work.id, "root", "看看");
-  await waitFor(run.id, "completed");
-  // Each fixed visual baseline check is a yes-or-no question on the overview pictures.
-  expect(asked).toHaveLength(1);
-  expect(asked[0]).toMatchObject({
-    model: "gemini-decision-1",
-    input: [
-      { type: "text", text: "作品的画面：\n" },
-      { type: "image", data: "dmlzaWJsZQ==", mime_type: "image/png", resolution: "medium" },
-    ],
-    questions: Object.fromEntries(
-      BASELINE_CHECKS.map((c, i) => ["c" + i, { type: "noul", instructions: "画面是否做到了：" + c }]),
-    ),
-  });
-  // The author is told only what the visual baseline check flagged; the studio shows every verdict.
-  const next = JSON.stringify(seen[1]);
-  expect(next).toContain("visual baseline check flagged: " + BASELINE_CHECKS[1] + ". ");
-  expect(next).not.toContain("visual baseline check flagged: " + BASELINE_CHECKS[0]);
-  const done = store.run(run.id);
-  expect(done.steps.find((s) => s.kind === "tool" && s.name === "view_canvas")).toMatchObject({
-    checked: [
-      { claim: BASELINE_CHECKS[0], score: 0.9, holds: true },
-      { claim: BASELINE_CHECKS[1], score: 0.2, holds: false },
-      { claim: BASELINE_CHECKS[2], score: 0.85, holds: true },
-    ],
-  });
-  expect(done.usage?.judge).toEqual({ calls: 1, input: 700 });
-});
-
-it("checks baseline on scenes a look left out as unchanged against how they last looked, and skips close-ups", async () => {
-  const catalog = db.models();
-  catalog.judge = { ...catalog.judge, enabled: true, endpoint: "https://judge.invalid/v1beta/decisions", credential: "gk", price: 0.1 };
-  db.saveModels(modelCatalogSchema.parse(catalog));
-  const asked: any[] = [];
-  library.route(async (url, init) => {
-    asked.push(JSON.parse(String(init?.body)));
-    return Response.json({
-      answers: Object.fromEntries(BASELINE_CHECKS.map((_, i) => ["c" + i, { type: "noul", noul: 0.9 }])),
-      usage: { total_input_tokens: 10 },
-    });
-  });
-  // The first look sees both scenes; the second only the one that changed; the third is a region close-up.
-  const child = store.putCapture(Buffer.from("child"), `canvas-${store.work(work.id).revision}-child-1`);
-  vi.mocked(observe)
-    .mockImplementationOnce((async (s: UserStore, workId: string) => {
-      const shot = await looked(s, workId);
-      return { ...shot, observation: { ...shot.observation, sceneIds: ["root", "child"], screenshots: [child] } };
-    }) as never)
-    .mockImplementationOnce((async (s: UserStore, workId: string) => ({ ...(await looked(s, workId)), omitted: ["child"] })) as never)
-    .mockImplementationOnce((async (s: UserStore, workId: string) => {
-      const shot = await looked(s, workId);
-      return { ...shot, observation: { ...shot.observation, overview: false } };
-    }) as never);
-  script([["view_canvas", {}], ["view_canvas", {}], ["view_canvas", { regions: [[0, 0, 100, 100]] }], ["finish", { message: "done" }]]);
-  const run = await new Agent(() => {}).start(store, work.id, "root", "看看");
-  await waitFor(run.id, "completed");
-  expect(asked).toHaveLength(2);
-  const images = (n: number) => asked[n].input.filter((p: { type: string }) => p.type === "image").map((p: { data: string }) => p.data);
-  expect(images(0)).toEqual(["dmlzaWJsZQ=="]);
-  expect(images(1)).toEqual(["dmlzaWJsZQ==", Buffer.from("child").toString("base64")]);
 });
 
 it("shows a turn's thinking, words and streamed layout as steps before the write is saved", async () => {

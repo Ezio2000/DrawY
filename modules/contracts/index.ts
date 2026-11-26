@@ -743,7 +743,7 @@ export type ToolActivity =
       waiting?: string[];
       screenshots?: Picture[];
       errors?: string[];
-      /** Visual baseline checks on this look, as the judge found them in the picture. */
+      /** Legacy judge check results kept on earlier runs for backward-compatible playback. */
       checked?: { claim: string; score: number; holds: boolean }[];
     };
 export type Step =
