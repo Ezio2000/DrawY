@@ -1781,3 +1781,19 @@ it("lays out plans, comparisons, part labels, group frames and replicas from the
   // Two copies, the paper under the block, and the block itself.
   expect(look.copies).toBe(4);
 });
+it.fails("problem 3B: a numbered message's words are marked as its data, the number drawn apart", async () => {
+  const sequence = seed("drawings").find((m) => m.id === "sequence") as DrawingMaterial;
+  work.materials = { sequence: libraryDrawing("sequence") };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [{ id: "seq", label: "seq", drawingId: "sequence", data: { ...sequence.example, numbered: true }, bounds: { x: 0, y: 0, ...sequence.size } }],
+    links: [],
+    checks: [],
+  };
+  await open();
+  const marked = await page.evaluate(() =>
+    [...document.querySelector('[data-module-id="seq"]')!.shadowRoot!.querySelectorAll("[data-edp-text]")].map((el) => el.textContent),
+  );
+  // The words a person retypes are the label alone; "1." is drawn in an element of its own.
+  expect(marked).toContain("登录请求");
+});
