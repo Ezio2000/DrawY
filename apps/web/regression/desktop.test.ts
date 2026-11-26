@@ -1219,3 +1219,31 @@ it("keeps a sequence diagram whole as it is changed on the canvas: renamed, reor
   d = await valid();
   expect(d.messages).toHaveLength(5);
 });
+
+it("undoes and redoes hand edits at once, a gesture a step: arrow keys pressed in a row, a drag", async () => {
+  const id = await make();
+  await open(id);
+  await editing();
+  await settled();
+  const x = async () => (await rootOf(id)).modules.find((m: { id: string }) => m.id === "a").bounds.x;
+  const alpha = await rectOf("Alpha");
+  await page.mouse.click(alpha.cx, alpha.cy);
+  // A press moves a pixel on screen, whatever the view's scale.
+  for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight");
+  await expect.poll(x, { timeout: 5_000 }).toBeGreaterThan(100);
+  await settled();
+  const nudged = await x();
+  await drag("Alpha");
+  await settled();
+  const dragged = await x();
+  expect(dragged).toBeGreaterThan(150);
+  // Back over the drag, then over all five presses at once; and forward again.
+  await page.keyboard.press("Meta+Z");
+  await expect.poll(x, { timeout: 5_000 }).toBe(nudged);
+  await page.keyboard.press("Meta+Z");
+  await expect.poll(x, { timeout: 5_000 }).toBe(100);
+  await page.keyboard.press("Meta+Shift+Z");
+  await expect.poll(x, { timeout: 5_000 }).toBe(nudged);
+  await page.keyboard.press("Meta+Y");
+  await expect.poll(x, { timeout: 5_000 }).toBe(dragged);
+});

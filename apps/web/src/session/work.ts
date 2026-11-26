@@ -10,6 +10,7 @@ import { Sending } from "./sending.ts";
 import { Store, kept } from "./store.ts";
 import type { Ask, Back, Change, Context, Happening, SessionHost, View } from "./types.ts";
 import { Versions } from "./versions.ts";
+import { History } from "./history.ts";
 
 export * from "./types.ts";
 
@@ -66,6 +67,8 @@ export interface Snapshot {
   /** Going back, while it can be taken back. */
   back?: Back;
   undoable: boolean;
+  /** Whether a step of hand editing undone here can be made again. */
+  redoable: boolean;
   /** Editing waits while the runs load, the author works or waits, or a preview shows. */
   locked: boolean;
 }
@@ -81,6 +84,7 @@ export interface Actions {
   restore(revision: number): Promise<void>;
   /** Takes back going back to a version, else the latest request or hand edit. */
   undo(): Promise<void>;
+  redo(): Promise<void>;
   look(revision: number): Promise<void>;
   endPreview(): void;
   /** Stops the author; resolves to what was asked, to change and send again. */
@@ -125,6 +129,7 @@ export class WorkSession extends Store<Snapshot> {
     ctx.edits = new Edits(ctx);
     ctx.sending = new Sending(ctx);
     ctx.versions = new Versions(ctx);
+    ctx.history = new History(ctx);
     ctx.scenes = new Scenes(ctx);
     ctx.runs = new Runs(ctx);
     const { revisions, runs, edits, sending, versions, scenes } = ctx;
@@ -135,6 +140,7 @@ export class WorkSession extends Store<Snapshot> {
       discard: () => versions.discard(),
       restore: (revision) => versions.restore(revision),
       undo: () => versions.undo(),
+      redo: () => versions.redo(),
       look: (revision) => revisions.look(revision),
       endPreview: () => revisions.endPreview(),
       stop: () => sending.stop(),
@@ -211,6 +217,7 @@ export class WorkSession extends Store<Snapshot> {
       holding: sending.holding,
       back: versions.back,
       undoable: !!work && versions.undoable,
+      redoable: !!work && versions.redoable,
       locked: !runs.loaded || runs.working || runs.waiting || !!preview,
     });
   }

@@ -191,12 +191,13 @@ export function catchUp(
     content: `Current scene: ${sceneId}\nThe work is as you last saw it (revision ${work.revision}).`,
   };
   if (known === work.revision) return unchanged;
-  const before = known === undefined ? undefined : store.revision(work.id, known);
+  const history = store.revisions(work.id);
+  // The revision last seen is gone when it was a hand edit since saved as a version: the
+  // author is then given the work whole.
+  const before = known === undefined || !history.some((r) => r.revision === known) ? undefined : store.revision(work.id, known);
   // Only the user changes a work between requests; a revision the author saved that this
   // conversation does not know of means it does not hold the work.
-  const between = store
-    .revisions(work.id)
-    .filter((r) => r.revision > (known ?? 0) && r.revision <= work.revision);
+  const between = history.filter((r) => r.revision > (known ?? 0) && r.revision <= work.revision);
   if (!before || between.some((r) => r.cause.kind === "run"))
     return workMessage(sceneId, work, ownChanges(store, work));
   const changes = changesBetween(before, work);

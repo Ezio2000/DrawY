@@ -14,7 +14,9 @@ import {
   dataPatch,
   duplicateItem,
   indentItem,
+  isEmptyEdit,
   outdentItem,
+  revert,
   spansOf,
   wrapItems,
   insertItem,
@@ -246,5 +248,34 @@ describe("structure edited on the canvas", () => {
     // say of it, by its place.
     const was = { ...data, messages: data.messages.map((m) => (m.id === "m1" ? { ...m, id: "first", accent: true } : m)) };
     expect(sequenceFrom(read, was).messages[0]).toEqual({ id: "first", accent: true, from: "web", to: "api", label: "登录" });
+  });
+});
+
+describe("going back and forth over hand edits", () => {
+  it("finds the edit back to how a work was before each kind of step, and forward again", () => {
+    const strip = (w: Work) => {
+      const { revision: _r, updatedAt: _u, materials: _m, ...rest } = structuredClone(w);
+      return rest;
+    };
+    const start = sequenceWork();
+    start.materials.label = curated("label").material;
+    start.materials.arrow = curated("arrow").material;
+    start.scenes.root.modules.push(box("a", { x: 0, y: 500, width: 160, height: 60 }), box("b", { x: 400, y: 500, width: 160, height: 60 }));
+    const linked = applied(start, connect(start, "root", { moduleId: "a" }, { moduleId: "b" }, { drawingId: "arrow", data: {} }).edit);
+    const steps = [
+      setAt(linked, "root", "seq", "participants.#server.label", "网关")!,
+      removeItem(linked, "root", "seq", "participants", "db").edit,
+      moveItem(linked, "root", "seq", "messages", "m1", 3)!,
+      moveParts(linked, "root", [{ id: "a", bounds: { x: 40, y: 540, width: 160, height: 60 } }]),
+      { remove: { modules: ["a"] } },
+      { scenes: [{ id: "root", order: ["b", "a", "seq"] }] },
+      { modules: [{ id: "c", bounds: [0, 0, 10, 10], drawingId: "label", data: { text: "新" } }], style: { accent: "#123456", ink: null } },
+    ];
+    for (const step of steps) {
+      const after = applied(linked, step);
+      expect(strip(applied(after, revert(after, linked))), JSON.stringify(step)).toEqual(strip(linked));
+      expect(strip(applied(linked, revert(linked, after))), JSON.stringify(step)).toEqual(strip(after));
+    }
+    expect(isEmptyEdit(revert(linked, linked))).toBe(true);
   });
 });

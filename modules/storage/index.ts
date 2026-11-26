@@ -405,6 +405,17 @@ export class UserStore {
         cause: JSON.parse(r.cause as string),
       }));
   }
+  /** Forgets revisions nothing leads back to any more, as saving hand edits as a version
+   * does with the edits it holds. */
+  forget(workId: string, revisions: number[]) {
+    const drop = this.storage.db.prepare("DELETE FROM revisions WHERE user_id=? AND work_id=? AND revision=?");
+    for (const r of revisions) drop.run(this.userId, workId, r);
+  }
+  hasRevision(workId: string, revision: number) {
+    return !!this.storage.db
+      .prepare("SELECT 1 FROM revisions WHERE user_id=? AND work_id=? AND revision=?")
+      .get(this.userId, workId, revision);
+  }
   revision(workId: string, revision: number) {
     return this.one<Work>(
       "SELECT data FROM revisions WHERE user_id=? AND work_id=? AND revision=?",

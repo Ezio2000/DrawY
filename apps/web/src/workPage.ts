@@ -119,6 +119,7 @@ export function useWorkPage({
       await session.undo();
       dismiss();
     });
+  const redo = () => void attempt(() => session.redo());
   const enter = (id: string) => void attempt(() => session.enter(id, t.work.expand));
   /** Follows a module's target: into a scene, or a detail page over this one. */
   const open = (target: Target) =>
@@ -188,6 +189,7 @@ export function useWorkPage({
     retyped,
     restore,
     undo,
+    redo,
     enter,
     open,
     ask,

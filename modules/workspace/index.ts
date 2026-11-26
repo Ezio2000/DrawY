@@ -333,12 +333,21 @@ export function restore(store: UserStore, workId: string, revision: number) {
     { kind: "restore", revision },
   );
 }
-/** Saves the hand edits made since the latest version as a version of their own. */
+/** Saves the hand edits made since the latest version as a version of their own. The
+ * revisions of the edits since that version are forgotten, those undone past too: the version
+ * is the state they led to, and nothing goes back to a step between them once saved (undoing goes back a version, going
+ * back to an edit not saved yet is only offered while it is not, and a restore can only
+ * name a revision before it). Each would otherwise keep a whole copy of the work. */
 export function saveEdits(store: UserStore, workId: string) {
   const current = store.work(workId);
-  if (!historyOf(store.revisions(workId)).unsaved.length)
-    throw new DomainError("没有要保存的修改");
-  return store.commit(current, current.revision, { kind: "save" });
+  const history = store.revisions(workId);
+  const { versions, unsaved } = historyOf(history);
+  if (!unsaved.length) throw new DomainError("没有要保存的修改");
+  const saved = store.commit(current, current.revision, { kind: "save" });
+  // Every revision since the version they were laid on, edits undone past among them.
+  const since = Math.max(0, ...(versions.at(-1)?.revisions ?? []));
+  store.forget(workId, history.flatMap((r) => (r.revision > since ? [r.revision] : [])));
+  return saved;
 }
 /** Takes back the latest step: the drawing returns to how it was before it. */
 export function undo(store: UserStore, workId: string) {

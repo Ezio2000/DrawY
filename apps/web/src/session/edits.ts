@@ -32,8 +32,9 @@ export class Edits {
 
   /** Commits a hand edit; resolves to the work it saved, or nothing when `make` had no
    * edit to make. `make` may run twice (for the draft and for real), so it must not do
-   * anything that can only happen once. */
-  commit(make: (work: Work) => WorkEdit | null): Promise<Work | undefined> {
+   * anything that can only happen once. `back` is the revision the edit lays the work back
+   * or forth to, when it undoes or redoes a step. */
+  commit(make: (work: Work) => WorkEdit | null, back?: number): Promise<Work | undefined> {
     const { revisions } = this.ctx;
     if (this.ctx.id === "_blank" && this.ctx.host.materialize) {
       const w = revisions.work;
@@ -74,10 +75,12 @@ export class Edits {
           return undefined;
         }
         const saved = await revisions.mine(() =>
-          api<Work>("/works/" + w.id + "/edits", "POST", { baseRevision: w.revision, edit }),
+          api<Work>("/works/" + w.id + "/edits", "POST", { baseRevision: w.revision, edit, ...(back !== undefined ? { back } : {}) }),
         );
         settle(false);
         revisions.edited(saved);
+        // Each edit is a step to go back over, unless it is a step being undone or redone.
+        this.ctx.history.record(w, saved);
         this.ctx.changed();
         return saved;
       } catch (e) {

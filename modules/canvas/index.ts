@@ -1908,6 +1908,10 @@ export class Canvas {
   get selectedLinks() {
     return [...this.linkSelection];
   }
+  /** What is selected now: the modules and the links. */
+  picked() {
+    return { modules: [...this.selection], links: [...this.linkSelection] };
+  }
   /** Selects modules, and links with them or alone; nothing, given none. */
   select(ids: string[], links: string[] = []) {
     this.selection = [...new Set(ids)].filter((id) => this.renderer.instances.has(id));

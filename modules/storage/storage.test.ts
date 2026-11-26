@@ -4,11 +4,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Storage } from "./index.ts";
-import { createWork, writeWork, restore, undo } from "../workspace/index.ts";
+import { createWork, writeWork, restore, undo, saveEdits } from "../workspace/index.ts";
+import { catchUp } from "../agent/conversation.ts";
 import { moveParts } from "../editing/index.ts";
 import {
   emptySettings,
   defaultCatalog,
+  historyOf,
   type Work,
   type Run,
   type ServerEvent,
@@ -244,6 +246,27 @@ describe("user owned works", () => {
       { title: "作者的标题" }, { cause: run("r3") });
     expect([kept.title, kept.named, keptTitle]).toEqual(["【high】我的标题", true, true]);
     expect(undo(store, work.id)).toMatchObject({ title: "【high】我的标题", named: true });
+  });
+  it("forgets the revisions of hand edits once they are saved as a version", async () => {
+    const store = db.scoped(register(db, "a", "abcdef").id);
+    const work = createWork(store, "test");
+    store.commit({ ...store.work(work.id), brief: fixture().brief }, 1, { kind: "run", runId: "r1", prompt: "r1" });
+    const edit = (title: string) => writeWork(store, work.id, { title }, { cause: { kind: "edit" } });
+    await edit("a");
+    await edit("b");
+    // Back to the first edit and on from there: the restore is one of the edits too.
+    restore(store, work.id, 3);
+    await edit("c");
+    expect(historyOf(store.revisions(work.id)).unsaved.map((e) => e.revisions)).toEqual([[3, 5], [6]]);
+    // The author last saw the work at an edit that saving forgets.
+    const saved = saveEdits(store, work.id);
+    expect(saved).toMatchObject({ revision: 7, title: "c" });
+    expect(store.revisions(work.id).map((r) => r.revision)).toEqual([7, 2, 1]);
+    const { versions, unsaved } = historyOf(store.revisions(work.id));
+    expect([versions.map((v) => v.revisions), unsaved]).toEqual([[[1], [2], [7]], []]);
+    // Undoing still goes back a version, and the author is given the work whole.
+    expect(catchUp(store, "root", saved, 6).content).toContain("Current work");
+    expect(undo(store, work.id).scenes).toEqual(store.revision(work.id, 2).scenes);
   });
   it("keeps undo moving backward after undoing twice and restoring the revision an undo made", async () => {
     const user = register(db, "author", "abcdef"),
