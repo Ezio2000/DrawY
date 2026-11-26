@@ -72,8 +72,12 @@ export function Content(ctx: Ctx) {
     ...Object.keys(part.data)
       .filter((k) => !(k in declared) && !plain.some((f) => f.key === k) && !fieldsOf(work, part).some((f) => f.key === k))
       .flatMap((k): [string, Field][] => {
-        const f = guessedField(part.data[k]);
-        return f && f.type !== "text" ? [[k, f]] : [];
+        // Short words left out of the fields are states the drawing tests for; long text is
+        // too long to be one, and is edited as words.
+        const v = part.data[k];
+        if (typeof v === "string") return v.length > 400 ? [[k, { type: "text", long: true }]] : [];
+        const f = guessedField(v);
+        return f ? [[k, f]] : [];
       }),
   ];
   if (!entries.length) return null;

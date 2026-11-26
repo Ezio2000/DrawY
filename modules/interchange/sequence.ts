@@ -135,8 +135,11 @@ export function sequenceFrom(read: MermaidSequence, was?: Partial<SequenceData>)
   const idOf = new Map(read.actors.map((a, i) => [a.key, participants[i].id]));
   const messages: Item[] = [];
   const notes: Item[] = [];
-  const fragments: Item[] = [];
-  const open: { kind: string; label: string; first: number; sections: { label: string; first: number }[] }[] = [];
+  const open: { kind: string; label: string; first: number; sections: { label: string; first: number }[]; order: number }[] = [];
+  // Blocks are kept in the order they open, outer before inner, which tells two round the
+  // same messages apart; they close inner first.
+  const closed: { order: number; fragment: Omit<Item, "id"> }[] = [];
+  let opened = 0;
   // A message's id is settled as it is read, before a note or a fragment refers to it: the id
   // the message in its place had, or else the next mN no message has or had.
   const used = new Set<string>();
@@ -151,7 +154,7 @@ export function sequenceFrom(read: MermaidSequence, was?: Partial<SequenceData>)
     if (m.type === LINE.NOTE) {
       const over = [m.from, m.placement === PLACE.OVER ? m.to : undefined].flatMap((k) => (k && idOf.get(k) ? [idOf.get(k)!] : []));
       notes.push({ id: `n${notes.length + 1}`, over: [...new Set(over)], ...(messages.length ? { after: messages.at(-1)!.id } : {}), text: m.text });
-    } else if (STARTS[m.type]) open.push({ kind: STARTS[m.type], label: m.text, first: messages.length, sections: [] });
+    } else if (STARTS[m.type]) open.push({ kind: STARTS[m.type], label: m.text, first: messages.length, sections: [], order: opened++ });
     else if (SECTIONS[m.type]) {
       const block = open.at(-1);
       if (block?.kind === SECTIONS[m.type]) block.sections.push({ label: m.text, first: messages.length });
@@ -161,15 +164,17 @@ export function sequenceFrom(read: MermaidSequence, was?: Partial<SequenceData>)
       // has nothing to divide.
       const sections = (block?.sections ?? []).filter((x) => x.first > block!.first && x.first < messages.length);
       if (block && messages.length > block.first)
-        fragments.push({
-          id: `f${fragments.length + 1}`,
-          kind: block.kind,
-          ...(block.label ? { label: block.label } : {}),
-          from: messages[block.first].id,
-          to: messages.at(-1)!.id,
-          ...(sections.length
-            ? { sections: sections.map((x, k) => ({ id: `s${k + 1}`, from: messages[x.first].id, ...(x.label ? { label: x.label } : {}) })) }
-            : {}),
+        closed.push({
+          order: block.order,
+          fragment: {
+            kind: block.kind,
+            ...(block.label ? { label: block.label } : {}),
+            from: messages[block.first].id,
+            to: messages.at(-1)!.id,
+            ...(sections.length
+              ? { sections: sections.map((x, k) => ({ id: `s${k + 1}`, from: messages[x.first].id, ...(x.label ? { label: x.label } : {}) })) }
+              : {}),
+          },
         });
     } else if (m.from && m.to && idOf.has(m.from) && idOf.has(m.to)) {
       const i = messages.length;
@@ -179,6 +184,7 @@ export function sequenceFrom(read: MermaidSequence, was?: Partial<SequenceData>)
       messages.push({ ...rest, id: messageId(typeof prior?.id === "string" ? prior.id : undefined), from: idOf.get(m.from)!, to: idOf.get(m.to)!, label: m.text, ...(kind === "sync" ? {} : { kind }) });
     }
   }
+  const fragments: Item[] = closed.sort((a, b) => a.order - b.order).map((c, i) => ({ id: `f${i + 1}`, ...c.fragment }));
   // Numbering the text no longer asks for is turned off, not left out, so it goes.
   const numbered = read.numbered ? { numbered: true } : was?.numbered ? { numbered: false } : {};
   return { participants, messages, notes, fragments, ...numbered };
@@ -213,7 +219,8 @@ export function sequenceSource(data: Partial<SequenceData>): string {
       for (const x of Array.isArray(f.sections) ? (f.sections as Item[]) : [])
         if (place(x.from) === i && place(f.from) < i && i <= place(f.to) && SECTION_WORD[String(f.kind ?? "alt")])
           lines.push(`  ${SECTION_WORD[String(f.kind ?? "alt")]}${x.label ? " " + said(x.label) : ""}`);
-    // Blocks open outermost first and close innermost first.
+    // Blocks open outermost first and close innermost first; of two round the same messages,
+    // the one listed first is outside the other.
     const opening = fragments.filter((f) => place(f.from) === i).sort((a, b) => place(b.to) - place(a.to));
     for (const f of opening) lines.push(`  ${f.kind ?? "alt"}${f.label ? " " + said(f.label) : ""}`);
     lines.push(`  ${m.from}${arrow(m.kind)}${m.to}: ${said(m.label)}`);

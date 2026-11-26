@@ -113,7 +113,7 @@ async function takeSources(work: Work, drawings: { from?: string }[], store: Use
  * items now gone taken out where the schema cascades, and what the write gave checked. Only
  * the keys the write gave are checked, so data a part held before is never a reason to
  * refuse a later change to it. A library drawing reads nothing it does not declare. */
-function settleData(before: Work, work: Work, edit: WorkEdit): Problem[] {
+export function settleData(before: Work, work: Work, edit: WorkEdit): Problem[] {
   const given = new Map<string, { keys: string[]; whole: boolean }>();
   for (const p of [...(edit.modules ?? []), ...(edit.links ?? [])])
     if (p.data || p.drawingId)

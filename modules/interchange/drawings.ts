@@ -116,7 +116,8 @@ export const sketchShape: Drawing = {
     dashed: value("boolean", "虚线", "Dashed"),
     roughness: amount("手绘感", "Roughness", 0, 3, 0.5),
     rounded: value("boolean", "圆角", "Rounded"),
-    size: amount("字号", "Font size", 8, 120, 1),
+    // Any size, as words brought in from another tool keep theirs; typed rather than slid.
+    size: { type: "number", label: L("字号", "Font size"), min: 1, step: 1 },
     textColor: value("color", "文字颜色", "Text colour"),
     align: among("对齐", "Align", ["left", "左", "Left"], ["center", "中", "Centre"], ["right", "右", "Right"]),
     opacity: amount("浓淡", "Opacity", 0.05, 1, 0.05),

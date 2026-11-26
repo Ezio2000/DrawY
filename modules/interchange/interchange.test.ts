@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applied, paste, syntaxError } from "../editing/index.ts";
-import { validateWork } from "../workspace/index.ts";
-import { workEditSchema, type MaterialUse, type Work } from "../contracts/index.ts";
+import { settleData, validateWork } from "../workspace/index.ts";
+import { EditRejected, workEditSchema, type MaterialUse, type Work } from "../contracts/index.ts";
 import {
   fromExcalidraw,
   fromFlowchart,
@@ -67,8 +67,11 @@ function blank(): Work {
 function pasted(work: Work, clip: Clip, extra: Record<string, MaterialUse> = {}) {
   Object.assign(work.materials, extra);
   const { edit, ids } = paste(work, "root", clip, { centre: { x: 500, y: 400 } });
-  const next = applied(work, workEditSchema.parse(edit));
+  const read = workEditSchema.parse(edit);
+  const next = applied(work, read);
   validateWork(next);
+  const problems = settleData(work, next, read);
+  if (problems.length) throw new EditRejected(problems);
   return { work: next, ids };
 }
 const el = (e: Partial<ExcalidrawElement> & Pick<ExcalidrawElement, "id" | "type">): ExcalidrawElement => ({
@@ -150,6 +153,17 @@ describe("Excalidraw", () => {
     ],
   };
 
+  it("keeps words of any size, big or small, as the workspace checks them", () => {
+    const big = {
+      elements: [
+        el({ id: "box", type: "rectangle", x: 0, y: 0, width: 600, height: 300, boundElements: [{ id: "huge", type: "text" }] }),
+        el({ id: "huge", type: "text", x: 20, y: 20, text: "大", originalText: "大", fontSize: 200, containerId: "box" }),
+        el({ id: "tiny", type: "text", x: 0, y: 400, width: 40, height: 6, text: "注", fontSize: 4 }),
+      ],
+    };
+    const { work } = pasted(blank(), fromExcalidraw(big, {}).clip);
+    expect(work.scenes.root.modules.map((m) => m.data.size)).toEqual([200, 4]);
+  });
   it("brings an arrow bound at one end in as a link, its other end free where it was", () => {
     const half = {
       elements: [

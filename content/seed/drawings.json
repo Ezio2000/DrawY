@@ -418,10 +418,9 @@
           "zh": "字号",
           "en": "Text size"
         },
-        "min": 8,
-        "max": 72,
+        "min": 1,
         "step": 1,
-        "description": "font size"
+        "description": "font size of the label; any size, as text brought in from another tool keeps its own"
       },
       "weight": {
         "type": "number",
@@ -5955,7 +5954,7 @@
           "kind": "alt",
           "label": ""
         },
-        "description": "boxes round a run of messages: [{id, kind: alt|opt|loop|par, label?: the condition, from, to: message ids, sections?: [{id, label?, from: message id}] for an alt's else branches or a par's and threads}]"
+        "description": "boxes round a run of messages: [{id, kind: alt|opt|loop|par, label?: the condition, from, to: message ids, sections?: [{id, label?, from: message id}] for an alt's else branches or a par's and threads}]; of two round the same messages, the one listed first is outside"
       },
       "numbered": {
         "type": "boolean",

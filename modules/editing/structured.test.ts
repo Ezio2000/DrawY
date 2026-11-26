@@ -377,6 +377,24 @@ describe("sections of a fragment", () => {
     const kinds = sequenceFrom({ ...read, messages: [0, 1, 24].map((type) => ({ from: "web", to: "api", text: "", type })) }).messages;
     expect(kinds.map((m) => m.kind ?? "sync")).toEqual(["sync", "reply", "async"]);
   });
+  it("keeps a block round the same messages as another inside it, written back so", () => {
+    const nested = sequenceFrom({
+      ...read,
+      messages: [
+        { text: "retry", type: 10 },
+        { text: "ok", type: 12 },
+        { from: "web", to: "api", text: "登录", type: 0 },
+        { text: "failed", type: 13 },
+        { from: "api", to: "web", text: "失败", type: 1 },
+        { text: "", type: 14 },
+        { text: "", type: 11 },
+      ],
+    });
+    expect(nested.fragments.map((f) => [f.id, f.kind])).toEqual([["f1", "loop"], ["f2", "alt"]]);
+    expect(sequenceSource(nested)).toContain(
+      ["  loop retry", "  alt ok", "  web->>api: 登录", "  else failed", "  api-->>web: 失败", "  end", "  end"].join("\n"),
+    );
+  });
   it("takes a section out with the message it starts from, and checks what it refers to", () => {
     const work = sequenceWork();
     const m = work.scenes.root.modules[0];

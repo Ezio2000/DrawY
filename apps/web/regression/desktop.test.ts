@@ -1359,3 +1359,25 @@ it("changes a chart's values on the canvas: a bar's top dragged, its number rety
   await settled();
   expect((await dataOf("gauge")).value).toBe(100);
 });
+
+it("edits long words its drawing does not declare in the content panel", async () => {
+  const w = await api("/works", "POST", { title: "Memo" });
+  const body = "A long note. ".repeat(32).trim();
+  expect(body.length).toBeGreaterThan(400);
+  await api(`/works/${w.id}/edits`, "POST", {
+    baseRevision: w.revision,
+    edit: {
+      drawings: [{ id: "memo", name: "Memo", params: {}, source: box }],
+      modules: [{ id: "m", drawingId: "memo", bounds: [100, 100, 200, 100], data: { label: "Memo", body } }],
+    },
+  });
+  await page.goto(base + "/a/" + w.id);
+  await page.waitForFunction(() => [...document.querySelectorAll("*")].some((e) => e.shadowRoot?.textContent?.includes("Memo")));
+  await editing();
+  await settled();
+  const memo = await rectOf("Memo");
+  await page.mouse.click(memo.cx, memo.cy);
+  await settled();
+  await page.getByRole("tab", { name: "Content", exact: true }).click();
+  await expect.poll(() => page.locator("[data-side-body] textarea").evaluateAll((els) => els.some((t) => (t as HTMLTextAreaElement).value.startsWith("A long note.")))).toBe(true);
+});
