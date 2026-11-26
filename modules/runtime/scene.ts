@@ -665,8 +665,10 @@ export class SceneRenderer {
       if (next) Object.assign(l, next);
     }
     this.relayer();
-    // Only the links that meet a moved module follow it.
-    await Promise.all([...jobs, this.drawLinks(moved)]);
+    // Only the links that meet a moved module follow it, those meeting one drawn again at
+    // its new size once it is, as they may meet it along the outline it draws.
+    await Promise.all(jobs);
+    await this.drawLinks(moved);
   }
   set(id: string, data: Record<string, unknown>) {
     const m = this.instances.get(id)!;
@@ -768,6 +770,8 @@ export class SceneRenderer {
     const inkedIds = new Set<string>();
     const moved: { id: string; dx: number; dy: number }[] = [];
     const geometryChanged = new Set<string>();
+    /** Modules being drawn again, whose outline is known once they are. */
+    const redrawn = new Set<string>();
     const developed: { moduleId: string; materialId: string }[] = [];
     for (const next of scene.modules) {
       const was = this.instances.get(next.id),
@@ -788,6 +792,7 @@ export class SceneRenderer {
       if (!was || !host || look(before, was) !== look(work, m)) {
         inked.push(m);
         inkedIds.add(m.id);
+        redrawn.add(m.id);
         jobs.push(this.drawModule(m));
         if (options?.hideNew && !host) {
           const created = this.views.get("module:" + m.id)?.host;
@@ -806,6 +811,7 @@ export class SceneRenderer {
         for (const materialId of usedDeveloped)
           developed.push({ moduleId: m.id, materialId });
         jobs.push(this.drawModule(m));
+        redrawn.add(m.id);
         continue;
       }
       if (was.bounds.x !== m.bounds.x || was.bounds.y !== m.bounds.y) {
@@ -842,6 +848,10 @@ export class SceneRenderer {
         w.drawings[l.drawingId] ?? null,
       ]);
     const drawnLinks: string[] = [];
+    // A link meeting a module along the outline it draws waits for it to be drawn again.
+    const alongRedrawn = (e: Link["from"]) =>
+      "moduleId" in e && redrawn.has(e.moduleId) && typeof e.at === "object" && !Array.isArray(e.at);
+    if (scene.links.some((l) => alongRedrawn(l.from) || alongRedrawn(l.to))) await Promise.all(jobs);
     // Every link is in place before any is drawn, as a link riding on another reads its
     // ends from that one, wherever it stands in the list.
     const prevLinks = new Map(scene.links.map((l) => [l.id, this.links.get(l.id)]));

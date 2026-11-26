@@ -5767,7 +5767,8 @@
         },
         "cascade": [
           "fragments.from",
-          "fragments.to"
+          "fragments.to",
+          "fragments.sections.from"
         ],
         "next": {
           "enter": {
@@ -5914,6 +5915,38 @@
                 "en": "To"
               },
               "to": "messages"
+            },
+            "sections": {
+              "type": "list",
+              "label": {
+                "zh": "分段",
+                "en": "Sections"
+              },
+              "item": {
+                "type": "record",
+                "fields": {
+                  "id": {
+                    "type": "id"
+                  },
+                  "label": {
+                    "type": "text",
+                    "label": {
+                      "zh": "条件",
+                      "en": "Condition"
+                    }
+                  },
+                  "from": {
+                    "type": "ref",
+                    "label": {
+                      "zh": "从",
+                      "en": "From"
+                    },
+                    "to": "messages"
+                  }
+                }
+              },
+              "title": "label",
+              "description": "an alt's further branches (else) or a par's further threads (and), each from its first message, which lies inside the fragment after its first"
             }
           }
         },
@@ -5922,7 +5955,7 @@
           "kind": "alt",
           "label": ""
         },
-        "description": "boxes round a run of messages: [{id, kind: alt|opt|loop|par, label?: the condition, from, to: message ids}]"
+        "description": "boxes round a run of messages: [{id, kind: alt|opt|loop|par, label?: the condition, from, to: message ids, sections?: [{id, label?, from: message id}] for an alt's else branches or a par's and threads}]"
       },
       "numbered": {
         "type": "boolean",

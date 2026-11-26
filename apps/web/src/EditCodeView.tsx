@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { Instance, Work } from "../../../modules/contracts/index.ts";
 import { dataPatch } from "../../../modules/editing/index.ts";
-import { sequenceSource, SEQUENCE, type SequenceData } from "../../../modules/interchange/index.ts";
+import { sequenceSource, SEQUENCE, Unexpressed, type SequenceData } from "../../../modules/interchange/index.ts";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
 import { readSequence } from "./interchange.ts";
@@ -58,7 +58,9 @@ export function CodeView({
         const patch = dataPatch(before, data);
         if (Object.keys(patch).length) apply(data);
       } catch (e) {
-        setError(e instanceof Error ? e.message.split("\n").slice(0, 3).join("\n") : String(e));
+        setError(
+          e instanceof Unexpressed ? t.edit.codeView.unexpressed(e.words) : e instanceof Error ? e.message.split("\n").slice(0, 3).join("\n") : String(e),
+        );
       }
     }, 500);
   };

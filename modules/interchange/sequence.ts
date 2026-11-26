@@ -30,11 +30,21 @@ const LINE = {
   ALT_END: 14,
   OPT_START: 15,
   OPT_END: 16,
+  ACTIVE_START: 17,
+  ACTIVE_END: 18,
   PAR_START: 19,
   PAR_AND: 20,
   PAR_END: 21,
+  RECT_START: 22,
+  RECT_END: 23,
   SOLID_POINT: 24,
   DOTTED_POINT: 25,
+  CRITICAL_START: 27,
+  CRITICAL_OPTION: 28,
+  CRITICAL_END: 29,
+  BREAK_START: 30,
+  BREAK_END: 31,
+  PAR_OVER_START: 32,
   BIDIRECTIONAL_SOLID: 33,
   BIDIRECTIONAL_DOTTED: 34,
 } as const;
@@ -42,6 +52,31 @@ const LINE = {
 const PLACE = { LEFTOF: 0, RIGHTOF: 1, OVER: 2 } as const;
 const STARTS: Record<number, string> = { [LINE.LOOP_START]: "loop", [LINE.ALT_START]: "alt", [LINE.OPT_START]: "opt", [LINE.PAR_START]: "par" };
 const ENDS = new Set<number>([LINE.LOOP_END, LINE.ALT_END, LINE.OPT_END, LINE.PAR_END]);
+/** The line that begins another section of a block, by the block's kind: `else` in an alt,
+ * `and` in a par. */
+const SECTIONS: Record<number, string> = { [LINE.ALT_ELSE]: "alt", [LINE.PAR_AND]: "par" };
+const SECTION_WORD: Record<string, string> = { alt: "else", par: "and" };
+/** What Mermaid can say that the sequence drawing cannot, by the word that says it. */
+const UNEXPRESSED: Record<number, string> = {
+  [LINE.ACTIVE_START]: "activate",
+  [LINE.ACTIVE_END]: "activate",
+  [LINE.RECT_START]: "rect",
+  [LINE.CRITICAL_START]: "critical",
+  [LINE.CRITICAL_OPTION]: "critical",
+  [LINE.BREAK_START]: "break",
+  [LINE.PAR_OVER_START]: "par over",
+};
+/** A diagram that says what the sequence drawing cannot, by the words that say it. */
+export class Unexpressed extends Error {
+  constructor(readonly words: string[]) {
+    super(`sequence drawing cannot express: ${words.join(", ")}`);
+  }
+}
+/** The words of what a diagram says that the sequence drawing would lose, if any: such a
+ * diagram is kept as Mermaid draws it rather than read into the drawing. */
+export function unexpressed(read: MermaidSequence): string[] {
+  return [...new Set(read.messages.flatMap((m) => (UNEXPRESSED[m.type] ? [UNEXPRESSED[m.type]] : [])))];
+}
 const KINDS: Record<string, string> = { actor: "actor", database: "database", queue: "queue" };
 const DOTTED = new Set<number>([LINE.DOTTED, LINE.DOTTED_CROSS, LINE.DOTTED_OPEN, LINE.DOTTED_POINT, LINE.BIDIRECTIONAL_DOTTED]);
 
@@ -77,7 +112,7 @@ export function sequenceFrom(read: MermaidSequence, was?: Partial<SequenceData>)
   const messages: Item[] = [];
   const notes: Item[] = [];
   const fragments: Item[] = [];
-  const open: { kind: string; label: string; first: number }[] = [];
+  const open: { kind: string; label: string; first: number; sections: { label: string; first: number }[] }[] = [];
   // A message's id is settled as it is read, before a note or a fragment refers to it: the id
   // the message in its place had, or else the next mN no message has or had.
   const used = new Set<string>();
@@ -92,9 +127,15 @@ export function sequenceFrom(read: MermaidSequence, was?: Partial<SequenceData>)
     if (m.type === LINE.NOTE) {
       const over = [m.from, m.placement === PLACE.OVER ? m.to : undefined].flatMap((k) => (k && idOf.get(k) ? [idOf.get(k)!] : []));
       notes.push({ id: `n${notes.length + 1}`, over: [...new Set(over)], ...(messages.length ? { after: messages.at(-1)!.id } : {}), text: m.text });
-    } else if (STARTS[m.type]) open.push({ kind: STARTS[m.type], label: m.text, first: messages.length });
-    else if (ENDS.has(m.type)) {
+    } else if (STARTS[m.type]) open.push({ kind: STARTS[m.type], label: m.text, first: messages.length, sections: [] });
+    else if (SECTIONS[m.type]) {
+      const block = open.at(-1);
+      if (block?.kind === SECTIONS[m.type]) block.sections.push({ label: m.text, first: messages.length });
+    } else if (ENDS.has(m.type)) {
       const block = open.pop();
+      // A section starts at its first message; one with none, or before any of the block's,
+      // has nothing to divide.
+      const sections = (block?.sections ?? []).filter((x) => x.first > block!.first && x.first < messages.length);
       if (block && messages.length > block.first)
         fragments.push({
           id: `f${fragments.length + 1}`,
@@ -102,6 +143,9 @@ export function sequenceFrom(read: MermaidSequence, was?: Partial<SequenceData>)
           ...(block.label ? { label: block.label } : {}),
           from: messages[block.first].id,
           to: messages.at(-1)!.id,
+          ...(sections.length
+            ? { sections: sections.map((x, k) => ({ id: `s${k + 1}`, from: messages[x.first].id, ...(x.label ? { label: x.label } : {}) })) }
+            : {}),
         });
     } else if (m.from && m.to && idOf.has(m.from) && idOf.has(m.to)) {
       const i = messages.length;
@@ -119,7 +163,8 @@ export function sequenceFrom(read: MermaidSequence, was?: Partial<SequenceData>)
 const said = (s: unknown) => String(s ?? "").replace(/[\n;#]/g, " ").trim();
 /** The sequence drawing's data as Mermaid source: participants by their ids as aliases,
  * messages by their kind of line, notes after the message they follow, and fragments as
- * blocks round the messages they hold. */
+ * blocks round the messages they hold, an alt's or a par's further sections each from its
+ * first message. */
 export function sequenceSource(data: Partial<SequenceData>): string {
   const participants = (data.participants ?? []).filter((p) => p && typeof p === "object");
   const messages = (data.messages ?? []).filter((m) => m && typeof m === "object");
@@ -139,6 +184,11 @@ export function sequenceSource(data: Partial<SequenceData>): string {
   };
   for (const n of notes) if (n.after === undefined || place(n.after) < 0) lines.push(noteLine(n) ?? "");
   messages.forEach((m, i) => {
+    // Another section of a block open round this message begins with it.
+    for (const f of fragments)
+      for (const x of Array.isArray(f.sections) ? (f.sections as Item[]) : [])
+        if (place(x.from) === i && place(f.from) < i && i <= place(f.to) && SECTION_WORD[String(f.kind ?? "alt")])
+          lines.push(`  ${SECTION_WORD[String(f.kind ?? "alt")]}${x.label ? " " + said(x.label) : ""}`);
     // Blocks open outermost first and close innermost first.
     const opening = fragments.filter((f) => place(f.from) === i).sort((a, b) => place(b.to) - place(a.to));
     for (const f of opening) lines.push(`  ${f.kind ?? "alt"}${f.label ? " " + said(f.label) : ""}`);

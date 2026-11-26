@@ -1,7 +1,8 @@
 // A sequence diagram: participants across the top (a box, a person, a database or a queue)
 // with dashed lifelines, messages as arrows between them in time order (calls filled,
 // asynchronous messages open, replies dashed), a message to oneself as a loop, notes over
-// the lifelines and fragments (alt, opt, loop, par) boxed round a run of messages. Every
+// the lifelines and fragments (alt, opt, loop, par) boxed round a run of messages, an alt's
+// branches and a par's threads divided by dashed lines. Every
 // part is marked as the data it is drawn from, so it is changed where it is drawn.
 const d = api.data,
   t = api.theme;
@@ -110,6 +111,16 @@ frames.forEach((f, j) => {
   const kind = String(f.kind || "alt");
   const tag = measure(kind, size * 0.8, 700) + size;
   out += `<g${api.part(path)}><rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="none" stroke="${muted}" stroke-width="${sw * 0.8}"/><path d="M${x0} ${y0}h${tag}v${size * 0.9}l${-size * 0.4} ${size * 0.4}H${x0}z" fill="${paper}" stroke="${muted}" stroke-width="${sw * 0.8}"/><text x="${x0 + size * 0.35}" y="${y0 + size * 0.62}" font-size="${size * 0.8}" font-weight="700" fill="${muted}">${esc(kind)}</text>${f.label ? `<text x="${x0 + tag + size * 0.5}" y="${y0 + size * 0.62}" font-size="${size * 0.8}" fill="${muted}" font-style="italic"${api.text(path + ".label")}>${esc(f.label)}</text>` : ""}</g>`;
+  // An alt's further branches and a par's further threads, each under a dashed line above
+  // its first message, with its condition.
+  const sections = ["alt", "par"].includes(kind) && Array.isArray(f.sections) ? f.sections.filter((x) => x && typeof x === "object") : [];
+  sections.forEach((x, i) => {
+    const r = rowOf(x.from);
+    if (r <= r0 || r > r1) return;
+    const y = rowY(r) - row * 0.62;
+    const at = api.path(path + ".sections", x, i);
+    out += `<g${api.part(at)}><path d="M${x0} ${y}H${x1}" stroke="${muted}" stroke-width="${sw * 0.8}" stroke-dasharray="${sw * 4} ${sw * 3}"/>${x.label ? `<text x="${x0 + size * 0.5}" y="${y + size * 0.85}" font-size="${size * 0.8}" fill="${muted}" font-style="italic"${api.text(at + ".label")}>${esc(x.label)}</text>` : ""}</g>`;
+  });
 });
 rows.forEach((r, ri) => {
   const y = rowY(ri);

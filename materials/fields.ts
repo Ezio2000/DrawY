@@ -51,8 +51,8 @@ export type Field = Base &
         new?: unknown;
         min?: number;
         max?: number;
-        /** References to this list's items, as `list.field`, whose items go when the item
-         * they refer to goes. */
+        /** References to this list's items, as `list.field` (or `list.inner.field`, into a
+         * list each item of `list` holds), whose items go when the item they refer to goes. */
         cascade?: string[];
         next?: { enter?: NextRule; tab?: NextRule };
       }
@@ -130,7 +130,7 @@ export const fieldSchema: z.ZodType<Field> = z.lazy(() =>
         new: z.unknown().optional(),
         min: z.number().int().nonnegative().optional(),
         max: z.number().int().positive().optional(),
-        cascade: z.array(z.string()).optional().describe("References to its items, as list.field, whose items go with the item"),
+        cascade: z.array(z.string()).optional().describe("References to its items, as list.field (or list.inner.field into a list each item holds), whose items go with the item"),
         next: z.object({ enter: nextRule.optional(), tab: nextRule.optional() }).strict().optional(),
       })
       .strict(),
@@ -381,28 +381,37 @@ export function cascadeData(fields: Fields, before: Record<string, unknown>, aft
         now = ids(next);
       const gone = new Set([...was].filter((id) => !now.has(id)));
       if (!gone.size) continue;
-      for (const path of f.cascade) {
-        const [list, field] = path.split(".");
-        const items = next[list];
-        const schema = fields[list];
-        if (!Array.isArray(items) || schema?.type !== "list") continue;
-        const inner = schema.item.type === "record" ? schema.item.fields[field] : undefined;
-        const kept = items.flatMap((item) => {
-          if (!isRec(item)) return [item];
-          const v = item[field];
+      // The items of a list kept, those referring through `steps` to an item gone taken out:
+      // the last step is the reference, those before it lists of records within each item.
+      const prune = (items: unknown[], item: Field, steps: string[]): unknown[] =>
+        items.flatMap((it) => {
+          if (!isRec(it) || item.type !== "record") return [it];
+          const [field, ...more] = steps;
+          const inner = item.fields[field];
+          const v = it[field];
+          if (more.length) {
+            if (!Array.isArray(v) || inner?.type !== "list") return [it];
+            const left = prune(v, inner.item, more);
+            return left.length === v.length && left.every((x, i) => x === v[i]) ? [it] : [{ ...it, [field]: left }];
+          }
           if (Array.isArray(v) && inner?.type === "list") {
             const left = v.filter((r) => !gone.has(r as string));
-            if (left.length === v.length) return [item];
+            if (left.length === v.length) return [it];
             changed = true;
-            return left.length < Math.max(1, inner.min ?? 1) ? [] : [{ ...item, [field]: left }];
+            return left.length < Math.max(1, inner.min ?? 1) ? [] : [{ ...it, [field]: left }];
           }
           if (typeof v === "string" && gone.has(v)) {
             changed = true;
             return [];
           }
-          return [item];
+          return [it];
         });
-        next = { ...next, [list]: kept };
+      for (const path of f.cascade) {
+        const [list, ...steps] = path.split(".");
+        const items = next[list];
+        const schema = fields[list];
+        if (!Array.isArray(items) || schema?.type !== "list" || !steps.length) continue;
+        next = { ...next, [list]: prune(items, schema.item, steps) };
       }
       before = { ...before, [key]: next[key] };
     }

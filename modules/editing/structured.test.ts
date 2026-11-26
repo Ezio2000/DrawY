@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Material } from "@drawy/materials/schema";
 import { linkEnds, scenePlacing } from "../contracts/geometry.ts";
-import type { Bounds, Instance, Work } from "../contracts/index.ts";
+import { validateData, type Bounds, type DataProblem, type Fields, type Instance, type Work } from "../contracts/index.ts";
 import { useOf } from "../materials/index.ts";
-import { sequenceFrom, sequenceSource } from "../interchange/index.ts";
+import { sequenceFrom, sequenceSource, unexpressed } from "../interchange/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { composed } from "./apply.ts";
 import {
@@ -49,6 +49,7 @@ type Sequence = {
   participants: { id: string; label: string; kind?: string }[];
   messages: { id: string; from: string; to: string; label: string; kind?: string }[];
   notes: { id: string; over: string[]; after?: string; text: string }[];
+  fragments: { id: string; kind: string; label?: string; from: string; to: string; sections?: { id: string; from: string; label?: string }[] }[];
 };
 const data = (w: Work) => w.scenes.root.modules.find((m) => m.id === "seq")!.data as Sequence;
 /** A work with the library's sequence diagram drawn from its example. */
@@ -316,6 +317,57 @@ describe("structure edited on the canvas", () => {
     );
     expect(looped.messages.map((m) => m.id)).toEqual(["m2", "m3", "m4"]);
     expect(looped.fragments).toEqual([{ id: "f1", kind: "loop", label: "重试", from: "m4", to: "m4" }]);
+  });
+});
+
+describe("sections of a fragment", () => {
+  const read = {
+    actors: [
+      { key: "web", name: "浏览器", type: "participant" },
+      { key: "api", name: "服务", type: "participant" },
+    ],
+    messages: [
+      { text: "密码正确", type: 12 },
+      { from: "web", to: "api", text: "登录", type: 0 },
+      { from: "api", to: "web", text: "成功", type: 1 },
+      { text: "密码错误", type: 13 },
+      { from: "api", to: "web", text: "失败", type: 1 },
+      { text: "", type: 14 },
+      { text: "同时", type: 19 },
+      { from: "web", to: "api", text: "心跳", type: 5 },
+      { text: "然后", type: 20 },
+      { from: "web", to: "api", text: "上报", type: 5 },
+      { text: "", type: 21 },
+    ],
+    numbered: false,
+  };
+  it("reads an alt's else and a par's and as sections, and writes them back", () => {
+    const data = sequenceFrom(read);
+    expect(data.fragments).toEqual([
+      { id: "f1", kind: "alt", label: "密码正确", from: "m1", to: "m3", sections: [{ id: "s1", from: "m3", label: "密码错误" }] },
+      { id: "f2", kind: "par", label: "同时", from: "m4", to: "m5", sections: [{ id: "s1", from: "m5", label: "然后" }] },
+    ]);
+    const source = sequenceSource(data);
+    expect(source).toContain(["  alt 密码正确", "  web->>api: 登录", "  api-->>web: 成功", "  else 密码错误", "  api-->>web: 失败", "  end"].join("\n"));
+    expect(source).toContain(["  par 同时", "  web-)api: 心跳", "  and 然后", "  web-)api: 上报", "  end"].join("\n"));
+    expect(unexpressed(read)).toEqual([]);
+    // What the drawing cannot say is named, for the diagram to be kept as Mermaid draws it.
+    expect(unexpressed({ ...read, messages: [...read.messages, { from: "api", to: "api", text: "", type: 17 }, { text: "x", type: 30 }] })).toEqual(["activate", "break"]);
+  });
+  it("takes a section out with the message it starts from, and checks what it refers to", () => {
+    const work = sequenceWork();
+    const m = work.scenes.root.modules[0];
+    const read2 = sequenceFrom(read);
+    // The other branch from the second message, which is not one of the block's ends.
+    (read2.fragments[0].sections as { from: string }[])[0].from = "m2";
+    m.data = read2 as unknown as Record<string, unknown>;
+    const gone = applied(work, removeItem(work, "root", "seq", "messages", "m2").edit);
+    expect(data(gone).fragments[0]).toEqual({ id: "f1", kind: "alt", label: "密码正确", from: "m1", to: "m3", sections: [] });
+    const wrong = applied(work, setAt(work, "root", "seq", "fragments.#f1.sections.#s1.from", "nobody")!);
+    const fields = (wrong.materials.sequence as { params: Fields }).params;
+    const problems: DataProblem[] = [];
+    validateData(fields, wrong.scenes.root.modules[0].data, "data", problems);
+    expect(problems.map((p) => p.problem).join()).toMatch(/nobody/);
   });
 });
 

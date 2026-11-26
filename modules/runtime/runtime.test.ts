@@ -1798,6 +1798,34 @@ it("problem 3B: a numbered message's words are marked as its data, the number dr
   expect(marked).toContain("登录请求");
 });
 
+it("divides an alt into its branches with dashed lines, each a part with its condition marked", async () => {
+  const sequence = seed("drawings").find((m) => m.id === "sequence") as DrawingMaterial;
+  const example = structuredClone(sequence.example) as { messages: { id: string }[]; fragments: Record<string, unknown>[] };
+  const [first, , third] = example.messages;
+  example.fragments = [{ id: "f1", kind: "alt", label: "密码正确", from: first.id, to: third.id, sections: [{ id: "s1", from: third.id, label: "密码错误" }] }];
+  work.materials = { sequence: libraryDrawing("sequence") };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [{ id: "seq", label: "seq", drawingId: "sequence", data: example, bounds: { x: 0, y: 0, ...sequence.size } }],
+    links: [],
+    checks: [],
+  };
+  await open();
+  const found = await page.evaluate(() => {
+    const map = window.drawyView.editMap("seq")!;
+    return {
+      parts: map.parts.map((p) => p.path),
+      texts: map.texts.map((t) => t.path),
+      unmarked: window.drawyView.unmarked("seq"),
+      dashed: window.drawyView.renderer.host("module", "seq")!.shadowRoot!.querySelectorAll('[data-edp-part="fragments.#f1.sections.#s1"] path[stroke-dasharray]').length,
+    };
+  });
+  expect(found.parts).toContain("fragments.#f1.sections.#s1");
+  expect(found.texts).toContain("fragments.#f1.sections.#s1.label");
+  expect(found.dashed).toBe(1);
+  expect(found.unmarked).toEqual([]);
+});
+
 /** The library drawings whose every word from their data is marked as that data, so a
  * person changes it where it is drawn. Every structured drawing joins as it is upgraded. */
 const STRUCTURED = [
@@ -1968,4 +1996,24 @@ it("draws links along a drawn line's own path, riding on other links and to free
   expect(reordered.ends.from).toEqual({ x: 80, y: 370, side: null });
   expect(reordered.left).toBeCloseTo(80 - 48, 0);
   expect(reordered.top).toBeCloseTo(Math.min(350, reordered.ends.to.y) - 48, 0);
+  // The line drawn again along its box's top: the message meeting it halfway along waits for
+  // the new line, and is drawn to its middle there.
+  await page.evaluate(async () => {
+    const next = structuredClone(window.drawyData.work);
+    const scene = next.scenes.root;
+    scene.modules.find((m) => m.id === "a")!.bounds = { x: 20, y: 40, width: 100, height: 60 };
+    scene.links.find((l) => l.id === "life")!.to = { x: 90, y: 640 };
+    scene.modules.find((m) => m.id === "line")!.data = { points: [[0, 0], [1, 0]] };
+    window.drawyView.update(next, scene, false);
+    await new Promise((r) => setTimeout(r, 300));
+  });
+  const redrawn = await page.evaluate(() => {
+    const r = window.drawyView.renderer;
+    const host = document.querySelector<HTMLElement>('[data-link-id="msg"]')!;
+    return { ends: r.ends(r.links.get("msg")!), top: parseFloat(host.style.top) };
+  });
+  expect(redrawn.ends.to.x).toBeCloseTo(400, 0);
+  expect(redrawn.ends.to.y).toBeCloseTo(0, 0);
+  // Drawn from the top of the line's box, not from where the diagonal's middle was.
+  expect(redrawn.top).toBeCloseTo(0 - 48, 0);
 });
