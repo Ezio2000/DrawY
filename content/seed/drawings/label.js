@@ -29,12 +29,20 @@ for (const line of lines) {
   );
   y += size * 1.25;
 }
+const notes = [];
 for (const line of note) {
-  rows.push(
+  notes.push(
     `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${noteSize}" fill="${d.noteColor || t.muted || "#777"}" ${halo}>${esc(line)}</text>`,
   );
   y += noteSize * 1.3;
 }
+// One marked group per field, its lines joined by newlines: the group's text is the whole
+// value, so a person retypes every line at once and the drawing breaks them again.
+const text =
+  d.text != null && rows.length
+    ? `<g${api.text("text")}>${rows.join("\n")}</g>`
+    : rows.join("");
+const noteText = notes.length ? `<g${api.text("note")}>${notes.join("\n")}</g>` : "";
 return api.svg(
-  `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(t.font || "system-ui")}">${rows.join("")}</svg>`,
+  `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(t.font || "system-ui")}">${text}${noteText}</svg>`,
 );

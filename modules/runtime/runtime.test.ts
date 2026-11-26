@@ -1863,7 +1863,7 @@ const STRUCTURED = [
 ];
 // The map's example needs tiles these tests do not hold; it is checked on a city below.
 /** Drawings without lists in their examples that mark their words all the same. */
-const EDITABLE = [...STRUCTURED, "node", "callout", "gauge", "stat", "leader-label", "region"];
+const EDITABLE = [...STRUCTURED, "node", "callout", "gauge", "stat", "leader-label", "region", "label"];
 it("marks every word a structured library drawing draws from its example as the data it comes from", async () => {
   const drawings = (seed("drawings") as DrawingMaterial[]).filter((m) => EDITABLE.includes(m.id));
   work.materials = Object.fromEntries([...drawings.map((m) => libraryDrawing(m.id)), ...seed("effects").map((m) => useOf(m)!)].map((m) => [m.id, m]));
@@ -1898,6 +1898,40 @@ it("marks every word a structured library drawing draws from its example as the 
   // The sequence diagram: three participants and five messages and a note are parts, with
   // slots round both lists and a lifeline for each participant.
   expect(found.find((f) => f.id === "sequence-0")).toMatchObject({ parts: 9, slots: 4 + 6, anchors: 3 });
+});
+it("marks a multi-line label's text and note as one field each, the line breaks kept for retyping", async () => {
+  work.materials.label = libraryDrawing("label");
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      {
+        id: "label",
+        drawingId: "label",
+        bounds: { x: 20, y: 20, width: 260, height: 100 },
+        data: { text: "第一行\n第二行", note: "说明一\n说明二", size: 20 },
+      },
+    ],
+    links: [],
+    checks: [],
+  };
+  await open();
+  const found = await page.evaluate(() => {
+    const view = window.drawyView;
+    const host = document.querySelector<HTMLElement>('[data-module-id="label"]')!;
+    const map = view.editMap("label")!;
+    return {
+      unmarked: view.unmarked("label").map((t) => t.path),
+      texts: map.texts.map((t) => t.path).sort(),
+      text: host.shadowRoot!.querySelector('[data-edp-text="text"]')?.textContent,
+      note: host.shadowRoot!.querySelector('[data-edp-text="note"]')?.textContent,
+    };
+  });
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+  expect(found.unmarked).toEqual([]);
+  // One box per data field, not one per line: retyping a box changes the whole value.
+  expect(found.texts).toEqual(["note", "text"]);
+  expect(found.text).toBe("第一行\n第二行");
+  expect(found.note).toBe("说明一\n说明二");
 });
 it("marks a map's places and routes as its data, with handles that move them in longitude and latitude", async () => {
   work.materials = { geomap: libraryDrawing("geomap") };
