@@ -52,8 +52,13 @@ const path = bend
   ? `M${target.x} ${target.y}L${knee.x} ${knee.y}L${end.x} ${end.y}`
   : `M${target.x} ${target.y}L${end.x} ${end.y}`;
 const line = d.color || t.muted || "#888";
+// The dot drags onto the part it names, the words along their side.
+const share = (v) => Math.round(Math.min(1, Math.max(0, v)) * 1000) / 1000;
+if (d.target) api.handle("target", { kind: "point", at: target, unproject: (x, y) => ({ x: share(x / W), y: share(y / H) }) });
+if (d.textAt != null)
+  api.handle("textAt", side === "right" || side === "left" ? { kind: "scalar", at: { x: tx, y: ty }, axis: "y", scale: 1 / H } : { kind: "scalar", at: { x: tx, y: ty }, axis: "x", scale: 1 / W });
 return api.svg(`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}">
   <path d="${path}" stroke="${line}" stroke-width="${Number(d.width ?? 1)}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
   ${d.dot === false ? "" : `<circle cx="${target.x}" cy="${target.y}" r="${Number(d.width ?? 1) * 2.2}" fill="${line}"/>`}
-  <text x="${tx}" y="${ty}" text-anchor="${anchor}" dominant-baseline="central" font-size="${size}" fill="${d.textColor || t.ink || "#222"}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4" stroke-linejoin="round">${esc(text)}</text>
+  <text x="${tx}" y="${ty}" text-anchor="${anchor}" dominant-baseline="central" font-size="${size}" fill="${d.textColor || t.ink || "#222"}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4" stroke-linejoin="round"${d.text != null ? api.text("text") : ""}>${esc(text)}</text>
 </svg>`);

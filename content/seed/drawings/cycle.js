@@ -5,9 +5,7 @@ const d = api.data,
   t = api.theme;
 const W = api.width,
   H = api.height;
-const steps = Array.isArray(d.steps)
-  ? d.steps
-  : Array.from({ length: Number(d.steps ?? 4) }, () => "");
+const steps = d.steps || [];
 const n = Math.max(2, steps.length);
 const color = d.color || t.accent || t.ink || "#333";
 const w = Number(d.width ?? Number(t.stroke ?? 1.6) * 1.4);
@@ -40,6 +38,10 @@ for (let i = 0; i < n; i++) {
   const p0 = at(a0),
     p1 = at(a1line),
     tip = at(a1);
+  // Each stage is its words and the arc on from it to the next; a new one goes midway.
+  const part = i < steps.length;
+  if (part) out += `<g${api.part("steps." + i)}>`;
+  if (steps.length) api.slot("steps", i + 1, at((a0 + a1) / 2));
   out += `<path d="M${p0.x} ${p0.y}A${r} ${r} 0 0 ${dir > 0 ? 1 : 0} ${p1.x} ${p1.y}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round"/>`;
   const tx = -Math.sin(a1) * dir,
     ty = Math.cos(a1) * dir;
@@ -55,8 +57,9 @@ for (let i = 0; i < n; i++) {
         : Math.cos(a) > 0 === (d.labels !== "inside")
           ? "start"
           : "end";
-    out += `<text x="${p.x}" y="${p.y}" text-anchor="${anchor}" dominant-baseline="central" font-size="${size}" fill="${t.ink || "#222"}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4" stroke-linejoin="round">${esc(label)}</text>`;
+    out += `<text x="${p.x}" y="${p.y}" text-anchor="${anchor}" dominant-baseline="central" font-size="${size}" fill="${t.ink || "#222"}" paint-order="stroke" stroke="${t.paper || "#fff"}" stroke-width="4" stroke-linejoin="round"${api.text("steps." + i)}>${esc(label)}</text>`;
   }
+  if (part) out += "</g>";
 }
 return api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(t.font || "system-ui")}">${out}</svg>`,

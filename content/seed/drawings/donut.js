@@ -58,9 +58,7 @@ const palette = (n) =>
         muted,
       ][i % 6],
   );
-const items = (d.items || []).map((it) =>
-  Array.isArray(it) ? { label: it[0], value: it[1] } : it,
-);
+const items = d.items || [];
 const total =
   items.reduce((s, i) => s + Math.max(0, Number(i.value) || 0), 0) || 1;
 const colors = palette(items.length);
@@ -78,17 +76,19 @@ let out = "",
 items.forEach((it, i) => {
   const share = Math.max(0, Number(it.value) || 0) / total;
   if (!share) return;
+  const path = api.path("items", it, i);
   const a1 = a0 + share * Math.PI * 2;
   const big = a1 - a0 > Math.PI ? 1 : 0;
   const c = it.color || colors[i];
+  let slice = "";
   if (share >= 0.9999)
-    out += `<circle cx="${cx}" cy="${cy}" r="${(R * (1 + hole)) / 2}" fill="none" stroke="${c}" stroke-width="${R * (1 - hole) || R}"/>`;
+    slice += `<circle cx="${cx}" cy="${cy}" r="${(R * (1 + hole)) / 2}" fill="none" stroke="${c}" stroke-width="${R * (1 - hole) || R}"/>`;
   else {
     const p0 = pt(a0, R),
       p1 = pt(a1, R),
       q1 = pt(a1, R * hole),
       q0 = pt(a0, R * hole);
-    out += `<path d="M${p0.x} ${p0.y}A${R} ${R} 0 ${big} 1 ${p1.x} ${p1.y}${hole ? `L${q1.x} ${q1.y}A${R * hole} ${R * hole} 0 ${big} 0 ${q0.x} ${q0.y}` : `L${cx} ${cy}`}Z" fill="${c}" stroke="${paper}" stroke-width="2" stroke-linejoin="round"/>`;
+    slice += `<path d="M${p0.x} ${p0.y}A${R} ${R} 0 ${big} 1 ${p1.x} ${p1.y}${hole ? `L${q1.x} ${q1.y}A${R * hole} ${R * hole} 0 ${big} 0 ${q0.x} ${q0.y}` : `L${cx} ${cy}`}Z" fill="${c}" stroke="${paper}" stroke-width="2" stroke-linejoin="round"/>`;
   }
   if (labelled) {
     const am = (a0 + a1) / 2,
@@ -96,16 +96,20 @@ items.forEach((it, i) => {
     const e = pt(am, R + 4),
       k = pt(am, R + size * 1.2);
     const tx = k.x + (right ? size * 0.9 : -size * 0.9);
-    out += `<path class="plain" d="M${e.x} ${e.y}L${k.x} ${k.y}H${tx + (right ? -size * 0.3 : size * 0.3)}" fill="none" stroke="${muted}" stroke-width="1"/>`;
-    out += `<text x="${tx}" y="${k.y - size * 0.45}" text-anchor="${right ? "start" : "end"}" font-size="${size}" font-weight="600" fill="${ink}">${esc(it.label)}</text>`;
-    out += `<text x="${tx}" y="${k.y + size * 0.65}" text-anchor="${right ? "start" : "end"}" font-size="${size * 0.82}" fill="${muted}">${esc(it.note ?? Math.round(share * 100) + "%")}</text>`;
+    slice += `<path class="plain" d="M${e.x} ${e.y}L${k.x} ${k.y}H${tx + (right ? -size * 0.3 : size * 0.3)}" fill="none" stroke="${muted}" stroke-width="1"/>`;
+    slice += `<text x="${tx}" y="${k.y - size * 0.45}" text-anchor="${right ? "start" : "end"}" font-size="${size}" font-weight="600" fill="${ink}"${api.text(path + ".label")}>${esc(it.label)}</text>`;
+    // A note given is the item's words; otherwise the share, worked out here.
+    slice += `<text x="${tx}" y="${k.y + size * 0.65}" text-anchor="${right ? "start" : "end"}" font-size="${size * 0.82}" fill="${muted}"${it.note != null ? api.text(path + ".note") : ""}>${esc(it.note ?? Math.round(share * 100) + "%")}</text>`;
   }
+  out += `<g${api.part(path)}>${slice}</g>`;
   a0 = a1;
 });
+// A new slice goes after the last, where the ring starts again at the top.
+if (items.length) api.slot("items", items.length, pt(-Math.PI / 2, R + size * 0.6));
 if (hole && d.center)
-  out += `<text x="${cx}" y="${cy - (d.centerNote ? size * 0.55 : 0)}" text-anchor="middle" font-size="${Math.min(size * 1.9, ((R * hole * 1.4) / Math.max(1, String(d.center).length)) * 1.6)}" font-weight="700" fill="${ink}">${esc(d.center)}</text>`;
+  out += `<text x="${cx}" y="${cy - (d.centerNote ? size * 0.55 : 0)}" text-anchor="middle" font-size="${Math.min(size * 1.9, ((R * hole * 1.4) / Math.max(1, String(d.center).length)) * 1.6)}" font-weight="700" fill="${ink}"${api.text("center")}>${esc(d.center)}</text>`;
 if (hole && d.centerNote)
-  out += `<text x="${cx}" y="${cy + size * 1.15}" text-anchor="middle" font-size="${size * 0.82}" fill="${muted}">${esc(d.centerNote)}</text>`;
+  out += `<text x="${cx}" y="${cy + size * 1.15}" text-anchor="middle" font-size="${size * 0.82}" fill="${muted}"${api.text("centerNote")}>${esc(d.centerNote)}</text>`;
 const svg = api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}" dominant-baseline="central">${out}</svg>`,
 );

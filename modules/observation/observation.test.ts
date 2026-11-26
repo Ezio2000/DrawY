@@ -132,7 +132,7 @@ it("sends each scene's modules once, only what changed since, and a close-up alo
       shot({
         overview: true,
         modules,
-        text: { smallest: { moduleId: modules[0].id, text: "字", px: 11 }, small: [{ moduleId: modules[0].id, text: "字", px: 11 }], clipped: [{ moduleId: modules[0].id, text: "被裁的字" }] },
+        text: { smallest: { moduleId: modules[0].id, text: "字", px: 11 }, small: [{ moduleId: modules[0].id, text: "字", px: 11 }], clipped: [{ moduleId: modules[0].id, text: "被裁的字" }], unmarked: [{ moduleId: modules[0].id, path: "items.#a.label", text: "没标的字" }] },
       }),
       shot({ label: "1440px / 局部" }),
     ];
@@ -157,6 +157,8 @@ it("sends each scene's modules once, only what changed since, and a close-up alo
     expect(whole.figure.tooSmall).toEqual([{ moduleId: modules[0].id, text: "字", px: 11, size: 22, sizeThatReads: 28 }]);
     expect(whole.figure.readableFrom).toMatch(/size \d+ in scene units/);
     expect(whole.clippedText[0].text).toBe("被裁的字");
+    // Words from the data drawn unmarked, by where they are in it, so the author marks them.
+    expect(whole.unmarkedText).toEqual([{ moduleId: modules[0].id, path: "items.#a.label", text: "没标的字" }]);
     // The other view of the same scene repeats none of it.
     expect(close).toEqual({ revision: 1, sceneId: "root", view: "1440px / 局部", camera: { x: 0, y: 0, scale: 1 } });
 

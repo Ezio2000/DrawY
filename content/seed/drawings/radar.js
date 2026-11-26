@@ -84,24 +84,38 @@ for (let l = 1; l <= levels; l++)
 axes.forEach((a, i) => {
   const e = pt(i, R),
     p = pt(i, R + size * 1.1);
-  out += `<path class="plain" d="M${cx} ${cy}L${e.x} ${e.y}" stroke="${muted}" stroke-opacity=".45" stroke-width="1"/>`;
   const c = Math.cos(-Math.PI / 2 + (i * 2 * Math.PI) / n);
-  out += `<text x="${p.x}" y="${p.y}" text-anchor="${Math.abs(c) < 0.2 ? "middle" : c > 0 ? "start" : "end"}" font-size="${size * 0.9}" font-weight="600" fill="${ink}">${esc(a)}</text>`;
+  out += `<g${api.part("axes." + i)}><path class="plain" d="M${cx} ${cy}L${e.x} ${e.y}" stroke="${muted}" stroke-opacity=".45" stroke-width="1"/><text x="${p.x}" y="${p.y}" text-anchor="${Math.abs(c) < 0.2 ? "middle" : c > 0 ? "start" : "end"}" font-size="${size * 0.9}" font-weight="600" fill="${ink}"${api.text("axes." + i)}>${esc(a)}</text></g>`;
+  // A new quality goes round the ring, between this one and the next.
+  const q = pt(i + 0.5, R + size * 0.6);
+  api.slot("axes", i + 1, q);
 });
+// How far a point is along a quality's spoke, as its score.
+const scoreAt = (i, x, y) => {
+  const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
+  const along = (x - cx) * Math.cos(a) + (y - cy) * Math.sin(a);
+  return Math.round(Math.min(max, Math.max(0, (along / R) * max)) * 100) / 100;
+};
 series.forEach((s, k) => {
+  const path = api.path("series", s, k);
   const c = s.color || colors[k];
   const ps = axes.map((_, i) =>
     pt(i, (R * Math.min(max, Math.max(0, Number(s.values?.[i]) || 0))) / max),
   );
-  out += `<path d="${ps.map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`).join("")}Z" fill="${c}" fill-opacity=".22" stroke="${c}" stroke-width="${sw * 1.3}" stroke-linejoin="round"/>`;
-  for (const p of ps)
-    out += `<circle cx="${p.x}" cy="${p.y}" r="${sw * 1.6}" fill="${c}"/>`;
+  let shape = `<path d="${ps.map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`).join("")}Z" fill="${c}" fill-opacity=".22" stroke="${c}" stroke-width="${sw * 1.3}" stroke-linejoin="round"/>`;
+  ps.forEach((p, i) => {
+    shape += `<circle cx="${p.x}" cy="${p.y}" r="${sw * 1.6}" fill="${c}"/>`;
+    // Each score drags along its spoke.
+    if (Array.isArray(s.values) && s.values[i] != null)
+      api.handle(`${path}.values.${i}`, { kind: "point", at: p, unproject: (x, y) => scoreAt(i, x, y) });
+  });
+  out += `<g${api.part(path)}>${shape}</g>`;
 });
 if (series.length > 1) {
   const items = series.map((s) => measure(s.label, size * 0.85) + size * 2);
   let x = cx - items.reduce((a, b) => a + b, 0) / 2;
   series.forEach((s, k) => {
-    out += `<rect class="plain" x="${x}" y="${H - size * 1.1}" width="${size * 0.9}" height="${size * 0.9}" rx="2" fill="${s.color || colors[k]}"/><text x="${x + size * 1.3}" y="${H - size * 0.65}" font-size="${size * 0.85}" fill="${ink}">${esc(s.label)}</text>`;
+    out += `<rect class="plain" x="${x}" y="${H - size * 1.1}" width="${size * 0.9}" height="${size * 0.9}" rx="2" fill="${s.color || colors[k]}"/><text x="${x + size * 1.3}" y="${H - size * 0.65}" font-size="${size * 0.85}" fill="${ink}"${api.text(api.path("series", s, k) + ".label")}>${esc(s.label)}</text>`;
     x += items[k];
   });
 }

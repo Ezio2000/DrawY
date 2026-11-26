@@ -58,8 +58,8 @@ const at = d.labelAt ?? (box ? "corner" : "center");
 const labelColor = d.labelColor || (box ? color : t.ink || "#222");
 const label = d.label
   ? at === "corner"
-    ? `<text x="${size * 0.8}" y="${size * 1.2}" dominant-baseline="central" font-size="${size}" font-weight="600" fill="${labelColor}">${esc(d.label)}</text>`
-    : `<text x="${W / 2}" y="${at === "top" ? size * 1.6 : H / 2}" text-anchor="middle" dominant-baseline="central" font-size="${size}" fill="${labelColor}" fill-opacity=".85">${esc(d.label)}</text>`
+    ? `<text x="${size * 0.8}" y="${size * 1.2}" dominant-baseline="central" font-size="${size}" font-weight="600" fill="${labelColor}"${api.text("label")}>${esc(d.label)}</text>`
+    : `<text x="${W / 2}" y="${at === "top" ? size * 1.6 : H / 2}" text-anchor="middle" dominant-baseline="central" font-size="${size}" fill="${labelColor}" fill-opacity=".85"${api.text("label")}>${esc(d.label)}</text>`
   : "";
 return api.svg(`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="${esc(font)}">
   ${shape}${label}

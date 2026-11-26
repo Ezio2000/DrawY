@@ -9,6 +9,7 @@ import { fixture } from "../runtime/fixture.ts";
 import { composed } from "./apply.ts";
 import {
   applied,
+  changesBetween,
   connect,
   danglingIn,
   dataPatch,
@@ -121,6 +122,16 @@ describe("diagnosis", () => {
 });
 
 describe("items of a drawing's data", () => {
+  it("tells the author which items of a part's lists the person changed, by id", () => {
+    const work = sequenceWork();
+    let after = applied(work, setAt(work, "root", "seq", "messages.#m3.label", "查库")!);
+    after = applied(after, moveItem(after, "root", "seq", "messages", "m1", 2)!);
+    after = applied(after, insertItem(after, "root", "seq", "messages", 5, { from: "browser", to: "server", label: "退出" }).edit);
+    after = applied(after, removeItem(after, "root", "seq", "notes", "n1").edit);
+    const [scene] = changesBetween(work, after).scenes;
+    expect(scene.changed).toEqual(["seq"]);
+    expect(scene.items.seq).toEqual(["messages: m6 added; m3 changed; reordered", "notes: n1 removed"]);
+  });
   it("changes, appends and deletes list items by id, and composes such changes onto a list given whole", () => {
     const work = sequenceWork();
     const w = applied(work, { modules: [{ id: "seq", data: { messages: { "#m2": { label: "查用户" }, "#m9": { from: "db", to: "browser", label: "推送" }, "#m5": null } } }] });

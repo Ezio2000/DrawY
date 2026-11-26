@@ -120,8 +120,9 @@ const lonlat = (p) => {
   const q = named.get(String(p));
   return q ? [+q.lon, +q.lat] : null;
 };
-const routes = (d.routes || []).map((r) => ({
+const routes = (d.routes || []).map((r, i) => ({
   ...r,
+  path: api.path("routes", r, i),
   at: (r.points || []).map(lonlat).filter(Boolean),
 }));
 const areas = (d.areas || []).map((a) => ({
@@ -238,6 +239,11 @@ const px = ([lon, lat]) => {
   return [(u - x0) * s, (v - y0) * s];
 };
 const unproject = (x, y) => inverse(x / s + x0, y / s + y0);
+// A place on the map read back as longitude and latitude, to a hundredth of a degree.
+const lonLatAt = (x, y) => {
+  const at = unproject(x, y);
+  return at && at.every(Number.isFinite) ? at.map((v) => Math.round(v * 100) / 100) : undefined;
+};
 const project = (p) => px(near(p));
 // What the view covers in degrees (a world view all the way round its middle meridian).
 const view = world
@@ -767,6 +773,14 @@ for (const r of routes) {
       .sort((a, b) => b.seen - a.seen)[0];
     if (best?.seen) routeLabels.push({ r, curve: best.curve, color });
   }
+  // Each point given as longitude and latitude drags where the route passes; one naming a
+  // place goes with that place.
+  (r.points || []).forEach((q, k) => {
+    if (!Array.isArray(q)) return;
+    const [x, y] = project([+q[0], +q[1]]);
+    api.handle(`${r.path}.points.${k}`, { kind: "point", at: { x, y }, unproject: lonLatAt });
+  });
+  routeOut += `<g${api.part(r.path)}>`;
   for (const { p, curve } of drawn) {
     for (let i = 1; i < curve.length; i++) lines.push([curve[i - 1], curve[i]]);
     const dash =
@@ -811,6 +825,7 @@ for (const r of routes) {
       routeOut += arrowAt(curve[e][0], curve[e][1], dir(e), w, color);
     }
   }
+  routeOut += "</g>";
 }
 
 // A scale bar, bottom left, in a round number of kilometres (true along the meridians),
@@ -909,7 +924,8 @@ const place = (x, y, gap, b, prefer, must) => {
   taken.push(best.box);
   return best;
 };
-const write = (box, side, name, note, sz, weight, color, extra = "") => {
+// `item` is the path of the place or route the words are, its name and note marked as its own.
+const write = (box, side, name, note, sz, weight, color, extra = "", item = null, nameKey = "name") => {
   const anchor = side.includes("left")
     ? "end"
     : side === "above" || side === "below"
@@ -921,18 +937,28 @@ const write = (box, side, name, note, sz, weight, color, extra = "") => {
       : anchor === "middle"
         ? box.x + box.w / 2
         : box.x;
-  let out = `<text x="${x.toFixed(1)}" y="${(box.y + sz * 0.95).toFixed(1)}" text-anchor="${anchor}" font-size="${sz}" font-weight="${weight}" fill="${color}" ${halo}${extra}>${esc(name)}</text>`;
+  let out = `<text x="${x.toFixed(1)}" y="${(box.y + sz * 0.95).toFixed(1)}" text-anchor="${anchor}" font-size="${sz}" font-weight="${weight}" fill="${color}" ${halo}${extra}${item ? api.text(`${item}.${nameKey}`) : ""}>${esc(name)}</text>`;
   if (note)
-    out += `<text x="${x.toFixed(1)}" y="${(box.y + sz * 1.2 + sz * 0.78 * 0.95).toFixed(1)}" text-anchor="${anchor}" font-size="${(sz * 0.78).toFixed(1)}" fill="${muted}" ${halo}>${esc(note)}</text>`;
+    out += `<text x="${x.toFixed(1)}" y="${(box.y + sz * 1.2 + sz * 0.78 * 0.95).toFixed(1)}" text-anchor="${anchor}" font-size="${(sz * 0.78).toFixed(1)}" fill="${muted}" ${halo}${item ? api.text(`${item}.note`) : ""}>${esc(note)}</text>`;
   return out;
 };
 // Markers first so no label covers any of them.
 const spots = places.map((p) => {
   const [x, y] = project([+p.lon, +p.lat]);
+  const path = api.path("places", p, d.places.indexOf(p));
   const kind = p.kind || "town";
   const color = p.color || (kind === "battle" ? accent : ink);
+  // The marker drags the place where it is.
+  api.handle(path, {
+    kind: "point",
+    at: { x, y },
+    unproject: (px, py) => {
+      const at = lonLatAt(px, py);
+      return at && { lon: at[0], lat: at[1] };
+    },
+  });
   if (!["water", "region"].includes(kind)) {
-    markOut += marker(kind, x, y, color);
+    markOut += `<g${api.part(path)}>${marker(kind, x, y, color)}</g>`;
     const r = size * 0.5;
     taken.push({ x: x - r, y: y - r, w: 2 * r, h: 2 * r });
   }
@@ -946,16 +972,17 @@ const spots = places.map((p) => {
     });
     taken.push({ x: x - ps / 2, y: y - ps - size * 0.5, w: ps, h: ps });
   }
-  return { p, x, y, kind, color };
+  return { p, path, x, y, kind, color };
 });
-for (const { p, x, y, kind, color } of spots) {
+for (const { p, path, x, y, kind, color } of spots) {
   if (!p.name) continue;
   if (kind === "water" || kind === "region") {
     const sz = size * (kind === "region" ? 1.25 : 0.95);
     const b = block(p.name, p.note, sz, kind === "region" ? 600 : 400);
     const box = { x: x - b.w / 2, y: y - b.h / 2, w: b.w, h: b.h };
     taken.push(box);
-    labelOut += write(
+    // A sea or a region is its name, having no marker.
+    labelOut += `<g${api.part(path)}>${write(
       box,
       "above",
       p.name,
@@ -967,7 +994,8 @@ for (const { p, x, y, kind, color } of spots) {
       kind === "water"
         ? ` font-style="italic"`
         : ` letter-spacing="${sz * 0.25}"`,
-    );
+      path,
+    )}</g>`;
     continue;
   }
   const major = p.major || kind === "capital";
@@ -975,7 +1003,7 @@ for (const { p, x, y, kind, color } of spots) {
   const weight = major ? 700 : 500;
   const b = block(p.name, p.note, sz, weight);
   const at = place(x, y, size * 0.55, b, p.label, true);
-  labelOut += write(at.box, at.side, p.name, p.note, sz, weight, ink);
+  labelOut += write(at.box, at.side, p.name, p.note, sz, weight, ink, "", path);
 }
 for (const { r, curve, color } of routeLabels) {
   const sz = size * 0.95;
@@ -991,7 +1019,7 @@ for (const { r, curve, color } of routeLabels) {
     if (at) break;
   }
   at ??= place(...spots[0], size * 0.6, b, r.labelSide, true);
-  labelOut += write(at.box, at.side, r.label, r.note, sz, 600, color);
+  labelOut += write(at.box, at.side, r.label, r.note, sz, 600, color, "", r.path, "label");
 }
 
 // Reference names last, only where they fit, first-level divisions before countries.

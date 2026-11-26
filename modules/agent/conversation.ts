@@ -90,7 +90,7 @@ function changeLines(changes: ReturnType<typeof changesBetween>) {
     ...scenes.map(
       (s) =>
         `- scene ${s.id}: ${[
-          ...list("changed", s.changed),
+          ...list("changed", s.changed.map((id) => (s.items[id] ? `${id} (${s.items[id].join("; ")})` : id))),
           ...list("moved or resized", s.moved),
           ...list("added", s.added),
           ...list("removed", s.removed),

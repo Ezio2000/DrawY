@@ -25,6 +25,9 @@ export interface TextReport {
    * them all. */
   small: { moduleId: string; text: string; px: number }[];
   clipped: { moduleId: string; text: string }[];
+  /** Words a module's data holds that its drawing draws without marking them as that data,
+   * so a person cannot retype them where they are drawn. */
+  unmarked: { moduleId: string; path: string; text: string }[];
 }
 export interface Shot {
   camera: { x: number; y: number; scale: number };
@@ -54,7 +57,7 @@ export interface Shot {
 /** Runs in the page, so its helpers live inside it: reads every part's text. A size is the
  * font's own, scaled as the camera and any viewBox or transform above it scale it. */
 export function readText(limit: number): TextReport {
-  const report: TextReport = { small: [], clipped: [] };
+  const report: TextReport = { small: [], clipped: [], unmarked: [] };
   const seen = new Set<string>();
   const least = new Map<string, { moduleId: string; text: string; px: number }>();
   const view = { right: innerWidth, bottom: innerHeight };
@@ -114,6 +117,9 @@ export function readText(limit: number): TextReport {
     }
   }
   report.small = [...least.values()].sort((a, b) => a.px - b.px).slice(0, 12);
+  for (const host of document.querySelectorAll<HTMLElement>("[data-module-id]"))
+    for (const { path, text } of window.drawyView.unmarked(host.dataset.moduleId!))
+      if (report.unmarked.length < 12) report.unmarked.push({ moduleId: host.dataset.moduleId!, path, text: text.slice(0, 30) });
   return report;
 }
 async function ready(page: Page) {

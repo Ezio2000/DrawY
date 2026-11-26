@@ -1222,7 +1222,7 @@
             }
           }
         },
-        "description": "{min, max, label, ticks (count or list), format ('{} m')}"
+        "description": "{min, max, label, ticks (how many), format ('{} m')}"
       },
       "y": {
         "type": "record",
@@ -1410,7 +1410,7 @@
             }
           }
         },
-        "description": "[i, j] or {from, to, color?, opacity?} to shade the area between two series"
+        "description": "[{from, to, color?, opacity?}] shades the area between two curves, by their places in series"
       },
       "grid": {
         "type": "boolean",

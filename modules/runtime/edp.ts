@@ -141,11 +141,12 @@ export function strayPaths(root: ParentNode, declared: Declared, data: Record<st
 /** The words of a part's data its drawing shows without marking them as that data. */
 export function unmarkedTexts(root: ParentNode, fields: Fields, data: Record<string, unknown>) {
   const marked = new Set(marks(root).texts.map((t) => t.path));
+  // Only words outside marked ones count: a tick marked as its own words may hold the unit.
   const shown: string[] = [];
   const walk = document.createTreeWalker(root as Node, NodeFilter.SHOW_TEXT);
   while (walk.nextNode()) {
     const parent = walk.currentNode.parentElement;
-    if (parent && !parent.closest("style,script,defs,title")) shown.push(walk.currentNode.textContent ?? "");
+    if (parent && !parent.closest("style,script,defs,title,[data-edp-text]")) shown.push(walk.currentNode.textContent ?? "");
   }
   const drawn = shown.join("\n");
   return textsIn(fields, data).filter((t) => !marked.has(t.path) && drawn.includes(t.text));

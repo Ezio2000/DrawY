@@ -1247,3 +1247,68 @@ it("undoes and redoes hand edits at once, a gesture a step: arrow keys pressed i
   await page.keyboard.press("Meta+Y");
   await expect.poll(x, { timeout: 5_000 }).toBe(dragged);
 });
+
+it("changes a chart's values on the canvas: a bar's top dragged, its number retyped, a gauge's needle dragged with only the gauge selected", async () => {
+  const w = await api("/works", "POST", { title: "Charts" });
+  await api(`/works/${w.id}/edits`, "POST", {
+    baseRevision: w.revision,
+    edit: {
+      modules: [
+        { id: "bars", drawingId: "bars", bounds: [100, 100, 520, 300], data: (await api("/materials/bars")).example },
+        { id: "gauge", drawingId: "gauge", bounds: [700, 100, 300, 220], data: (await api("/materials/gauge")).example },
+      ],
+    },
+  });
+  await page.goto(base + "/a/" + w.id);
+  await page.waitForFunction(() => [...document.querySelectorAll("*")].some((e) => e.shadowRoot?.textContent?.includes("蛋白质")));
+  await editing();
+  await settled();
+  const dataOf = async (id: string) => (await rootOf(w.id)).modules.find((m: { id: string }) => m.id === id)!.data;
+  const shown = () =>
+    page.locator("[data-edit-handle]").evaluateAll((els) =>
+      els.filter((e) => (e as HTMLElement).style.display !== "none").map((e) => {
+        const r = e.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }),
+    );
+  // The bar selected, its top drags its value up.
+  const water = await wordsAt("水");
+  await page.mouse.click(water.cx, water.cy);
+  await page.mouse.click(water.cx, water.cy);
+  await settled();
+  const [top] = await shown();
+  expect(top).toBeTruthy();
+  await page.mouse.move(top.x, top.y);
+  await page.mouse.down();
+  await page.mouse.move(top.x, top.y - 20, { steps: 4 });
+  await page.mouse.move(top.x, top.y - 40, { steps: 4 });
+  await page.mouse.up();
+  await settled();
+  const raised = (await dataOf("bars")).items[0].value;
+  expect(raised).toBeGreaterThan(71);
+  // Its number retyped where it is drawn is a number.
+  const number = await wordsAt(String(raised));
+  await page.mouse.dblclick(number.cx, number.cy);
+  await page.keyboard.press("Meta+A");
+  await page.keyboard.type("80");
+  await page.keyboard.press("Enter");
+  await settled();
+  expect((await dataOf("bars")).items[0].value).toBe(80);
+  // The gauge selected alone shows its needle's handle; dragged past the right end, below
+  // the dial, the reading goes to the top of the scale.
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  const label = await wordsAt("空气质量指数");
+  await page.mouse.click(label.cx, label.cy);
+  await settled();
+  const handles = await shown();
+  expect(handles).toHaveLength(1);
+  const right = (await page.locator('[data-module-id="gauge"]').boundingBox())!;
+  await page.mouse.move(handles[0].x, handles[0].y);
+  await page.mouse.down();
+  await page.mouse.move(right.x + right.width * 0.8, right.y + right.height * 0.3, { steps: 4 });
+  await page.mouse.move(right.x + right.width + 40, right.y + right.height + 20, { steps: 4 });
+  await page.mouse.up();
+  await settled();
+  expect((await dataOf("gauge")).value).toBe(100);
+});

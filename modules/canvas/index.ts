@@ -1944,13 +1944,12 @@ export class Canvas {
     this.options.part?.(part ? { ...part } : null);
   }
   /** The marks of what can be edited inside the module selected: the handles of the parts
-   * selected, and the "+" of the place for a new item nearest the pointer. */
+   * selected, or of the module itself, and the "+" of the place for a new item nearest the
+   * pointer. */
   private paintEditMarks() {
     const { x, y, scale } = this.camera;
     const on = (p: Point) => ({ left: x + p.x * scale + "px", top: y + p.y * scale + "px" });
-    const m = this.chosenPart && this.editing ? this.renderer.editMap(this.chosenPart.moduleId) : undefined;
-    const paths = this.chosenPart ? [this.chosenPart.path, ...this.moreParts] : [];
-    const handles = m && !this.gesture ? m.handles.filter((h) => paths.some((p) => h.path.startsWith(p + "."))) : [];
+    const handles = this.gesture ? [] : (this.shownHandles()?.handles ?? []);
     while (this.handleMarks.length < handles.length) {
       const mark = control(
         { editHandle: String(this.handleMarks.length) },
@@ -1973,11 +1972,18 @@ export class Canvas {
     slot.style.display = near && this.editing && !this.gesture && this.tool === "select" ? "grid" : "none";
     if (near) Object.assign(slot.style, on(near.at));
   }
-  /** The handles of the parts selected, in the order they are marked. */
-  private partHandles() {
-    const m = this.chosenPart && this.renderer.editMap(this.chosenPart.moduleId);
-    const paths = this.selectedParts.map((p) => p.path);
-    return m ? m.handles.filter((h) => paths.some((p) => h.path.startsWith(p + "."))) : [];
+  /** The handles marked, in order: those of the parts selected, or with only the module
+   * selected while editing, those of its own values (a gauge's reading, a now line) that
+   * belong to no part. */
+  private shownHandles() {
+    const moduleId = this.chosenPart?.moduleId ?? (this.editing && this.selection.length === 1 ? this.selection[0] : undefined);
+    const m = moduleId && this.editing ? this.renderer.editMap(moduleId) : undefined;
+    if (!moduleId || !m) return undefined;
+    const paths = this.chosenPart ? this.selectedParts.map((p) => p.path) : undefined;
+    // A part's handles are its own (a place on a chart moving the whole item) and its values'.
+    const under = (h: { path: string }, p: string) => h.path === p || h.path.startsWith(p + ".");
+    const handles = m.handles.filter((h) => (paths ? paths.some((p) => under(h, p)) : !m.parts.some((q) => under(h, q.path))));
+    return { moduleId, handles };
   }
   /** A module's data as its drawing draws it: its own over the drawing's defaults. */
   private drawnData(m: Instance) {
@@ -2525,11 +2531,12 @@ export class Canvas {
       this.gesture = { ...start, kind: "press" };
       return capture();
     }
-    // A handle of a part selected is dragged: onto what it can refer to, or along.
+    // A handle of a part selected, or of the module, is dragged: onto what it can refer to, or along.
     const editHandle = control?.dataset.editHandle;
-    if (editHandle !== undefined && this.chosenPart) {
-      const h = this.partHandles()[Number(editHandle)];
-      const m = this.renderer.instances.get(this.chosenPart.moduleId);
+    const shown = editHandle !== undefined ? this.shownHandles() : undefined;
+    if (shown) {
+      const h = shown.handles[Number(editHandle)];
+      const m = this.renderer.instances.get(shown.moduleId);
       if (h && m) {
         this.gesture = { ...start, kind: "handle", moduleId: m.id, handle: h, data: this.drawnData(m) };
         return capture();

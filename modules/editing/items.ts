@@ -110,6 +110,12 @@ function withValue(work: Work, part: Part, path: string, value: unknown) {
  * dragged, a choice made. Undefined takes the value out. */
 export function setAt(work: Work, sceneId: string, id: string, path: string, value: unknown): WorkEdit | null {
   const { part } = partIn(work, sceneId, id);
+  // Words retyped where a number is drawn are that number; words that are none change nothing.
+  if (typeof value === "string" && fieldAt(fieldsOf(work, part), path)?.type === "number") {
+    const n = Number(value.trim());
+    if (!value.trim() || !Number.isFinite(n)) return null;
+    value = n;
+  }
   return rewritten(work, sceneId, id, withValue(work, part, path, value));
 }
 /** Points a reference at another item, as a message's end dropped on another lifeline. */

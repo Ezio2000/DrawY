@@ -32,10 +32,10 @@ const left = d.align === "left";
 const x = left ? 0 : W / 2,
   anchor = left ? "start" : "middle";
 let y = valueSize * 0.6;
-let out = `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${valueSize}" font-weight="700" fill="${color}">${esc(d.value)}${d.unit ? `<tspan font-size="${valueSize * 0.42}" font-weight="600" fill="${muted}" dx="4">${esc(d.unit)}</tspan>` : ""}</text>`;
+let out = `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${valueSize}" font-weight="700" fill="${color}"><tspan${api.text("value")}>${esc(d.value)}</tspan>${d.unit ? `<tspan font-size="${valueSize * 0.42}" font-weight="600" fill="${muted}" dx="4"${api.text("unit")}>${esc(d.unit)}</tspan>` : ""}</text>`;
 y += valueSize * 0.55 + size * 0.9;
 if (d.label) {
-  out += `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${size * 1.05}" font-weight="600" fill="${ink}">${esc(d.label)}</text>`;
+  out += `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${size * 1.05}" font-weight="600" fill="${ink}"${api.text("label")}>${esc(d.label)}</text>`;
   y += size * 1.5;
 }
 if (d.delta) {
@@ -49,11 +49,11 @@ if (d.delta) {
   const ay = y,
     ax = x0 + size * 0.45;
   out += `<path d="${up ? `M${ax - size * 0.32} ${ay + size * 0.2}L${ax} ${ay - size * 0.25}L${ax + size * 0.32} ${ay + size * 0.2}Z` : `M${ax - size * 0.32} ${ay - size * 0.2}L${ax} ${ay + size * 0.25}L${ax + size * 0.32} ${ay - size * 0.2}Z`}" fill="${c}"/>`;
-  out += `<text x="${x0 + size * 1.1}" y="${ay}" font-size="${size * 0.9}" font-weight="600" fill="${c}">${esc(d.delta)}</text>`;
+  out += `<text x="${x0 + size * 1.1}" y="${ay}" font-size="${size * 0.9}" font-weight="600" fill="${c}"${api.text("delta")}>${esc(d.delta)}</text>`;
   y += size * 1.4;
 }
 if (d.note)
-  out += `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${size * 0.82}" fill="${muted}">${esc(d.note)}</text>`;
+  out += `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${size * 0.82}" fill="${muted}"${api.text("note")}>${esc(d.note)}</text>`;
 const svg = api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}" dominant-baseline="central">${out}</svg>`,
 );

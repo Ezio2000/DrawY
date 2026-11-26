@@ -1800,9 +1800,14 @@ it("problem 3B: a numbered message's words are marked as its data, the number dr
 
 /** The library drawings whose every word from their data is marked as that data, so a
  * person changes it where it is drawn. Every structured drawing joins as it is upgraded. */
-const STRUCTURED = ["sequence", "steps", "timeline", "mindmap", "hierarchy", "swimlanes", "compare", "checklist"];
-/** Drawings without lists that mark their words all the same. */
-const EDITABLE = [...STRUCTURED, "node", "callout"];
+const STRUCTURED = [
+  ...["sequence", "steps", "timeline", "mindmap", "hierarchy", "swimlanes", "compare", "checklist"],
+  ...["bars", "donut", "plot", "gantt", "radar"],
+  ...["quadrant", "pyramid", "venn", "layers", "fishbone", "cycle", "concentric"],
+];
+// The map's example needs tiles these tests do not hold; it is checked on a city below.
+/** Drawings without lists in their examples that mark their words all the same. */
+const EDITABLE = [...STRUCTURED, "node", "callout", "gauge", "stat", "leader-label", "region"];
 it("marks every word a structured library drawing draws from its example as the data it comes from", async () => {
   const drawings = (seed("drawings") as DrawingMaterial[]).filter((m) => EDITABLE.includes(m.id));
   work.materials = Object.fromEntries([...drawings.map((m) => libraryDrawing(m.id)), ...seed("effects").map((m) => useOf(m)!)].map((m) => [m.id, m]));
@@ -1837,6 +1842,71 @@ it("marks every word a structured library drawing draws from its example as the 
   // The sequence diagram: three participants and five messages and a note are parts, with
   // slots round both lists and a lifeline for each participant.
   expect(found.find((f) => f.id === "sequence-0")).toMatchObject({ parts: 9, slots: 4 + 6, anchors: 3 });
+});
+it("marks a map's places and routes as its data, with handles that move them in longitude and latitude", async () => {
+  work.materials = { geomap: libraryDrawing("geomap") };
+  const data = {
+    places: [
+      { id: "road", name: "北京路", lon: 113.2695, lat: 23.1232, note: "起点" },
+      { id: "bridge", name: "海珠桥", lon: 113.2727, lat: 23.1145 },
+      { id: "isle", name: "二沙岛", lon: 113.2985, lat: 23.1122 },
+    ],
+    routes: [{ id: "walk", points: ["road", [113.28, 23.118], "isle"], label: "步行" }],
+  };
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [{ id: "map", label: "map", drawingId: "geomap", data, bounds: { x: 0, y: 0, width: 960, height: 600 } }],
+    links: [],
+    checks: [],
+  };
+  delete work.scenes.root.interaction;
+  await open();
+  const found = await page.evaluate(() => {
+    const view = window.drawyView;
+    const map = view.editMap("map")!;
+    const place = map.handles.find((h) => h.path === "places.#bridge")!;
+    const turn = map.handles.find((h) => h.path === "routes.#walk.points.1")!;
+    return {
+      unmarked: view.unmarked("map").map((t) => t.path),
+      parts: map.parts.map((p) => p.path).sort(),
+      texts: map.texts.map((t) => t.path).sort(),
+      handles: map.handles.map((h) => h.path).sort(),
+      // Where the handle stands reads back as the place it stands for.
+      place: place.unproject!(place.at.x, place.at.y),
+      turn: turn.unproject!(turn.at.x, turn.at.y),
+    };
+  });
+  expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
+  expect(found.unmarked).toEqual([]);
+  expect(found.parts).toEqual(["places.#bridge", "places.#isle", "places.#road", "routes.#walk"]);
+  expect(found.texts).toEqual(["places.#bridge.name", "places.#isle.name", "places.#road.name", "places.#road.note", "routes.#walk.label"]);
+  expect(found.handles).toEqual(["places.#bridge", "places.#isle", "places.#road", "routes.#walk.points.1"]);
+  expect(found.place).toEqual({ lon: 113.27, lat: 23.11 });
+  expect(found.turn).toEqual([113.28, 23.12]);
+});
+it("reports to the author the words from a drawing's data it draws without marking them", async () => {
+  const card = (marked: boolean) =>
+    `return api.svg('<svg viewBox="0 0 200 80"><text x="10" y="30"${marked ? "' + api.text('title') + '" : ""}>' + api.data.title + '</text><text x="10" y="60">' + api.data.tag + '</text></svg>')`;
+  const params = { title: { type: "text", label: { zh: "标题", en: "Title" } }, tag: { type: "text", label: { zh: "标签", en: "Tag" } } };
+  work.drawings.card = { id: "card", name: "卡片", params, source: card(false) } as never;
+  work.drawings.marked = { id: "marked", name: "标好的卡片", params, source: card(true) } as never;
+  work.scenes.root = {
+    ...work.scenes.root,
+    modules: [
+      { id: "plain", drawingId: "card", bounds: { x: 0, y: 0, width: 200, height: 80 }, data: { title: "心脏", tag: "器官" } },
+      { id: "kept", drawingId: "marked", bounds: { x: 0, y: 120, width: 200, height: 80 }, data: { title: "肺", tag: "器官" } },
+    ],
+    links: [],
+    checks: [],
+  };
+  delete work.scenes.root.interaction;
+  await open();
+  const { unmarked } = await page.evaluate(readText, 14);
+  expect(unmarked).toEqual([
+    { moduleId: "plain", path: "title", text: "心脏" },
+    { moduleId: "plain", path: "tag", text: "器官" },
+    { moduleId: "kept", path: "tag", text: "器官" },
+  ]);
 });
 it("draws links along a drawn line's own path, riding on other links and to free points, and moves a line hanging from a module with it", async () => {
   work.drawings["sketch-line"] = sketchLine;

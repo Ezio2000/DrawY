@@ -415,6 +415,7 @@ describe("hand edits", () => {
           added: ["text"],
           removed: ["control"],
           changed: ["level-0"],
+          items: {},
           moved: ["heading"],
           restacked: false,
           retitled: false,

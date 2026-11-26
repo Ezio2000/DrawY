@@ -59,9 +59,7 @@ const palette = (n) =>
         muted,
       ][i % 6],
   );
-const rings = (d.rings || []).map((r) =>
-  typeof r === "string" ? { label: r } : r,
-);
+const rings = d.rings || [];
 // With no rings named yet, the core alone, waiting for its name.
 const n = Math.max(1, rings.length);
 const R = Math.min(W, H) / 2 - sw;
@@ -76,9 +74,13 @@ for (let i = n - 1; i >= 0; i--) {
   const base =
     rings[i]?.color || (i === 0 ? d.color || accent : d.color2 || accent2);
   const k = i === 0 ? 0.55 : 0.12 + (0.3 * (n - 1 - i)) / Math.max(1, n - 1);
-  out += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${mix(paper, base, k)}" stroke="${base}" stroke-width="${sw}"/>`;
+  // Each ring is its circle: the inner ones lie over it, so a ring is picked in its own band.
+  out += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${mix(paper, base, k)}" stroke="${base}" stroke-width="${sw}"${rings[i] ? api.part(api.path("rings", rings[i], i)) : ""}/>`;
 }
+// A new ring goes round the outside.
+if (rings.length) api.slot("rings", rings.length, { x: cx, y: (bottom ? H - sw - 2 * R : H / 2 - R) + sw });
 rings.forEach((g, i) => {
+  const path = api.path("rings", g, i);
   const r = (R * (i + 1)) / n,
     inner = (R * i) / n;
   const cy = H / 2;
@@ -88,9 +90,9 @@ rings.forEach((g, i) => {
     : cy - (r + inner) / 2;
   const ty =
     (i === 0 ? (bottom ? H - sw - r : cy) : band) - (g.note ? size * 0.5 : 0);
-  out += `<text x="${cx}" y="${ty}" text-anchor="middle" font-size="${i === 0 ? size * 1.1 : size}" font-weight="700" fill="${ink}">${esc(g.label)}</text>`;
+  out += `<text x="${cx}" y="${ty}" text-anchor="middle" font-size="${i === 0 ? size * 1.1 : size}" font-weight="700" fill="${ink}"${api.text(path + ".label")}>${esc(g.label)}</text>`;
   if (g.note)
-    out += `<text x="${cx}" y="${ty + size * 1.2}" text-anchor="middle" font-size="${size * 0.8}" fill="${ink}" fill-opacity=".7">${esc(g.note)}</text>`;
+    out += `<text x="${cx}" y="${ty + size * 1.2}" text-anchor="middle" font-size="${size * 0.8}" fill="${ink}" fill-opacity=".7"${api.text(path + ".note")}>${esc(g.note)}</text>`;
 });
 const svg = api.svg(
   `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="overflow:visible" font-family="${esc(font)}" dominant-baseline="central">${out}</svg>`,

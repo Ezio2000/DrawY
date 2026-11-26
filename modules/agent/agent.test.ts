@@ -18,7 +18,7 @@ import { observe, Unavailable } from "../observation/index.ts";
 import { boxOf, costOf, endModule, guideTopics, labelOf, modelCatalogSchema, type Run, type Work } from "../contracts/index.ts";
 import { removeParts, setData } from "../editing/index.ts";
 import { tracer } from "../trace/index.ts";
-import { library as client, resolveStyle } from "../materials/index.ts";
+import { CARD_BUDGET, card, library as client, resolveStyle } from "../materials/index.ts";
 import { serveLibrary, picture, solid } from "@drawy/materials/testing";
 import type { DrawingMaterial } from "@drawy/materials/schema";
 
@@ -1520,4 +1520,13 @@ it("exempts the drawings the library binds to text, pictures and links from card
   expect(written.cardsUnread).toBeUndefined();
 });
 
-
+it("reads every library drawing's card, its data schema written compactly, well within one answer", () => {
+  const seed = JSON.parse(readFileSync(new URL("../../content/seed/drawings.json", import.meta.url), "utf8")) as DrawingMaterial[];
+  for (const m of seed) {
+    const read = JSON.stringify(card({ ...m, kind: "drawing", type: "drawing", version: 1 } as DrawingMaterial));
+    // A few cards read together still fit, so the author reads every form it uses in one call.
+    expect(read.length, m.id).toBeLessThan(CARD_BUDGET / 2);
+  }
+  const sequence = card({ ...seed.find((m) => m.id === "sequence")!, kind: "drawing", type: "drawing", version: 1 } as DrawingMaterial);
+  expect((sequence.params as Record<string, string>).messages).toMatch(/^\[\{id: id, from: id of participants, to: id of participants, label: text/);
+});
