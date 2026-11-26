@@ -157,11 +157,34 @@ export function toSteps(input: Item[], withTools: boolean): Step[] {
   return steps;
 }
 
+/** How many times a schema that refers to itself is written out in place. */
+const INLINED = 2;
+/** `schema` without `$defs` and `$ref`, which the Interactions API refuses as a syntax error
+ * in the request body: each reference is written out in place, `INLINED` levels deep, and
+ * below that is any object of the same shape. A drawing's data fields nest fields, so the
+ * schema of `write_work` refers to itself. */
+export function inlinedSchema(schema: Item): Item {
+  const defs: Item = schema.$defs ?? {};
+  const inline = (value: unknown, depth: number): unknown => {
+    if (Array.isArray(value)) return value.map((v) => inline(v, depth));
+    if (!value || typeof value !== "object") return value;
+    const node = value as Item;
+    if (typeof node.$ref === "string") {
+      const def = defs[node.$ref.replace(/^#\/\$defs\//, "")];
+      return def && depth > 0
+        ? inline(def, depth - 1)
+        : { type: "object", description: "The same shape as the schema it is inside" };
+    }
+    return Object.fromEntries(Object.entries(node).flatMap(([k, v]) => (k === "$defs" ? [] : [[k, inline(v, depth)]])));
+  };
+  return inline(schema, INLINED) as Item;
+}
+
 /** Converts DrawY function/search tools into Interactions API tool declarations. */
 export function interactionsTools(tools: Item[]): Item[] {
   return tools.flatMap((t): Item[] =>
     t.type === "function"
-      ? [{ type: "function", name: t.name, description: t.description, parameters: t.parameters }]
+      ? [{ type: "function", name: t.name, description: t.description, parameters: inlinedSchema(t.parameters ?? {}) }]
       : t.type === "web_search"
         ? [{ type: "google_search" }]
         : [],

@@ -2,6 +2,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { defaultRole, protocolFor, type Role } from "../contracts/index.ts";
 import { CutOff, adapterFor, citationsOf, forResponses, generate, interactionsTools, textOf, toSteps } from "./index.ts";
 import { endpointOf, toUsage, utf16Offsets } from "./interactions.ts";
+import type { Item } from "./types.ts";
+import { tools } from "../agent/tools.ts";
 
 const role: Role = {
   ...defaultRole(),
@@ -371,3 +373,14 @@ it("resumes requires_continuation hops, converts UTF-8 citation byte offsets, an
   ).rejects.toBeInstanceOf(CutOff);
 });
 
+
+it("writes a tool's schema that refers to itself out in place, which the Interactions API needs", () => {
+  const declared = interactionsTools(tools as Item[]);
+  const write = JSON.stringify(declared.find((t) => t.name === "write_work"));
+  expect(JSON.stringify(tools.find((t) => t.name === "write_work"))).toContain("$ref");
+  expect(write).not.toMatch(/\$ref|\$defs/);
+  // A field of a drawing's data says its kinds, and a list's item does too, a level down.
+  const params = JSON.parse(write).parameters.properties.drawings.items.properties.params.additionalProperties;
+  expect(JSON.stringify(params)).toContain('"list"');
+  expect(JSON.stringify(params.anyOf[0].oneOf.find((f: Item) => f.properties?.item).properties.item)).toContain('"choice"');
+});
