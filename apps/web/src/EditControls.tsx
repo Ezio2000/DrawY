@@ -5,31 +5,23 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { ArrowDown, ArrowUp, ChevronRight, Plus, RotateCcw, X } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
-import { Switch } from "./ui/primitives.tsx";
-import type { Canvas } from "../../../modules/canvas/index.ts";
-import {
-  fieldsOf,
-  restOf,
-  setData,
-  type Field,
-} from "../../../modules/editing/index.ts";
+import type { Field } from "../../../modules/editing/index.ts";
 import type {
   Instance,
   Link,
   Work,
 } from "../../../modules/contracts/index.ts";
 import type { PictureMaterial } from "@drawy/materials/schema";
-import type { Change } from "./session/work.ts";
 import { cx } from "./cx.ts";
 import { useT, type Words as Dictionary } from "./i18n.tsx";
 import { store, stored } from "./storage.ts";
 
-/* The controls a part's values are changed with: plain controls for words, pictures,
- * choices, colours, numbers and switches, and a data editor for everything else a part
- * holds (lists, tables, records), so whatever the author can write in a part's data a
- * person can change too. */
+/* The plain controls a part's values are changed with (words, colours from the work's
+ * palette, numbers, pictures), the names fields and options go by, and the panel's
+ * folding sections. What a part holds beyond plain values is edited by its schema in
+ * EditContent.tsx. */
 
 /** The part a field belongs to: a module, or a link drawn between two. */
 export type Part = Instance | Link;
@@ -80,194 +72,6 @@ export const optionOf = (t: Dictionary, value: string, f?: Pick<Field, "options"
 /** The values a choice offers. */
 export const valuesOf = (f: Pick<Field, "options">) => (f.options ?? []).map((o) => o.value);
 
-/** What the controls of one module or link work on: the part in the work as shown, the
- * canvas it is previewed on, and how its changes are kept. */
-interface PartControls {
-  work: Work;
-  sceneId: string;
-  part: Part;
-  canvas?: Canvas;
-  change: Change;
-  pickPicture: PickPicture;
-}
-
-/** The values of one module or link, each in the control its kind takes. Changes show on
- * the canvas as they are made and are kept when they are done: words when the field is
- * left, a slider when it is let go, everything else at once. The controls stay as they
- * are while the work is saved under them, so typing goes on from field to field; a value
- * changed elsewhere (an undo) shows in any control not being used. */
-export function Fields({
-  work,
-  sceneId,
-  part,
-  canvas,
-  change,
-  pickPicture,
-}: PartControls) {
-  const t = useT();
-  const fields = fieldsOf(work, part);
-  // Values changed but not yet kept, shown on the canvas meanwhile.
-  const draft = useRef<Record<string, unknown>>({});
-  const [, redraw] = useState(0);
-  const show = (key: string, value: unknown) => {
-    draft.current = { ...draft.current, [key]: value };
-    redraw((n) => n + 1);
-    canvas?.preview(part.id, { ...part.data, ...draft.current });
-  };
-  const keep = (patch: Record<string, unknown>, pictures: string[] = []) => {
-    const changed = Object.entries(patch).some(([k, v]) => part.data[k] !== v);
-    draft.current = {};
-    if (changed)
-      void change((w) => setData(w, sceneId, part.id, patch, pictures));
-  };
-  // Words still being typed are kept when the panel moves on to something else.
-  const pending = useRef(keep);
-  pending.current = keep;
-  useEffect(
-    () => () => {
-      const left = Object.entries(draft.current).filter(
-        ([k]) => fields.find((f) => f.key === k)?.type === "text",
-      );
-      if (left.length) pending.current(Object.fromEntries(left));
-    },
-    [],
-  );
-  if (!fields.length)
-    return <p className={cx("edit-note")}>{t.edit.nothing}</p>;
-  const value = (f: Field) =>
-    f.key in draft.current ? draft.current[f.key] : f.value;
-  return (
-    <div className={cx("fields")}>
-      {fields.map((f) => {
-        const v = value(f);
-        const reset = f.optional && f.set && (
-          <button
-            className={cx("field-reset")}
-            aria-label={t.edit.reset}
-            data-tip={t.edit.reset}
-            onClick={() => keep({ [f.key]: undefined })}
-          >
-            <RotateCcw size={13} />
-          </button>
-        );
-        const head = (
-          <span className={cx("field-name")}>
-            {nameOf(t, f)}
-            {reset}
-          </span>
-        );
-        switch (f.type) {
-          case "text":
-            return (
-              <label key={f.key} className={cx("field")}>
-                {head}
-                <Words
-                  value={String(v ?? "")}
-                  onChange={(s) => show(f.key, s)}
-                  onDone={(s) => keep({ [f.key]: s })}
-                />
-              </label>
-            );
-          case "picture": {
-            const picture =
-              typeof v === "string" ? work.materials[v] : undefined;
-            return (
-              <div key={f.key} className={cx("field")}>
-                {head}
-                <button
-                  className={cx("field-picture")}
-                  onClick={() =>
-                    pickPicture((m) => keep({ [f.key]: m.id }, [m.id]))
-                  }
-                >
-                  {picture?.kind === "picture" && (
-                    <img src={picture.url} alt={picture.name} />
-                  )}
-                  <span>{t.edit.replacePicture}</span>
-                </button>
-              </div>
-            );
-          }
-          case "choice":
-            // A few choices side by side; many in a list.
-            return valuesOf(f).length > 5 ? (
-              <label key={f.key} className={cx("field")} data-inline>
-                {head}
-                <select
-                  className={cx("edit-select")}
-                  data-short
-                  value={String(v ?? "")}
-                  onChange={(e) => keep({ [f.key]: e.target.value })}
-                >
-                  {!valuesOf(f).includes(String(v)) && <option value={String(v ?? "")}>{String(v ?? "—")}</option>}
-                  {valuesOf(f).map((o) => (
-                    <option key={o} value={o}>
-                      {optionOf(t, o, f)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <div key={f.key} className={cx("field")}>
-                {head}
-                <span className={cx("field-choice")} role="group">
-                  {valuesOf(f).map((o) => (
-                    <button
-                      key={o}
-                      aria-pressed={v === o}
-                      onClick={() => v !== o && keep({ [f.key]: o })}
-                    >
-                      {optionOf(t, o, f)}
-                    </button>
-                  ))}
-                </span>
-              </div>
-            );
-          case "color":
-            return (
-              <div key={f.key} className={cx("field")}>
-                {head}
-                <Colors
-                  work={work}
-                  value={typeof v === "string" ? v : undefined}
-                  auto={f.optional}
-                  onChange={(c) => show(f.key, c)}
-                  onDone={(c) => keep({ [f.key]: c })}
-                />
-              </div>
-            );
-          case "number":
-            return (
-              <label
-                key={f.key}
-                className={cx("field")}
-                data-inline={f.min === undefined || f.max === undefined || undefined}
-              >
-                {head}
-                <Amount
-                  field={f}
-                  value={typeof v === "number" ? v : undefined}
-                  onChange={(n) => show(f.key, n)}
-                  onDone={(n) => keep({ [f.key]: n })}
-                />
-              </label>
-            );
-          case "boolean":
-            return (
-              <div key={f.key} className={cx("field")} data-inline>
-                {head}
-                <Switch
-                  checked={!!v}
-                  onChange={(on) => keep({ [f.key]: on })}
-                />
-              </div>
-            );
-        }
-      })}
-    </div>
-  );
-}
-
 /** Words typed in place: Enter keeps them, Shift+Enter starts a new line. */
 export function Words({
   value,
@@ -309,7 +113,12 @@ export function Words({
   );
 }
 
-/** A colour from the work's own palette, the style's default, or any other. */
+/** The style tokens a colour can name, so the part follows the work's palette. */
+export const swatchTokens = ["ink", "accent", "accent2", "muted", "paper"] as const;
+/** What a colour value shows as: a token's colour in the work's style, or itself. */
+export const colourOf = (work: Work, value: string) => work.style[value] ?? value;
+/** A colour: one of the work's palette (written as its token, so the part follows the style
+ * when it changes), the drawing's own default, another the work uses, or any other. */
 export function Colors({
   work,
   value,
@@ -325,9 +134,11 @@ export function Colors({
   onDone: (c: string | undefined) => void;
 }) {
   const t = useT();
-  const colours = palette(work);
-  const current = value && hex(value);
-  const [custom, setCustom] = useState(current ?? colours[0] ?? "#000000");
+  const tokens = swatchTokens.filter((k) => work.style[k] && COLOR.test(hex(work.style[k])));
+  const taken = new Set(tokens.map((k) => hex(work.style[k])));
+  const others = palette(work).filter((c) => !taken.has(c));
+  const current = value && hex(colourOf(work, value));
+  const [custom, setCustom] = useState(current ?? hex(work.style.ink ?? "#000000"));
   return (
     <span className={cx("swatches")}>
       {auto && (
@@ -340,20 +151,32 @@ export function Colors({
           onClick={() => onDone(undefined)}
         />
       )}
-      {colours.map((c) => (
+      {tokens.map((k) => (
+        <button
+          key={k}
+          className={cx("swatch")}
+          data-token={k}
+          style={{ "--swatch": work.style[k] } as CSSProperties}
+          aria-label={t.edit.swatches[k]}
+          data-tip={t.edit.swatches[k]}
+          aria-pressed={value === k}
+          onClick={() => onDone(k)}
+        />
+      ))}
+      {others.map((c) => (
         <button
           key={c}
           className={cx("swatch")}
           style={{ "--swatch": c } as CSSProperties}
           aria-label={c}
-          aria-pressed={current === c}
+          aria-pressed={value !== undefined && !(value in work.style) && current === c}
           onClick={() => onDone(c)}
         />
       ))}
       <Picker
         label={t.edit.custom}
         value={custom}
-        pressed={!!current && !colours.includes(current)}
+        pressed={!!current && !!value && !(value in work.style) && !others.includes(current)}
         onChange={(c) => {
           setCustom(c);
           onChange(c);
@@ -478,345 +301,6 @@ export function Amount({
   );
 }
 
-
-type Path = (string | number)[];
-function setAt(v: unknown, path: Path, value: unknown): unknown {
-  if (!path.length) return value;
-  const [k, ...rest] = path;
-  if (Array.isArray(v)) return v.with(k as number, setAt(v[k as number], rest, value));
-  return { ...(v as object), [k]: setAt((v as any)?.[k], rest, value) };
-}
-/** A value of the same shape as another, emptied: what a new entry in a list starts as
- * when there is nothing to copy. */
-function blank(like: unknown): unknown {
-  if (typeof like === "string") return "";
-  if (typeof like === "number") return 0;
-  if (typeof like === "boolean") return false;
-  if (Array.isArray(like)) return [];
-  if (like && typeof like === "object")
-    return Object.fromEntries(Object.entries(like).map(([k, v]) => [k, blank(v)]));
-  return "";
-}
-const COLOUR = /^#[0-9a-f]{3,8}$/i;
-/** The entries of a part's data that no plain control shows (lists, records and the
- * like), each opened as a tree: every value in it can be changed, entries of a list
- * added (a copy of the last), moved and taken out, and entries of a record added and
- * taken out. Changes show at once and are kept when a value is left. */
-export function DataEditor({
-  work,
-  sceneId,
-  part,
-  canvas,
-  change,
-  pickPicture,
-}: PartControls) {
-  const t = useT();
-  const keys = restOf(work, part);
-  if (!keys.length) return null;
-  return (
-    <div className={cx("fields")}>
-      {keys.map((key) => (
-        <DataEntry
-          key={part.id + ":" + key}
-          name={nameOf(t, { key })}
-          value={part.data[key]}
-          work={work}
-          preview={(v) => canvas?.preview(part.id, { ...part.data, [key]: v })}
-          commit={(v) =>
-            void change((w) => setData(w, sceneId, part.id, { [key]: v }))
-          }
-          pickPicture={pickPicture}
-        />
-      ))}
-    </div>
-  );
-}
-function DataEntry({
-  name,
-  value: initial,
-  work,
-  preview,
-  commit,
-  pickPicture,
-}: {
-  name: string;
-  value: unknown;
-  work: Work;
-  preview: (v: unknown) => void;
-  commit: (v: unknown) => void;
-  pickPicture: PickPicture;
-}) {
-  const [value, setValue] = useState(initial);
-  const latest = useRef(value);
-  // What was last kept, so leaving a value commits it only when it changed.
-  const saved = useRef(initial);
-  // Each time the entry is changed elsewhere (an undo, the author), its controls start
-  // again from it; what this editor kept itself coming back changes nothing.
-  const [epoch, setEpoch] = useState(0);
-  useEffect(() => {
-    if (JSON.stringify(initial) === JSON.stringify(saved.current)) return;
-    saved.current = latest.current = initial;
-    setValue(initial);
-    setEpoch((n) => n + 1);
-  }, [initial]);
-  const set = (path: Path, v: unknown, keep: boolean) => {
-    const next = setAt(latest.current, path, v);
-    latest.current = next;
-    setValue(next);
-    preview(next);
-    if (keep && JSON.stringify(next) !== JSON.stringify(saved.current)) {
-      saved.current = next;
-      commit(next);
-    }
-  };
-  return (
-    <div className={cx("field")}>
-      <span className={cx("field-name")}>{name}</span>
-      <div className={cx("tree")}>
-        <Node
-          key={epoch}
-          value={value}
-          path={[]}
-          depth={0}
-          work={work}
-          set={set}
-          pickPicture={pickPicture}
-        />
-      </div>
-    </div>
-  );
-}
-/** How many items a list shows before it is folded. */
-const LONG = 12;
-function Node({
-  value,
-  path,
-  depth,
-  work,
-  set,
-  pickPicture,
-}: {
-  value: unknown;
-  path: Path;
-  depth: number;
-  work: Work;
-  set: (path: Path, v: unknown, keep: boolean) => void;
-  pickPicture: PickPicture;
-}) {
-  const t = useT();
-  // A long list (a line's points, a table's rows) opens on request.
-  const [folded, setFolded] = useState(Array.isArray(value) && value.length > LONG);
-  if (Array.isArray(value) && folded)
-    return (
-      <button className={cx("tree-add")} onClick={() => setFolded(false)}>
-        <ChevronRight size={13} />
-        {t.edit.data.unfold(value.length)}
-      </button>
-    );
-  if (Array.isArray(value))
-    return (
-      <div className={cx("tree-list")}>
-        {value.map((item, i) => (
-          <div key={i} className={cx("tree-item")}>
-            <div className={cx("tree-item-head")}>
-              <span>{i + 1}</span>
-              <button
-                aria-label={t.edit.data.up}
-                data-tip={t.edit.data.up}
-                disabled={i === 0}
-                onClick={() => {
-                  const next = [...value];
-                  [next[i - 1], next[i]] = [next[i], next[i - 1]];
-                  set(path, next, true);
-                }}
-              >
-                <ArrowUp size={12} />
-              </button>
-              <button
-                aria-label={t.edit.data.down}
-                data-tip={t.edit.data.down}
-                disabled={i === value.length - 1}
-                onClick={() => {
-                  const next = [...value];
-                  [next[i + 1], next[i]] = [next[i], next[i + 1]];
-                  set(path, next, true);
-                }}
-              >
-                <ArrowDown size={12} />
-              </button>
-              <button
-                aria-label={t.edit.data.remove}
-                data-tip={t.edit.data.remove}
-                data-tone="danger"
-                onClick={() =>
-                  set(
-                    path,
-                    value.filter((_, j) => j !== i),
-                    true,
-                  )
-                }
-              >
-                <X size={12} />
-              </button>
-            </div>
-            <Node
-              value={item}
-              path={[...path, i]}
-              depth={depth + 1}
-              work={work}
-              set={set}
-              pickPicture={pickPicture}
-            />
-          </div>
-        ))}
-        <button
-          className={cx("tree-add")}
-          onClick={() =>
-            set(
-              path,
-              [...value, value.length ? structuredClone(value.at(-1)) : ""],
-              true,
-            )
-          }
-        >
-          <Plus size={13} />
-          {t.edit.data.addItem}
-        </button>
-      </div>
-    );
-  if (value && typeof value === "object")
-    return (
-      <div className={cx("tree-record")}>
-        {Object.entries(value).map(([k, v]) => (
-          <div key={k} className={cx("tree-entry")} data-flat={typeof v !== "object" || v === null || undefined}>
-            <span className={cx("tree-key")}>
-              {k}
-              <button
-                aria-label={t.edit.data.remove}
-                data-tip={t.edit.data.remove}
-                data-tone="danger"
-                onClick={() => {
-                  const { [k]: _, ...rest } = value as Record<string, unknown>;
-                  set(path, rest, true);
-                }}
-              >
-                <X size={11} />
-              </button>
-            </span>
-            <Node
-              value={v}
-              path={[...path, k]}
-              depth={depth + 1}
-              work={work}
-              set={set}
-              pickPicture={pickPicture}
-            />
-          </div>
-        ))}
-        <NewKey
-          add={(k) =>
-            set(
-              path,
-              {
-                ...(value as object),
-                [k]: blank(Object.values(value).find((v) => typeof v !== "object") ?? ""),
-              },
-              true,
-            )
-          }
-        />
-      </div>
-    );
-  if (typeof value === "boolean")
-    return <Switch checked={value} onChange={(on) => set(path, on, true)} />;
-  if (typeof value === "number")
-    return (
-      <input
-        className={cx("tree-value")}
-        type="number"
-        defaultValue={value}
-        onChange={(e) =>
-          e.target.value !== "" && set(path, Number(e.target.value), false)
-        }
-        onBlur={(e) =>
-          e.target.value !== "" && set(path, Number(e.target.value), true)
-        }
-        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-      />
-    );
-  if (typeof value === "string" && work.materials[value]?.kind === "picture") {
-    const p = work.materials[value];
-    return (
-      <button
-        className={cx("field-picture")}
-        data-small
-        onClick={() => pickPicture((m) => set(path, m.id, true))}
-      >
-        {p.kind === "picture" && <img src={p.url} alt={p.name} />}
-        <span>{t.edit.replacePicture}</span>
-      </button>
-    );
-  }
-  if (typeof value === "string" && COLOUR.test(value))
-    return (
-      <span className={cx("tree-colour")}>
-        <Picker
-          plain
-          label={value}
-          value={hex(value)}
-          onChange={(c) => set(path, c, false)}
-          onDone={(c) => set(path, c, true)}
-        />
-        <code>{value}</code>
-      </span>
-    );
-  if (value === null || value === undefined)
-    return (
-      <input
-        className={cx("tree-value")}
-        placeholder="—"
-        onBlur={(e) => e.target.value && set(path, e.target.value, true)}
-      />
-    );
-  return (
-    <Words
-      value={String(value)}
-      onChange={(s) => set(path, s, false)}
-      onDone={(s) => set(path, s, true)}
-    />
-  );
-}
-/** A new entry for a record, by the name it is written under. */
-function NewKey({ add }: { add: (key: string) => void }) {
-  const t = useT();
-  const [key, setKey] = useState("");
-  return (
-    <span className={cx("tree-new")}>
-      <input
-        value={key}
-        placeholder={t.edit.data.newKey}
-        onChange={(e) => setKey(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && key.trim()) {
-            add(key.trim());
-            setKey("");
-          }
-        }}
-      />
-      <button
-        aria-label={t.edit.data.addKey}
-        data-tip={t.edit.data.addKey}
-        disabled={!key.trim()}
-        onClick={() => {
-          add(key.trim());
-          setKey("");
-        }}
-      >
-        <Plus size={13} />
-      </button>
-    </span>
-  );
-}
 
 const opened = (id: string, fallback: boolean) => {
   const v = stored("drawy.edit." + id);

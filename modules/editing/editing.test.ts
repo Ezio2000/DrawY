@@ -36,7 +36,6 @@ import {
   replace,
   resized,
   restack,
-  restOf,
   restyle,
   reverse,
   scaled,
@@ -633,12 +632,6 @@ describe("hand edits reach what the author writes", () => {
     );
     expect(module(rewritten, "heading")).toMatchObject({ label: "新的", data: { x: [1, 2] } });
     expect(() => setModule(work, "root", "heading", { label: 3 })).toThrow();
-  });
-
-  it("leaves lists and records to the data editor", () => {
-    const work = fixture();
-    const part = { ...module(work, "level-0"), data: { ...module(work, "level-0").data, items: [{ a: 1 }], side: "left" } };
-    expect(restOf(work, part)).toEqual(["items", "side"]);
   });
 
   it("adds a library drawing with the data that shows it", () => {

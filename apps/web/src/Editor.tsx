@@ -47,16 +47,21 @@ import {
   scaled,
   setDetail,
   setTarget,
+  quickFields,
   sharedFields,
   sides,
   sideOf,
+  trailOf,
   useDrawing,
   type Alignment,
   type SharedField,
 } from "../../../modules/editing/index.ts";
 import { union } from "../../../modules/contracts/geometry.ts";
 import { endModule } from "../../../modules/contracts/index.ts";
+import type { PartPick } from "../../../modules/canvas/index.ts";
 import { endName } from "./workPage.ts";
+import { Content, ItemForm } from "./EditContent.tsx";
+import { useDevMode } from "./EditView.tsx";
 import type {
   Bounds,
   Instance,
@@ -77,8 +82,6 @@ import { DrawingPanel, ModuleRecord } from "./EditCode.tsx";
 import {
   Amount,
   Colors,
-  DataEditor,
-  Fields,
   nameOf,
   optionOf,
   valuesOf,
@@ -100,17 +103,20 @@ const both = (a: WorkEdit, b: WorkEdit) => composed(a, b) as WorkEdit;
 const TAB = "drawy.edit.tab";
 type Pick = (kind: "picture" | "drawing", chosen: (m: Material) => void) => void;
 
-/** The editing panel beside the canvas, in two tabs. Properties shows what can be changed
- * about the selection: for modules their name, place and size, values and data, where they
- * lead, their links and, for those who want it, their drawing's code and record; for a
- * link its ends, values and drawing; with nothing selected, what to add and the scene's
- * and the work's own settings. Layers lists the scene's modules in stacking order, and
- * its links. */
+/** The editing panel beside the canvas, in three pages, by what a person means to do.
+ * Design is how the selection sits and looks: place and size, alignment, its look and its
+ * links; for a link its ends and drawing; with nothing selected, the work's look. Content is
+ * what it says and shows, laid out by its drawing's schema (a part selected inside a module
+ * shows that item alone), and where a click on it leads; with nothing selected, the scene
+ * and its subscenes. Layers lists the scene's modules in stacking order, and its links.
+ * Code (drawing code and schema, records as JSON, scripts, detail pages) shows only in
+ * developer mode. */
 export function EditPanel({
   work,
   sceneId,
   selected,
   links,
+  part,
   canvas,
   busy,
   change,
@@ -124,6 +130,8 @@ export function EditPanel({
   selected: string[];
   /** The links selected, with the modules or alone. */
   links: string[];
+  /** The part selected inside the one module selected. */
+  part?: PartPick | null;
   canvas?: Canvas;
   /** Why the work cannot be edited right now, if it cannot. */
   busy?: string;
@@ -134,9 +142,11 @@ export function EditPanel({
   openScene: (id: string) => void;
 }) {
   const t = useT();
-  const [tab, setTab] = useState<"properties" | "layers">(() =>
-    stored(TAB) === "layers" ? "layers" : "properties",
-  );
+  const [dev] = useDevMode();
+  const [tab, setTab] = useState<"design" | "content" | "layers">(() => {
+    const kept = stored(TAB);
+    return kept === "design" || kept === "layers" ? kept : "content";
+  });
   const choose = (next: typeof tab) => {
     setTab(next);
     store(TAB, next);
@@ -159,8 +169,11 @@ export function EditPanel({
   return (
     <div ref={top} className={cx("edit")}>
       <span className={cx("field-choice", "edit-tabs")} role="tablist">
-        <button role="tab" aria-pressed={tab === "properties"} onClick={() => choose("properties")}>
-          {t.edit.tabs.properties}
+        <button role="tab" aria-pressed={tab === "design"} onClick={() => choose("design")}>
+          {t.edit.tabs.design}
+        </button>
+        <button role="tab" aria-pressed={tab === "content"} onClick={() => choose("content")}>
+          {t.edit.tabs.content}
         </button>
         <button role="tab" aria-pressed={tab === "layers"} onClick={() => choose("layers")}>
           {t.edit.tabs.layers}
@@ -178,6 +191,9 @@ export function EditPanel({
         />
       ) : modules.length ? (
         <Selected
+          page={tab}
+          dev={dev}
+          part={part && modules.length === 1 && part.moduleId === modules[0].id ? part.path : undefined}
           work={work}
           sceneId={sceneId}
           modules={modules}
@@ -193,6 +209,7 @@ export function EditPanel({
       ) : chosenLinks.length === 1 ? (
         <LinkPanel
           key={chosenLinks[0].id}
+          page={tab}
           work={work}
           sceneId={sceneId}
           link={chosenLinks[0]}
@@ -204,21 +221,26 @@ export function EditPanel({
           ask={ask}
         />
       ) : chosenLinks.length ? (
-        <Links work={work} sceneId={sceneId} links={chosenLinks} canvas={canvas} change={change} ops={ops} ask={ask} />
+        <Links page={tab} work={work} sceneId={sceneId} links={chosenLinks} canvas={canvas} change={change} ops={ops} ask={ask} />
+      ) : tab === "design" ? (
+        <Section id="look" title={t.edit.look}>
+          <Look work={work} change={change} />
+        </Section>
       ) : (
         <>
           <Section id="scene" title={sceneId === work.rootSceneId ? t.edit.scene.rootHeading : t.edit.scene.heading}>
             <SceneSettings work={work} sceneId={sceneId} change={change} openScene={openScene} />
           </Section>
-          <Section id="look" title={t.edit.look} open={false}>
-            <Look work={work} change={change} />
-          </Section>
-          <Section id="script" title={t.edit.scene.script} open={false}>
-            <SceneScript work={work} sceneId={sceneId} change={change} />
-          </Section>
-          <Section id="details" title={t.edit.details.heading} open={false}>
-            <Details work={work} change={change} />
-          </Section>
+          {dev && (
+            <Section id="script" title={t.edit.scene.script} open={false}>
+              <SceneScript work={work} sceneId={sceneId} change={change} />
+            </Section>
+          )}
+          {dev && (
+            <Section id="details" title={t.edit.details.heading} open={false}>
+              <Details work={work} change={change} />
+            </Section>
+          )}
         </>
       )}
     </div>
@@ -257,8 +279,12 @@ function Act({
   );
 }
 
-/** What can be changed about the selected modules, and the links selected with them. */
+/** What can be changed about the selected modules, and the links selected with them, on
+ * the page shown. */
 function Selected({
+  page,
+  dev,
+  part,
   work,
   sceneId,
   modules,
@@ -282,6 +308,10 @@ function Selected({
   pickPicture: PickPicture;
   ask: () => void;
   openScene: (id: string) => void;
+  page: "design" | "content";
+  dev: boolean;
+  /** The path of the part selected inside the one module selected. */
+  part?: string;
 }) {
   const t = useT();
   const scene = work.scenes[sceneId];
@@ -364,64 +394,56 @@ function Selected({
           </button>
         )}
       </header>
-      <Section id="place" title={t.edit.place.heading}>
-        <Place sceneId={sceneId} scene={scene.modules} modules={modules} canvas={canvas} change={change} />
-        <Arrange count={modules.length} ops={ops} />
-      </Section>
-      {!one && (
-        <Shared work={work} sceneId={sceneId} parts={[...modules, ...chosenLinks]} canvas={canvas} change={change} />
-      )}
-      {one && (
-        <Section id="content" title={t.edit.content}>
-          <Fields
-            key={one.id}
-            work={work}
-            sceneId={sceneId}
-            part={one}
-            canvas={canvas}
-            change={change}
-            pickPicture={pickPicture}
-          />
-          <DataEditor
-            key={"data:" + one.id}
-            work={work}
-            sceneId={sceneId}
-            part={one}
-            canvas={canvas}
-            change={change}
-            pickPicture={pickPicture}
-          />
-        </Section>
-      )}
-      <Section id="target" title={t.edit.target.heading}>
-        <Leads work={work} sceneId={sceneId} modules={modules} change={change} openScene={openScene} />
-      </Section>
-      {one && (
-        <Section id="links" title={t.edit.links} count={links.length}>
-          {!!links.length && (
-            <ul className={cx("link-rows")}>
-              {links.map((l) => (
-                <Connection key={l.id} work={work} sceneId={sceneId} link={l} from={one.id} canvas={canvas} change={change} />
-              ))}
-            </ul>
+      {page === "design" ? (
+        <>
+          <Section id="place" title={t.edit.place.heading}>
+            <Place sceneId={sceneId} scene={scene.modules} modules={modules} canvas={canvas} change={change} />
+            <Arrange count={modules.length} ops={ops} />
+          </Section>
+          <Shared work={work} sceneId={sceneId} parts={[...modules, ...chosenLinks]} canvas={canvas} change={change} />
+          {one && !!links.length && (
+            <Section id="links" title={t.edit.links} count={links.length}>
+              <ul className={cx("link-rows")}>
+                {links.map((l) => (
+                  <Connection key={l.id} work={work} sceneId={sceneId} link={l} from={one.id} canvas={canvas} change={change} />
+                ))}
+              </ul>
+            </Section>
           )}
-        </Section>
+        </>
+      ) : (
+        <>
+          {one && part ? (
+            <Section id="part" title={partTitle(t, work, one, part)}>
+              <ItemForm key={one.id + ":" + part} ctx={{ work, sceneId, part: one, canvas, change, pickPicture }} path={part} />
+            </Section>
+          ) : (
+            one && (
+              <div className={cx("edit-content")}>
+                <Content key={one.id} work={work} sceneId={sceneId} part={one} canvas={canvas} change={change} pickPicture={pickPicture} />
+              </div>
+            )
+          )}
+          {!part && <Leads work={work} sceneId={sceneId} modules={modules} change={change} openScene={openScene} />}
+          {one && dev && (
+            <Section id="advanced" title={t.edit.code.heading} open={false}>
+              <DrawingPanel key={one.id} work={work} sceneId={sceneId} module={one} change={change} pick={pick} />
+              <div className={cx("field")}>
+                <span className={cx("field-name")}>{t.edit.code.record}</span>
+                <ModuleRecord key={one.id} sceneId={sceneId} module={one} change={change} />
+              </div>
+            </Section>
+          )}
+        </>
       )}
-      {one && (
-        <Section id="advanced" title={t.edit.code.heading} open={false}>
-          <DrawingPanel key={one.id} work={work} sceneId={sceneId} module={one} change={change} pick={pick} />
-          <div className={cx("field")}>
-            <span className={cx("field-name")}>{t.edit.code.record}</span>
-            <ModuleRecord key={one.id} sceneId={sceneId} module={one} change={change} />
-          </div>
-        </Section>
-      )}
-      <button className={cx("edit-ask")} onClick={ask}>
-        <MessageSquareQuote size={15} />
-        {t.edit.ask}
-      </button>
     </>
   );
+}
+
+/** What the part selected inside a module is called: the list it is in and its place. */
+function partTitle(t: ReturnType<typeof useT>, work: Work, module: Instance, path: string) {
+  const steps = trailOf(work, module, path).filter((s) => s.place !== undefined);
+  return steps.map((s) => `${s.label?.[t.locale] ?? s.key} ${s.place}`).join(" › ") || t.edit.content;
 }
 
 const round = (n: number) => Math.round(n * 10) / 10;
@@ -639,9 +661,12 @@ function Leads({
       setTarget(w, sceneId, ids, value ? { kind: kind as Target["kind"], id: rest.join(":") } : null),
     );
   };
+  // Where a click leads, last on the content page, in a row of its own.
   return (
-    <div className={cx("fields")}>
-      <select className={cx("edit-select")} value={current} onChange={(e) => set(e.target.value)}>
+    <div className={cx("fields", "edit-leads")}>
+      <label className={cx("field")} data-inline>
+        <span className={cx("field-name")}>{t.edit.target.heading}</span>
+      <select className={cx("edit-select")} data-short value={current} onChange={(e) => set(e.target.value)}>
         {current === "\u0000mixed" && <option value="\u0000mixed">{t.edit.target.mixed}</option>}
         <option value="">{t.edit.target.none}</option>
         <optgroup label={t.edit.target.scenes}>
@@ -663,6 +688,7 @@ function Leads({
           <option value={NEW_DETAIL}>{t.edit.target.newDetail}</option>
         </optgroup>
       </select>
+      </label>
       {keysNow.size === 1 && target?.kind === "scene" && work.scenes[target.id] && (
         <button className={cx("edit-link")} onClick={() => openScene(target.id)}>
           <CornerDownRight size={13} />
@@ -728,6 +754,7 @@ const FROM_LIBRARY = "\u0000library";
 /** What can be changed about the selected link: the modules and sides its ends meet, its
  * direction, its values and data, and the drawing it is drawn with. */
 function LinkPanel({
+  page,
   work,
   sceneId,
   link,
@@ -747,6 +774,7 @@ function LinkPanel({
   pick: Pick;
   pickPicture: PickPicture;
   ask: () => void;
+  page: "design" | "content";
 }) {
   const t = useT(),
     locale = useLocale(),
@@ -777,16 +805,23 @@ function LinkPanel({
             ))}
         </select>
         {on && (
-          <span className={cx("field-choice")} role="group" aria-label={l.side}>
-            <button aria-pressed={at === undefined} onClick={() => at !== undefined && moveTo(on)}>
-              {t.edit.linkEnds.auto}
-            </button>
+          // The side it meets, or following the other end; a point found on the outline
+          // shows as such until a side is chosen.
+          <select
+            className={cx("edit-select")}
+            data-side
+            aria-label={l.side}
+            value={at === undefined ? "" : side ?? "\u0000point"}
+            onChange={(e) => (e.target.value ? moveTo(on, e.target.value as (typeof sides)[number]) : moveTo(on))}
+          >
+            <option value="">{t.edit.linkEnds.auto}</option>
+            {at !== undefined && !side && <option value={"\u0000point"}>{t.edit.linkEnds.point}</option>}
             {sides.map((s) => (
-              <button key={s} aria-pressed={side === s} onClick={() => side !== s && moveTo(on, s)}>
+              <option key={s} value={s}>
                 {t.edit.linkEnds.sides[s]}
-              </button>
+              </option>
             ))}
-          </span>
+          </select>
         )}
       </div>
     );
@@ -829,15 +864,18 @@ function LinkPanel({
           </Act>
         </Actions>
       </header>
-      <Section id="link-ends" title={l.ends}>
-        {end("from")}
-        {end("to")}
-      </Section>
-      <Section id="link-content" title={t.edit.content}>
-        <Fields key={link.id} work={work} sceneId={sceneId} part={link} canvas={canvas} change={change} pickPicture={pickPicture} />
-        <DataEditor key={"data:" + link.id} work={work} sceneId={sceneId} part={link} canvas={canvas} change={change} pickPicture={pickPicture} />
-      </Section>
-      <Section id="link-drawing" title={l.drawing} open={false}>
+      {page === "content" ? (
+        <div className={cx("edit-content")}>
+          <Content key={link.id} work={work} sceneId={sceneId} part={link} canvas={canvas} change={change} pickPicture={pickPicture} />
+        </div>
+      ) : (
+        <>
+          <Section id="link-ends" title={l.ends}>
+            {end("from")}
+            {end("to")}
+          </Section>
+          <Shared work={work} sceneId={sceneId} parts={[link]} canvas={canvas} change={change} />
+          <Section id="link-drawing" title={l.drawing} open={false}>
         <select
           className={cx("edit-select")}
           value={link.drawingId}
@@ -858,7 +896,9 @@ function LinkPanel({
           ))}
           <option value={FROM_LIBRARY}>{t.edit.code.fromLibrary}</option>
         </select>
-      </Section>
+          </Section>
+        </>
+      )}
     </>
   );
 }
@@ -866,6 +906,7 @@ function LinkPanel({
 /** What can be changed about several links selected alone: their direction, their look,
  * the modules they join, and taking them out. */
 function Links({
+  page,
   work,
   sceneId,
   links,
@@ -881,6 +922,7 @@ function Links({
   change: Change;
   ops: EditOps;
   ask: () => void;
+  page: "design" | "content";
 }) {
   const t = useT(),
     l = t.edit.linkPanel;
@@ -913,7 +955,7 @@ function Links({
           </Act>
         </Actions>
       </header>
-      <Shared work={work} sceneId={sceneId} parts={links} canvas={canvas} change={change} />
+      {page === "design" && <Shared work={work} sceneId={sceneId} parts={links} canvas={canvas} change={change} />}
     </>
   );
 }
@@ -943,85 +985,78 @@ function Shared({
   const show = (f: SharedField, value: unknown) => {
     for (const m of parts) canvas?.preview(m.id, { ...m.data, [f.key]: value });
   };
+  // Each value in a row of its own; the few most reached for first, the rest folded away.
+  const control = (f: SharedField) => {
+    const head = <span className={cx("field-name")}>{nameOf(t, f)}</span>;
+    const v = f.mixed ? undefined : f.value;
+    switch (f.type) {
+      case "choice":
+        return (
+          <label key={f.key} className={cx("field")} data-inline>
+            {head}
+            {valuesOf(f).length > 3 ? (
+              <select className={cx("edit-select")} data-short value={String(v ?? "")} onChange={(e) => keep(f, e.target.value)}>
+                {!valuesOf(f).includes(String(v)) && <option value="">{t.edit.target.mixed}</option>}
+                {valuesOf(f).map((o) => (
+                  <option key={o} value={o}>
+                    {optionOf(t, o, f)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className={cx("field-choice")} data-short role="group">
+                {valuesOf(f).map((o) => (
+                  <button key={o} aria-pressed={v === o} onClick={() => v !== o && keep(f, o)}>
+                    {optionOf(t, o, f)}
+                  </button>
+                ))}
+              </span>
+            )}
+          </label>
+        );
+      case "color":
+        return (
+          <div key={f.key} className={cx("field")} data-inline data-wrap>
+            {head}
+            <Colors work={work} value={typeof v === "string" ? v : undefined} auto={f.optional} onChange={(c) => show(f, c)} onDone={(c) => keep(f, c)} />
+          </div>
+        );
+      case "number":
+        return (
+          <label key={f.key} className={cx("field")} data-inline>
+            {head}
+            <Amount field={f} value={typeof v === "number" ? v : undefined} onChange={(n) => show(f, n)} onDone={(n) => keep(f, n)} />
+          </label>
+        );
+      case "boolean":
+        return (
+          <div key={f.key} className={cx("field")} data-inline>
+            {head}
+            <Switch checked={!!v} onChange={(on) => keep(f, on)} />
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+  const first = new Set(quickFields(fields, 6).map((f) => f.key));
+  for (const f of fields) if (f.type === "color" && first.size < 7) first.add(f.key);
+  const rest = fields.filter((f) => !first.has(f.key) && f.type !== "effect");
   return (
-    <Section id="shared" title={t.edit.shared}>
-      <div className={cx("fields")} key={ids.join()}>
-        {fields.map((f) => {
-          const head = <span className={cx("field-name")}>{nameOf(t, f)}</span>;
-          const v = f.mixed ? undefined : f.value;
-          switch (f.type) {
-            case "choice":
-              return valuesOf(f).length > 5 ? (
-                <label key={f.key} className={cx("field")} data-inline>
-                  {head}
-                  <select
-                    className={cx("edit-select")}
-                    data-short
-                    value={String(v ?? "")}
-                    onChange={(e) => keep(f, e.target.value)}
-                  >
-                    {!valuesOf(f).includes(String(v)) && <option value="">{t.edit.target.mixed}</option>}
-                    {valuesOf(f).map((o) => (
-                      <option key={o} value={o}>
-                        {optionOf(t, o, f)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <div key={f.key} className={cx("field")}>
-                  {head}
-                  <span className={cx("field-choice")} role="group">
-                    {valuesOf(f).map((o) => (
-                      <button key={o} aria-pressed={v === o} onClick={() => v !== o && keep(f, o)}>
-                        {optionOf(t, o, f)}
-                      </button>
-                    ))}
-                  </span>
-                </div>
-              );
-            case "color":
-              return (
-                <div key={f.key} className={cx("field")}>
-                  {head}
-                  <Colors
-                    work={work}
-                    value={typeof v === "string" ? v : undefined}
-                    auto={f.optional}
-                    onChange={(c) => show(f, c)}
-                    onDone={(c) => keep(f, c)}
-                  />
-                </div>
-              );
-            case "number":
-              return (
-                <label
-                  key={f.key}
-                  className={cx("field")}
-                  data-inline={f.min === undefined || f.max === undefined || undefined}
-                >
-                  {head}
-                  <Amount
-                    field={f}
-                    value={typeof v === "number" ? v : undefined}
-                    onChange={(n) => show(f, n)}
-                    onDone={(n) => keep(f, n)}
-                  />
-                </label>
-              );
-            case "boolean":
-              return (
-                <div key={f.key} className={cx("field")} data-inline>
-                  {head}
-                  <Switch checked={!!v} onChange={(on) => keep(f, on)} />
-                </div>
-              );
-            default:
-              return null;
-          }
-        })}
-      </div>
-    </Section>
+    <>
+      <Section id="shared" title={t.edit.shared}>
+        <div className={cx("fields")} data-compact key={ids.join()}>
+          {fields.filter((f) => first.has(f.key)).map(control)}
+        </div>
+      </Section>
+      {!!rest.length && (
+        <Section id="shared-more" title={t.edit.moreLook} open={false}>
+          <div className={cx("fields")} data-compact key={ids.join()}>
+            {rest.map(control)}
+          </div>
+        </Section>
+      )}
+    </>
   );
 }
 

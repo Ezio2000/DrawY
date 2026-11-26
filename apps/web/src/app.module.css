@@ -3685,36 +3685,20 @@ body:has(.resizer[data-dragging]) {
   padding: 4px 0 16px 20px;
 }
 
-/* Position and size, typed in. */
+/* Position and size, typed in, in one row. */
 .place {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;
-  gap: 6px 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) 26px;
+  gap: 4px;
   align-items: center;
-}
-
-.place > :nth-child(1) {
-  grid-area: 1 / 1;
-}
-
-.place > :nth-child(2) {
-  grid-area: 1 / 2;
-}
-
-.place > :nth-child(3) {
-  grid-area: 2 / 1;
-}
-
-.place > :nth-child(4) {
-  grid-area: 2 / 2;
 }
 
 .place-field {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   min-width: 0;
-  padding: 0 4px 0 10px;
+  padding: 0 2px 0 6px;
   border-radius: 9px;
   background: var(--field);
   box-shadow: inset 0 0 0 0.5px var(--line);
@@ -3756,10 +3740,9 @@ body:has(.resizer[data-dragging]) {
 }
 
 .place-lock {
-  grid-area: 1 / 3 / span 2;
   display: grid;
   place-items: center;
-  width: 28px;
+  width: 26px;
   height: 28px;
   border-radius: 8px;
   color: var(--text-3);
@@ -4312,13 +4295,9 @@ body:has(.resizer[data-dragging]) {
 /* One end of the selected link: the module it meets, and on which side. */
 .link-end {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
-  gap: 6px 10px;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  gap: 6px 6px;
   align-items: center;
-}
-
-.link-end .field-choice {
-  grid-column: 2;
 }
 
 .layers-heading {
@@ -9447,4 +9426,307 @@ body:has(.resizer[data-dragging]) {
   .detail {
     padding: max(8px, env(safe-area-inset-top)) 20px max(48px, env(safe-area-inset-bottom));
   }
+}
+
+/* The content of a part, laid out by its drawing's schema: rows of words, tables, rows
+ * that open into a form, and outlines. */
+.fields[data-compact] {
+  gap: 10px;
+}
+
+.field[data-list] {
+  gap: 5px;
+}
+
+.list-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rows > li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  border-radius: 7px;
+}
+
+.rows > li[data-drop],
+.data-table tr[data-drop] {
+  box-shadow: inset 0 -2px 0 var(--ai);
+}
+
+.rows > li > .cell-input {
+  flex: 1;
+}
+
+.cell-input {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--field);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.cell-input[data-numeric] {
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-input:focus {
+  outline: none;
+  background: var(--bg);
+  box-shadow:
+    inset 0 0 0 1px var(--ai),
+    0 0 0 3px var(--blue-soft);
+}
+
+.cell-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.cell-check {
+  width: 16px;
+  height: 16px;
+  margin: 0 6px;
+  accent-color: var(--ink);
+}
+
+.edit-select[data-cell] {
+  min-height: 26px;
+  height: 26px;
+  padding: 0 2px 0 5px;
+  border-radius: 7px;
+  font-size: 12.5px;
+}
+
+[data-list-head] {
+  justify-content: space-between;
+}
+
+.row-grip,
+.row-act {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--text-3);
+}
+
+.row-grip {
+  cursor: grab;
+  touch-action: none;
+}
+
+.row-grip:active {
+  cursor: grabbing;
+}
+
+.row-act:hover,
+.row-grip:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.row-act[aria-expanded] svg {
+  transition: transform 0.15s;
+}
+
+.row-act[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+.table-wrap {
+  overflow-x: auto;
+  margin: 0 -2px;
+}
+
+.data-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: 12px;
+}
+
+.data-table th {
+  padding: 0 4px;
+  overflow: hidden;
+  font-weight: 500;
+  text-align: left;
+  color: var(--text-3);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.data-table th:first-child,
+.data-table th:last-child,
+.data-table td:first-child,
+.data-table td:last-child {
+  width: 22px;
+}
+
+.data-table td {
+  padding: 0;
+  vertical-align: middle;
+}
+
+.item-row {
+  flex-direction: column;
+  align-items: stretch !important;
+}
+
+.item-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.item-head > .cell-input {
+  flex: 1;
+}
+
+.item-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.item-body {
+  padding: 6px 4px 8px 46px;
+}
+
+.list-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  padding: 4px 6px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--ai-deep);
+}
+
+.list-add:hover {
+  background: var(--blue-soft);
+}
+
+.list-note {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.item-acts {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--field);
+}
+
+.item-acts button {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  height: 28px;
+  border-radius: 7px;
+  color: var(--text-2);
+}
+
+.item-acts button:hover:not(:disabled) {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.item-acts button[data-tone="danger"]:hover {
+  color: var(--red-text);
+}
+
+.item-acts button:disabled {
+  opacity: 0.35;
+}
+
+/* The content page: the part's content straight under its head, where a click leads last. */
+.edit-content {
+  padding: 12px 0 4px;
+}
+
+.edit-content > .fields {
+  gap: 12px;
+}
+
+.edit-leads {
+  padding: 10px 0 4px;
+  border-top: 0.5px solid var(--line);
+}
+
+/* A look value in a row: its name, then its control at the right. */
+.field[data-inline] > .field-choice[data-short] {
+  flex: none;
+  max-width: 70%;
+}
+
+.field[data-inline] > .field-choice[data-short] button {
+  padding: 4px 7px;
+}
+
+.field[data-inline][data-wrap] {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.field[data-inline][data-wrap] > .field-name {
+  padding-top: 3px;
+}
+
+.field[data-inline][data-wrap] > .swatches {
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.field[data-inline] > .amount {
+  flex: 1;
+  max-width: 62%;
+}
+
+/* Four figures in a row leave no room for a number box's spinner. */
+.place-field input {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.place-field input::-webkit-inner-spin-button,
+.place-field input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.edit-select[data-side] {
+  width: 76px;
+  flex: none;
+}
+
+.field[data-inline] > .edit-select:not([data-short]),
+.field[data-inline] > .cell-input {
+  width: 60%;
+  flex: none;
 }

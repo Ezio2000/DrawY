@@ -55,9 +55,9 @@ it("edits with fingers: a part moves with one, the paper moves the view, and a l
   // On a screen this narrow the editor's panel starts put away, so the canvas and its
   // tools are what is edited with; a press on its tab brings it back, and it goes again.
   expect(await page.locator("[data-tucked]").count()).toBe(1);
-  await page.getByRole("button", { name: "Open the properties panel" }).tap();
+  await page.getByRole("button", { name: "Open the editing panel" }).tap();
   expect(await page.locator("[data-tucked]").count()).toBe(0);
-  expect(await page.getByRole("tab", { name: "Properties" }).count()).toBe(1);
+  expect(await page.getByRole("tab", { name: "Content" }).count()).toBe(1);
   await page.getByRole("button", { name: "Put the panel away" }).tap();
   expect(await page.locator("[data-tucked]").count()).toBe(1);
   // The tools in the tray are as big as a fingertip too.

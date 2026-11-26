@@ -261,6 +261,7 @@ export function EditOverlay({
   links,
   retyping,
   ask,
+  part,
 }: {
   session: WorkSession;
   hand: ReturnType<typeof useEditing>;
@@ -270,6 +271,8 @@ export function EditOverlay({
   links: string[];
   retyping: boolean;
   ask: () => void;
+  /** The part selected inside the one module selected. */
+  part: PartPick | null;
 }) {
   counted("overlay");
   const { some, within, holds, loose, work, sceneId } = useSelect(session, (s) => {
@@ -302,6 +305,7 @@ export function EditOverlay({
         ops={hand.ops}
         selected={ids}
         links={links}
+        part={part}
         hidden={!!hand.menu || retyping || hand.tool !== "select"}
         more={hand.setMenu}
         ask={ask}
@@ -579,6 +583,7 @@ export function EditPane({
   session,
   ids,
   links,
+  part,
   canvas,
   change,
   ops,
@@ -595,6 +600,8 @@ export function EditPane({
   pick: (kind: "picture" | "drawing", chosen: (m: import("@drawy/materials/schema").Material) => void) => void;
   enter: (id: string) => void;
   ask: () => void;
+  /** The part selected inside the one module selected. */
+  part: PartPick | null;
 }) {
   counted("editor");
   const t = useT();
@@ -605,6 +612,7 @@ export function EditPane({
       sceneId={s.sceneId}
       selected={ids}
       links={links}
+      part={part}
       canvas={canvas}
       busy={s.engaged ? t.edit.busy : undefined}
       change={change}

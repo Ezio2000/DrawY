@@ -1,6 +1,9 @@
 import {
   drawingOf,
+  fieldAt,
+  getAt,
   isPlain,
+  isRecord,
   type ChoiceOption,
   type FieldNames,
   type Instance,
@@ -10,9 +13,9 @@ import {
 } from "../contracts/index.ts";
 type ParamType = PlainType;
 
-/* The values of a part a person can change in plain controls: those its drawing declares,
- * then the plain values in its data. What is left (lists, tables, nested records) is
- * changed in the data editor, as the author would write it. */
+/* The values of a part a person can change in plain controls: the plain fields its
+ * drawing's schema declares, then the plain values in its data. Lists, tables and records
+ * are edited by the schema (EditContent.tsx). */
 
 /** A value of a module or link that a person can change, and the control it takes. */
 export interface Field {
@@ -133,12 +136,6 @@ export function fieldsOf(work: Work, part: Instance | Link): Field[] {
   return fields.sort((a, b) => rank[a.type] - rank[b.type]);
 }
 
-/** The data entries a part holds that no plain control shows: lists, records and
- * anything else, changed in the data editor. */
-export function restOf(work: Work, part: Instance | Link) {
-  const shown = new Set(fieldsOf(work, part).map((f) => f.key));
-  return Object.keys(part.data).filter((k) => !shown.has(k));
-}
 
 /** How a part looks, apart from what it says and shows: the values it sets that are choices,
  * colours, numbers and switches, with the drawing they belong to. Copied from one part and
@@ -240,4 +237,30 @@ export function quickFields(fields: SharedField[], most = 5): SharedField[] {
     // What the drawing asks to offer first, then the names the library's drawings share.
     .sort((a, b) => (a.quick ? -1 : QUICK.indexOf(a.key)) - (b.quick ? -1 : QUICK.indexOf(b.key)))
     .slice(0, most);
+}
+
+/** The plain values of the item at a path in a part's data, as controls: what the item of
+ * a list selected on the canvas offers beside it (a message's kind, whether it stands out). */
+export function itemFields(work: Work, part: Instance | Link, path: string): Field[] {
+  const drawing = drawingOf(work, part.drawingId);
+  const f = fieldAt(drawing?.params ?? {}, path);
+  const value = getAt({ ...(drawing?.defaults ?? {}), ...part.data }, path);
+  if (!f || (f.type !== "record" && f.type !== "tree") || !isRecord(value)) return [];
+  return Object.entries(f.fields).flatMap(([key, p]): Field[] =>
+    isPlain(p) && fits(p.type, value[key])
+      ? [
+          {
+            key,
+            type: p.type,
+            ...(p.label ? { label: p.label } : {}),
+            ...(p.type === "choice" ? { options: p.options } : {}),
+            ...(p.type === "number" ? Object.fromEntries((["min", "max", "step"] as const).flatMap((k) => (p[k] !== undefined ? [[k, p[k]]] : []))) : {}),
+            ...(p.quick ? { quick: true } : {}),
+            value: value[key],
+            set: value[key] !== undefined,
+            optional: true,
+          },
+        ]
+      : [],
+  );
 }

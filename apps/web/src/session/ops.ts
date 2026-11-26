@@ -32,6 +32,9 @@ import {
   pasteLook,
   reattach,
   removeDangling,
+  setAt,
+  composed,
+  applied,
   removeParts,
   restyle,
   reverse,
@@ -188,6 +191,21 @@ export function editOps(ctx: Context) {
     /** Moves an end of a link elsewhere: a module, a link or a free point. */
     reconnect(link: string, end: "from" | "to", to: LinkEnd) {
       run((w, s) => reattach(w, s, link, end, to));
+    },
+    /** Sets values of the item at a path in a part's data, as a part selected on the canvas
+     * is given a look from the bar beside it. */
+    setItem(partId: string, path: string, values: Record<string, unknown>) {
+      run((w, s) => {
+        let edit: WorkEdit | null = null;
+        let at = w;
+        for (const [key, value] of Object.entries(values)) {
+          const next = setAt(at, s, partId, `${path}.${key}`, value);
+          if (!next) continue;
+          edit = edit ? (composed(edit, next) as WorkEdit) : next;
+          at = applied(at, next);
+        }
+        return edit;
+      });
     },
     /** Takes out the links in the scene that meet nothing at either end. */
     removeDangling() {

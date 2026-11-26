@@ -289,6 +289,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             links={linkIds}
             retyping={!!retyping}
             ask={() => ask()}
+            part={part}
           />
         )}
         {retyping && stage.current && (
@@ -339,7 +340,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             onClick={() => setTucked(false)}
           >
             <PanelRightOpen size={16} />
-            <span>{t.edit.tabs.properties}</span>
+            <span>{t.edit.panel.label}</span>
           </button>
         )}
         <WorkDetail session={session} detailId={detailId} close={() => setDetail(undefined)} />
@@ -376,6 +377,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
           </header>
           <section
             className={cx("side-body")}
+            data-side-body
             ref={conversation}
             onWheel={(e) => {
               if (!journal) return;
@@ -395,6 +397,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
                 pick={pick}
                 enter={enter}
                 ask={() => ask()}
+                part={part}
               />
             ) : drafting ? (
               <WorkDrafts session={session} restore={restore} feedback={feedback} />

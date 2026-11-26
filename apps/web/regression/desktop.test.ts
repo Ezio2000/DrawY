@@ -869,8 +869,8 @@ it("draws by hand with the pen, the arrow and the eraser; brings Mermaid and Exc
   await page.keyboard.press("Escape");
   // A drawing taken from the library comes in with its example data, though the library
   // is browsed without it.
-  await tray.getByRole("button", { name: "Drawings", exact: true }).click();
-  const shelf = page.getByRole("dialog", { name: "Drawings" });
+  await tray.getByRole("button", { name: "Diagram library", exact: true }).click();
+  const shelf = page.getByRole("dialog", { name: "Diagram library" });
   await shelf.getByRole("textbox").fill("concentric");
   await shelf.locator('button[data-tip="Concentric rings"]').click();
   await expect
@@ -988,3 +988,91 @@ it("draws a sequence freehand: lines pulled down from boxes hang from them, mess
   const shifted = await rectOf("Alpha");
   expect(Math.abs(host.x + 48 * k - shifted.cx)).toBeLessThan(4);
 });
+
+it("lays the editing panel out by schema: one screen for a structured drawing, a part of it, a block and a link, with no data keys, JSON or code", async () => {
+  // A drawing from the library, drawn from its example, with two blocks linked beside it.
+  const w = await api("/works", "POST", { title: "面板" });
+  const sequence = (await api("/materials/sequence")).example;
+  await api(`/works/${w.id}/edits`, "POST", {
+    baseRevision: w.revision,
+    edit: {
+      modules: [
+        { id: "seq", drawingId: "sequence", bounds: [100, 100, 640, 360], data: sequence },
+        { id: "n1", drawingId: "node", bounds: [100, 560, 200, 84], data: { title: "订单服务" } },
+        { id: "n2", drawingId: "node", bounds: [500, 560, 200, 84], data: { title: "库存服务" } },
+      ],
+      links: [{ id: "l1", from: "n1", to: "n2", data: { label: "扣减" } }],
+    },
+  });
+  await page.goto(base + "/");
+  await page.evaluate(() => localStorage.setItem("drawy.locale", "zh"));
+  try {
+    await page.goto(base + "/a/" + w.id);
+    await page.waitForFunction(() => [...document.querySelectorAll("*")].some((e) => e.shadowRoot?.textContent?.includes("登录请求")));
+    await settled();
+    await page.getByRole("button", { name: "手动编辑" }).click();
+    await settled();
+    const keys = ["participants", "messages", "notes", "fragments", "numbered", "label", "kind", "accent", "from", "to", "title", "tone", "shape", "head", "route"];
+    /** What the panel shows: whether it fits without scrolling, and any data key, JSON or code in it. */
+    const scan = () =>
+      page.evaluate((keys) => {
+        const panel = document.querySelector<HTMLElement>("[data-side-body]")!;
+        const text = panel.innerText;
+        const words = new Set(text.split(/[^A-Za-z_]+/).filter(Boolean));
+        const spelled = (k: string) => k[0].toUpperCase() + k.slice(1);
+        return {
+          fits: panel.scrollHeight <= panel.clientHeight + 1,
+          height: panel.scrollHeight,
+          keys: keys.filter((k) => words.has(k) || words.has(spelled(k))),
+          json: /[{[]\s*"|":\s*[\[{"]/.test(text) || [...panel.querySelectorAll("textarea")].some((t) => /^\s*[{[]/.test(t.value)),
+          code: /\bapi\.|return\s|=>|<\/?svg|function\s*\(/.test(text + [...panel.querySelectorAll("textarea")].map((t) => t.value).join("\n")),
+        };
+      }, keys);
+    const tab = (name: string) => page.getByRole("tab", { name, exact: true }).click();
+    const check = async (what: string) => {
+      for (const name of ["设计", "内容"]) {
+        await tab(name);
+        await page.waitForTimeout(250);
+        const found = await scan();
+        expect(found, `${what} · ${name}`).toMatchObject({ fits: true, keys: [], json: false, code: false });
+      }
+    };
+    // The sequence diagram, then one of its messages selected inside it.
+    const seq = await wordsAt("登录请求");
+    await page.mouse.click(seq.cx, seq.cy);
+    await settled();
+    await check("时序图");
+    await page.mouse.click(seq.cx, seq.cy);
+    await settled();
+    expect(await page.locator("[data-part-crumbs]").innerText()).toMatch(/消息\s*1/);
+    await check("消息");
+    // A block of a flowchart, and the link between two.
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    const block = await rectOf("订单服务");
+    await page.mouse.click(block.cx, block.cy);
+    await settled();
+    await check("方框");
+    const a = await rectOf("订单服务"),
+      b = await rectOf("库存服务");
+    await page.keyboard.press("Escape");
+    await page.mouse.click((a.x + a.width + b.x) / 2, a.cy);
+    await settled();
+    await check("连线");
+  } finally {
+    await page.evaluate(() => localStorage.setItem("drawy.locale", "en"));
+  }
+});
+
+/** Where words a drawing draws are on screen, by what they say. */
+const wordsAt = (text: string) =>
+  page.evaluate((text) => {
+    for (const host of document.querySelectorAll("[data-module-id]")) {
+      const el = [...host.shadowRoot!.querySelectorAll("text,[data-edp-text]")].find((e) => e.textContent?.trim() === text);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        return { cx: r.x + r.width / 2, cy: r.y + r.height / 2 };
+      }
+    }
+    throw Error("no words " + text);
+  }, text);

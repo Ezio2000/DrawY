@@ -326,7 +326,7 @@ const zh = {
   edit: {
     linkDrawing: "这是连线画法，请用连线工具，或拖元素旁的加号来连线",
     name: "名称",
-    tabs: { properties: "属性", layers: "图层" },
+    tabs: { design: "设计", content: "内容", layers: "图层" },
     content: "内容",
     place: { heading: "位置与大小", width: "宽", height: "高", lock: "锁定比例", scrub: "左右拖动来调整，按住 Shift 调得更快" },
     align: {
@@ -368,11 +368,12 @@ const zh = {
       more: (name: string) => `${name}调大`,
     },
     shared: "外观",
-    panel: { hide: "收起面板，只留画布", show: "打开属性面板" },
+    moreLook: "更多外观",
+    panel: { hide: "收起面板，只留画布", show: "打开编辑面板", label: "面板" },
     match: { width: "等宽", height: "等高", both: "等大" },
     shelf: {
-      search: "搜索画法：流程、图表、时间线…",
-      none: "没有找到这样的画法",
+      search: "在图库里找：流程、图表、时间线…",
+      none: "图库里没有这样的图",
       all: "打开素材库",
       kinds: {
         structure: "结构",
@@ -388,6 +389,23 @@ const zh = {
         nature: "自然",
         science: "科学",
       },
+    },
+    contentEditor: {
+      add: "添加一项",
+      remove: "删除这一项",
+      up: "上移",
+      down: "下移",
+      duplicate: "复制这一项",
+      drag: "拖动排序",
+      expand: "展开",
+      collapse: "收起",
+      item: (n: number) => `第 ${n} 项`,
+      removedAlong: (n: number) => `一并删除了 ${n} 处引用它的内容，可以撤销`,
+      none: "（未选）",
+      lon: "经度",
+      lat: "纬度",
+      newKey: "原来的名字",
+      newValue: "显示为",
     },
     linkEnds: {
       from: "起点",
@@ -445,15 +463,6 @@ const zh = {
     },
     palettes: "套用风格配色",
     usePalette: (name: string) => `套用「${name}」的配色`,
-    data: {
-      up: "上移",
-      down: "下移",
-      remove: "删除",
-      addItem: "添加一项",
-      unfold: (n: number) => `展开 ${n} 项`,
-      newKey: "新字段名",
-      addKey: "添加字段",
-    },
     tools: {
       label: "编辑工具",
       select: "选择",
@@ -473,7 +482,7 @@ const zh = {
       arrow: "箭头",
       erase: "橡皮",
       picture: "图片",
-      drawing: "画法库",
+      drawing: "图库",
       bring: "导入 Mermaid 或 Excalidraw",
     },
     // The names of the drawings a work makes for itself when drawn on by hand or brought into.
@@ -542,7 +551,7 @@ const zh = {
         "拖选框上的手柄缩放：按住 Shift 保持比例，按住 Alt 从中心缩放。",
         "点一条连线选中它，Shift 点击多选；只选一条时拖它两端的圆点换到别的元素或另一边；双击连线给它写字。",
         "双击文字直接改字，双击图片换一张；双击空白处在那里添加文字。",
-        "把图片文件或画法库里的画法直接拖到画布上。",
+        "把图片文件或图库里的图直接拖到画布上。",
         "画笔随手画线，可以连续画；箭头从一个元素画到另一个元素就是连线，画在空白处是一支独立的箭头；橡皮擦过的东西松手后删除。",
         "粘贴或拖入 Mermaid 代码、Excalidraw 内容或 .excalidraw 文件即可导入；导出菜单里可以存成 Excalidraw 文件或复制 Mermaid 代码。",
         "右键打开菜单；按住空格或用中键拖动来平移，按住 ⌘/Ctrl 滚动来缩放。",
@@ -592,6 +601,8 @@ const zh = {
     },
     newText: "输入文字",
     look: "作品外观",
+    // The work's colours a value can follow, in the palette of a colour control.
+    swatches: { ink: "墨色", accent: "强调", accent2: "辅助", muted: "次要", paper: "纸色" } as Record<string, string>,
     tokens: {
       ink: "线条与文字",
       accent: "强调色",
@@ -1820,7 +1831,7 @@ const en: Words = {
   edit: {
     linkDrawing: "This drawing is for links: use the link tool, or drag the plus beside a part",
     name: "Name",
-    tabs: { properties: "Properties", layers: "Layers" },
+    tabs: { design: "Design", content: "Content", layers: "Layers" },
     content: "Content",
     place: { heading: "Position and size", width: "W", height: "H", lock: "Keep proportions", scrub: "Drag sideways to adjust; hold Shift to go faster" },
     align: {
@@ -1862,11 +1873,12 @@ const en: Words = {
       more: (name: string) => `Larger ${name.toLowerCase()}`,
     },
     shared: "Look",
-    panel: { hide: "Put the panel away", show: "Open the properties panel" },
+    moreLook: "More of its look",
+    panel: { hide: "Put the panel away", show: "Open the editing panel", label: "Panel" },
     match: { width: "Same width", height: "Same height", both: "Same size" },
     shelf: {
-      search: "Find a drawing: flow, chart, timeline…",
-      none: "No drawing like that",
+      search: "Find in the diagram library: flow, chart, timeline…",
+      none: "No diagram like that in the library",
       all: "Open the library",
       kinds: {
         structure: "Structure",
@@ -1882,6 +1894,23 @@ const en: Words = {
         nature: "Nature",
         science: "Science",
       },
+    },
+    contentEditor: {
+      add: "Add one",
+      remove: "Delete this one",
+      up: "Move up",
+      down: "Move down",
+      duplicate: "Duplicate this one",
+      drag: "Drag to reorder",
+      expand: "Open",
+      collapse: "Close",
+      item: (n: number) => `Item ${n}`,
+      removedAlong: (n: number) => `Also deleted ${n} that referred to it; you can undo`,
+      none: "(none)",
+      lon: "Longitude",
+      lat: "Latitude",
+      newKey: "Name as drawn",
+      newValue: "Shown as",
     },
     linkEnds: {
       from: "Starts at",
@@ -1939,15 +1968,6 @@ const en: Words = {
     },
     palettes: "Take a style's colours",
     usePalette: (name) => `Use the colours of “${name}”`,
-    data: {
-      up: "Move up",
-      down: "Move down",
-      remove: "Delete",
-      addItem: "Add one",
-      unfold: (n: number) => `Show all ${n}`,
-      newKey: "New field name",
-      addKey: "Add field",
-    },
     tools: {
       label: "Editing tools",
       select: "Select",
@@ -1967,7 +1987,7 @@ const en: Words = {
       arrow: "Arrow",
       erase: "Eraser",
       picture: "Picture",
-      drawing: "Drawings",
+      drawing: "Diagram library",
       bring: "Import Mermaid or Excalidraw",
     },
     made: {
@@ -2088,6 +2108,7 @@ const en: Words = {
     },
     newText: "Type here",
     look: "Look of the work",
+    swatches: { ink: "Ink", accent: "Accent", accent2: "Second accent", muted: "Muted", paper: "Paper" },
     tokens: {
       ink: "Lines and words",
       accent: "Accent",
