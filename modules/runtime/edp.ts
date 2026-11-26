@@ -13,7 +13,8 @@ export type HandleKind = "ref" | "scalar" | "point";
 /** What a drawing declares, in its own units (its box from 0,0). */
 export interface Declared {
   slots: { list: string; index: number; at: Point }[];
-  handles: { path: string; kind: HandleKind; at: Point; axis?: "x" | "y"; scale?: number }[];
+  /** A point handle carries how a place in the drawing's units reads as its value. */
+  handles: { path: string; kind: HandleKind; at: Point; axis?: "x" | "y"; scale?: number; unproject?: (x: number, y: number) => unknown }[];
   creates: { list: string; between: [string, string]; fields?: Record<string, unknown>; rows?: "x" | "y" }[];
   outline?: string | Bounds;
 }
@@ -41,7 +42,7 @@ export interface EditableAPI {
   anchor(list: string, id: string, options?: { shape?: string } | Element, el?: Element): string | Element;
   /** A mark to drag: onto an anchor to point a reference elsewhere, along an axis to change a
    * number (`scale` data units per unit dragged), or on a map to move a place. */
-  handle(path: string, options: { kind: HandleKind; at: Point; axis?: "x" | "y"; scale?: number }): string;
+  handle(path: string, options: { kind: HandleKind; at: Point; axis?: "x" | "y"; scale?: number; unproject?: (x: number, y: number) => unknown }): string;
   /** Dragging from one anchor of `list`'s references to another makes an item of `list` with
    * `between` set to the two, placed among the slots along `rows`. */
   create(options: { list: string; between: [string, string]; fields?: Record<string, unknown>; rows?: "x" | "y" }): string;
@@ -79,7 +80,15 @@ export function editable(live = true) {
       return "";
     },
     handle: (path, o) => {
-      if (live) declared.handles.push({ path, kind: o.kind, at: { x: o.at.x, y: o.at.y }, ...(o.axis ? { axis: o.axis } : {}), ...(o.scale ? { scale: o.scale } : {}) });
+      if (live)
+        declared.handles.push({
+          path,
+          kind: o.kind,
+          at: { x: o.at.x, y: o.at.y },
+          ...(o.axis ? { axis: o.axis } : {}),
+          ...(o.scale ? { scale: o.scale } : {}),
+          ...(typeof o.unproject === "function" ? { unproject: o.unproject } : {}),
+        });
       return "";
     },
     create: (o) => {

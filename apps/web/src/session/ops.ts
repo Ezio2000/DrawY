@@ -32,6 +32,7 @@ import {
   pasteLook,
   reattach,
   removeDangling,
+  removeItem,
   setAt,
   composed,
   applied,
@@ -191,6 +192,27 @@ export function editOps(ctx: Context) {
     /** Moves an end of a link elsewhere: a module, a link or a free point. */
     reconnect(link: string, end: "from" | "to", to: LinkEnd) {
       run((w, s) => reattach(w, s, link, end, to));
+    },
+    /** Makes one hand edit of the scene in view, from the work as it then stands; a
+     * failure is told as any other. Resolves once it is shown or refused. */
+    edit(make: (w: Work, sceneId: string) => WorkEdit | null) {
+      const sceneId = scene();
+      const job = ctx.edits.commit((w) => make(w, sceneId));
+      report(job);
+      return job.then(
+        () => true,
+        () => false,
+      );
+    },
+    /** Takes an item out of a part's list, with what referred to it, and tells how many
+     * went along. */
+    removeItem(partId: string, list: string, item: string | number) {
+      let along = 0;
+      void ops.edit((w, s) => {
+        const r = removeItem(w, s, partId, list, item);
+        along = r.along;
+        return r.edit;
+      }).then((done) => done && along && ctx.tell({ kind: "along", count: along }));
     },
     /** Sets values of the item at a path in a part's data, as a part selected on the canvas
      * is given a look from the bar beside it. */

@@ -10,7 +10,9 @@ import { simplify, sketchLine } from "./drawings.ts";
 export * from "./drawings.ts";
 export * from "./excalidraw.ts";
 export * from "./mermaid.ts";
+export * from "./sequence.ts";
 export { ClipMaker } from "./clip.ts";
+export { SEQUENCE } from "./library.ts";
 
 /** A line drawn on the canvas, as a clip of one part where it was drawn: a freehand
  * stroke smoothed through the points that shape it, or a straight line with a head.

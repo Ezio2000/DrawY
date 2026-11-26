@@ -369,6 +369,8 @@ const zh = {
     },
     shared: "外观",
     moreLook: "更多外观",
+    wrap: (kind: string) => `包成「${kind}」片段`,
+    codeView: { open: "代码视图", title: "Mermaid 代码" },
     panel: { hide: "收起面板，只留画布", show: "打开编辑面板", label: "面板" },
     match: { width: "等宽", height: "等高", both: "等大" },
     shelf: {
@@ -1874,6 +1876,8 @@ const en: Words = {
     },
     shared: "Look",
     moreLook: "More of its look",
+    wrap: (kind: string) => `Wrap in a ${kind} fragment`,
+    codeView: { open: "Code view", title: "Mermaid source" },
     panel: { hide: "Put the panel away", show: "Open the editing panel", label: "Panel" },
     match: { width: "Same width", height: "Same height", both: "Same size" },
     shelf: {

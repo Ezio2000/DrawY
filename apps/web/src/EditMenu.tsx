@@ -58,6 +58,7 @@ export function EditMenu({
   clipped,
   brushed,
   loose,
+  wraps = [],
   close,
   ask,
   fit,
@@ -79,6 +80,8 @@ export function EditMenu({
   brushed: boolean;
   /** Whether the scene has links meeting nothing at either end. */
   loose: boolean;
+  /** Ways to wrap the items selected inside a module in one that spans them. */
+  wraps?: { label: string; run: () => void }[];
   close: () => void;
   ask: () => void;
   /** Shows the whole drawing. */
@@ -130,6 +133,8 @@ export function EditMenu({
       ]
     : some
     ? [
+        ...wraps.map((w): Item => ({ label: w.label, icon: <BoxSelect size={size} />, run: w.run })),
+        ...(wraps.length ? ["-" as const] : []),
         { label: m.cut, icon: <Scissors size={size} />, key: "Mod+X", run: ops.cut },
         { label: m.copy, icon: <Copy size={size} />, key: "Mod+C", run: () => void ops.copy() },
         paste,

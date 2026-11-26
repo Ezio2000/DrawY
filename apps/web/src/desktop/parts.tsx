@@ -3,7 +3,9 @@ import { ChevronDown, X, Check, FileInput, PenLine } from "lucide-react";
 import * as Hand from "../ui/brand/icons.tsx";
 import type { Canvas, CanvasOptions, PartPick, Pointed } from "../../../../modules/canvas/index.ts";
 import { shownName, type Target } from "../../../../modules/contracts/index.ts";
-import { carried, danglingIn, trailOf } from "../../../../modules/editing/index.ts";
+import { carried, danglingIn, itemOf, setData, spansOf, trailOf, wrapItems } from "../../../../modules/editing/index.ts";
+import { CodeView, hasTextView } from "../EditCodeView.tsx";
+import { optionOf } from "../EditControls.tsx";
 import { cx } from "../cx.ts";
 import { SelectionBar } from "../EditBar.tsx";
 import { EditMenu } from "../EditMenu.tsx";
@@ -228,6 +230,7 @@ export function CanvasArea({
       setBoard={setBoard}
       help={help}
       part={part}
+      items={hand.items}
       start={
         !locked && (
           editing ? (
@@ -275,6 +278,7 @@ export function EditOverlay({
   part: PartPick | null;
 }) {
   counted("overlay");
+  const t = useT();
   const { some, within, holds, loose, work, sceneId } = useSelect(session, (s) => {
     const modules = s.scene?.modules ?? [];
     const groups = ids.map((id) => modules.find((m) => m.id === id)?.group);
@@ -293,6 +297,25 @@ export function EditOverlay({
       sceneId: s.sceneId,
     };
   });
+  // Items selected inside a module can be wrapped in an item of a list that spans them, of
+  // each kind it offers (a run of messages in a loop or an alternative).
+  // The text a module selected has of its own (a sequence diagram's Mermaid), open beside it.
+  const [coding, setCoding] = useState<string>();
+  const one = ids.length === 1 && !links.length ? work.scenes[sceneId]?.modules.find((m) => m.id === ids[0]) : undefined;
+  const coded = coding ? work.scenes[sceneId]?.modules.find((m) => m.id === coding) : undefined;
+  const wrapsOf = () => {
+    const parts = canvas?.selectedParts ?? [];
+    const m = parts.length ? work.scenes[sceneId]?.modules.find((x) => x.id === parts[0].moduleId) : undefined;
+    const at = parts.length ? itemOf(parts[0].path) : undefined;
+    if (!m || !at) return [];
+    const paths = parts.map((p) => p.path);
+    return spansOf(work, m, at.list).flatMap((span) =>
+      (span.choice ? span.choice[1].options : [undefined]).map((o) => ({
+        label: t.edit.wrap(o ? optionOf(t, o.value, { options: span.choice![1].options }) : (span.field.label?.[t.locale] ?? span.list)),
+        run: () => void hand.ops.edit((w, s) => wrapItems(w, s, m.id, paths, span.list, o?.value).edit),
+      })),
+    );
+  };
   return (
     <>
       <EditTray tool={hand.tool} setTool={hand.setTool} ops={hand.ops} bring={() => hand.setBringing(true)} />
@@ -309,9 +332,20 @@ export function EditOverlay({
         hidden={!!hand.menu || retyping || hand.tool !== "select"}
         more={hand.setMenu}
         ask={ask}
+        code={one && hasTextView(work, one) ? () => setCoding(one.id) : undefined}
       />
+      {coded && (
+        <CodeView
+          key={coded.id}
+          work={work}
+          module={coded}
+          apply={(data) => void hand.ops.edit((w, s) => setData(w, s, coded.id, data))}
+          close={() => setCoding(undefined)}
+        />
+      )}
       {hand.menu && (
         <EditMenu
+          wraps={wrapsOf()}
           at={hand.menu}
           ops={hand.ops}
           selected={ids}

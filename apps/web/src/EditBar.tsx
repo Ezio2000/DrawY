@@ -4,6 +4,7 @@ import {
   AlignLeft,
   AlignRight,
   Bold,
+  Code2,
   Ellipsis,
   MessageSquareQuote,
   Minus,
@@ -124,6 +125,7 @@ export function SelectionBar({
   hidden,
   more,
   ask,
+  code,
 }: {
   canvas?: Canvas;
   stage: HTMLElement | null;
@@ -140,6 +142,8 @@ export function SelectionBar({
   more: (at: { x: number; y: number }) => void;
   /** Brings up the composer, about the selection. */
   ask: () => void;
+  /** Opens the text the one module selected has of its own, when it has one. */
+  code?: () => void;
 }) {
   const t = useT(),
     e = t.edit;
@@ -342,6 +346,7 @@ export function SelectionBar({
     <div ref={ref} className={cx("selection-bar")} role="toolbar" aria-label={e.bar.label} data-away="">
       {quick.map(control)}
       {!!quick.length && <i />}
+      {code && item(e.codeView.open, <Code2 size={16} />, code)}
       {item(
         e.menu.more,
         <Ellipsis size={16} />,

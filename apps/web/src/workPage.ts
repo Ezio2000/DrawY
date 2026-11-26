@@ -96,7 +96,9 @@ export function useWorkPage({
           ? feedback.say(t.unsaved.saved(h.version))
           : h.kind === "adjusted"
             ? feedback.say(t.edit.bring.adjusted(h.adjusted), EXPLAIN_FOR)
-            : feedback.fail(h.error),
+            : h.kind === "along"
+              ? feedback.say(t.edit.contentEditor.removedAlong(h.count))
+              : feedback.fail(h.error),
       ),
     [session, t],
   );

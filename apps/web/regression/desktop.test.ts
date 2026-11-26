@@ -1076,3 +1076,146 @@ const wordsAt = (text: string) =>
     }
     throw Error("no words " + text);
   }, text);
+
+/** The sequence diagram of a scene, as saved. */
+const sequenceOf = async (id: string) =>
+  (await rootOf(id)).modules.find((m: { drawingId: string }) => m.drawingId === "sequence")?.data as
+    | { participants: { id: string; label: string }[]; messages: { id: string; from: string; to: string; label: string; kind?: string }[]; notes?: { over: string[] }[] }
+    | undefined;
+
+it("builds a sequence diagram from a blank canvas with the canvas and the keyboard alone: three participants, six messages", async () => {
+  const w = await api("/works", "POST", { title: "Login" });
+  await page.goto(base + "/a/" + w.id);
+  await page.waitForSelector("[data-canvas]");
+  let steps = 0;
+  const click = async (x: number, y: number, n = 1) => {
+    steps++;
+    await page.mouse.click(x, y, { clickCount: n });
+    if (n === 2) await page.mouse.dblclick(x, y);
+  };
+  const type = async (text: string) => {
+    steps++;
+    await page.keyboard.type(text);
+    await page.keyboard.press("Enter");
+  };
+  // Start drawing, and take the sequence diagram from the library.
+  steps++;
+  await page.getByRole("button", { name: "Start drawing" }).click();
+  await settled();
+  const tray = page.getByRole("navigation", { name: "Editing tools" });
+  steps++;
+  await tray.getByRole("button", { name: "Diagram library", exact: true }).click();
+  const shelf = page.getByRole("dialog", { name: "Diagram library" });
+  steps++;
+  await shelf.getByRole("textbox").fill("sequence");
+  steps++;
+  await shelf.locator('button[data-tip="Sequence diagram"]').click();
+  await expect.poll(async () => (await sequenceOf(w.id))?.messages.length, { timeout: 15_000 }).toBe(5);
+  await page.keyboard.press("Escape");
+  await settled();
+  // Each participant renamed where its name is drawn.
+  for (const [was, now] of [["浏览器", "App"], ["服务器", "Gateway"], ["数据库", "Users"]]) {
+    const at = await wordsAt(was);
+    steps++;
+    await page.mouse.dblclick(at.cx, at.cy);
+    await page.keyboard.press("Meta+A");
+    await type(now);
+    await settled();
+  }
+  // The first message selected inside the diagram; Enter makes the next one between the same
+  // two, ready to type into.
+  const first = await wordsAt("登录请求");
+  await click(first.cx, first.cy);
+  await click(first.cx, first.cy);
+  await settled();
+  steps++;
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await sequenceOf(w.id))?.messages.length, { timeout: 10_000 }).toBe(6);
+  await type("Check token");
+  await settled();
+  const data = (await sequenceOf(w.id))!;
+  expect(data.participants.map((p) => p.label)).toEqual(["App", "Gateway", "Users"]);
+  expect(data.messages).toHaveLength(6);
+  expect(data.messages[1]).toMatchObject({ from: data.messages[0].from, to: data.messages[0].to, label: "Check token" });
+  // Every message runs between participants that are there.
+  const ids = new Set(data.participants.map((p) => p.id));
+  expect(data.messages.every((m) => ids.has(m.from) && ids.has(m.to))).toBe(true);
+  expect(steps).toBeLessThanOrEqual(16);
+  console.log(`sequence from a blank canvas: ${steps} steps`);
+});
+
+it("keeps a sequence diagram whole as it is changed on the canvas: renamed, reordered, reconnected, a participant taken out and brought back", async () => {
+  const w = await api("/works", "POST", { title: "Flows" });
+  await api(`/works/${w.id}/edits`, "POST", {
+    baseRevision: w.revision,
+    edit: { modules: [{ id: "seq", drawingId: "sequence", bounds: [100, 100, 640, 360], data: (await api("/materials/sequence")).example }] },
+  });
+  await page.goto(base + "/a/" + w.id);
+  await page.waitForFunction(() => [...document.querySelectorAll("*")].some((e) => e.shadowRoot?.textContent?.includes("登录请求")));
+  await editing();
+  await settled();
+  const valid = async () => {
+    const d = (await sequenceOf(w.id))!;
+    const ids = new Set(d.participants.map((p) => p.id));
+    expect(d.messages.every((m) => ids.has(m.from) && ids.has(m.to))).toBe(true);
+    return d;
+  };
+  // Renamed where it is drawn: the messages keep to it (problem 3A).
+  const server = await wordsAt("服务器");
+  await page.mouse.dblclick(server.cx, server.cy);
+  await page.keyboard.press("Meta+A");
+  await page.keyboard.type("API 网关");
+  await page.keyboard.press("Enter");
+  await settled();
+  let d = await valid();
+  expect(d.participants[1].label).toBe("API 网关");
+  expect(d.messages.filter((m) => m.from === "server" || m.to === "server")).toHaveLength(5);
+  // A message dragged below the next one changes places with it.
+  const m1 = await wordsAt("登录请求");
+  await page.mouse.click(m1.cx, m1.cy);
+  await page.mouse.click(m1.cx, m1.cy);
+  await settled();
+  const m2 = await wordsAt("查询用户");
+  await page.mouse.move(m1.cx, m1.cy);
+  await page.mouse.down();
+  await page.mouse.move(m1.cx, (m1.cy + m2.cy) / 2, { steps: 4 });
+  await page.mouse.move(m1.cx, m2.cy + 30, { steps: 6 });
+  await page.mouse.up();
+  await settled();
+  d = await valid();
+  expect(d.messages.slice(0, 2).map((m) => m.id)).toEqual(["m2", "m1"]);
+  // Its end dragged to another lifeline points it at that participant.
+  const moved = await wordsAt("登录请求");
+  await page.mouse.click(moved.cx, moved.cy);
+  await settled();
+  const handles = await page.locator("[data-edit-handle]").evaluateAll((els) =>
+    els.filter((e) => (e as HTMLElement).style.display !== "none").map((e) => {
+      const r = e.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }),
+  );
+  expect(handles).toHaveLength(2);
+  const db = await wordsAt("数据库");
+  await page.mouse.move(handles[1].x, handles[1].y);
+  await page.mouse.down();
+  await page.mouse.move((handles[1].x + db.cx) / 2, handles[1].y, { steps: 4 });
+  await page.mouse.move(db.cx, handles[1].y, { steps: 6 });
+  await page.mouse.up();
+  await settled();
+  d = await valid();
+  expect(d.messages.find((m) => m.id === "m1")).toMatchObject({ from: "browser", to: "db" });
+  // The database taken out takes the messages to and from it along; undone, all come back.
+  await page.keyboard.press("Escape");
+  await page.mouse.click(db.cx, db.cy);
+  await page.mouse.click(db.cx, db.cy);
+  await settled();
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await sequenceOf(w.id))?.participants.length, { timeout: 10_000 }).toBe(2);
+  d = await valid();
+  expect(d.messages.map((m) => m.id)).toEqual(["m4", "m5"]);
+  expect(await page.getByRole("status").allInnerTexts()).toEqual(expect.arrayContaining([expect.stringMatching(/Also deleted 3/)]));
+  await page.keyboard.press("Meta+Z");
+  await expect.poll(async () => (await sequenceOf(w.id))?.participants.length, { timeout: 10_000 }).toBe(3);
+  d = await valid();
+  expect(d.messages).toHaveLength(5);
+});

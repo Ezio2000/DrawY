@@ -4,6 +4,7 @@ import type { Material } from "@drawy/materials/schema";
 import { linkEnds, scenePlacing } from "../contracts/geometry.ts";
 import type { Bounds, Instance, Work } from "../contracts/index.ts";
 import { useOf } from "../materials/index.ts";
+import { sequenceFrom, sequenceSource } from "../interchange/index.ts";
 import { fixture } from "../runtime/fixture.ts";
 import { composed } from "./apply.ts";
 import {
@@ -12,6 +13,10 @@ import {
   danglingIn,
   dataPatch,
   duplicateItem,
+  indentItem,
+  outdentItem,
+  spansOf,
+  wrapItems,
   insertItem,
   itemOf,
   moveItem,
@@ -159,5 +164,87 @@ describe("items of a drawing's data", () => {
     expect(itemOf("messages.#m3")).toEqual({ list: "messages", item: "m3" });
     expect(itemOf("branches.#b1.children.2")).toEqual({ list: "branches.#b1.children", item: 2 });
     expect(dataPatch({ a: [{ id: "x", v: 1 }, { id: "y", v: 2 }], b: 1 }, { a: [{ id: "x", v: 3 }, { id: "y", v: 2 }] })).toEqual({ a: { "#x": { v: 3 } }, b: null });
+  });
+});
+
+describe("structure edited on the canvas", () => {
+  it("wraps messages in a fragment found from the schema, and moves tree items in and out", () => {
+    const work = sequenceWork();
+    const m = work.scenes.root.modules[0];
+    expect(spansOf(work, m, "messages").map((s) => [s.list, s.from, s.to, s.choice?.[0]])).toEqual([["fragments", "from", "to", "kind"]]);
+    const wrapped = applied(work, wrapItems(work, "root", "seq", ["messages.#m4", "messages.#m2"], "fragments", "loop").edit);
+    expect((wrapped.scenes.root.modules[0].data as { fragments: unknown[] }).fragments).toEqual([{ id: "f1", kind: "loop", label: "", from: "m2", to: "m4" }]);
+    // A tree: the second child goes under the first, and back out after it.
+    const { material, example } = curated("hierarchy");
+    const tree = blank();
+    tree.materials.hierarchy = material;
+    tree.scenes.root.modules = [{ ...box("h", { x: 0, y: 0, width: 600, height: 300 }, "hierarchy"), data: structuredClone(example) }];
+    const kids = (w: Work) => ((w.scenes.root.modules[0].data as { root: { children: { id: string; children?: { id: string }[] }[] } }).root.children);
+    const [first, second] = kids(tree);
+    const inner = indentItem(tree, "root", "h", `root.children.#${second.id}`)!;
+    const indented = applied(tree, inner.edit);
+    expect(kids(indented).map((c) => c.id)).toEqual([first.id, kids(tree)[2].id]);
+    expect(kids(indented)[0].children!.at(-1)!.id).toBe(second.id);
+    expect(inner.path).toBe(`root.children.#${first.id}.children.#${second.id}`);
+    const outer = outdentItem(indented, "root", "h", inner.path)!;
+    expect(kids(applied(indented, outer.edit)).map((c) => c.id)).toEqual(kids(tree).map((c) => c.id));
+    expect(indentItem(tree, "root", "h", `root.children.#${first.id}`)).toBeNull();
+  });
+  it("reads a Mermaid sequence diagram as the drawing's data and writes it back, keeping ids", () => {
+    const read = {
+      actors: [
+        { key: "web", name: "浏览器", type: "actor" },
+        { key: "api", name: "服务", type: "participant" },
+        { key: "db", name: "数据库", type: "database" },
+      ],
+      messages: [
+        { from: "web", to: "api", text: "登录", type: 0 },
+        { text: "重试", type: 10 },
+        { from: "api", to: "db", text: "查询", type: 0 },
+        { from: "db", to: "api", text: "结果", type: 1 },
+        { text: "", type: 11 },
+        { from: "api", to: "api", text: "校验", type: 2, placement: 2 },
+        { from: "api", to: "web", text: "推送", type: 5 },
+      ],
+      numbered: true,
+    };
+    const data = sequenceFrom(read);
+    expect(data).toEqual({
+      participants: [
+        { id: "web", label: "浏览器", kind: "actor" },
+        { id: "api", label: "服务" },
+        { id: "db", label: "数据库", kind: "database" },
+      ],
+      messages: [
+        { id: "m1", from: "web", to: "api", label: "登录" },
+        { id: "m2", from: "api", to: "db", label: "查询" },
+        { id: "m3", from: "db", to: "api", label: "结果", kind: "reply" },
+        { id: "m4", from: "api", to: "web", label: "推送", kind: "async" },
+      ],
+      notes: [{ id: "n1", over: ["api"], after: "m3", text: "校验" }],
+      fragments: [{ id: "f1", kind: "loop", label: "重试", from: "m2", to: "m3" }],
+      numbered: true,
+    });
+    expect(sequenceSource(data)).toBe(
+      [
+        "sequenceDiagram",
+        "  autonumber",
+        "  actor web as 浏览器",
+        "  participant api as 服务",
+        "  database db as 数据库",
+        "  web->>api: 登录",
+        "  loop 重试",
+        "  api->>db: 查询",
+        "  db-->>api: 结果",
+        "  Note over api: 校验",
+        "  end",
+        "  api-)web: 推送",
+        "",
+      ].join("\n"),
+    );
+    // Read again from text written for it, a message keeps its id and what Mermaid does not
+    // say of it, by its place.
+    const was = { ...data, messages: data.messages.map((m) => (m.id === "m1" ? { ...m, id: "first", accent: true } : m)) };
+    expect(sequenceFrom(read, was).messages[0]).toEqual({ id: "first", accent: true, from: "web", to: "api", label: "登录" });
   });
 });

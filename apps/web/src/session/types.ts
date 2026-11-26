@@ -55,7 +55,9 @@ export type Happening =
   | { kind: "saved"; version: number }
   | { kind: "failed"; error: unknown }
   // Parts brought in from another tool that could not come in as they were there.
-  | { kind: "adjusted"; adjusted: Adjusted };
+  | { kind: "adjusted"; adjusted: Adjusted }
+  // An item taken out of a drawing's list took this many that referred to it along.
+  | { kind: "along"; count: number };
 
 /** Going back, which can be taken back for a while: to a version, by its number, or to
  * the latest version by throwing hand edits away. */

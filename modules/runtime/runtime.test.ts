@@ -1800,7 +1800,9 @@ it("problem 3B: a numbered message's words are marked as its data, the number dr
 
 /** The library drawings whose every word from their data is marked as that data, so a
  * person changes it where it is drawn. Every structured drawing joins as it is upgraded. */
-const EDITABLE = ["sequence"];
+const STRUCTURED = ["sequence", "steps", "timeline", "mindmap", "hierarchy", "swimlanes", "compare", "checklist"];
+/** Drawings without lists that mark their words all the same. */
+const EDITABLE = [...STRUCTURED, "node", "callout"];
 it("marks every word a structured library drawing draws from its example as the data it comes from", async () => {
   const drawings = (seed("drawings") as DrawingMaterial[]).filter((m) => EDITABLE.includes(m.id));
   work.materials = Object.fromEntries([...drawings.map((m) => libraryDrawing(m.id)), ...seed("effects").map((m) => useOf(m)!)].map((m) => [m.id, m]));
@@ -1829,12 +1831,12 @@ it("marks every word a structured library drawing draws from its example as the 
   expect(await page.evaluate(() => window.drawyErrors)).toEqual([]);
   for (const f of found) {
     expect(f.unmarked, f.id).toEqual([]);
-    expect(f.parts, f.id).toBeGreaterThan(0);
+    if (STRUCTURED.includes(f.id.replace(/-\d+$/, ""))) expect(f.parts, f.id).toBeGreaterThan(0);
     expect(f.texts, f.id).toBeGreaterThan(0);
   }
   // The sequence diagram: three participants and five messages and a note are parts, with
   // slots round both lists and a lifeline for each participant.
-  expect(found[0]).toMatchObject({ parts: 9, slots: 4 + 6, anchors: 3 });
+  expect(found.find((f) => f.id === "sequence-0")).toMatchObject({ parts: 9, slots: 4 + 6, anchors: 3 });
 });
 it("draws links along a drawn line's own path, riding on other links and to free points, and moves a line hanging from a module with it", async () => {
   work.drawings["sketch-line"] = sketchLine;

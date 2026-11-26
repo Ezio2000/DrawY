@@ -263,3 +263,78 @@ export function trailOf(work: Work, part: Part, path: string): { key: string; la
   });
   return trail;
 }
+/** Puts an item of a tree under the item before it, last among its children: Tab in an
+ * outline. Null when it is the first, with nothing to go under. */
+export function indentItem(work: Work, sceneId: string, id: string, path: string): { edit: WorkEdit; path: string } | null {
+  const at = itemOf(path);
+  if (!at) return null;
+  const { part } = partIn(work, sceneId, id);
+  const { list } = listAt(work, part, at.list);
+  const place = placeOf(list, at.item);
+  if (place < 1) return null;
+  const children = parsePath(at.list).at(-1) as string;
+  const before = list[place - 1] as Record<string, unknown>;
+  const moved = list[place];
+  const next = list.toSpliced(place, 1).with(place - 1, { ...before, [children]: [...(Array.isArray(before[children]) ? (before[children] as unknown[]) : []), moved] });
+  const edit = rewritten(work, sceneId, id, withValue(work, part, at.list, next));
+  const beforePath = `${at.list}.${isRecord(before) && isItemId(before.id) ? "#" + before.id : place - 1}`;
+  return edit && { edit, path: `${beforePath}.${children}.${isRecord(moved) && isItemId(moved.id) ? "#" + moved.id : 0}` };
+}
+/** Takes an item of a tree out from under its parent, to stand right after it: Shift+Tab in
+ * an outline. Null when its parent is the root. */
+export function outdentItem(work: Work, sceneId: string, id: string, path: string): { edit: WorkEdit; path: string } | null {
+  const at = itemOf(path);
+  const parentAt = at && itemOf(parsePath(at.list).slice(0, -1).map((s) => (typeof s === "object" ? "#" + s.id : String(s))).join("."));
+  if (!at || !parentAt) return null;
+  const { part } = partIn(work, sceneId, id);
+  const data = drawnData(work, part);
+  const outer = getAt(data, parentAt.list);
+  const inner = getAt(data, at.list);
+  if (!Array.isArray(outer) || !Array.isArray(inner)) return null;
+  const parentPlace = placeOf(outer, parentAt.item);
+  const place = placeOf(inner, at.item);
+  const moved = inner[place];
+  const children = parsePath(at.list).at(-1) as string;
+  const parent = { ...(outer[parentPlace] as Record<string, unknown>), [children]: inner.toSpliced(place, 1) };
+  const next = outer.with(parentPlace, parent).toSpliced(parentPlace + 1, 0, moved);
+  const edit = rewritten(work, sceneId, id, withValue(work, part, parentAt.list, next));
+  return edit && { edit, path: `${parentAt.list}.${isRecord(moved) && isItemId(moved.id) ? "#" + moved.id : parentPlace + 1}` };
+}
+/** The schema of the list an item's path is in, and the item, for what Enter and Tab make. */
+export function listOf(work: Work, part: Part, path: string) {
+  const at = itemOf(path);
+  if (!at) return undefined;
+  const f = fieldAt(fieldsOf(work, part), at.list);
+  const list = getAt(drawnData(work, part), at.list);
+  if (f?.type !== "list" || !Array.isArray(list)) return undefined;
+  return { ...at, field: f, place: placeOf(list, at.item), value: list[placeOf(list, at.item)], tree: parsePath(at.list).length > 1 && fieldAt(fieldsOf(work, part), at.list.split(".").slice(0, -1).join("."))?.type === "tree" || f.item.type === "tree" };
+}
+/** The lists whose items span a run of another list's items, by two references into it (a
+ * sequence diagram's fragments round its messages), with the choice that says what kind of
+ * span each is. */
+export function spansOf(work: Work, part: Part, list: string) {
+  const fields = fieldsOf(work, part);
+  return Object.entries(fields).flatMap(([key, f]) => {
+    if (f.type !== "list" || f.item.type !== "record") return [];
+    const refs = Object.entries(f.item.fields).filter(([, x]) => x.type === "ref" && x.to === list);
+    if (refs.length !== 2) return [];
+    const choice = Object.entries(f.item.fields).find(([, x]) => x.type === "choice") as [string, Extract<Field, { type: "choice" }>] | undefined;
+    return [{ list: key, field: f, from: refs[0][0], to: refs[1][0], choice }];
+  });
+}
+/** Wraps a run of items in a new item of a list that spans them, from the first of them to
+ * the last as their list orders them, of the kind given. */
+export function wrapItems(work: Work, sceneId: string, id: string, paths: string[], span: string, kind?: string) {
+  const { part } = partIn(work, sceneId, id);
+  const at = paths.map(itemOf);
+  const list = at[0]?.list;
+  if (!list || at.some((x) => !x || x.list !== list)) throw Error("要选同一列表里的条目");
+  const s = spansOf(work, part, list).find((x) => x.list === span);
+  if (!s) throw Error(`${span} 不能包住 ${list}`);
+  const items = getAt(drawnData(work, part), list) as unknown[];
+  const places = at.map((x) => placeOf(items, x!.item)).sort((a, b) => a - b);
+  const idOf = (i: number) => (items[i] as { id: string }).id;
+  const values: Record<string, unknown> = { [s.from]: idOf(places[0]), [s.to]: idOf(places.at(-1)!) };
+  if (s.choice && kind) values[s.choice[0]] = kind;
+  return insertItem(work, sceneId, id, span, undefined, values);
+}

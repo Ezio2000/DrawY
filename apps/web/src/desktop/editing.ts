@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import type { Canvas, CanvasTool, Pointed } from "../../../../modules/canvas/index.ts";
-import type { Bounds, Point } from "../../../../modules/contracts/index.ts";
+import type { Bounds, Point, Work, WorkEdit } from "../../../../modules/contracts/index.ts";
 import {
   carried,
+  duplicateItem,
+  following,
+  indentItem,
+  insertItem,
   isClip,
   labelOf,
+  listOf,
+  moveItem,
+  outdentItem,
+  retarget as retargetItem,
+  setAt,
   type Alignment,
   type Clip,
   type Look,
@@ -104,6 +113,120 @@ export function useEditing({
       setBringing(false);
     }
   }, [editing]);
+  /** Changes the words of an item where they are drawn, once it is: a new item is typed
+   * into at once, selected as the part it is. */
+  const typeInto = (moduleId: string, path: string) => {
+    let tries = 0;
+    const look = () => {
+      const c = canvasRef.current;
+      const words = c?.wordsAt(moduleId, path);
+      if (c && words) {
+        c.selectPart({ moduleId, path });
+        retype(words);
+      } else if (tries++ < 120) requestAnimationFrame(look);
+    };
+    requestAnimationFrame(look);
+  };
+  /** What is done to the items of a drawing's lists on the canvas: each one hand edit. */
+  const items = {
+    insert({ moduleId, list, index }: { moduleId: string; list: string; index: number }) {
+      let path = "";
+      void base
+        .edit((w, s) => {
+          const r = insertItem(w, s, moduleId, list, index);
+          path = r.path;
+          return r.edit;
+        })
+        .then((done) => done && typeInto(moduleId, path));
+    },
+    reorder({ moduleId, list, item, to }: { moduleId: string; list: string; item: string | number; to: number }) {
+      void base.edit((w, s) => moveItem(w, s, moduleId, list, item, to));
+    },
+    retarget({ moduleId, path, to }: { moduleId: string; path: string; to: string }) {
+      void base.edit((w, s) => retargetItem(w, s, moduleId, path, to));
+    },
+    setValue({ moduleId, path, value }: { moduleId: string; path: string; value: unknown }) {
+      // A place given as fields of its record (a point on a map) changes those fields.
+      if (value && typeof value === "object" && !Array.isArray(value))
+        base.setItem(moduleId, path, value as Record<string, unknown>);
+      else void base.edit((w, s) => setAt(w, s, moduleId, path, value));
+    },
+    create({ moduleId, list, index, values }: { moduleId: string; list: string; index: number; values: Record<string, unknown> }) {
+      let path = "";
+      void base
+        .edit((w, s) => {
+          const r = insertItem(w, s, moduleId, list, index, values);
+          path = r.path;
+          return r.edit;
+        })
+        .then((done) => done && typeInto(moduleId, path));
+    },
+  };
+  /** What the keyboard does to the part selected inside a module, if it does anything:
+   * Enter makes the next item as its list says, Tab the one its list makes with Tab (in a
+   * tree, Tab and Shift+Tab move it in and out), Alt with the arrows moves it, Delete takes
+   * it out with what referred to it, Cmd+D copies it and F2 changes its words. */
+  const partKey = (e: KeyboardEvent): boolean => {
+    const c = canvasRef.current;
+    const part = c?.selectedPart;
+    const w = session.get().shown;
+    const m = part && w?.scenes[sceneId]?.modules.find((x) => x.id === part.moduleId);
+    if (!c || !part || !w || !m) return false;
+    const at = listOf(w, m, part.path);
+    const mod = e.metaKey || e.ctrlKey;
+    const insertWith = (index: number, values: Record<string, unknown>) => {
+      let path = "";
+      void base
+        .edit((w2, s) => {
+          const r = insertItem(w2, s, m.id, at!.list, index, values);
+          path = r.path;
+          return r.edit;
+        })
+        .then((done) => done && typeInto(m.id, path));
+    };
+    const moveTo = (make: (w2: Work, s: string) => { edit: WorkEdit; path: string } | null) => {
+      let path = "";
+      void base
+        .edit((w2, s) => {
+          const r = make(w2, s);
+          if (!r) return null;
+          path = r.path;
+          return r.edit;
+        })
+        .then((done) => done && path && c.selectPart({ moduleId: m.id, path }));
+    };
+    if (e.key === "F2") {
+      const words = c.wordsAt(m.id, part.path);
+      if (words) retype(words);
+      return !!words;
+    }
+    if (!at) return false;
+    if (e.key === "Enter" && !mod && !e.shiftKey) {
+      insertWith(at.place + 1, following(at.value, at.field.next?.enter));
+      return true;
+    }
+    if (e.key === "Tab" && !mod) {
+      if (at.field.item.type === "tree") moveTo((w2, s) => (e.shiftKey ? outdentItem : indentItem)(w2, s, m.id, part.path));
+      else if (at.field.next?.tab) insertWith(e.shiftKey ? at.place : at.place + 1, following(at.value, at.field.next.tab));
+      else return false;
+      return true;
+    }
+    if (e.altKey && !mod && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      const to = at.place + (e.key === "ArrowUp" ? -1 : 1);
+      void base.edit((w2, s) => moveItem(w2, s, m.id, at.list, at.item, to));
+      return true;
+    }
+    if (e.key === "Delete" || e.key === "Backspace") {
+      base.removeItem(m.id, at.list, at.item);
+      c.selectPart(null);
+      return true;
+    }
+    if (mod && e.code === "KeyD") {
+      moveTo((w2, s) => duplicateItem(w2, s, m.id, at.list, at.item));
+      return true;
+    }
+    return false;
+  };
   /** Changes a new module's words where they are drawn, once it is. */
   const retypeNew = (made: Promise<string | undefined>) =>
     void made.then((id) => {
@@ -342,6 +465,9 @@ export function useEditing({
       else if (e.shiftKey && !mod && !e.altKey && code === "Digit2") canvas?.frameSelection();
       else if (e.key === "?" && !mod) help();
       else if (locked) return;
+      else if (partKey(e)) {
+        // The part selected took the key.
+      }
       // R turns the selected links round; with anything else it takes up the rectangle.
       else if (links.length && !ids.length && plain && code === "KeyR") ops.reverse();
       else if (letter) setTool(letter);
@@ -403,7 +529,7 @@ export function useEditing({
     return () => removeEventListener("keydown", key);
   }, [editing, locked, selected, links, sceneId, tool, menu, canvas]);
 
-  return { ops, tool, setTool, place, ink, menu, setMenu, clipped, brushed, bringing, setBringing };
+  return { ops, items, tool, setTool, place, ink, menu, setMenu, clipped, brushed, bringing, setBringing };
 }
 /** A tool by the letter drawing apps give it. */
 const toolKeys: Record<string, Tool> = {

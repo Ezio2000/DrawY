@@ -1,10 +1,11 @@
-import { SceneRenderer, type PatchResult } from "../runtime/scene.ts";
+import { SceneRenderer, type EditMap, type PatchResult } from "../runtime/scene.ts";
 import { boxOutline, fit, nearestAlong, union, zoom, type Camera } from "../contracts/geometry.ts";
-import { endLink, endModule, shownName, type LinkEnd } from "../contracts/index.ts";
+import { drawingOf, endLink, endModule, fieldAt, getAt, parsePath, setAt as setIn, shownName, type LinkEnd } from "../contracts/index.ts";
 import { plan, play, gesture, hatching } from "./ink.ts";
 import {
   carried,
   facing,
+  itemOf,
   handles,
   resized,
   scaled,
@@ -90,6 +91,16 @@ export interface CanvasOptions {
    * while editing, or always with `parts: "always"` (a page that does not edit). */
   part?: (part: PartPick | null) => void;
   parts?: "editing" | "always";
+  /** A place for a new item of a list pressed (its "+"), inside a module. */
+  insert?: (at: { moduleId: string; list: string; index: number }) => void;
+  /** An item of a list dragged to another place in it. */
+  reorder?: (at: { moduleId: string; list: string; item: string | number; to: number }) => void;
+  /** A reference's handle dropped on an item it can refer to, as a message's end on a lifeline. */
+  retarget?: (at: { moduleId: string; path: string; to: string }) => void;
+  /** A value dragged by its handle to another: a number, or a place on a map. */
+  setValue?: (at: { moduleId: string; path: string; value: unknown }) => void;
+  /** A drag from one item's region to another's that makes a new item between them. */
+  create?: (at: { moduleId: string; list: string; index: number; values: Record<string, unknown> }) => void;
   cameraChanged?: (camera: Camera) => void;
   commit?: (moves: { id: string; bounds: Bounds }[]) => void;
   /** Modules dragged off with Alt held while editing: copies of them go that far from
@@ -177,6 +188,14 @@ function placeOf(words: Element) {
         : rect.height * 0.8,
   };
 }
+/** Data with a value dragged by a handle: a record's fields given whole merge into it (a
+ * place moved on a map), anything else is set at the path. */
+function pointValue(data: Record<string, unknown>, path: string, value: unknown) {
+  const at = getAt(data, path);
+  const merged =
+    value && typeof value === "object" && !Array.isArray(value) && at && typeof at === "object" && !Array.isArray(at) ? { ...at, ...value } : value;
+  return setIn(data, path, merged) as Record<string, unknown> | null;
+}
 const isFreeEnd = (end: LinkEnd) => !("moduleId" in end) && !("linkId" in end);
 /** Where a bound end stands: a side's middle, or the point found on the outline. */
 const middle = (end: LinkEnd, b: Bounds, found: Point): Point =>
@@ -235,6 +254,16 @@ export class Canvas {
   private hoveredPart: PartPick | null = null;
   private partBox = document.createElement("div");
   private partHover = document.createElement("div");
+  /** More parts selected with the first, by Shift, in the same module. */
+  private moreParts: string[] = [];
+  private partBoxes: HTMLDivElement[] = [];
+  /** The "+" of the place for a new item nearest the pointer, the handles of the parts
+   * selected, where a dragged item would go, and the region a drag would drop on. */
+  private slotMark?: HTMLButtonElement;
+  private nearSlot: { list: string; index: number; at: Point } | null = null;
+  private handleMarks: HTMLButtonElement[] = [];
+  private dropLine = document.createElement("div");
+  private target = document.createElement("div");
   private outlines: HTMLDivElement[] = [];
   private hovered: string | null = null;
   private hover = document.createElement("div");
@@ -358,6 +387,12 @@ export class Canvas {
     /** The eraser going over parts: those it has touched go when it is lifted. */
     | { kind: "erase"; hit: Set<string>; last: { x: number; y: number } }
     | { kind: "press" }
+    /** An item of a module's list dragged along its rows to another place. */
+    | { kind: "reorder"; moduleId: string; list: string; item: string | number; axis: "x" | "y"; to?: number }
+    /** A handle of a part dragged: onto an item it can refer to, or along to change a value. */
+    | { kind: "handle"; moduleId: string; handle: EditMap["handles"][number]; data: Record<string, unknown>; to?: string; value?: unknown }
+    /** A drag from one item's region to another's, making a new item between them. */
+    | { kind: "create"; moduleId: string; list: string; between: [string, string]; fields?: Record<string, unknown>; rows: "x" | "y"; from: string; start: Point; to?: string }
   );
   /** The fingers on the canvas now, where they are on screen. */
   private touches = new Map<number, Point>();
@@ -404,6 +439,9 @@ export class Canvas {
     this.partHover.style.cssText =
       "position:absolute;border:1px dashed rgba(51,102,214,.7);border-radius:2px;pointer-events:none;display:none;z-index:4;box-sizing:border-box";
     this.element.append(this.partBox, this.partHover);
+    this.dropLine.style.cssText = `position:absolute;background:${ACCENT};pointer-events:none;display:none;z-index:5;border-radius:1px`;
+    this.target.style.cssText = `position:absolute;border:1.5px solid ${ACCENT};background:rgba(51,102,214,.08);border-radius:3px;pointer-events:none;display:none;z-index:4;box-sizing:border-box`;
+    this.element.append(this.dropLine, this.target);
     const english = /^en/i.test(document.documentElement.lang);
     // Controls are pressed by their invisible place, which grows to a fingertip on touch.
     const finger = fingers(),
@@ -449,6 +487,17 @@ export class Canvas {
       this.frame.append(dot);
     }
     this.element.append(this.frame);
+    // A new item goes in at a place a drawing offers: a plus in a dashed ring of the blue pencil.
+    this.slotMark = control(
+      { slot: "" },
+      hit(24),
+      `width:18px;height:18px;border-radius:50%;background:linear-gradient(${ACCENT},${ACCENT}) center/8px 1.5px no-repeat,linear-gradient(${ACCENT},${ACCENT}) center/1.5px 8px no-repeat,#fff;border:1.5px dashed ${ACCENT}`,
+      english ? "Add one here" : "在这里添加一项",
+    ) as HTMLButtonElement;
+    this.slotMark.style.display = "none";
+    this.slotMark.style.zIndex = "5";
+    this.slotMark.style.cursor = "copy";
+    this.element.append(this.slotMark);
     this.groupBox.style.cssText =
       "position:absolute;border:1px dashed rgba(51,102,214,.5);border-radius:3px;pointer-events:none;display:none;z-index:3;box-sizing:border-box";
     this.element.append(this.groupBox);
@@ -1281,6 +1330,14 @@ export class Canvas {
     const chosenBox = partBox(this.chosenPart);
     if (chosenBox) box(this.partBox, chosenBox);
     else this.partBox.style.display = "none";
+    const more = this.chosenPart ? this.moreParts.map((path) => partBox({ moduleId: this.chosenPart!.moduleId, path })) : [];
+    while (this.partBoxes.length < more.length) {
+      const el = this.partBox.cloneNode() as HTMLDivElement;
+      this.element.append(el);
+      this.partBoxes.push(el);
+    }
+    this.partBoxes.forEach((el, i) => (more[i] ? box(el, more[i]!) : (el.style.display = "none")));
+    this.paintEditMarks();
     const hoverBox =
       this.hoveredPart && this.hoveredPart.path !== this.chosenPart?.path && !this.gesture ? partBox(this.hoveredPart) : undefined;
     if (hoverBox) box(this.partHover, hoverBox);
@@ -1876,10 +1933,84 @@ export class Canvas {
     this.setPart(part);
     this.paint();
   }
-  private setPart(part: PartPick | null) {
+  private setPart(part: PartPick | null, more: string[] = []) {
+    this.moreParts = part ? more.filter((p) => p !== part.path) : [];
     if (this.chosenPart?.moduleId === part?.moduleId && this.chosenPart?.path === part?.path) return;
     this.chosenPart = part;
     this.options.part?.(part ? { ...part } : null);
+  }
+  /** The marks of what can be edited inside the module selected: the handles of the parts
+   * selected, and the "+" of the place for a new item nearest the pointer. */
+  private paintEditMarks() {
+    const { x, y, scale } = this.camera;
+    const on = (p: Point) => ({ left: x + p.x * scale + "px", top: y + p.y * scale + "px" });
+    const m = this.chosenPart && this.editing ? this.renderer.editMap(this.chosenPart.moduleId) : undefined;
+    const paths = this.chosenPart ? [this.chosenPart.path, ...this.moreParts] : [];
+    const handles = m && !this.gesture ? m.handles.filter((h) => paths.some((p) => h.path.startsWith(p + "."))) : [];
+    while (this.handleMarks.length < handles.length) {
+      const mark = control(
+        { editHandle: String(this.handleMarks.length) },
+        fingers() ? 44 : 18,
+        `width:11px;height:11px;border-radius:50%;background:#fff;border:2px solid ${ACCENT};box-shadow:0 1px 3px rgba(0,0,0,.2)`,
+        /^en/i.test(document.documentElement.lang) ? "Drag to change" : "拖动来改",
+      ) as HTMLButtonElement;
+      mark.style.zIndex = "5";
+      mark.style.cursor = "grab";
+      this.element.append(mark);
+      this.handleMarks.push(mark);
+    }
+    this.handleMarks.forEach((mark, i) => {
+      const h = handles[i];
+      mark.style.display = h ? "grid" : "none";
+      if (h) Object.assign(mark.style, on(h.at));
+    });
+    const slot = this.slotMark!;
+    const near = this.nearSlot;
+    slot.style.display = near && this.editing && !this.gesture && this.tool === "select" ? "grid" : "none";
+    if (near) Object.assign(slot.style, on(near.at));
+  }
+  /** The handles of the parts selected, in the order they are marked. */
+  private partHandles() {
+    const m = this.chosenPart && this.renderer.editMap(this.chosenPart.moduleId);
+    const paths = this.selectedParts.map((p) => p.path);
+    return m ? m.handles.filter((h) => paths.some((p) => h.path.startsWith(p + "."))) : [];
+  }
+  /** A module's data as its drawing draws it: its own over the drawing's defaults. */
+  private drawnData(m: Instance) {
+    return { ...(drawingOf(this.renderer.work, m.drawingId)?.defaults ?? {}), ...m.data };
+  }
+  /** The smallest region an item declared as what can be referred to, under a point. */
+  private anchorAt(map: EditMap, clientX: number, clientY: number, list?: string) {
+    const p = this.toScene(clientX, clientY);
+    return map.anchors
+      .filter((a) => (!list || a.list === list) && p.x >= a.box.x && p.x <= a.box.x + a.box.width && p.y >= a.box.y && p.y <= a.box.y + a.box.height)
+      .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height)[0];
+  }
+  /** The list a reference field of a list's items refers into, by the module's schema. */
+  private refersTo(m: Instance, list: string, field: string) {
+    const f = fieldAt(drawingOf(this.renderer.work, m.drawingId)?.params ?? {}, `${list}.0.${field}`);
+    return f?.type === "ref" ? f.to : undefined;
+  }
+  /** The places for new items of a list a module offers, along an axis. */
+  private nearestSlot(map: EditMap, list: string, p: Point, axis: "x" | "y") {
+    return map.slots
+      .filter((s) => s.list === list)
+      .sort((a, b) => Math.abs(a.at[axis] - p[axis]) - Math.abs(b.at[axis] - p[axis]))[0];
+  }
+  /** The parts selected inside the one module selected, the first first. */
+  get selectedParts(): PartPick[] {
+    return this.chosenPart ? [this.chosenPart, ...this.moreParts.map((path) => ({ moduleId: this.chosenPart!.moduleId, path }))] : [];
+  }
+  /** Marked words of a module under a path, as a double click on them points at them: what
+   * a new item is typed into once it is drawn. */
+  wordsAt(moduleId: string, path: string): Extract<Pointed, { kind: "text" }> | undefined {
+    const root = this.renderer.host("module", moduleId)?.shadowRoot;
+    const marked = [...(root?.querySelectorAll("[data-edp-text]") ?? [])].find((el) => {
+      const at = el.getAttribute("data-edp-text")!;
+      return at === path || at.startsWith(path + ".");
+    });
+    if (!marked) return undefined;
+    return { kind: "text", moduleId, text: marked.textContent?.trim() ?? "", path: marked.getAttribute("data-edp-text")!, place: () => placeOf(marked) };
   }
   /** What a module offers to edit, measured where it is drawn now. */
   editMap(moduleId: string) {
@@ -2058,6 +2189,19 @@ export class Canvas {
     if (near === this.near) return;
     this.near = near;
     this.paint();
+  }
+  /** The place for a new item nearest the pointer, in the module selected alone. */
+  private hoverSlot(clientX: number, clientY: number) {
+    const map = this.editing && this.partsOn && this.selection.length === 1 ? this.renderer.editMap(this.selection[0]) : undefined;
+    const p = this.toScene(clientX, clientY),
+      reach = 16 / this.camera.scale;
+    const near = map?.slots
+      .map((s) => ({ s, d: Math.hypot(s.at.x - p.x, s.at.y - p.y) }))
+      .filter((x) => x.d <= reach)
+      .sort((a, b) => a.d - b.d)[0]?.s ?? null;
+    if (near?.list === this.nearSlot?.list && near?.index === this.nearSlot?.index) return;
+    this.nearSlot = near;
+    this.paintEditMarks();
   }
   private hoverPart(part: PartPick | null) {
     if (this.hoveredPart?.path === part?.path && this.hoveredPart?.moduleId === part?.moduleId) return;
@@ -2371,6 +2515,22 @@ export class Canvas {
       };
       return capture();
     }
+    // The "+" of a place for a new item puts one in there.
+    if (control?.dataset.slot !== undefined && this.nearSlot && this.selection.length === 1) {
+      this.options.insert?.({ moduleId: this.selection[0], list: this.nearSlot.list, index: this.nearSlot.index });
+      this.gesture = { ...start, kind: "press" };
+      return capture();
+    }
+    // A handle of a part selected is dragged: onto what it can refer to, or along.
+    const editHandle = control?.dataset.editHandle;
+    if (editHandle !== undefined && this.chosenPart) {
+      const h = this.partHandles()[Number(editHandle)];
+      const m = this.renderer.instances.get(this.chosenPart.moduleId);
+      if (h && m) {
+        this.gesture = { ...start, kind: "handle", moduleId: m.id, handle: h, data: this.drawnData(m) };
+        return capture();
+      }
+    }
     // An end of the one link selected is dragged onto another module, or another side.
     const end = control?.dataset.linkEnd as "from" | "to" | undefined;
     const only = this.onlyLink;
@@ -2414,6 +2574,45 @@ export class Canvas {
     // the selection or takes it out.
     const deep = this.editing && (e.metaKey || e.ctrlKey);
     const was = !!m && selection.includes(m.id);
+    // Inside the module selected alone, while editing: Shift adds a part to the parts
+    // selected; a part selected is dragged to another place in its list; a drag from an
+    // item's region to another's makes a new item between them.
+    if (m && was && this.editing && this.partsOn && selection.length === 1 && !links.length && !e.altKey && !deep) {
+      const under = this.partAt(m, e.clientX, e.clientY);
+      const map = this.renderer.editMap(m.id);
+      if (under && e.shiftKey && this.chosenPart?.moduleId === m.id) {
+        const paths = this.selectedParts.map((p) => p.path);
+        const next = paths.includes(under.path) ? paths.filter((p) => p !== under.path) : [...paths, under.path];
+        this.setPart(next.length ? { moduleId: m.id, path: next[0] } : null, next.slice(1));
+        this.paint();
+        this.gesture = { ...start, kind: "press" };
+        return capture();
+      }
+      const chosen = !!under && this.selectedParts.some((p) => p.path === under.path);
+      const reorder = under && map?.parts.find((p) => p.path === under.path)?.reorder;
+      const item = under && itemOf(under.path);
+      if (chosen && reorder && item) {
+        this.gesture = { ...start, pickPart: under, kind: "reorder", moduleId: m.id, list: item.list, item: item.item, axis: reorder };
+        return capture();
+      }
+      const anchor = !under && map ? this.anchorAt(map, e.clientX, e.clientY) : undefined;
+      const make = anchor && map?.creates.find((c) => this.refersTo(m, c.list, c.between[0]) === anchor.list);
+      if (anchor && make) {
+        this.gesture = {
+          ...start,
+          pickPart: null,
+          kind: "create",
+          moduleId: m.id,
+          list: make.list,
+          between: make.between,
+          fields: make.fields,
+          rows: make.rows ?? "y",
+          from: anchor.id,
+          start: this.toScene(e.clientX, e.clientY),
+        };
+        return capture();
+      }
+    }
     // A second press on a module selected alone goes into it, as a second press goes into
     // a group: to the part of its drawing under the press.
     const pickPart =
@@ -2638,6 +2837,7 @@ export class Canvas {
         this.hoverPart(
           m && this.partsOn && this.selection.length === 1 && this.selection[0] === m.id ? this.partAt(m, e.clientX, e.clientY) : null,
         );
+        this.hoverSlot(e.clientX, e.clientY);
         this.hoverOver(m?.id ?? null, m ? null : (link ?? null));
         this.element.style.cursor = !m && link ? "pointer" : "";
       } else if (this.editing && this.tool === "arrow" && !this.spacing) {
@@ -2687,6 +2887,7 @@ export class Canvas {
       clearTimeout(this.holding);
     }
     if (!g.moved) return;
+    if (g.kind === "reorder" || g.kind === "create" || g.kind === "handle") return this.dragInside(g, e);
     const scale = this.camera.scale;
     // Snapping lines a dragged box up with its neighbours; Cmd or Ctrl turns it off.
     const snapping = this.editing && this.snapping.guides && !e.metaKey && !e.ctrlKey;
@@ -2883,6 +3084,61 @@ export class Canvas {
     }
     this.paint();
   }
+  /** A drag inside the module selected: an item to another place in its list, a new item
+   * from one region to another, or a part's handle. */
+  private dragInside(g: Extract<NonNullable<Canvas["gesture"]>, { kind: "reorder" | "create" | "handle" }>, e: PointerEvent) {
+    const map = this.renderer.editMap(g.moduleId);
+    const m = this.renderer.instances.get(g.moduleId);
+    if (!map || !m) return;
+    const p = this.toScene(e.clientX, e.clientY);
+    const { x, y, scale } = this.camera;
+    const showTarget = (b?: Bounds) => {
+      if (!b) return void (this.target.style.display = "none");
+      const on = this.shown(b);
+      Object.assign(this.target.style, { display: "block", left: on.x + "px", top: on.y + "px", width: on.width + "px", height: on.height + "px" });
+    };
+    if (g.kind === "reorder") {
+      const slot = this.nearestSlot(map, g.list, p, g.axis);
+      g.to = slot?.index;
+      const part = map.parts.find((q) => q.path === `${g.list}.${typeof g.item === "number" ? g.item : "#" + g.item}`);
+      if (!slot || !part) return void (this.dropLine.style.display = "none");
+      // The line across where it would go.
+      const across = g.axis === "y" ? { left: x + part.box.x * scale, top: y + slot.at.y * scale - 1, width: part.box.width * scale, height: 2 } : { left: x + slot.at.x * scale - 1, top: y + part.box.y * scale, width: 2, height: part.box.height * scale };
+      Object.assign(this.dropLine.style, { display: "block", left: across.left + "px", top: across.top + "px", width: across.width + "px", height: across.height + "px" });
+      return;
+    }
+    if (g.kind === "create") {
+      const to = this.anchorAt(map, e.clientX, e.clientY, this.refersTo(m, g.list, g.between[1]));
+      g.to = to?.id;
+      showTarget(to?.box);
+      const point = to ? { x: to.box.x + to.box.width / 2, y: p.y } : p;
+      this.showBinding({ end: { x: g.start.x, y: g.start.y }, point: g.start }, { end: { x: point.x, y: point.y }, point });
+      return;
+    }
+    const h = g.handle;
+    if (h.kind === "ref") {
+      const list = (() => {
+        const f = fieldAt(drawingOf(this.renderer.work, m.drawingId)?.params ?? {}, h.path);
+        return f?.type === "ref" ? f.to : undefined;
+      })();
+      const to = list ? this.anchorAt(map, e.clientX, e.clientY, list) : undefined;
+      g.to = to?.id;
+      showTarget(to?.box);
+      this.showBinding({ end: { x: h.at.x, y: h.at.y }, point: h.at }, { end: { x: p.x, y: p.y }, point: p });
+      return;
+    }
+    // A number dragged along its axis, or a place moved on a map, shown as it goes.
+    let value: unknown;
+    if (h.kind === "scalar") {
+      const was = Number(getAt(g.data, h.path) ?? 0);
+      const along = (h.axis ?? "y") === "x" ? p.x - h.at.x : p.y - h.at.y;
+      value = Math.round((was + along * (h.scale ?? 1)) * 100) / 100;
+    } else if (h.unproject) value = h.unproject(p.x - m.bounds.x, p.y - m.bounds.y);
+    if (value === undefined) return;
+    g.value = value;
+    const next = pointValue(g.data, h.path, value);
+    if (next) this.renderer.redraw(m.id, next);
+  }
   /** The line being drawn, where it is on screen. */
   private paintInk() {
     const g = this.gesture;
@@ -2933,6 +3189,8 @@ export class Canvas {
     this.marquee.style.display = "none";
     this.origin.style.display = "none";
     this.line.style.display = "none";
+    this.dropLine.style.display = "none";
+    this.target.style.display = "none";
     this.gaps = [];
     this.showGuides([]);
     this.showReadout(null);
@@ -3058,6 +3316,28 @@ export class Canvas {
       else if (!g.straight || g.moved) this.options.ink?.(g.points, g.straight ? { kind: "arrow", ...(tall ? { upright: true } : {}) } : { kind: "pen" });
     }
     if (g.kind === "erase" && g.hit.size) this.options.erase?.([...g.hit]);
+    if (g.moved && g.kind === "reorder" && g.to !== undefined) {
+      const list = getAt(this.drawnData(this.renderer.instances.get(g.moduleId)!), g.list);
+      const from = Array.isArray(list) ? (typeof g.item === "number" ? g.item : list.findIndex((x) => (x as { id?: unknown })?.id === g.item)) : -1;
+      const to = from >= 0 && g.to > from ? g.to - 1 : g.to;
+      if (from >= 0 && to !== from) this.options.reorder?.({ moduleId: g.moduleId, list: g.list, item: g.item, to });
+    }
+    if (g.moved && g.kind === "create" && g.to !== undefined) {
+      const map = this.renderer.editMap(g.moduleId);
+      const slot = map && this.nearestSlot(map, g.list, this.toScene(e.clientX, e.clientY), g.rows);
+      const list = getAt(this.drawnData(this.renderer.instances.get(g.moduleId)!), g.list);
+      this.options.create?.({
+        moduleId: g.moduleId,
+        list: g.list,
+        index: slot?.index ?? (Array.isArray(list) ? list.length : 0),
+        values: { ...(g.fields ?? {}), [g.between[0]]: g.from, [g.between[1]]: g.to },
+      });
+    }
+    if (g.moved && g.kind === "handle") {
+      if (g.handle.kind === "ref" && g.to !== undefined) this.options.retarget?.({ moduleId: g.moduleId, path: g.handle.path, to: g.to });
+      else if (g.handle.kind !== "ref" && g.value !== undefined) this.options.setValue?.({ moduleId: g.moduleId, path: g.handle.path, value: g.value });
+      else this.renderer.redraw(g.moduleId, this.renderer.instances.get(g.moduleId)!.data);
+    }
     if (!g.moved && g.pickPart !== undefined) {
       this.setPart(g.pickPart);
       this.paint();
