@@ -1,4 +1,7 @@
 import { expect, it } from "vitest";
+import { register } from "../../../modules/identity/index.ts";
+import { Storage } from "../../../modules/storage/index.ts";
+import { createWork } from "../../../modules/workspace/index.ts";
 import {
   api,
   asked,
@@ -9,6 +12,7 @@ import {
   composer,
   context,
   count,
+  data,
   drag,
   editing,
   make,
@@ -24,6 +28,7 @@ import {
   setup,
   statuses,
   tell,
+  userId,
 } from "./harness.ts";
 
 /* The desktop work page as AGENTS.md describes it, on a computer's screen with a mouse and
@@ -826,6 +831,46 @@ it("requests covers only in work records and restores the sidebar row on undo or
   await page.getByText("Work is busy", { exact: true }).waitFor();
   expect(lists).toBe(2);
 }, 20_000);
+
+it("previews another account's work with its saved screenshot and only draws the administrator's own work live", async () => {
+  const own = await make();
+  const png = await page.screenshot({ clip: { x: 0, y: 0, width: 2, height: 2 } });
+  const storage = new Storage(data);
+  const member = register(storage, "Preview member", "preview-test");
+  const store = storage.scoped(member.id);
+  const work = createWork(store, "With screenshot");
+  const capture = store.putCapture(png, "Saved overview");
+  store.saveRun(run(work.id, "preview-run", "completed", [
+    { kind: "tool", id: "view", name: "view_canvas", focus: "overview", status: "done", screenshots: [capture] },
+  ]));
+  createWork(store, "Without screenshot");
+  storage.close();
+
+  const foreignWorkRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.searchParams.get("account") === member.id && url.pathname.startsWith("/api/works/"))
+      foreignWorkRequests.push(url.pathname);
+  });
+  await page.goto(base + "/traces?account=" + member.id);
+  await page.getByRole("button", { name: "Works", exact: true }).click();
+  await page.getByRole("button", { name: /With screenshot/ }).click();
+  const screenshot = page.getByRole("img", { name: "Last saved overview screenshot" });
+  await expect.poll(() => screenshot.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  expect(await screenshot.getAttribute("src")).toBe(capture.url + "?account=" + member.id);
+  expect(await page.locator("[data-canvas]").count()).toBe(0);
+
+  await page.getByRole("button", { name: /Without screenshot/ }).click();
+  await page.getByText("No work screenshot available").waitFor();
+  expect(await page.locator("[data-canvas]").count()).toBe(0);
+  expect(foreignWorkRequests).toEqual([]);
+
+  const target = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/works/" + own);
+  await page.getByRole("combobox", { name: "Whose records" }).selectOption(userId);
+  await target;
+  await page.locator("[data-canvas]").waitFor();
+  expect(await screenshot.count()).toBe(0);
+});
 
 it("draws by hand with the pen, the arrow and the eraser; brings Mermaid and Excalidraw in by pasting; and sends the scene out as Excalidraw and Mermaid", async () => {
   const id = await open(await make()).then(() => page.url().split("/a/")[1]);
