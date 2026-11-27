@@ -147,6 +147,7 @@ export type MaterialUse =
       kind: "picture";
       version?: number;
       name: string;
+      nameEn?: string;
       /** Its material type, such as object, figure, scene, icon or texture. */
       type: string;
       style: string | null;
@@ -167,6 +168,7 @@ export type MaterialUse =
       kind: "drawing";
       version?: number;
       name: string;
+      nameEn?: string;
       source: string;
       defaults: Record<string, unknown>;
       /** The data it reads, as a schema. */
@@ -175,7 +177,7 @@ export type MaterialUse =
        * lists and records, so data it does not declare is not refused. */
       partial?: true;
     }
-  | { id: string; kind: "effect"; version?: number; name: string; defs: string };
+  | { id: string; kind: "effect"; version?: number; name: string; nameEn?: string; defs: string };
 export type Point = z.infer<typeof pointSchema>;
 export type Bounds = z.infer<typeof boundsSchema>;
 export type Target = z.infer<typeof targetSchema>;
@@ -620,6 +622,7 @@ export interface Candidate {
   id: string;
   kind: "picture" | "drawing" | "effect" | "style";
   name: string;
+  nameEn?: string;
   /** A picture to show: the picture itself, or a style's sample. */
   url?: string;
 }

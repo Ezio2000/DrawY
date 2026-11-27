@@ -64,6 +64,7 @@ export function Library({
     locale = useLocale(),
     can = useCan();
   const shelf = useRef<HTMLDivElement>(null);
+  const uploadInput = useRef<HTMLInputElement>(null);
   // Public and private materials are kept apart: each has its own shelf, and those who
   // see everyone's have a third for other users' private ones.
   const shelves: Shelf[] = can("materials.all")
@@ -109,9 +110,19 @@ export function Library({
       );
     };
     measure();
-    const observer = new ResizeObserver(measure);
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    });
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, [cell]);
   const size = grid ? grid.columns * grid.rows : 0;
   useEffect(() => {
@@ -144,9 +155,12 @@ export function Library({
     };
   }, [q, page, kind, stamp, locale, size, on]);
   const shelve = (next: Shelf) => {
+    if (next === on) return;
     lastShelf = next;
     setOn(next);
     setPage(1);
+    setLoading(true);
+    R({ items: [], total: 0, page: 0, pages: 1 });
     O(undefined);
   };
   const styleName = (id: string | null) => (id ? styleNames[id]?.[locale] : undefined);
@@ -172,8 +186,14 @@ export function Library({
       U(false);
     }
   }
+  const nameCounts = new Map<string, number>();
+  for (const m of result.items) {
+    const label = m.name[locale];
+    nameCounts.set(label, (nameCounts.get(label) ?? 0) + 1);
+  }
   return (
-    <div className={cx("library")}>
+    <div className={cx("library")} data-inspecting={!!open || undefined}>
+      <div className={cx("library-body")}>
       <nav className={cx("shelf-tabs")} aria-label={t.library.shelf}>
         {shelves.map((k) => (
           <button
@@ -195,8 +215,11 @@ export function Library({
                 key={k}
                 aria-pressed={kind === k}
                 onClick={() => {
+                  if (k === kind) return;
                   K(k);
                   setPage(1);
+                  setLoading(true);
+                  R({ items: [], total: 0, page: 0, pages: 1 });
                   O(undefined);
                 }}
               >
@@ -216,29 +239,34 @@ export function Library({
             }}
           />
           {q && (
-            <button aria-label={t.library.clear} onClick={() => (Q(""), setPage(1))}>
+            <button type="button" aria-label={t.library.clear} onClick={() => (Q(""), setPage(1))}>
               <X size={14} />
             </button>
           )}
         </label>
-        <label
+        <button
+          type="button"
           className={cx("secondary upload")}
           data-busy={uploading || undefined}
+          disabled={uploading}
           aria-label={t.library.upload}
           data-tip={t.library.upload}
+          onClick={() => uploadInput.current?.click()}
         >
           {uploading ? <Spinner size={15} /> : <Upload size={15} />}
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={(e) => {
-              if (e.target.files?.length) void upload(e.target.files);
-              e.target.value = "";
-            }}
-          />
-        </label>
+        </button>
+        <input
+          ref={uploadInput}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          tabIndex={-1}
+          onChange={(e) => {
+            if (e.target.files?.length) void upload(e.target.files);
+            e.target.value = "";
+          }}
+        />
       </div>
       {error && (
         <p className={cx("error")} role="alert">
@@ -257,19 +285,35 @@ export function Library({
           } as CSSProperties
         }
       >
-        {result.items.map((m, i) => (
-          <button
-            key={m.id}
-            className={cx("item")}
-            aria-current={open?.id === m.id || undefined}
-            title={m.name[locale]}
-            style={{ "--tint": tints[i % tints.length] } as CSSProperties}
-            onClick={() => O(m)}
-          >
-            <Look m={m} />
-            <span className={cx("item-name")}>{m.name[locale]}</span>
-          </button>
-        ))}
+        {loading && !result.items.length && (
+          <div className={cx("shelf-loading")}>
+            <Spinner />
+          </div>
+        )}
+        {result.items.map((m, i) => {
+          const dup = (nameCounts.get(m.name[locale]) ?? 0) > 1;
+          const cue = dup
+            ? m.kind === "picture"
+              ? `${t.library.roles[m.type as keyof typeof t.library.roles] ?? m.type} · ${m.id.slice(-4)}`
+              : m.id.slice(-4)
+            : undefined;
+          return (
+            <button
+              key={m.id}
+              className={cx("item")}
+              aria-current={open?.id === m.id || undefined}
+              title={cue ? `${m.name[locale]} (${cue})` : m.name[locale]}
+              style={{ "--tint": tints[i % tints.length] } as CSSProperties}
+              onClick={() => O(m)}
+            >
+              <Look m={m} />
+              <span className={cx("item-name")}>
+                {m.name[locale]}
+                {cue && <small className={cx("item-cue")}>{cue}</small>}
+              </span>
+            </button>
+          );
+        })}
         {!loading && !result.items.length && (
           <p className={cx("shelf-empty")}>
             {q ? t.library.none(q) : t.library.empty[on]}
@@ -298,6 +342,7 @@ export function Library({
           <ChevronRight size={16} />
         </button>
       </nav>
+      </div>
       {open && (
         <Inspector
           key={open.id}

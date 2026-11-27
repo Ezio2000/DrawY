@@ -59,6 +59,10 @@ const zh = {
     whyEdit: "登录后即可编辑并保存你的画布",
     whyPage: "登录后即可查看此页面",
     whyGeneral: "登录或注册账号，开始你的创作",
+    needUsername: "请输入用户名",
+    needPassword: "请输入密码",
+    passwordShort: "密码至少需要 6 位",
+    needInvite: "请输入邀请码",
     art: "桌上三张画好的图：太阳系、大语言模型和红楼梦的人物关系，旁边是写下的一句请求",
   },
   // Rail
@@ -71,6 +75,8 @@ const zh = {
     home: "首页",
     library: "素材库",
     recents: "最近",
+    search: "搜索作品…",
+    noMatch: (q: string) => `没有找到“${q}”`,
     removeWork: (title: string) => "删除：" + title,
     remove: "删除",
     account: "账户",
@@ -288,6 +294,9 @@ const zh = {
     rename: "点击重命名",
     scenes: "全部场景",
     undo: "撤销上一步（⌘Z）",
+    undoToVersion: (n: number) => `撤销回第 ${n} 版（⌘Z）`,
+    undoToBlank: "撤销回空白画布（⌘Z）",
+    undoBack: "撤销刚才的恢复（⌘Z）",
     edit: "手动编辑",
     history: "版本",
     journal: "画室",
@@ -1579,6 +1588,10 @@ const en: Words = {
     whyEdit: "Sign in to edit and save your canvas",
     whyPage: "Sign in to view this page",
     whyGeneral: "Sign in or create an account to start creating",
+    needUsername: "Please enter a username",
+    needPassword: "Please enter a password",
+    passwordShort: "Password must be at least 6 characters",
+    needInvite: "Please enter an invite code",
     art: "Three finished drawings on a desk: the solar system, a language model and the families of a novel, beside the request that was written for one",
   },
   rail: {
@@ -1590,6 +1603,8 @@ const en: Words = {
     home: "Home",
     library: "Library",
     recents: "Recents",
+    search: "Filter works…",
+    noMatch: (q) => `No works matching “${q}”`,
     removeWork: (title) => "Delete " + title,
     remove: "Delete",
     account: "Account",
@@ -1803,6 +1818,9 @@ const en: Words = {
     rename: "Click to rename",
     scenes: "All scenes",
     undo: "Undo last step (⌘Z)",
+    undoToVersion: (n) => `Undo to version ${n} (⌘Z)`,
+    undoToBlank: "Undo to blank canvas (⌘Z)",
+    undoBack: "Undo going back (⌘Z)",
     edit: "Edit by hand",
     history: "Versions",
     journal: "Studio",
@@ -2015,7 +2033,7 @@ const en: Words = {
     bring: {
       title: "Import",
       heading: "Import Mermaid or Excalidraw",
-      hint: "Paste Mermaid code or Excalidraw content, or open a .excalidraw / .mmd file. A flowchart becomes boxes and links you can move and retype one by one, a sequence diagram participants and messages you can change one by one (whole, if it uses what that cannot draw); other Mermaid diagrams come in whole with their code still editable; Excalidraw shapes keep their hand-drawn look.",
+      hint: "Paste Mermaid code or Excalidraw content, or open a .excalidraw / .mmd file. Flowcharts become editable boxes and links, sequence diagrams become editable participants and messages (or import whole if they use unsupported syntax), other Mermaid diagrams import whole with editable code, and Excalidraw shapes keep their hand-drawn look.",
       placeholder: "flowchart LR\n  A[Idea] --> B{Will it work?}\n  B -->|Yes| C[Draw it]\n  B -->|No| A",
       open: "Open a file…",
       submit: "Import",
@@ -2639,7 +2657,7 @@ const en: Words = {
     search: "Search materials",
     clear: "Clear",
     upload: "Upload images",
-    count: (n) => `${n}`,
+    count: (n) => (n === 1 ? "1 item" : `${n} items`),
     none: (q) => (q ? `Nothing found for “${q}”` : "Nothing here yet"),
     previous: "Previous page",
     next: "Next page",
@@ -2651,7 +2669,7 @@ const en: Words = {
       size: "Size",
       fits: "Suits",
       pictures: "Pictures",
-      picturesCount: (n) => `${n}`,
+      picturesCount: (n) => (n === 1 ? "1 picture" : `${n} pictures`),
       use: "Use",
       link: "Link or module",
       module: "Module",
@@ -3075,7 +3093,7 @@ export function useLanguage() {
 export const ChooseLocale = createContext<(locale: Locale) => void>(() => {});
 
 /** One press switches between Chinese and English. */
-export function LanguageSwitch() {
+export function LanguageSwitch({ menu = false }: { menu?: boolean } = {}) {
   const locale = useLocale(),
     choose = useContext(ChooseLocale),
     t = useT();
@@ -3083,6 +3101,7 @@ export function LanguageSwitch() {
   return (
     <button
       type="button"
+      role={menu ? "menuitem" : undefined}
       className={cx("language")}
       aria-label={t.language + " · " + t.languages[next]}
       onClick={() => choose(next)}

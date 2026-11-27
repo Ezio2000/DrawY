@@ -1,6 +1,6 @@
 import type { Work } from "../../../../modules/contracts/index.ts";
 import { api } from "../api.ts";
-import type { Back, Context } from "./types.ts";
+import type { Back, Context, UndoTarget } from "./types.ts";
 
 /** How long going back can be taken back from the note that says it happened. */
 const BACK_FOR = 10_000;
@@ -53,7 +53,17 @@ export class Versions {
     return !!this.back || this.ctx.history.canUndo || this.ctx.revisions.counted.before !== undefined;
   }
   get redoable() {
-    return !this.back && this.ctx.history.canRedo;
+    return !!this.back?.undone || (!this.back && this.ctx.history.canRedo);
+  }
+  get undoTarget(): UndoTarget | undefined {
+    if (this.back) return { kind: "back" };
+    if (this.ctx.history.canUndo) return { kind: "step" };
+    const before = this.ctx.revisions.counted.before;
+    if (before === undefined) return undefined;
+    const number = this.ctx.revisions.counted.of.versions.find((v) =>
+      v.revisions.includes(before),
+    )?.number;
+    return { kind: "version", version: number ?? 0 };
   }
 
   /** Saves the hand edits made since the latest version as a version of their own. */
@@ -110,11 +120,30 @@ export class Versions {
       await this.ctx.history.undo();
       return;
     }
-    await this.apply(() => api<Work>("/works/" + this.ctx.id + "/undo", "POST"));
+    const from = this.work.revision;
+    const before = this.ctx.revisions.counted.before;
+    const number =
+      before !== undefined
+        ? this.ctx.revisions.counted.of.versions.find((v) => v.revisions.includes(before))?.number
+        : undefined;
+    const w = await this.apply(() => api<Work>("/works/" + this.ctx.id + "/undo", "POST"));
+    if (w.revision !== from)
+      this.wentTo({
+        at: w.revision,
+        from,
+        to: { kind: "version", version: number ?? 0 },
+        undone: true,
+      });
   }
-  /** Makes again the step of hand editing last undone here. */
+  /** Makes again the step of hand editing last undone here, or reverses a server undo. */
   async redo() {
     if (!this.redoable) return;
+    if (this.back?.undone) {
+      const from = this.back.from;
+      this.wentTo(undefined);
+      await this.restoring(from);
+      return;
+    }
     await this.ctx.edits.settled();
     await this.ctx.history.redo();
   }

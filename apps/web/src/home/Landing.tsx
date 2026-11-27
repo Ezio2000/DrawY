@@ -121,7 +121,8 @@ function Hero({
           detach={asking.draft.detach}
           uploading={request.uploading}
           focus={request.asked}
-          placeholder={occupied ? t.home.placeholder : typed.text}
+          placeholder={t.home.placeholder}
+          ghostPlaceholder={occupied ? undefined : typed.text}
           style={request.style}
           setStyle={user ? asking.draft.setStyle : undefined}
           working={false}

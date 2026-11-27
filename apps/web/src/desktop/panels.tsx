@@ -7,12 +7,12 @@ import { store, stored } from "../storage.ts";
  * editor wants room for its fields without crowding the canvas. */
 export type Sized = "journal" | "drafts" | "edit";
 export const panelWidths: Record<Sized, { min: number; initial: number }> = {
-  journal: { min: 360, initial: 520 },
+  journal: { min: 360, initial: 420 },
   drafts: { min: 260, initial: 340 },
   edit: { min: 280, initial: 320 },
 };
 export const panelWidth = {
-  max: () => Math.max(420, Math.round(innerWidth * 0.62)),
+  max: () => Math.max(360, Math.min(620, Math.round(innerWidth * 0.48))),
   clamp: (kind: Sized, n: number) =>
     Math.min(panelWidth.max(), Math.max(panelWidths[kind].min, n)),
   read(kind: Sized) {

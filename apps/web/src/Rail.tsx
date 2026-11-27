@@ -1,4 +1,5 @@
 import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
+import { Search, X } from "lucide-react";
 import { PanelMark } from "./ui/brand/hand.tsx";
 import * as Hand from "./ui/brand/icons.tsx";
 import { useLocale } from "./ui/locale.tsx";
@@ -170,7 +171,7 @@ export function Rail({
                     {t.rail.traces}
                   </button>
                 )}
-                <LanguageSwitch />
+                <LanguageSwitch menu />
                 <ShellSwitch shells={shells} />
                 <hr />
                 <button
@@ -224,15 +225,44 @@ type RowActions = { nav: (path: string) => void; remove: (work: WorkSummary) => 
 
 function RecentList({ recents, current, nav, remove }: RowActions & { recents: Recents; current?: string }) {
   const t = useT(), { rows, loading } = useStore(recents);
+  const [query, setQuery] = useState("");
   const list = useRef<HTMLUListElement>(null);
   useLayoutEffect(() => {
     if (list.current) list.current.scrollTop = recents.scrollTop;
   }, [recents]);
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? rows.filter(
+        (w) =>
+          w.title.toLowerCase().includes(needle) ||
+          (w.progress.prompt ?? "").toLowerCase().includes(needle),
+      )
+    : rows;
   return <>
     <h2>{t.rail.recents}</h2>
+    {(rows.length > 5 || query) && (
+      <label className={cx("rail-search")}>
+        <Search size={13} aria-hidden />
+        <input
+          type="search"
+          value={query}
+          placeholder={t.rail.search}
+          aria-label={t.rail.search}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {query && (
+          <button type="button" aria-label={t.library.clear} onClick={() => setQuery("")}>
+            <X size={12} />
+          </button>
+        )}
+      </label>
+    )}
     <ul ref={list} aria-busy={loading} onScroll={(e) => { recents.scrollTop = e.currentTarget.scrollTop; }}>
       {loading && <li><Spinner /></li>}
-      {rows.map((work) => <WorkRow key={work.id} work={work} current={work.id === current} nav={nav} remove={remove} />)}
+      {!loading && needle && !shown.length && (
+        <li className={cx("rail-empty")}>{t.rail.noMatch(query.trim())}</li>
+      )}
+      {shown.map((work) => <WorkRow key={work.id} work={work} current={work.id === current} nav={nav} remove={remove} />)}
     </ul>
   </>;
 }

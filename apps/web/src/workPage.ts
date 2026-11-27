@@ -9,6 +9,43 @@ import { useSelect } from "./session/store.ts";
 import type { Ask, Snapshot } from "./session/work.ts";
 import type { ShellProps } from "./shell.ts";
 
+const BUILTIN_DRAWING_EN: Record<string, string> = {
+  node: "Node",
+  swimlane: "Swimlane",
+  arrow: "Arrow",
+  text: "Text",
+  picture: "Picture",
+  callout: "Callout",
+  sequence: "Sequence diagram",
+  flowchart: "Flowchart",
+  timeline: "Timeline",
+  table: "Table",
+  card: "Card",
+  group: "Group",
+  "bar-chart": "Bar chart",
+  "line-chart": "Line chart",
+  "pie-chart": "Pie chart",
+  mindmap: "Mind map",
+  tree: "Tree",
+  matrix: "Matrix",
+  venn: "Venn diagram",
+  funnel: "Funnel",
+  radar: "Radar chart",
+  gantt: "Gantt chart",
+};
+
+/** The display name of a drawing or material in the current locale. */
+export function drawingLabel(work: Work, id: string, locale: "zh" | "en", fallback = id): string {
+  const own = work.drawings[id]?.name;
+  if (own) return own;
+  const mat = work.materials[id];
+  if (mat) {
+    if (locale === "en") return mat.nameEn || BUILTIN_DRAWING_EN[id] || mat.name;
+    return mat.name;
+  }
+  return locale === "en" ? (BUILTIN_DRAWING_EN[id] ?? fallback) : fallback;
+}
+
 /** What an end of a link is on, as the page calls it: a module by its name, a link it rides
  * on by what that link joins, or a free point. */
 export function endName(work: Work, sceneId: string, e: LinkEnd, t: Dictionary, depth = 0): string {

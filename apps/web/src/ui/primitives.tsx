@@ -116,12 +116,20 @@ export function Segmented({
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const observer = new ResizeObserver(place);
+    let resizeFrame = 0;
+    const observer = new ResizeObserver(() => {
+      if (resizeFrame) return;
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = 0;
+        place();
+      });
+    });
     observer.observe(el);
     Array.from(el.children).forEach((c) => observer.observe(c));
     const frame = requestAnimationFrame(() => (el.dataset.ready = ""));
     return () => {
       observer.disconnect();
+      cancelAnimationFrame(resizeFrame);
       cancelAnimationFrame(frame);
     };
   }, []);

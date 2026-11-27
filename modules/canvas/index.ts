@@ -1294,7 +1294,7 @@ export class Canvas {
         chosen.length > 1 ? "1px dashed rgba(51,102,214,.75)" : "none";
       const small =
         frame.width * scale < 36 || frame.height * scale < 36;
-      const handles = this.options.resizable !== false;
+      const handles = this.editing && this.options.resizable !== false;
       for (const h of this.frame.querySelectorAll<HTMLElement>("[data-handle]"))
         h.style.display =
           !handles || (small && h.dataset.handle!.length === 1) ? "none" : "block";

@@ -309,7 +309,7 @@ export function Now({
   return (
     <button className={cx("now")} data-tone="live" data-tip={t.now.open} onClick={reveal}>
       <Stages run={run} />
-      {!compact && <Current run={run} />}
+      {!compact && <Current run={run} stage={t.now.stages[stageOf(run)]} />}
       {(!!board.length || painting) && (
         <span className={cx("board")}>
           {board.map((p, i) => (
@@ -352,14 +352,15 @@ export function currentOf(run: Run, t: Words, locale: string, told = false) {
   };
 }
 /** One line on what a live run is doing, and for how long it has. */
-function Current({ run, told }: { run: Run; told?: boolean }) {
+function Current({ run, told, stage }: { run: Run; told?: boolean; stage?: string }) {
   const t = useT(),
     locale = useLocale();
   const { line, lang, at } = currentOf(run, t, locale, told);
+  const shownLine = stage && line === stage ? "" : line;
   return (
     <>
-      <span key={at + line} className={cx("now-line")} lang={lang}>
-        {line}
+      <span key={at + shownLine} className={cx("now-line")} lang={lang}>
+        {shownLine}
       </span>
       <Clock since={run.startedAt} />
     </>
@@ -647,9 +648,15 @@ function ToolBody({
           </span>
           {!!step.screenshots?.length && (
             <div className={cx("looks")}>
-              {step.screenshots.map((p, i) => (
-                <Thumb key={p.url + i} picture={p} zoom={zoom} />
-              ))}
+              {step.screenshots.map((p, i) => {
+                const focusLabel = t.now.focus[step.focus] || w.view_canvas;
+                const cleanName = /^canvas-\d+-/.test(p.name)
+                  ? step.screenshots!.length > 1
+                    ? `${focusLabel} #${i + 1}`
+                    : focusLabel
+                  : p.name;
+                return <Thumb key={p.url + i} picture={{ ...p, name: cleanName }} zoom={zoom} />;
+              })}
             </div>
           )}
           {!!step.checked?.length && <Checked checked={step.checked} />}
@@ -735,12 +742,13 @@ function Found({
   used,
   zoom,
 }: {
-  found?: { subject: string; candidates: { id: string; name: string; url?: string }[] }[];
+  found?: { subject: string; candidates: { id: string; name: string; nameEn?: string; url?: string }[] }[];
   subjects?: string[];
   used: Set<string>;
   zoom: (p: Picture) => void;
 }) {
-  const t = useT();
+  const t = useT(),
+    locale = useLocale();
   const rows = found ?? subjects.map((subject) => ({ subject, candidates: undefined }));
   return (
     <dl className={cx("found")}>
@@ -753,20 +761,21 @@ function Found({
             ) : !f.candidates.length ? (
               <span className={cx("found-none")}>{t.steps.none}</span>
             ) : (
-              f.candidates.slice(0, 4).map((c) =>
-                c.url ? (
+              f.candidates.slice(0, 4).map((c) => {
+                const label = locale === "en" && c.nameEn ? c.nameEn : c.name;
+                return c.url ? (
                   <Thumb
                     key={c.id}
-                    picture={{ id: c.id, name: c.name, url: c.url }}
+                    picture={{ id: c.id, name: label, url: c.url }}
                     used={used.has(c.id)}
                     zoom={zoom}
                   />
                 ) : (
                   <span key={c.id} className={cx("found-name")} data-used={used.has(c.id) || undefined}>
-                    {c.name}
+                    {label}
                   </span>
-                ),
-              )
+                );
+              })
             )}
           </dd>
         </div>

@@ -33,9 +33,19 @@ function useFits(list: React.RefObject<HTMLUListElement | null>, deps: unknown[]
       setFits(cols * rows);
     };
     measure();
-    const watch = new ResizeObserver(measure);
+    let frame = 0;
+    const watch = new ResizeObserver(() => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    });
     watch.observe(ul);
-    return () => watch.disconnect();
+    return () => {
+      cancelAnimationFrame(frame);
+      watch.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return fits;

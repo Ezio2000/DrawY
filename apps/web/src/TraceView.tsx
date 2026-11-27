@@ -80,6 +80,7 @@ export function TraceView() {
     trace: Costed;
     spans: Span[];
   }>();
+  const [failedCovers, setFailedCovers] = useState<Record<string, true>>({});
   const [error, setError] = useState("");
   useEffect(() => {
     if (can("accounts.manage")) void api<Account[]>("/admin/accounts").then(setAccounts, (e) => setError(e.message));
@@ -115,16 +116,24 @@ export function TraceView() {
   useEffect(() => {
     history.replaceState(null, "", forAccount("/traces" + (selected ? "/" + selected : ""), account));
     if (!selected) return;
+    let active = true;
     let timer: ReturnType<typeof setTimeout>;
+    setDetail((prev) => (prev?.trace.id === selected ? prev : undefined));
     const load = () =>
       api<{ trace: Costed; spans: Span[] }>(forAccount("/traces/" + selected, account))
         .then((d) => {
+          if (!active) return;
           setDetail(d);
           if (live(d.trace.status)) timer = setTimeout(load, 2500);
         })
-        .catch((e) => setError(e.message));
+        .catch((e) => {
+          if (active) setError(e.message);
+        });
     void load();
-    return () => clearTimeout(timer);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [selected, account]);
   /** Reads another account's records, from their latest run and work. */
   const pick = (id: string) => {
@@ -184,7 +193,16 @@ export function TraceView() {
               <li key={x.id}>
                 <button aria-current={x.id === work || undefined} onClick={() => setWork(x.id)}>
                   <span className={cx("trace-cover")}>
-                    {x.cover && !x.progress.blank ? <img src={forAccount(x.cover, account)} alt="" loading="lazy" /> : <i aria-hidden />}
+                    {x.cover && !x.progress.blank && !failedCovers[x.id] ? (
+                      <img
+                        src={forAccount(x.cover, account)}
+                        alt=""
+                        loading="lazy"
+                        onError={() => setFailedCovers((prev) => ({ ...prev, [x.id]: true }))}
+                      />
+                    ) : (
+                      <i aria-hidden />
+                    )}
                   </span>
                   <span className={cx("trace-row")}>
                     <b>{x.title}</b>
@@ -199,10 +217,16 @@ export function TraceView() {
         {tab === "runs" && list && !list.length && !error && <p className={cx("traces-empty")}>{w.empty}</p>}
         {tab === "works" && works && !works.length && !error && <p className={cx("traces-empty")}>{w.noWorks}</p>}
       </aside>
-      <main>
-        {error && <p className={cx("error")}>{error}</p>}
+      <section className={cx("trace-main")} aria-label={w[tab]}>
+        {error && <p className={cx("error")} role="alert">{error}</p>}
         {tab === "runs"
-          ? detail && <Timeline {...detail} account={account} />
+          ? detail && detail.trace.id === selected ? (
+              <Timeline {...detail} account={account} />
+            ) : selected && !error ? (
+              <div className={cx("trace-loading")} aria-busy>
+                <Spinner />
+              </div>
+            ) : null
           : shown && (
               <WorkRecord
                 key={`${account ?? me}:${shown.id}`}
@@ -214,7 +238,7 @@ export function TraceView() {
                 }}
               />
             )}
-      </main>
+      </section>
     </div>
   );
 }

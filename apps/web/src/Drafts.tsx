@@ -181,7 +181,7 @@ export function WorkDrafts({
   counted("drafts");
   const { attempt } = feedback;
   const s = useSelect(session, (s) => ({
-    versions: s.versions,
+    versions: session.id === "_blank" ? [] : s.versions,
     unsaved: s.unsaved,
     current: s.work!.revision,
     previewing: s.preview?.revision,

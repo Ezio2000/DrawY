@@ -473,3 +473,50 @@ it("leaves going back to a version and taking that back as they were, beside und
   expect(s().back).toBeUndefined();
   expect(s().redoable).toBe(false);
 });
+
+it("offers recovery and redo after server-side undo reverts a version", async () => {
+  const { store, s } = await open();
+  events!({
+    type: "work",
+    work: commit({ ...head, title: "AI 版本" }, { kind: "run", runId: "r1", prompt: "draw it" }),
+  });
+  await settle();
+  expect(s().undoTarget).toEqual({ kind: "version", version: 0 });
+  await store.undo();
+  await settle();
+  expect(s().work!.title).not.toBe("AI 版本");
+  expect(s().back?.undone).toBe(true);
+  expect(s().back?.to).toEqual({ kind: "version", version: 0 });
+  expect(s().redoable).toBe(true);
+  // Redo reverses the server undo and brings the AI version back.
+  await store.redo();
+  await settle();
+  expect(s().work!.title).toBe("AI 版本");
+  expect(s().back).toBeUndefined();
+  expect(s().redoable).toBe(false);
+});
+
+it("waits for the new session view to attach when materializing a blank canvas", async () => {
+  const real = new WorkSession(head.id, host, structuredClone(head));
+  const blankHost: SessionHost = {
+    ...host,
+    materialize: async () => real,
+  };
+  const blank = new WorkSession("_blank", blankHost, { ...structuredClone(head), id: "_blank" });
+  blank.attach(slowView());
+  const box = { x: 20, y: 30, width: 160, height: 80 };
+  const job = blank.ops.text("First note", { x: 100, y: 70 }, box);
+  await settle();
+  // Attach the real session's view asynchronously (as React does on route switch).
+  const realView = slowView();
+  real.attach(realView);
+  await settle();
+  await settle();
+  expect(realView.waits).toHaveLength(1);
+  realView.waits[0]("drawn");
+  const id = await job;
+  expect(id).toBeDefined();
+  expect(real.get().scene!.modules.at(-1)!.bounds).toEqual(box);
+  blank.dispose();
+  real.dispose();
+});

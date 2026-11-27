@@ -185,6 +185,11 @@
   line-height: 1.6;
 }
 
+.l-ask.l-ask textarea[aria-label] + span[aria-hidden="true"] {
+  font-size: 17px;
+  line-height: 1.6;
+}
+
 /* Questions to start from, quiet beside the box: plain words on a faint ground, and the
    blank canvas apart at the end. */
 .l-tries {

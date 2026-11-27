@@ -179,7 +179,10 @@
 .rail-brand {
   white-space: nowrap;
   opacity: 0;
-  transition: opacity 0.2s var(--ease);
+  visibility: hidden;
+  transition:
+    opacity 0.2s var(--ease),
+    visibility 0s 0.2s;
 }
 
 .rail-button {
@@ -219,12 +222,18 @@
 
 .rail-label {
   opacity: 0;
-  transition: opacity 0.2s var(--ease);
+  visibility: hidden;
+  transition:
+    opacity 0.2s var(--ease),
+    visibility 0s 0.2s;
 }
 
 .rail[data-open="true"] :is(.rail-brand, .rail-label) {
   opacity: 1;
-  transition-delay: 0.1s;
+  visibility: visible;
+  transition:
+    opacity 0.2s var(--ease) 0.1s,
+    visibility 0s;
 }
 
 .rail-recents {
@@ -254,6 +263,61 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--text-desk);
+}
+
+.rail-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(var(--rail-open) - 24px);
+  height: 30px;
+  margin: 0 4px 8px;
+  padding: 0 8px;
+  border-radius: 7px;
+  background: var(--fill);
+  color: var(--text-3);
+}
+
+.rail-search:focus-within {
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--text-2);
+}
+
+.rail-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.rail-search input:focus {
+  box-shadow: none;
+}
+
+.rail-search button {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--text-3);
+}
+
+.rail-search button:hover {
+  background: var(--fill-2);
+  color: var(--text);
+}
+
+.rail-empty {
+  padding: 12px 11px;
+  font-size: 12.5px;
+  color: var(--text-3);
 }
 
 .rail-recents ul {
@@ -410,6 +474,7 @@
 .popover {
   position: absolute;
   z-index: 60;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   min-width: 168px;
@@ -970,11 +1035,13 @@ h2:has(> .title) {
 }
 
 /* Each field under its name: a name that stays put is read before, during and after typing. */
+.auth-field,
 .auth-card label {
   display: grid;
   gap: 6px;
 }
 
+.auth-field > label,
 .auth-card label > span:first-child {
   display: flex;
   align-items: baseline;
@@ -984,6 +1051,7 @@ h2:has(> .title) {
   color: var(--text);
 }
 
+.auth-field > label small,
 .auth-card label small {
   font-size: 12.5px;
   font-weight: 400;
@@ -997,6 +1065,11 @@ h2:has(> .title) {
   border-color: var(--line-strong);
   border-radius: 8px;
   font-size: 15px;
+}
+
+.auth-card input[aria-invalid="true"] {
+  border-color: var(--red-text);
+  box-shadow: 0 0 0 3px rgba(198, 42, 47, 0.14);
 }
 
 /* The password, and the eye that shows what was typed. */
@@ -1056,8 +1129,11 @@ h2:has(> .title) {
 
 .auth-card .error {
   padding: 10px 12px;
+  border: 1px solid rgba(198, 42, 47, 0.28);
   border-radius: 8px;
-  background: rgba(198, 42, 47, 0.07);
+  background: rgba(198, 42, 47, 0.08);
+  color: #a11d22;
+  font-weight: 500;
 }
 
 .auth-switch {
@@ -1241,6 +1317,7 @@ h2:has(> .title) {
 }
 
 .composer[data-place="dock"] {
+  position: relative;
   padding: 10px 8px 8px 16px;
   border-radius: 12px;
 }
@@ -1252,6 +1329,23 @@ h2:has(> .title) {
   flex-direction: column;
   align-items: stretch;
   gap: 4px;
+}
+
+.composer-input {
+  position: relative;
+  display: flex;
+  flex: 1;
+}
+
+.composer-ghost {
+  position: absolute;
+  inset: 0;
+  padding: 2px 10px 0 0;
+  color: var(--text-3);
+  font-size: 16px;
+  line-height: 1.55;
+  pointer-events: none;
+  overflow: hidden;
 }
 
 .composer textarea {
@@ -1487,23 +1581,41 @@ h2:has(> .title) {
   transform-origin: top left;
 }
 
-.composer[data-place="panel"] .add-menu .popover,
-.composer[data-place="dock"] .add-menu .popover {
+.composer[data-place="panel"] .add-menu .popover {
   top: auto;
   bottom: calc(100% + 10px);
   transform-origin: bottom left;
 }
 
+.composer[data-place="dock"] .add-menu,
+.composer[data-place="dock"] .style-picker {
+  position: static;
+}
+
+.composer[data-place="dock"] .add-menu .popover {
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: 0;
+  transform-origin: bottom left;
+}
+
 .styles-menu {
   top: calc(100% + 8px);
-  left: -6px;
+  right: 0;
+  left: auto;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
-  width: 456px;
+  width: min(456px, calc(100vw - 16px));
   max-height: min(460px, 62vh);
   overflow-y: auto;
-  transform-origin: top left;
+  transform-origin: top right;
+}
+
+.composer[data-place="dock"] .styles-menu {
+  top: auto;
+  bottom: calc(100% + 8px);
+  transform-origin: bottom right;
 }
 
 /* Each style is shown by a sample large enough to see its line, colour and texture. */
@@ -1512,6 +1624,8 @@ h2:has(> .title) {
   display: grid;
   gap: 6px;
   align-content: start;
+  min-width: 0;
+  overflow: hidden;
   padding: 6px;
   text-align: left;
 }
@@ -1544,6 +1658,9 @@ h2:has(> .title) {
 }
 
 .styles-menu b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -6323,6 +6440,18 @@ body:has(.resizer[data-dragging]) {
   position: relative;
   flex: 1;
   min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.library[data-inspecting] {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.library-body {
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -6426,12 +6555,15 @@ body:has(.resizer[data-dragging]) {
   min-width: 0;
 }
 
-.library-bar > label.secondary {
+.library-bar > .secondary.upload {
   height: 42px;
+  width: 42px;
+  padding: 0;
+  justify-content: center;
   cursor: pointer;
 }
 
-.library-bar > label.secondary[data-busy] {
+.library-bar > .secondary.upload[data-busy] {
   pointer-events: none;
   opacity: 0.6;
 }
@@ -6447,7 +6579,14 @@ body:has(.resizer[data-dragging]) {
 }
 
 .shelf[aria-busy] {
-  opacity: 0.5;
+  opacity: 0.55;
+}
+
+.shelf-loading {
+  grid-column: 1 / -1;
+  display: grid;
+  place-items: center;
+  padding: 56px 0;
 }
 
 .shelf-empty {
@@ -6582,6 +6721,9 @@ body:has(.resizer[data-dragging]) {
 
 .item-name {
   flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
   padding: 0 2px;
   overflow: hidden;
   white-space: nowrap;
@@ -6590,25 +6732,61 @@ body:has(.resizer[data-dragging]) {
   color: var(--text-2);
 }
 
+.item-cue {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
 .inspector {
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 18px 14px;
+  overflow: hidden auto;
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: 0 0 0 0.5px var(--line-strong);
+  animation: sheet-in 0.3s var(--ease-sheet) both;
+}
+
+[role="dialog"] .library[data-inspecting],
+.side-panel .library[data-inspecting] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+[role="dialog"] .inspector,
+.side-panel .inspector {
   position: fixed;
   z-index: 50;
   top: 12px;
   right: 12px;
   bottom: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  /* Of what it is laid over: the dialog that holds the library, or the window. */
   width: min(360px, calc(100% - 24px));
-  padding: 18px 18px 14px;
-  overflow: hidden auto;
-  border-radius: 12px;
-  background: var(--paper);
   box-shadow:
     0 0 0 0.5px var(--line-strong),
     0 24px 64px rgba(0, 0, 0, 0.16);
-  animation: sheet-in 0.5s var(--ease-sheet) both;
+}
+
+@media (max-width: 960px) {
+  .library[data-inspecting] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspector {
+    position: fixed;
+    z-index: 50;
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: min(360px, calc(100% - 24px));
+    box-shadow:
+      0 0 0 0.5px var(--line-strong),
+      0 24px 64px rgba(0, 0, 0, 0.16);
+  }
 }
 
 .inspector > header {
@@ -6796,19 +6974,22 @@ body:has(.resizer[data-dragging]) {
   color: var(--text);
 }
 
-.settings-nav button[aria-current] {
+.settings-nav button[aria-current],
+.settings-nav button[aria-selected="true"] {
   background: var(--desk);
   color: var(--ink);
   font-weight: 650;
 }
 
-.settings-nav button[aria-current] > svg {
+.settings-nav button[aria-current] > svg,
+.settings-nav button[aria-selected="true"] > svg {
   color: var(--text);
 }
 
 .settings section {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   animation: line-in 0.35s var(--ease-out) both;
 }
 
@@ -7295,13 +7476,42 @@ body:has(.resizer[data-dragging]) {
 
 @media (max-width: 860px) {
   .settings-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 20px;
   }
 
   .settings-nav {
     position: static;
     flex-direction: row;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+  }
+
+  .settings-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-nav button {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  .settings-nav button[data-break] {
+    margin-top: 0;
+    margin-left: 8px;
+  }
+}
+
+@media (max-width: 640px) {
+  .setting {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .setting > div:last-child {
+    justify-content: flex-start;
   }
 }
 
@@ -7690,17 +7900,39 @@ body:has(.resizer[data-dragging]) {
   animation: breathe 1.8s var(--ease-in-out) infinite;
 }
 
-.traces > main {
+.traces > .trace-main {
   min-width: 0;
   overflow: auto;
   padding: 28px 36px 64px;
   background: var(--paper);
 }
 
-.traces > main > * {
+.traces > .trace-main > * {
   max-width: 1120px;
   margin-left: auto;
   margin-right: auto;
+}
+
+.trace-loading {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+}
+
+@media (max-width: 860px) {
+  .traces {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(220px, 38vh) minmax(0, 1fr);
+  }
+
+  .traces > aside {
+    border-right: 0;
+    border-bottom: 1px solid var(--separator);
+  }
+
+  .traces > .trace-main {
+    padding: 20px 18px 48px;
+  }
 }
 
 .trace-head {
