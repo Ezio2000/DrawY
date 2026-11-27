@@ -57,8 +57,7 @@ function forAccount(path: string, account: string | undefined, more: Record<stri
 
 /** Every run of an account's works, and for one run each model turn, tool call, search,
  * generation and capture in time order, with what went in and came out. Those who manage
- * accounts pick whose records to read: their runs, or their works, each drawn as it is now
- * with its own runs beside it. */
+ * accounts can also view other accounts' runs and saved screenshots. */
 export function TraceView() {
   const t = useT(),
     w = t.traces;
@@ -206,7 +205,7 @@ export function TraceView() {
           ? detail && <Timeline {...detail} account={account} />
           : shown && (
               <WorkRecord
-                key={shown.id}
+                key={`${account ?? me}:${shown.id}`}
                 summary={shown}
                 account={account}
                 open={(id) => {
@@ -240,8 +239,7 @@ function RunRow({ run, current, open }: { run: Costed; current: boolean; open: (
   );
 }
 
-/** One of an account's works as it is now, drawn live (its scenes can be gone into), and
- * the runs that made it, each opening its timeline. */
+/** A work's preview and the runs that made it, each opening its timeline. */
 function WorkRecord({
   summary,
   account,
@@ -253,19 +251,24 @@ function WorkRecord({
 }) {
   const t = useT(),
     w = t.traces;
+  const me = useAccount()!.id;
+  const own = !account || account === me;
   const [work, setWork] = useState<Work>();
   const [runs, setRuns] = useState<Costed[]>();
   const [scene, setScene] = useState<string>();
   const [error, setError] = useState("");
+  const [failedCover, setFailedCover] = useState<string>();
+  const cover = summary.cover ? forAccount(summary.cover, account) : undefined;
   useEffect(() => {
     void Promise.all([
-      api<Work>(forAccount("/works/" + summary.id, account)),
+      // A live preview executes the work's scripts with the viewer's session.
+      own ? api<Work>(forAccount("/works/" + summary.id, account)) : undefined,
       api<Costed[]>(forAccount("/traces", account, { work: summary.id })),
     ]).then(([work, runs]) => {
       setWork(work);
       setRuns(runs);
     }, (e) => setError(e.message));
-  }, [summary.id, account]);
+  }, [summary.id, account, own]);
   const path: { id: string; title: string }[] = [];
   for (let at = work && (scene && work.scenes[scene] ? scene : work.rootSceneId); at && work; at = work.scenes[at].parentId ?? undefined)
     path.unshift({ id: at, title: work.scenes[at].parentId ? work.scenes[at].title : work.title });
@@ -291,7 +294,13 @@ function WorkRecord({
       </header>
       {error && <p className={cx("error")}>{error}</p>}
       <div className={cx("trace-work")}>
-        {work ? <LiveWork work={work} scene={scene} open={setScene} label={summary.title} /> : !error && <Spinner />}
+        {own ? (
+          work ? <LiveWork work={work} scene={scene} open={setScene} label={summary.title} /> : !error && <Spinner />
+        ) : cover && cover !== failedCover ? (
+          <img src={cover} alt={w.savedScreenshot} onError={() => setFailedCover(cover)} />
+        ) : (
+          <p>{w.noScreenshot}</p>
+        )}
       </div>
       <section className={cx("trace-card")}>
         <header>

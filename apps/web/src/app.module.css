@@ -7491,7 +7491,7 @@ body:has(.resizer[data-dragging]) {
   margin-top: 0;
 }
 
-/* One work as it is now, drawn live on a sheet, and the runs that made it. */
+/* The live canvas or the saved screenshot above a work's list of runs. */
 .trace-work {
   position: relative;
   display: grid;
@@ -7503,6 +7503,20 @@ body:has(.resizer[data-dragging]) {
   border-radius: 10px;
   background: var(--paper);
   box-shadow: 0 0 0 1px var(--line);
+}
+
+.trace-work > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  position: absolute;
+  inset: 0;
+}
+
+.trace-work > p {
+  margin: 16px;
+  color: var(--text-3);
+  font-size: 13px;
 }
 
 .trace-scenes {

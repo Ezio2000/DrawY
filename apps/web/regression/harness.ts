@@ -33,7 +33,7 @@ import type { Run, Step } from "../../../modules/contracts/index.ts";
 const root = new URL("../../../", import.meta.url).pathname;
 const tsx = join(root, "node_modules/.bin/tsx");
 const processes: ChildProcess[] = [];
-let data: string;
+export let data: string;
 export let base: string, browser: Browser, context: BrowserContext, userId: string;
 export let page: Page;
 /** The page's DevTools session, for fingers on the screen. */
