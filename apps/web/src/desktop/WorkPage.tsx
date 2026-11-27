@@ -3,7 +3,7 @@ import { WorkComposer } from "../Composer.tsx";
 import { WorkStatus, WorkStudio } from "../Studio.tsx";
 import { WorkDrafts } from "../Drafts.tsx";
 import { WorkDetail } from "../SceneView.tsx";
-import { PanelRightClose, PanelRightOpen } from "lucide-react";
+import { PanelRightClose, PanelRightOpen, X } from "lucide-react";
 import { Dialog } from "../ui/dialogs.tsx";
 import type { Material } from "@drawy/materials/schema";
 import type { Canvas, PartPick, Pointed } from "../../../../modules/canvas/index.ts";
@@ -100,8 +100,8 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
   const deselect = () => (canvas ? canvas.select([]) : (setSelected([]), setLinks([])));
   const toggle = (p: Panel) => {
     const next = panel === p ? "" : p;
-    // The versions are looked at as wholes: what was selected in the one shown goes.
-    if (next === "drafts") deselect();
+    // The versions are looked at as wholes, and leaving hand-editing clears selection.
+    if (next === "drafts" || (panel === "edit" && next !== "edit")) deselect();
     if (next === "edit") setTucked(!roomy());
     setPanel(next);
     session.endPreview();
@@ -151,7 +151,7 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
   // Cmd/Ctrl+Z takes back the latest step and Shift+Cmd/Ctrl+Z or Cmd/Ctrl+Y makes it again,
   // unless a field is being typed in; Cmd/Ctrl+S
   // saves the hand edits as a version; Escape ends a preview, or puts the reply away.
-  const keys = useRef({ replying, journal, detailId, undo: () => {}, redo: () => {}, dismiss });
+  const keys = useRef({ replying, journal, panel, detailId, undo: () => {}, redo: () => {}, dismiss });
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const s = session.get(),
@@ -171,13 +171,19 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
         if (s.preview) session.endPreview();
         else if (keys.current.replying && !keys.current.journal && !keys.current.detailId)
           keys.current.dismiss();
+        else if (
+          !typing &&
+          !keys.current.detailId &&
+          (keys.current.panel === "journal" || keys.current.panel === "drafts")
+        )
+          setPanel("");
       }
     };
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
   }, [session]);
 
-  keys.current = { replying, journal, detailId, undo, redo, dismiss };
+  keys.current = { replying, journal, panel, detailId, undo, redo, dismiss };
   /** Words or a picture pointed at on the canvas: words are changed where they are, a
    * picture is swapped for one from the library. What the work cannot change by itself is
    * written up for the author to do. */
@@ -368,8 +374,9 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
             <h2>
               <Title name={editing ? "edit" : drafting ? "drafts" : "journal"} size="section" />
             </h2>
-            {editing && (
+            {editing ? (
               <button
+                type="button"
                 className={cx("tuck")}
                 aria-label={t.edit.panel.hide}
                 data-tip={t.edit.panel.hide}
@@ -377,6 +384,18 @@ export default function DesktopWorkPage({ session, asking, feedback, go }: Shell
               >
                 <PanelRightClose size={16} />
               </button>
+            ) : (
+              panel && (
+                <button
+                  type="button"
+                  className={cx("close-button")}
+                  aria-label={t.close}
+                  data-tip={t.close}
+                  onClick={() => toggle(panel)}
+                >
+                  <X size={15} />
+                </button>
+              )
             )}
           </header>
           <section

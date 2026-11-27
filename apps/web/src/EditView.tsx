@@ -213,9 +213,21 @@ export function ViewControls({
   useEffect(() => {
     const stage = ref.current?.parentElement;
     if (!stage) return;
-    const fits = new ResizeObserver(() => setCompact(stage.clientWidth < 1040));
+    let frame = 0;
+    const sync = () => setCompact(stage.clientWidth < 760);
+    sync();
+    const fits = new ResizeObserver(() => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        sync();
+      });
+    });
     fits.observe(stage);
-    return () => fits.disconnect();
+    return () => {
+      cancelAnimationFrame(frame);
+      fits.disconnect();
+    };
   }, []);
   useEffect(() => {
     if (!canvas) return;

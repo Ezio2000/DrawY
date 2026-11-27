@@ -34,7 +34,8 @@ export function Dialog({
     const previous = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    panel.current?.focus({ preventScroll: true });
+    if (panel.current && !panel.current.contains(document.activeElement))
+      panel.current.focus({ preventScroll: true });
     return () => {
       document.body.style.overflow = overflow;
       previous?.focus?.({ preventScroll: true });

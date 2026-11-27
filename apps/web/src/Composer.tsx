@@ -68,6 +68,7 @@ export function Composer({
   unquote,
   edit,
   placeholder,
+  ghostPlaceholder,
   style,
   setStyle,
   working,
@@ -97,6 +98,8 @@ export function Composer({
   /** Changes what is quoted by hand instead. */
   edit?: () => void;
   placeholder: string;
+  /** Decorative animated placeholder rendered aria-hidden when empty, keeping the textarea's placeholder attribute stable. */
+  ghostPlaceholder?: string;
   style?: StyleMaterial;
   setStyle?: (style?: StyleMaterial) => void;
   working: boolean;
@@ -211,26 +214,33 @@ export function Composer({
           </div>
         )}
         <div className={cx("composer-field")}>
-          <textarea
-            ref={field}
-            aria-label={t.composer.describe}
-            placeholder={placeholder}
-            value={value}
-            rows={1}
-            onChange={(e) => set(e.target.value)}
-            onPaste={(e) => {
-              if (e.clipboardData.files.length) {
-                e.preventDefault();
-                attach(e.clipboardData.files);
-              }
-            }}
-            onKeyDown={(e) => {
-              if (sendsOnEnter(e)) {
-                e.preventDefault();
-                send();
-              }
-            }}
-          />
+          <div className={cx("composer-input")}>
+            <textarea
+              ref={field}
+              aria-label={t.composer.describe}
+              placeholder={ghostPlaceholder && !value ? "" : placeholder}
+              value={value}
+              rows={1}
+              onChange={(e) => set(e.target.value)}
+              onPaste={(e) => {
+                if (e.clipboardData.files.length) {
+                  e.preventDefault();
+                  attach(e.clipboardData.files);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (sendsOnEnter(e)) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+            />
+            {ghostPlaceholder && !value && (
+              <span className={cx("composer-ghost")} aria-hidden="true">
+                {ghostPlaceholder}
+              </span>
+            )}
+          </div>
           <div className={cx("composer-tools")}>
             <AddMenu
               upload={() => picker.current?.click()}
@@ -557,6 +567,8 @@ export function WorkComposer({
     waiting: s.waiting,
     engaged: s.engaged,
     busy: s.sending || !s.loaded || !s.synced,
+    empty: !s.scene?.modules.length,
+    unbriefed: !s.work?.brief && !s.scene?.modules.length,
   }));
   const note = request.handed && request.text && (
     <div className={cx("now")}>
@@ -582,11 +594,13 @@ export function WorkComposer({
             ? t.composer.selected
             : s.working
               ? t.composer.working
-              : t.composer.continue
+              : s.empty
+                ? t.home.placeholder
+                : t.composer.continue
       }
       status={(asking.blocked === "unconnected" && <Unconnected go={go} />) || note || status}
       style={request.style}
-      setStyle={(session.id === "_blank" && user) || request.style ? draft.setStyle : undefined}
+      setStyle={((session.id === "_blank" || s.unbriefed) && user) || request.style ? draft.setStyle : undefined}
       working={s.working}
       busy={s.busy}
       send={send}

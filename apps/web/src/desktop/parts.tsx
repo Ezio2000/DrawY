@@ -568,11 +568,20 @@ export function SideTools({
     sceneId: s.sceneId,
     working: s.working,
     undoable: s.undoable,
+    undoTarget: s.undoTarget,
     drawn: !!s.scene?.modules.length,
   }));
+  const undoLabel =
+    s.undoTarget?.kind === "back"
+      ? t.work.undoBack
+      : s.undoTarget?.kind === "version"
+        ? s.undoTarget.version > 0
+          ? t.work.undoToVersion(s.undoTarget.version)
+          : t.work.undoToBlank
+        : t.work.undo;
   return (
     <nav className={cx("side-tools")}>
-      <button aria-label={t.work.undo} data-tip={t.work.undo} disabled={s.working || !s.undoable} onClick={undo}>
+      <button aria-label={undoLabel} data-tip={undoLabel} disabled={s.working || !s.undoable} onClick={undo}>
         <Hand.Undo size={18} />
       </button>
       <button

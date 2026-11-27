@@ -68,6 +68,7 @@ export function useOf(m: Material): MaterialUse | null {
         kind: "picture",
         version: m.version,
         name: m.name.zh,
+        nameEn: m.name.en,
         type: m.type,
         style: m.style,
         // A pack's picture is addressed at its version, so a later pack's pixels under the
@@ -97,12 +98,13 @@ export function useOf(m: Material): MaterialUse | null {
         kind: "drawing",
         version: m.version,
         name: m.name.zh,
+        nameEn: m.name.en,
         source: m.source,
         defaults: m.defaults ?? {},
         params: m.params,
       };
     case "effect":
-      return { id: m.id, kind: "effect", version: m.version, name: m.name.zh, defs: m.defs };
+      return { id: m.id, kind: "effect", version: m.version, name: m.name.zh, nameEn: m.name.en, defs: m.defs };
     case "style":
       return null;
   }
@@ -347,6 +349,7 @@ export const candidate = (m: MaterialHead): Candidate => ({
   id: m.id,
   kind: m.kind,
   name: m.name.zh,
+  nameEn: m.name.en,
   ...(m.kind === "picture"
     ? { url: m.file.url }
     : m.kind === "style" && m.samples[0]

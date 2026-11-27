@@ -59,7 +59,7 @@ import {
 import { union } from "../../../modules/contracts/geometry.ts";
 import { endModule } from "../../../modules/contracts/index.ts";
 import type { PartPick } from "../../../modules/canvas/index.ts";
-import { endName } from "./workPage.ts";
+import { drawingLabel, endName } from "./workPage.ts";
 import { Content, ItemForm } from "./EditContent.tsx";
 import { useDevMode } from "./EditView.tsx";
 import type {
@@ -313,14 +313,15 @@ function Selected({
   /** The path of the part selected inside the one module selected. */
   part?: string;
 }) {
-  const t = useT();
+  const t = useT(),
+    locale = useLocale();
   const scene = work.scenes[sceneId];
   const one = modules.length === 1 && !chosenLinks.length ? modules[0] : undefined;
   const grouped = modules.some((m) => m.group);
   const links = one
     ? scene.links.filter((l) => endModule(l.from) === one.id || endModule(l.to) === one.id)
     : [];
-  const drawing = one && (work.drawings[one.drawingId]?.name ?? work.materials[one.drawingId]?.name);
+  const drawing = one && (work.drawings[one.drawingId] || work.materials[one.drawingId] ? drawingLabel(work, one.drawingId, locale) : undefined);
   return (
     <>
       <header className={cx("edit-head")}>
@@ -827,13 +828,14 @@ function LinkPanel({
     );
   };
   // The drawings links in this work are drawn with, and the library's drawing for links.
+  const linkLocale = useLocale();
   const drawings = new Map<string, string>();
   for (const s of Object.values(work.scenes))
     for (const x of s.links)
-      drawings.set(x.drawingId, work.drawings[x.drawingId]?.name ?? work.materials[x.drawingId]?.name ?? x.drawingId);
+      drawings.set(x.drawingId, drawingLabel(work, x.drawingId, linkLocale));
   const bound = boundIfKnown()?.link;
   if (bound && !drawings.has(bound) && !work.drawings[bound])
-    drawings.set(bound, work.materials[bound]?.name ?? l.arrow);
+    drawings.set(bound, drawingLabel(work, bound, linkLocale, l.arrow));
   return (
     <>
       <header className={cx("edit-head")}>

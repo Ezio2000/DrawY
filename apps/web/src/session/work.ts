@@ -8,7 +8,7 @@ import { Runs } from "./runs.ts";
 import { Scenes } from "./scenes.ts";
 import { Sending } from "./sending.ts";
 import { Store, kept } from "./store.ts";
-import type { Ask, Back, Change, Context, Happening, SessionHost, View } from "./types.ts";
+import type { Ask, Back, Change, Context, Happening, SessionHost, UndoTarget, View } from "./types.ts";
 import { Versions } from "./versions.ts";
 import { History } from "./history.ts";
 
@@ -67,6 +67,7 @@ export interface Snapshot {
   /** Going back, while it can be taken back. */
   back?: Back;
   undoable: boolean;
+  undoTarget?: UndoTarget;
   /** Whether a step of hand editing undone here can be made again. */
   redoable: boolean;
   /** Editing waits while the runs load, the author works or waits, or a preview shows. */
@@ -100,6 +101,8 @@ export interface Actions {
   quiet(revision: number): boolean;
   /** The view the work is drawn on, once it is there, and none once it goes. */
   attach(view: View | undefined): void;
+  /** Resolves once a view is attached to this session (or undefined if disposed first). */
+  whenAttached(): Promise<View | undefined>;
   ops: SessionOps;
 }
 
@@ -108,6 +111,7 @@ export interface WorkSession extends Actions {}
 export class WorkSession extends Store<Snapshot> {
   private ctx: Context;
   private hearing = new Set<(happening: Happening) => void>();
+  private viewWaiters: ((view: View | undefined) => void)[] = [];
 
   /** Opens a work by its id: it loads, and follows the server from then on. A work just
    * made here (`made`) shows at once, with no runs to wait for. */
@@ -152,7 +156,29 @@ export class WorkSession extends Store<Snapshot> {
       enter: (id, asking) => scenes.enter(id, asking),
       rename: (title) => revisions.rename(title),
       quiet: (revision) => revisions.quiet(revision),
-      attach: (view) => void (ctx.view = view),
+      attach: (view) => {
+        ctx.view = view;
+        if (view && this.viewWaiters.length) {
+          const waiters = this.viewWaiters.splice(0);
+          for (const resolve of waiters) resolve(view);
+        }
+      },
+      whenAttached: () => {
+        if (ctx.view) return Promise.resolve(ctx.view);
+        if (ctx.disposed) return Promise.resolve(undefined);
+        return new Promise<View | undefined>((resolve) => {
+          const timer = setTimeout(() => {
+            const idx = this.viewWaiters.indexOf(done);
+            if (idx >= 0) this.viewWaiters.splice(idx, 1);
+            resolve(ctx.view);
+          }, 3000);
+          const done = (v: View | undefined) => {
+            clearTimeout(timer);
+            resolve(v);
+          };
+          this.viewWaiters.push(done);
+        });
+      },
       ops: editOps(ctx),
     };
     Object.assign(this, actions);
@@ -179,6 +205,7 @@ export class WorkSession extends Store<Snapshot> {
 
   dispose() {
     this.ctx.disposed = true;
+    for (const resolve of this.viewWaiters.splice(0)) resolve(undefined);
     this.ctx.runs.dispose();
     this.ctx.versions.dispose();
   }
@@ -217,6 +244,7 @@ export class WorkSession extends Store<Snapshot> {
       holding: sending.holding,
       back: versions.back,
       undoable: !!work && versions.undoable,
+      undoTarget: work ? versions.undoTarget : undefined,
       redoable: !!work && versions.redoable,
       locked: !runs.loaded || runs.working || runs.waiting || !!preview,
     });

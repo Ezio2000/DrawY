@@ -369,6 +369,8 @@ code {
 
 /* A select is sized by its height, not by vertical padding, so a shorter one never clips its text. */
 :where(select) {
+  -webkit-appearance: none;
+  -moz-appearance: none;
   appearance: none;
   height: 38px;
   padding-block: 0;

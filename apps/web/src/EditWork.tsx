@@ -32,7 +32,7 @@ import { hex, Picker } from "./EditControls.tsx";
 import type { Change } from "./session/work.ts";
 import { cx } from "./cx.ts";
 import { useT } from "./i18n.tsx";
-import { linkName } from "./workPage.ts";
+import { drawingLabel, linkName } from "./workPage.ts";
 
 /* The work around the parts: its shared look, the scene and the scenes below it, the
  * details a click opens and the list of layers. */
@@ -400,14 +400,14 @@ export function Layers({
   canvas?: Canvas;
   change: Change;
 }) {
-  const t = useT();
+  const t = useT(),
+    locale = useLocale();
   const scene = work.scenes[sceneId];
   const [naming, setNaming] = useState<string>();
   const [dragging, setDragging] = useState<string>();
   const [over, setOver] = useState<{ id: string; above: boolean }>();
   const layers = [...scene.modules].reverse();
-  const drawingName = (id: string) =>
-    work.drawings[id]?.name ?? work.materials[id]?.name ?? id;
+  const drawingName = (id: string) => drawingLabel(work, id, locale);
   if (!layers.length) return <p className={cx("edit-note")}>{t.edit.layers.empty}</p>;
   const nameOf = (id: string) => {
     const m = scene.modules.find((x) => x.id === id);

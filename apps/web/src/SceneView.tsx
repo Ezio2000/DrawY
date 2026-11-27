@@ -205,10 +205,13 @@ export function SceneView({
     // shown or put away, the composer growing with what is typed.
     const dock = host.current!.parentElement?.querySelector("[data-dock]");
     let dockHeight = 0;
+    let dockFrame = 0;
     const docked = new ResizeObserver(([entry]) => {
       const h = Math.round(entry.contentRect.height);
-      // Not while editing by hand: what a person is working on stays where it is.
-      if (dockHeight && Math.abs(h - dockHeight) > 8 && !boarded.current) view.refit();
+      if (dockHeight && Math.abs(h - dockHeight) > 8 && !boarded.current) {
+        cancelAnimationFrame(dockFrame);
+        dockFrame = requestAnimationFrame(() => view.refit());
+      }
       dockHeight = h;
     });
     if (dock) docked.observe(dock);
@@ -223,6 +226,7 @@ export function SceneView({
       .finally(() => mounted && setShown(true));
     return () => {
       mounted = false;
+      cancelAnimationFrame(dockFrame);
       docked.disconnect();
       callbacks.current.view(undefined);
       view.dispose();

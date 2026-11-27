@@ -127,9 +127,10 @@ export function editOps(ctx: Context) {
   /** Materializes the blank home canvas into a real work before any library or edit call. */
   const materializeBlank = () =>
     ctx.id === "_blank" && ctx.host.materialize
-      ? ctx.host.materialize().then((next) => {
+      ? ctx.host.materialize().then(async (next) => {
           if (!next) return null;
-          return new Promise<typeof next>((r) => requestAnimationFrame(() => r(next)));
+          await next.whenAttached();
+          return next;
         })
       : undefined;
   /** Adds something at a point, in the middle of the view, or filling a box drawn for it. */

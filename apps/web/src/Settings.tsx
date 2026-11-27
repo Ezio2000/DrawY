@@ -162,11 +162,32 @@ export function Settings() {
         </h1>
       </header>
       <div className={cx("settings-layout")}>
-        <nav className={cx("settings-nav")}>
+        <div
+          className={cx("settings-nav")}
+          role="tablist"
+          aria-label={t.titles.settings}
+          onKeyDown={(e) => {
+            const keys = tabs.map(([k]) => k);
+            const idx = keys.indexOf(tab);
+            let next = -1;
+            if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (idx + 1) % keys.length;
+            else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (idx - 1 + keys.length) % keys.length;
+            else if (e.key === "Home") next = 0;
+            else if (e.key === "End") next = keys.length - 1;
+            if (next < 0) return;
+            e.preventDefault();
+            setTab(keys[next]);
+            const btns = e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+            btns[next]?.focus();
+          }}
+        >
           {tabs.map(([k, Icon], i) => (
             <button
               key={k}
-              aria-current={tab === k || undefined}
+              type="button"
+              role="tab"
+              aria-selected={tab === k}
+              tabIndex={tab === k ? 0 : -1}
               // Everyone's own settings first, then what their role lets them run.
               data-break={i === 1 || undefined}
               onClick={() => setTab(k)}
@@ -175,7 +196,7 @@ export function Settings() {
               {t.titles[k]}
             </button>
           ))}
-        </nav>
+        </div>
         {tab === "preferences" && (
           <section>
             <Head title={t.titles.preferences} hint={w.preferencesHint} />

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
 import * as Hand from "./ui/brand/icons.tsx";
 import { Spinner } from "./ui/primitives.tsx";
@@ -13,6 +13,15 @@ import { cx } from "./cx.ts";
 /** The sign-in / sign-up form, shared between the full page and the contextual modal. */
 function AuthForm({ done }: { done: (user: User) => void }) {
   const t = useT();
+  const baseId = useId();
+  const nameId = `${baseId}-name`,
+    passId = `${baseId}-pass`,
+    inviteId = `${baseId}-invite`,
+    inviteHintId = `${baseId}-invite-hint`,
+    errorId = `${baseId}-error`;
+  const nameRef = useRef<HTMLInputElement>(null),
+    passRef = useRef<HTMLInputElement>(null),
+    inviteRef = useRef<HTMLInputElement>(null);
   const [signup, S] = useState(false),
     [name, N] = useState(""),
     [password, P] = useState(""),
@@ -21,6 +30,7 @@ function AuthForm({ done }: { done: (user: User) => void }) {
     [needsInvite, setNeedsInvite] = useState(true),
     [shown, setShown] = useState(false),
     [busy, B] = useState(false),
+    [invalid, setInvalid] = useState<"name" | "password" | "invite">(),
     [error, E] = useState("");
   useEffect(() => {
     void api<{ invite: boolean }>("/auth/signup").then(
@@ -28,12 +38,43 @@ function AuthForm({ done }: { done: (user: User) => void }) {
       () => {},
     );
   }, []);
+  const clearError = (field: "name" | "password" | "invite") => {
+    if (invalid === field) setInvalid(undefined);
+    if (error) E("");
+  };
   return (
     <form
       className={cx("auth-card")}
+      noValidate
       onSubmit={async (e) => {
         e.preventDefault();
+        const trimmedName = name.trim();
+        if (!trimmedName) {
+          setInvalid("name");
+          E(t.auth.needUsername);
+          nameRef.current?.focus();
+          return;
+        }
+        if (!password) {
+          setInvalid("password");
+          E(t.auth.needPassword);
+          passRef.current?.focus();
+          return;
+        }
+        if (signup && password.length < 6) {
+          setInvalid("password");
+          E(t.auth.passwordShort);
+          passRef.current?.focus();
+          return;
+        }
+        if (signup && needsInvite && !invite.trim()) {
+          setInvalid("invite");
+          E(t.auth.needInvite);
+          inviteRef.current?.focus();
+          return;
+        }
         B(true);
+        setInvalid(undefined);
         E("");
         try {
           done(
@@ -41,8 +82,8 @@ function AuthForm({ done }: { done: (user: User) => void }) {
               "/auth/" + (signup ? "register" : "login"),
               "POST",
               signup && needsInvite
-                ? { name, password, invite }
-                : { name, password },
+                ? { name: trimmedName, password, invite: invite.trim() }
+                : { name: trimmedName, password },
             ),
           );
         } catch (e) {
@@ -55,28 +96,46 @@ function AuthForm({ done }: { done: (user: User) => void }) {
       <p className={cx("auth-greeting")}>
         {signup ? t.auth.join : t.auth.welcome}
       </p>
-      <label>
-        <span>{t.auth.username}</span>
+      <div className={cx("auth-field")}>
+        <label htmlFor={nameId}>{t.auth.username}</label>
         <input
+          ref={nameRef}
+          id={nameId}
+          name="username"
           autoComplete="username"
           autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           value={name}
-          onChange={(e) => N(e.target.value)}
+          aria-invalid={invalid === "name" || undefined}
+          aria-describedby={invalid === "name" && error ? errorId : undefined}
+          onChange={(e) => {
+            N(e.target.value);
+            clearError("name");
+          }}
           required
           autoFocus
         />
-      </label>
-      <label>
-        <span>
-          {t.auth.password}
+      </div>
+      <div className={cx("auth-field")}>
+        <label htmlFor={passId}>
+          <span>{t.auth.password}</span>
           {signup && <small>{t.auth.atLeast6}</small>}
-        </span>
-        <span className={cx("auth-secret")}>
+        </label>
+        <div className={cx("auth-secret")}>
           <input
+            ref={passRef}
+            id={passId}
+            name="password"
             type={shown ? "text" : "password"}
             autoComplete={signup ? "new-password" : "current-password"}
             value={password}
-            onChange={(e) => P(e.target.value)}
+            aria-invalid={invalid === "password" || undefined}
+            aria-describedby={invalid === "password" && error ? errorId : undefined}
+            onChange={(e) => {
+              P(e.target.value);
+              clearError("password");
+            }}
             required
             minLength={6}
           />
@@ -91,28 +150,35 @@ function AuthForm({ done }: { done: (user: User) => void }) {
           >
             {shown ? <Hand.EyeShut size={17} /> : <Hand.Eye size={17} />}
           </button>
-        </span>
-      </label>
+        </div>
+      </div>
       {signup && needsInvite && (
-        <label>
-          <span>{t.auth.invite}</span>
+        <div className={cx("auth-field")}>
+          <label htmlFor={inviteId}>{t.auth.invite}</label>
           <input
+            ref={inviteRef}
+            id={inviteId}
+            name="invite"
             autoComplete="off"
             spellCheck={false}
             value={invite}
-            onChange={(e) => I(e.target.value)}
-            aria-describedby="invite-hint"
+            aria-invalid={invalid === "invite" || undefined}
+            aria-describedby={invalid === "invite" && error ? `${errorId} ${inviteHintId}` : inviteHintId}
+            onChange={(e) => {
+              I(e.target.value);
+              clearError("invite");
+            }}
             required
           />
-        </label>
+        </div>
       )}
       {signup && needsInvite && (
-        <p className={cx("auth-hint")} id="invite-hint">
+        <p className={cx("auth-hint")} id={inviteHintId}>
           {t.auth.inviteHint}
         </p>
       )}
       {error && (
-        <p className={cx("error")} role="alert">
+        <p id={errorId} className={cx("error")} role="alert">
           {error}
         </p>
       )}
@@ -131,6 +197,7 @@ function AuthForm({ done }: { done: (user: User) => void }) {
         className={cx("auth-switch")}
         onClick={() => {
           S(!signup);
+          setInvalid(undefined);
           E("");
         }}
       >

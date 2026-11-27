@@ -70,7 +70,15 @@ export interface Back {
   at: number;
   from: number;
   to: { kind: "version"; version: number } | { kind: "discarded" };
+  /** True when going back came from server-side undo, so Redo (⌘⇧Z) can reverse it too. */
+  undone?: true;
 }
+
+/** What pressing Undo will act on next. */
+export type UndoTarget =
+  | { kind: "step" }
+  | { kind: "back" }
+  | { kind: "version"; version: number };
 
 /** What the session needs from the app around it. */
 export interface SessionHost {

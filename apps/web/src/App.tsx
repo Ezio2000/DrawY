@@ -39,6 +39,16 @@ import { followViewport } from "./viewport.ts";
 
 type AuthReason = "send" | "upload" | "library" | "edit" | "page" | "general";
 
+/** Trims a prompt into a concise title without cutting mid-word. */
+function titleFrom(raw: string, max = 36): string {
+  const clean = raw.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  const head = space > max * 0.5 ? cut.slice(0, space) : cut;
+  return head.replace(/[,.;:!?，。；：！？\s]+$/, "") + "…";
+}
+
 function makeBlankWork(title: string): Work {
   return {
     id: "_blank",
@@ -199,13 +209,17 @@ export function App() {
     }
     if (session) {
       if (!allowed(session.get().waiting)) return;
-      return session.send({ text, materials, picked: ask.picked ?? r.choices, scene: ask.scene, focus: ask.focus, sent: ask.sent ?? draft.clear });
+      const withStyle =
+        r.style && !session.get().work?.brief && !ask.text
+          ? `${text.trim()}\n${t.home.styleLine(r.style.name[locale])}`
+          : text;
+      return session.send({ text: withStyle, materials, picked: ask.picked ?? r.choices, scene: ask.scene, focus: ask.focus, sent: ask.sent ?? draft.clear });
     }
     if (starting || !allowed(false)) return;
     setStarting(true);
     try {
       const w = await api<Work>("/works", "POST", {
-        title: (text.trim() || r.attachments[0].name[locale]).slice(0, 36),
+        title: titleFrom(text.trim() || r.attachments[0].name[locale]),
       });
       const made = begin(w);
       go("/a/" + w.id);
@@ -416,20 +430,11 @@ export function App() {
                 loading
               ) : page === "home" ? (
                 <Landing asking={asking} feedback={feedback} go={go} />
-              ) : page === "new" || !user ? (
-                <OpenWork
-                  session={blankSession}
-                  Page={shells.Page}
-                  asking={asking}
-                  feedback={feedback}
-                  go={go}
-                  loading={loading}
-                />
-              ) : page === "traces" ? (
+              ) : user && page === "traces" ? (
                 <TraceView />
-              ) : page === "settings" ? (
+              ) : user && page === "settings" ? (
                 <Settings />
-              ) : page === "library" ? (
+              ) : user && page === "library" ? (
                 <div className={cx("page")}>
                   <header className={cx("page-head")}>
                     <h1>
@@ -438,11 +443,11 @@ export function App() {
                   </header>
                   <Library use={use} action={t.work.useIt} />
                 </div>
-              ) : !session ? (
+              ) : !activeSession ? (
                 loading
               ) : (
                 <OpenWork
-                  session={session}
+                  session={activeSession}
                   Page={shells.Page}
                   asking={asking}
                   feedback={feedback}
