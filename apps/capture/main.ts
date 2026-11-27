@@ -3,9 +3,11 @@ import { serve } from "@hono/node-server";
 import { chromium } from "playwright";
 import { capture, render } from "../../modules/observation/capture.ts";
 const app = new Hono();
+const executablePath = process.env.DRAWY_CHROMIUM || process.env.CHROME_EXECUTABLE;
 const browser = await chromium.launch({
   headless: true,
   args: ["--no-sandbox"],
+  ...(executablePath ? { executablePath } : {}),
 });
 app.get("/health", (c) => c.json({ ok: browser.isConnected() }));
 app.post("/capture", async (c) =>

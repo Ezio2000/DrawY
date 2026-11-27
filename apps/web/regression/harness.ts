@@ -88,9 +88,8 @@ beforeAll(async () => {
   });
   base = `http://127.0.0.1:${port}`;
   await until(base + "/api/auth/signup");
-  browser = await chromium.launch(
-    process.env.DRAWY_CHROMIUM ? { executablePath: process.env.DRAWY_CHROMIUM } : {},
-  );
+  const executablePath = process.env.DRAWY_CHROMIUM || process.env.CHROME_EXECUTABLE;
+  browser = await chromium.launch(executablePath ? { executablePath } : {});
   context = await browser.newContext({ locale: "en-US", ...device });
   const me = await context.request.post(base + "/api/auth/register", {
     data: { name: "desk", password: "password123" },

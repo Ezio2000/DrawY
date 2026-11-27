@@ -124,7 +124,8 @@ beforeAll(async () => {
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   origin = "http://127.0.0.1:" + (server.address() as { port: number }).port;
-  browser = await chromium.launch();
+  const executablePath = process.env.DRAWY_CHROMIUM || process.env.CHROME_EXECUTABLE;
+  browser = await chromium.launch(executablePath ? { executablePath } : {});
 });
 afterAll(async () => {
   await browser.close();
